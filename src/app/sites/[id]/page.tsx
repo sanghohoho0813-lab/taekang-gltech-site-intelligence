@@ -65,7 +65,7 @@ export default function SiteDetailPage() {
 
       {/* 헤더: 모바일은 참고 시안의 '현장 상세' 구성 */}
       <div className="grid gap-5 @min-[1000px]:grid-cols-[minmax(0,0.9fr)_minmax(0,1.6fr)]">
-        <Card className="overflow-hidden">
+        <Card className="order-2 overflow-hidden @min-[1000px]:order-1">
           <div className="relative">
             <Facade kind={site.illustration} className="h-44 @min-[520px]:h-52" />
             <span className="absolute right-3 top-3">
@@ -93,13 +93,17 @@ export default function SiteDetailPage() {
                 {canSeeMoney && <KeyValue k="원가 진척률" v={fmtPct(f.costProgressPct)} />}
               </dl>
             </div>
-            <Button variant="cta" size="lg" block icon={<ClipboardPen size={19} />} onClick={() => setSheet(true)} className="hidden lg:inline-flex" data-testid="open-report-sheet-pc">
-              현장 보고 · 비용 입력
-            </Button>
+            {role !== "partner" && (
+              <div className="hidden lg:block">
+                <Button variant="cta" size="lg" block icon={<ClipboardPen size={19} />} onClick={() => setSheet(true)} data-testid="open-report-sheet-pc">
+                  현장 보고 · 비용 입력
+                </Button>
+              </div>
+            )}
           </div>
         </Card>
 
-        {canSeeMoney ? <ProfitEngine db={db} site={site} f={f} /> : <FieldSiteSummary db={db} site={site} />}
+        <div className="order-1 min-w-0 @min-[1000px]:order-2">{canSeeMoney ? <ProfitEngine db={db} site={site} f={f} /> : <FieldSiteSummary db={db} site={site} />}</div>
       </div>
 
       {canSeeMoney && siteSignals.length > 0 && (
@@ -188,7 +192,7 @@ function ProfitEngine({ db, site, f }: { db: DemoDB; site: Site; f: SiteFinancia
   const changed = base && (base.eac !== f.eac || base.adjustedContract !== f.adjustedContract);
   const [def, setDef] = useState(false);
   return (
-    <Card className="flex flex-col" data-tour="profit-engine" data-testid="profit-engine">
+    <Card className="flex h-full flex-col" data-tour="profit-engine" data-testid="profit-engine">
       <CardHeader
         title="현장 손익 엔진"
         sub="원가 이벤트 합산 → 총예상원가(EAC) → 예상이익 자동 재계산 · 단위 원, 부가세 별도"
@@ -221,6 +225,24 @@ function ProfitEngine({ db, site, f }: { db: DemoDB; site: Site; f: SiteFinancia
         <p className="mt-2 rounded-lg bg-surface-2 px-3 py-2 text-[0.76rem] text-ink-2 num">
           EAC <b>{fmtEok(f.eac)}</b> = 발생원가 {fmtEok(f.incurred)} + 잔여예상원가 {fmtEok(f.remaining)} · 예상이익 <b>{fmtEok(f.expectedProfit)}</b> = 조정 계약 {fmtEok(f.adjustedContract)} − EAC · 이익률 = 예상이익 ÷ 조정 계약
         </p>
+      </div>
+      <div className="px-5 pt-4">
+        <p className="mb-1.5 text-[0.78rem] font-bold text-ink-2">원가항목별 EAC vs 실행예산</p>
+        <ul className="grid grid-cols-1 gap-x-5 gap-y-1.5 @min-[560px]:grid-cols-2" data-testid="category-mini">
+          {f.categories.map((c) => {
+            const over = c.variancePct > db.thresholds.overrunPct;
+            return (
+              <li key={c.category} className="grid grid-cols-[4.6rem_1fr_auto] items-center gap-2 text-[0.76rem]">
+                <span className="font-semibold text-ink-2">{CATEGORY_LABEL[c.category].replace("(인건비)", "")}</span>
+                <span className="relative h-2 rounded-full bg-surface-3">
+                  <span className={cx("absolute inset-y-0 left-0 rounded-full transition-[width] duration-700", over ? "bg-err" : "bg-chart-2")} style={{ width: `${Math.min(100, (c.eac / Math.max(c.budget, c.eac)) * 100)}%` }} />
+                  {c.eac > c.budget && <span className="absolute inset-y-[-3px] w-0.5 bg-ink" style={{ left: `${(c.budget / c.eac) * 100}%` }} aria-hidden />}
+                </span>
+                <span className={cx("num font-bold", over ? "text-err" : c.variance > 0 ? "text-warn" : "text-ink-3")}>{c.variance > 0 ? `+${fmtPct(c.variancePct)}` : "예산 내"}</span>
+              </li>
+            );
+          })}
+        </ul>
       </div>
       <div className="mt-auto space-y-2 px-5 py-4">
         {changed && base && (
@@ -332,7 +354,7 @@ function OverviewTab({ db, site, f, canSeeMoney }: { db: DemoDB; site: Site; f: 
         )}
         {canSeeMoney && (
           <div className="border-t border-line px-5 py-3 text-[0.8rem] text-ink-3">
-            미수금 <b className="text-ink num">{fmtEok(f.outstanding)}</b> · 승인 대기 변경공사 <b className="text-ink num">{fmtMan(f.pendingChangeAmount)}</b>
+            미수금 <b className="text-ink num">{fmtEok(f.outstanding)}</b> · 승인 대기 변경공사 <b className="text-ink num">{f.pendingChangeAmount ? fmtMan(f.pendingChangeAmount) : "없음"}</b>
           </div>
         )}
       </Card>

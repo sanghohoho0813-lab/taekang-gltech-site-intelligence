@@ -99,6 +99,7 @@ function CeoDashboard() {
           href="/finance"
         />
         <StatCard
+          className="col-span-2 @min-[760px]:col-span-1"
           label="위험 알림 (규칙 기반)"
           value={`${signals.length}건`}
           sub={`경고 ${high} · 주의 ${medium} · 확인 ${low}`}
@@ -109,7 +110,7 @@ function CeoDashboard() {
         />
       </div>
 
-      <div className="grid gap-5 @min-[1080px]:grid-cols-[minmax(0,1.85fr)_minmax(0,1fr)]">
+      <div className="grid gap-5">
         <Card>
           <CardHeader
             title="현장별 손익 현황"
@@ -139,15 +140,54 @@ function CeoDashboard() {
           {sites.length === 0 ? (
             <EmptyState title="해당 조건의 현장이 없습니다." desc="필터를 '전체'로 바꿔보세요." />
           ) : (
-            <div className="overflow-x-auto scroll-thin">
-              <table className="w-full min-w-[46rem] text-[0.86rem]" data-testid="site-table">
+            <>
+            <ul className="divide-y divide-line border-t border-line @min-[760px]:hidden" data-testid="site-list-mobile">
+              {sites.map(({ s, f, h }) => (
+                <li key={s.id}>
+                  <Link href={`/sites/${s.id}`} className="row-hover block px-5 py-3.5">
+                    <span className="flex items-center justify-between gap-2">
+                      <span className="min-w-0">
+                        <b className="text-ink">{s.shortName}</b> <span className="text-[0.75rem] text-ink-3">{s.workType}</span>
+                      </span>
+                      <HealthPill health={h} />
+                    </span>
+                    <span className="mt-2 grid grid-cols-3 gap-2 text-[0.75rem] text-ink-3">
+                      <span>
+                        EAC
+                        <b className="block text-[0.95rem] text-ink num">
+                          <CountUp value={f.eac} format={(v) => fmtEok(v, { unit: false })} />
+                        </b>
+                      </span>
+                      <span>
+                        예상이익
+                        <b className={cx("block text-[0.95rem] num", f.expectedProfit < 0 ? "text-err" : "text-ink")}>
+                          <CountUp value={f.expectedProfit} format={(v) => fmtEok(v, { unit: false })} />
+                        </b>
+                      </span>
+                      <span>
+                        이익률
+                        <b className={cx("block text-[0.95rem] num", f.marginPct < f.plannedMarginPct - 2.99 ? "text-err" : "text-ink")}>
+                          <CountUp value={f.marginPct} format={(v) => fmtPct(v)} />
+                        </b>
+                      </span>
+                    </span>
+                    <span className="mt-2 flex items-center gap-2">
+                      <ProgressBar value={s.progressPct} label={`${s.shortName} 공정률`} />
+                      <span className="text-[0.75rem] font-semibold num">{s.progressPct}%</span>
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+            <div className="hidden overflow-x-auto scroll-thin @min-[760px]:block">
+              <table className="w-full min-w-[44rem] text-[0.86rem]" data-testid="site-table">
                 <thead>
                   <tr className="border-y border-line bg-surface-2 text-left text-[0.75rem] font-semibold text-ink-3">
                     <th className="px-5 py-2.5">현장</th>
                     <th className="px-3 py-2.5 text-right">조정 계약</th>
                     <th className="px-3 py-2.5 text-right">총예상원가(EAC)</th>
                     <th className="px-3 py-2.5 text-right">예상이익</th>
-                    <th className="px-3 py-2.5 text-right">이익률 (계획→현재)</th>
+                    <th className="whitespace-nowrap px-3 py-2.5 text-right">이익률 (계획→현재)</th>
                     <th className="px-3 py-2.5 w-36">공정률</th>
                     <th className="px-5 py-2.5">상태</th>
                   </tr>
@@ -169,7 +209,7 @@ function CeoDashboard() {
                       <td className={cx("px-3 py-3 text-right num font-bold", f.expectedProfit < 0 ? "text-err" : "text-ink")}>
                         <CountUp value={f.expectedProfit} format={(v) => fmtEok(v, { unit: false })} />
                       </td>
-                      <td className="px-3 py-3 text-right num">
+                      <td className="whitespace-nowrap px-3 py-3 text-right num">
                         <span className="text-ink-3">{fmtPct(f.plannedMarginPct)} → </span>
                         <b className={cx(f.marginPct < f.plannedMarginPct - 2.99 ? "text-err" : "text-ink")}>
                           <CountUp value={f.marginPct} format={(v) => fmtPct(v)} />
@@ -189,9 +229,13 @@ function CeoDashboard() {
                 </tbody>
               </table>
             </div>
+            </>
           )}
         </Card>
 
+      </div>
+
+      <div className="grid gap-5 @min-[760px]:grid-cols-2 @min-[1080px]:grid-cols-3">
         <Card>
           <CardHeader
             title="위험 알림"
@@ -229,7 +273,7 @@ function CeoDashboard() {
             </ul>
           )}
           <div className="mx-4 mb-4 rounded-xl bg-surface-2 p-3.5">
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-[0.82rem] font-bold text-ink">권장 조치 (규칙 기반)</p>
               <AiReadyButton />
             </div>
@@ -242,9 +286,6 @@ function CeoDashboard() {
             )}
           </div>
         </Card>
-      </div>
-
-      <div className="grid gap-5 @min-[900px]:grid-cols-2 @min-[1300px]:grid-cols-3">
         <Card>
           <CardHeader title="현장별 예상이익률" sub="계획(계약 시 실행예산 기준) vs 현재" />
           <div className="px-5 pb-5">
@@ -257,7 +298,7 @@ function CeoDashboard() {
             <BillingBars rows={db.sites.map((s) => ({ label: s.shortName, billed: fin[s.id].billed, received: fin[s.id].received, outstanding: fin[s.id].outstanding }))} />
           </div>
         </Card>
-        <Card className="@min-[900px]:col-span-2 @min-[1300px]:col-span-1">
+        <Card className="@min-[760px]:col-span-2 @min-[1080px]:col-span-3">
           <CardHeader
             title="최근 현장 보고"
             right={

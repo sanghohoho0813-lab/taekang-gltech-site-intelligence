@@ -103,6 +103,7 @@ export function StatCard({
   href,
   testId,
   extra,
+  className,
 }: {
   label: string;
   value: ReactNode;
@@ -112,22 +113,25 @@ export function StatCard({
   href?: string;
   testId?: string;
   extra?: ReactNode;
+  className?: string;
 }) {
   const color = `var(--g-${group})`;
   const body = (
-    <div className="flex h-full items-start gap-3 p-4">
-      <span className="grid size-11 shrink-0 place-items-center rounded-xl" style={{ background: `color-mix(in srgb, ${color} 14%, #fff)`, color }} aria-hidden>
-        {icon}
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="text-[0.8rem] font-semibold text-ink-3">{label}</p>
-        <p className="mt-0.5 text-[1.6rem] font-extrabold leading-tight tracking-[-0.01em] text-ink num">{value}</p>
-        {sub && <div className="mt-1 text-[0.76rem] text-ink-3">{sub}</div>}
+    <div className="flex h-full flex-col gap-2 p-4">
+      <div className="flex items-center gap-2.5">
+        <span className="grid size-9 shrink-0 place-items-center rounded-xl" style={{ background: `color-mix(in srgb, ${color} 14%, #fff)`, color }} aria-hidden>
+          {icon}
+        </span>
+        <p className="min-w-0 text-[0.8rem] font-semibold leading-snug text-ink-3">{label}</p>
+      </div>
+      <div className="min-w-0">
+        <p className="whitespace-nowrap text-[1.55rem] font-extrabold leading-tight tracking-[-0.01em] text-ink num">{value}</p>
+        {sub && <div className="mt-1 text-[0.76rem] leading-snug text-ink-3">{sub}</div>}
         {extra}
       </div>
     </div>
   );
-  const cls = "block rounded-2xl border border-line bg-surface shadow-card";
+  const cls = cx("block min-w-0 rounded-2xl border border-line bg-surface shadow-card", className);
   return href ? (
     <Link href={href} className={cx(cls, "lift")} data-testid={testId}>
       {body}

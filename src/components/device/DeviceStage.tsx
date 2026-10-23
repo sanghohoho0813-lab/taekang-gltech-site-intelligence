@@ -168,14 +168,14 @@ function PhoneStage({ mode }: { mode: "mobile" | "dual" }) {
     >
       <div className="mb-2 flex w-[410px] max-w-full shrink-0 items-center justify-between gap-2 text-[0.72rem] text-ink-2">
         <span className="inline-flex items-center gap-1.5 font-bold">
-          <Smartphone size={15} aria-hidden /> 390px 실제 렌더
+          <Smartphone size={15} aria-hidden /> <span className="whitespace-nowrap">Mobile 390</span>
         </span>
         <span className="inline-flex min-w-0 items-center gap-1 rounded-full bg-surface px-2 py-0.5 font-semibold text-ink-3" title="PC와 같은 Route·같은 데이터">
           <Link2 size={13} aria-hidden /> <span className="num truncate max-w-[8rem]">{shownPath}</span>
         </span>
         {mode === "dual" && (
           <label className="inline-flex items-center gap-1">
-            <span className="font-semibold">모바일 역할</span>
+            <span className="whitespace-nowrap font-semibold">역할</span>
             <select
               value={prefs.mobilePersona}
               onChange={(e) => setPrefs({ mobilePersona: e.target.value as "same" | RoleId })}

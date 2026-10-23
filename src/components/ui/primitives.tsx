@@ -47,7 +47,7 @@ export const Button = forwardRef<
 
 export function Card({ className, children, as: As = "section", ...rest }: { className?: string; children: ReactNode; as?: "section" | "div" | "article" } & React.HTMLAttributes<HTMLElement>) {
   return (
-    <As className={cx("rounded-2xl border border-line bg-surface shadow-card", className)} {...rest}>
+    <As className={cx("min-w-0 rounded-2xl border border-line bg-surface shadow-card", className)} {...rest}>
       {children}
     </As>
   );
@@ -55,8 +55,8 @@ export function Card({ className, children, as: As = "section", ...rest }: { cla
 
 export function CardHeader({ title, sub, right, className }: { title: ReactNode; sub?: ReactNode; right?: ReactNode; className?: string }) {
   return (
-    <div className={cx("flex items-start justify-between gap-3 px-5 pt-4 pb-3", className)}>
-      <div className="min-w-0">
+    <div className={cx("flex flex-wrap items-start justify-between gap-x-3 gap-y-2 px-5 pt-4 pb-3", className)}>
+      <div className="min-w-[min(100%,13rem)] flex-1">
         <h2 className="text-[1.05rem] font-bold text-ink leading-snug">{title}</h2>
         {sub && <p className="mt-0.5 text-[0.82rem] text-ink-3">{sub}</p>}
       </div>

@@ -19,14 +19,16 @@ export function MarginBars({
         return (
           <div key={r.label} role="row" className="grid grid-cols-[4.2rem_1fr] items-center gap-3">
             <span role="rowheader" className="text-[0.85rem] font-bold text-ink">{r.label}</span>
-            <div role="cell" className="relative space-y-1">
+            <div role="cell" className="space-y-1">
+              <div className="relative space-y-1">
+              <span className="absolute -top-1 -bottom-1 z-10 w-0.5 rounded bg-ink-2/70" style={{ left: `${(target / max) * 100}%` }} aria-hidden />
               <div className="relative h-3 rounded-full bg-surface-3">
                 <div className="anim-bar absolute inset-y-0 left-0 rounded-full bg-[color-mix(in_srgb,var(--t-chart-2)_35%,#D5DAE0)]" style={{ width: `${(r.planned / max) * 100}%` }} />
               </div>
               <div className="relative h-3 rounded-full bg-surface-3">
                 <div className={cx("anim-bar absolute inset-y-0 left-0 rounded-full", down ? "bg-err" : "bg-chart-1")} style={{ width: `${(Math.max(0, r.current) / max) * 100}%` }} />
               </div>
-              <span className="absolute -top-1 bottom-[-0.25rem] w-px bg-ink-2/60" style={{ left: `${(target / max) * 100}%` }} aria-hidden />
+              </div>
               <div className="flex justify-between text-[0.75rem] text-ink-3 num">
                 <span>
                   계획 {fmtPct(r.planned)} → <b className={cx(down ? "text-err" : "text-ink")}>현재 {fmtPct(r.current)}</b>
@@ -48,33 +50,33 @@ export function MarginBars({
 export function BillingBars({ rows }: { rows: { label: string; billed: number; received: number; outstanding: number }[] }) {
   const max = Math.max(1, ...rows.map((r) => r.billed)) * 1.08;
   return (
-    <div>
-      <div className="flex h-44 items-end justify-around gap-4 border-b border-line px-2" role="img" aria-label="현장별 기성청구·수금·미수 금액">
+    <div className="overflow-hidden">
+      <div className="grid h-44 items-end gap-3 border-b border-line px-1" style={{ gridTemplateColumns: `repeat(${rows.length}, minmax(0, 1fr))` }} role="img" aria-label="현장별 기성청구·수금·미수 금액">
         {rows.map((r) => (
-          <div key={r.label} className="flex h-full flex-1 items-end justify-center gap-1.5">
+          <div key={r.label} className="flex h-full min-w-0 items-end justify-center gap-1">
             {[
               { v: r.billed, c: "bg-chart-2", t: "확정 기성" },
               { v: r.received, c: "bg-chart-3", t: "수금" },
               { v: r.outstanding, c: "bg-chart-1", t: "미수" },
             ].map((b) => (
-              <div key={b.t} className="flex h-full w-5 flex-col items-center justify-end @min-[560px]:w-7" title={`${r.label} ${b.t} ${fmtEok(b.v)}`}>
-                <span className="mb-1 text-[0.62rem] font-semibold text-ink-3 num whitespace-nowrap">{fmtEok(b.v, { unit: false, digits: 1 })}</span>
-                <div className={cx("w-full rounded-t-md origin-bottom [animation:tk-fade-up_600ms_ease-out_both]", b.c)} style={{ height: `${Math.max(2, (b.v / max) * 82)}%` }} />
+              <div key={b.t} className="flex h-full min-w-0 max-w-8 flex-1 flex-col items-center justify-end" title={`${r.label} ${b.t} ${fmtEok(b.v)}`}>
+                <span className="mb-1 text-[0.6rem] font-semibold leading-none text-ink-3 num whitespace-nowrap">{fmtEok(b.v, { unit: false, digits: 1 }).replace("억", "")}</span>
+                <div className={cx("w-full rounded-t-md origin-bottom [animation:tk-fade-up_600ms_ease-out_both]", b.c)} style={{ height: `${Math.max(2, (b.v / max) * 80)}%` }} />
               </div>
             ))}
           </div>
         ))}
       </div>
-      <div className="flex justify-around px-2 pt-2 text-[0.8rem] font-bold text-ink">
+      <div className="grid gap-3 px-1 pt-2 text-center text-[0.8rem] font-bold text-ink" style={{ gridTemplateColumns: `repeat(${rows.length}, minmax(0, 1fr))` }}>
         {rows.map((r) => (
-          <span key={r.label} className="flex-1 text-center">{r.label}</span>
+          <span key={r.label}>{r.label}</span>
         ))}
       </div>
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[0.72rem] text-ink-3">
         <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-sm bg-chart-2" />확정 기성청구</span>
         <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-sm bg-chart-3" />수금</span>
         <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-sm bg-chart-1" />미수금</span>
-        <span>단위: 억 원 · 부가세 별도</span>
+        <span>막대 위 숫자 단위: 억 원 · 부가세 별도</span>
       </div>
     </div>
   );
@@ -119,14 +121,14 @@ export function ProfitStack({ incurred, remaining, profit, contract }: { incurre
     <div>
       <div className="flex h-9 w-full overflow-hidden rounded-xl ring-1 ring-line" role="img" aria-label={`발생원가 ${fmtEok(incurred)}, 잔여예상원가 ${fmtEok(remaining)}, 예상이익 ${fmtEok(profit)}`}>
         <div className="grid place-items-center bg-chart-2 text-[0.72rem] font-bold text-white transition-[width] duration-700" style={{ width: pct(incurred) }}>
-          <span className="truncate px-1">발생 {fmtEok(incurred, { unit: false, digits: 2 })}억</span>
+          <span className="truncate px-1">발생 {fmtEok(incurred, { unit: false, digits: 2 })}</span>
         </div>
         <div className="grid place-items-center bg-[color-mix(in_srgb,var(--t-chart-2)_45%,#C9CFD6)] text-[0.72rem] font-bold text-ink transition-[width] duration-700" style={{ width: pct(remaining) }}>
-          <span className="truncate px-1">잔여 {fmtEok(remaining, { unit: false, digits: 2 })}억</span>
+          <span className="truncate px-1">잔여 {fmtEok(remaining, { unit: false, digits: 2 })}</span>
         </div>
         {!loss && (
           <div className="grid place-items-center bg-chart-1 text-[0.72rem] font-bold text-white transition-[width] duration-700" style={{ width: pct(profit) }}>
-            <span className="truncate px-1">이익 {fmtEok(profit, { unit: false, digits: 2 })}억</span>
+            <span className="truncate px-1">이익 {fmtEok(profit, { unit: false, digits: 2 })}</span>
           </div>
         )}
       </div>
