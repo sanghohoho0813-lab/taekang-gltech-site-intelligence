@@ -55,6 +55,7 @@ export function MyActionsView() {
         </div>
       ) : (
         <div className="grid gap-4 @min-[900px]:grid-cols-2" data-testid="my-actions-list">
+          <h2 className="sr-only">{status === "open" ? "처리할 조치 목록" : "완료된 조치 목록"}</h2>
           {list.map((a) => (
             <ActionCard key={a.id} db={db} action={a} />
           ))}

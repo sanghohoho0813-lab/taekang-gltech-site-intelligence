@@ -82,7 +82,7 @@ export default function ReportPage() {
         <div className="grid grid-cols-2 gap-3 px-5 @min-[900px]:grid-cols-4">
           <Tile label="예상이익 합계" before={fmtEok(base.profit)} after={fmtEok(total.expectedProfit)} delta={<Delta value={total.expectedProfit - base.profit} format={(v) => fmtMan(v)} />} />
           <Tile label="평균 예상이익률" before={fmtPct(base.margin)} after={fmtPct(total.marginPct)} delta={<span className={cx("font-bold num", total.marginPct < base.margin - 0.05 ? "text-err" : "text-ink-3")}>{fmtPp(total.marginPct - base.margin)}</span>} />
-          <Tile label="위험 신호" after={`${signals.length}건`} delta={<span className="text-ink-3">경고 {signals.filter((s) => s.severity === "high").length} · 주의 {signals.filter((s) => s.severity === "medium").length}</span>} />
+          <Tile label="위험 신호" after={`${signals.length}건`} delta={<span className="text-ink-3">경고 {signals.filter((s) => s.severity === "high").length} · 주의 {signals.filter((s) => s.severity === "medium").length} · 확인 {signals.filter((s) => s.severity === "low").length}</span>} />
           <Tile label="조치 · Proof Event" after={`${doneActions.length}/${doneActions.length + openActions.length} 완료`} delta={<span className="text-ink-3">Proof {db.proofEvents.length}건 (확인 {db.proofEvents.filter((p) => p.status === "confirmed").length})</span>} />
         </div>
         <ul className="space-y-1.5 px-5 py-4" data-testid="report-bullets">
@@ -244,7 +244,7 @@ export default function ReportPage() {
                           <>
                             <Badge tone={p.status === "confirmed" ? "ok" : "warn"}>{p.status === "confirmed" ? "결과 확인" : "확인 대기"}</Badge>
                             <span className="mt-1 block num text-ink-3">
-                              이익률 {String(p.kpi_before["예상이익률"])} → {String(p.kpi_after["예상이익률"])} · 대응 {p.response_minutes ?? 0}분
+                              이익률 {String(p.kpi_before["예상이익률"])} → {String(p.kpi_after["예상이익률"])} · 대응 {p.response_minutes ? `${p.response_minutes}분` : "1분 미만"}
                             </span>
                           </>
                         ) : (

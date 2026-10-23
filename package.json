@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "qa:cuesheet": "node tests/qa/cuesheet.mjs"
   },
   "engines": {
     "node": ">=20"

@@ -151,7 +151,7 @@ export function NotificationBell() {
         data-testid="notifications"
       >
         <Bell size={21} />
-        {items.length > 0 && <span className="num absolute right-1.5 top-1.5 grid min-w-[1.1rem] h-[1.1rem] place-items-center rounded-full bg-active px-1 text-[0.62rem] font-bold text-white">{items.length}</span>}
+        {items.length > 0 && <span className="num absolute right-1.5 top-1.5 grid min-w-[1.1rem] h-[1.1rem] place-items-center rounded-full bg-solid px-1 text-[0.62rem] font-bold text-white">{items.length}</span>}
       </button>
       {open && (
         <div className="anim-pop absolute right-0 top-[calc(100%+6px)] z-40 w-[min(26rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-line bg-surface shadow-pop">

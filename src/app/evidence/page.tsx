@@ -114,7 +114,7 @@ export default function EvidencePage() {
           <ol className="relative mx-5 mb-5 border-l-2 border-line pl-5">
             {WEEKS.map((w, i) => (
               <li key={w.w} className="relative pb-4 last:pb-0">
-                <span className={cx("absolute -left-[1.72rem] top-0.5 grid size-5 place-items-center rounded-full text-[0.62rem] font-bold text-white", i === 0 ? "bg-active" : "bg-ink-3")}>{i}</span>
+                <span className={cx("absolute -left-[1.72rem] top-0.5 grid size-5 place-items-center rounded-full text-[0.62rem] font-bold text-white", i === 0 ? "bg-solid" : "bg-ink-3")}>{i}</span>
                 <p className="text-[0.78rem] font-bold text-theme-ink">{w.w}</p>
                 <p className="text-[0.9rem] font-bold">{w.t}</p>
                 <p className="text-[0.8rem] text-ink-2">{w.d}</p>
@@ -154,7 +154,7 @@ function ProofItem({ p, site, approver, user, canConfirm, onConfirm }: { p: Proo
         </Badge>
         <Badge tone="demo">DEMO_LOCAL</Badge>
         <b className="text-ink-2">{site}</b> · {fmtDateTime(p.created_at)}
-        {typeof p.response_minutes === "number" && <span>· 감지→완료 {p.response_minutes}분 (시연 측정값)</span>}
+        {typeof p.response_minutes === "number" && <span>· 감지→완료 {p.response_minutes ? `${p.response_minutes}분` : "1분 미만"} (시연 측정값)</span>}
       </div>
       <div className="mt-2 grid gap-2 @min-[900px]:grid-cols-[1fr_1fr]">
         <dl className="space-y-1.5 text-[0.82rem]">

@@ -241,6 +241,8 @@ function DataSection() {
               ref={fileRef}
               type="file"
               accept=".csv,text/csv"
+              aria-label="원가 CSV 파일 선택"
+              tabIndex={-1}
               className="sr-only"
               onChange={async (e) => {
                 const f = e.target.files?.[0];

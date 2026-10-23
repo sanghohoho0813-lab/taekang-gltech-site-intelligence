@@ -39,6 +39,8 @@ export function DemoBar({ active }: { active: boolean }) {
         !active && "lg:hidden",
       )}
       data-testid="demo-bar"
+      role="region"
+      aria-label="시연 제어 바"
     >
       <span className="inline-flex items-center gap-1.5 rounded-full bg-[#FFF7D6] px-2.5 py-0.5 font-bold text-[#7A5200]">
         <span className="size-1.5 rounded-full bg-[#C98A00]" aria-hidden /> DEMO · 가상 시연 데이터

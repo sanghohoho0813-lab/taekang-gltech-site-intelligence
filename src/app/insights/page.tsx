@@ -55,7 +55,7 @@ function Insights() {
       <Freshness />
 
       <div className="grid grid-cols-2 gap-3 @min-[900px]:grid-cols-4">
-        <StatCard label="열린 위험 신호" value={`${signals.length}건`} sub={`경고 ${signals.filter((s) => s.severity === "high").length} · 주의 ${signals.filter((s) => s.severity === "medium").length}`} icon={<ShieldAlert size={21} />} group="ax" />
+        <StatCard label="열린 위험 신호" value={`${signals.length}건`} sub={`경고 ${signals.filter((s) => s.severity === "high").length} · 주의 ${signals.filter((s) => s.severity === "medium").length} · 확인 ${signals.filter((s) => s.severity === "low").length}`} icon={<ShieldAlert size={21} />} group="ax" />
         <StatCard label="진행 중 조치" value={`${open.length}건`} sub={open.length ? `${ACTION_STATUS_LABEL[open[0].status]} · ${open[0].title}` : "없음"} icon={<ListChecks size={21} />} group="ops" />
         <StatCard label="완료 · Proof Event" value={`${done.length} · ${db.proofEvents.length}건`} sub={`결과 확인 ${db.proofEvents.filter((p) => p.status === "confirmed").length}건`} icon={<BadgeCheck size={21} />} group="ax" href="/evidence" />
         <StatCard label="발주처 요청 (미회신)" value={`${newReq.length}건`} sub="파트너 포털에서 접수" icon={<Inbox size={21} />} group="growth" />

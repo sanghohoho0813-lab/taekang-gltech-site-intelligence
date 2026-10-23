@@ -39,7 +39,7 @@ export default function PresentationPage() {
         <ol className="space-y-2.5 px-5 pb-5">
           {steps.map((s, i) => (
             <li key={i} className="flex gap-3 rounded-xl border border-line bg-surface-2 px-4 py-3">
-              <span className="num grid size-8 shrink-0 place-items-center rounded-full bg-active text-[0.85rem] font-bold text-white">{i + 1}</span>
+              <span className="num grid size-8 shrink-0 place-items-center rounded-full bg-solid text-[0.85rem] font-bold text-white">{i + 1}</span>
               <div className="min-w-0">
                 <p className="flex flex-wrap items-center gap-2 font-bold">
                   {s.title.replace(/^[①-⑥]\s*/, "")}

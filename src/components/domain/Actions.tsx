@@ -26,7 +26,7 @@ export function StatusStepper({ status }: { status: ActionStatus }) {
         const on = idx >= i;
         return (
           <li key={s} className="flex items-center gap-1">
-            <span className={cx("rounded-full px-2 py-0.5 text-[0.68rem] font-bold whitespace-nowrap", on ? (s === "done" ? "bg-ok text-white" : "bg-active text-white") : "bg-surface-3 text-ink-3", status === s && "ring-2 ring-offset-1 ring-active/40")}>
+            <span className={cx("rounded-full px-2 py-0.5 text-[0.68rem] font-bold whitespace-nowrap", on ? (s === "done" ? "bg-ok text-white" : "bg-solid text-white") : "bg-surface-3 text-ink-3", status === s && "ring-2 ring-offset-1 ring-active/40")}>
               {ACTION_STATUS_LABEL[s]}
             </span>
             {i < STEPS.length - 1 && <span className={cx("h-0.5 w-3 rounded-full", idx > i ? "bg-active" : "bg-line")} aria-hidden />}

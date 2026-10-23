@@ -98,7 +98,7 @@ export function Sidebar({ compact }: { compact: boolean }) {
                         {badge > 0 && (
                           <span
                             className={cx(
-                              "num grid min-w-[1.25rem] h-5 place-items-center rounded-full bg-active px-1 text-[0.68rem] font-bold text-white",
+                              "num grid min-w-[1.25rem] h-5 place-items-center rounded-full bg-solid px-1 text-[0.68rem] font-bold text-white",
                               compact ? "absolute -top-0.5 right-1" : "ml-auto",
                             )}
                             aria-label={`${badge}건`}

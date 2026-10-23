@@ -120,14 +120,14 @@ export function ProfitStack({ incurred, remaining, profit, contract }: { incurre
   return (
     <div>
       <div className="flex h-9 w-full overflow-hidden rounded-xl ring-1 ring-line" role="img" aria-label={`발생원가 ${fmtEok(incurred)}, 잔여예상원가 ${fmtEok(remaining)}, 예상이익 ${fmtEok(profit)}`}>
-        <div className="grid place-items-center bg-chart-2 text-[0.72rem] font-bold text-white transition-[width] duration-700" style={{ width: pct(incurred) }}>
+        <div className="grid place-items-center bg-chart-2-fill text-[0.72rem] font-bold text-chart-2-text transition-[width] duration-700" style={{ width: pct(incurred) }}>
           <span className="truncate px-1">발생 {fmtEok(incurred, { unit: false, digits: 2 })}</span>
         </div>
         <div className="grid place-items-center bg-[color-mix(in_srgb,var(--t-chart-2)_45%,#C9CFD6)] text-[0.72rem] font-bold text-ink transition-[width] duration-700" style={{ width: pct(remaining) }}>
           <span className="truncate px-1">잔여 {fmtEok(remaining, { unit: false, digits: 2 })}</span>
         </div>
         {!loss && (
-          <div className="grid place-items-center bg-chart-1 text-[0.72rem] font-bold text-white transition-[width] duration-700" style={{ width: pct(profit) }}>
+          <div className="grid place-items-center bg-chart-1-fill text-[0.72rem] font-bold text-chart-1-text transition-[width] duration-700" style={{ width: pct(profit) }}>
             <span className="truncate px-1">이익 {fmtEok(profit, { unit: false, digits: 2 })}</span>
           </div>
         )}

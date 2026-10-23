@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createSeed, DEMO_SCENARIO } from "@/lib/data/seed";
 import { siteFinancials, portfolioTotals, simulateApprovedClaims, entryEacImpact } from "@/lib/domain/calc";
+import { THEMES, themeTokens, contrast } from "@/lib/theme/themes";
 import {
   submitFieldReport,
   voidReport,
@@ -233,5 +234,21 @@ describe("파트너 요청 Closed Loop / 정산", () => {
     expect(t.siteCount).toBe(3);
     expect(t.contractAmount).toBe(3_070_000_000);
     expect(t.expectedProfit).toBe(150_000_000 + 80_600_000 + 165_000_000);
+  });
+});
+
+describe("Theme 대비 (WCAG AA 4.5:1)", () => {
+  it("7개 Theme 모두 CTA·흰 글자 배지·강조 텍스트가 4.5:1 이상", () => {
+    expect(THEMES).toHaveLength(7);
+    for (const t of THEMES) {
+      const k = themeTokens(t);
+      expect(contrast(k.cta, "#FFFFFF"), `${t.id} cta`).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(k.solid, "#FFFFFF"), `${t.id} solid`).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(k.ink, k.activeSoft), `${t.id} ink/soft`).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(k.ink, "#FFFFFF"), `${t.id} ink/white`).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(k.chart1Label.fill, k.chart1Label.text), `${t.id} chart-1 label`).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(k.chart2Label.fill, k.chart2Label.text), `${t.id} chart-2 label`).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(k.wordmark, t.core.shell), `${t.id} wordmark/shell`).toBeGreaterThanOrEqual(4.5);
+    }
   });
 });

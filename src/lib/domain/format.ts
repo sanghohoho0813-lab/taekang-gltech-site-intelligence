@@ -23,14 +23,25 @@ export function fmtEok(v: number, opts: { digits?: number; unit?: boolean } = {}
   return `${sign}${trimNum(abs / 100_000_000, digits)}억${unit ? " 원" : ""}`;
 }
 
-/** 만 단위: 30,000,000 → "3,000만 원" */
+/** 만 단위: 30,000,000 → "3,000만 원", 1억 이상은 "1억 5,000만 원" */
 export function fmtMan(v: number, opts: { unit?: boolean } = {}): string {
   const unit = opts.unit ?? true;
   const sign = v < 0 ? "−" : "";
-  const abs = Math.abs(v);
+  const abs = Math.abs(Math.round(v));
+  if (abs >= 100_000_000) {
+    const eok = Math.floor(abs / 100_000_000);
+    const rest = Math.round((abs % 100_000_000) / 10_000);
+    return `${sign}${nf.format(eok)}억${rest ? ` ${nf.format(rest)}만` : ""}${unit ? " 원" : ""}`;
+  }
   const man = abs / 10_000;
   const s = Number.isInteger(man) ? nf.format(man) : nf.format(Math.round(man * 10) / 10);
   return `${sign}${s}만${unit ? " 원" : ""}`;
+}
+
+/** 표 전용 만 원 숫자: 380,000,000 → "38,000" (열 머리에 '단위: 만 원' 표기) */
+export function fmtManNum(v: number): string {
+  const sign = v < 0 ? "−" : "";
+  return sign + nf.format(Math.round(Math.abs(v) / 10_000));
 }
 
 /** 증감 표기: +4,000만 원 / −4,000만 원 */

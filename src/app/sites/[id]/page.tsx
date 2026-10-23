@@ -15,7 +15,7 @@ import { FieldReportForm } from "@/components/domain/FieldReportForm";
 import { CostEntryList } from "@/components/domain/CostEntryList";
 import { simulateApprovedClaims, type SiteFinancials } from "@/lib/domain/calc";
 import { receivableAging } from "@/lib/domain/risk";
-import { fmtDate, fmtDateTime, fmtEok, fmtMan, fmtPct, fmtPp, fmtRelative } from "@/lib/domain/format";
+import { fmtDate, fmtDateTime, fmtEok, fmtMan, fmtManNum, fmtPct, fmtPp, fmtRelative } from "@/lib/domain/format";
 import { CATEGORY_LABEL, CO_STATUS_LABEL, PARTNER_STATUS_LABEL, RULE_LABEL } from "@/lib/domain/labels";
 import type { DemoDB, Site } from "@/lib/domain/types";
 
@@ -386,22 +386,22 @@ function CostTab({ db, site, f, canSeeMoney }: { db: DemoDB; site: Site; f: Site
                 {f.categories.map((c) => (
                   <tr key={c.category} className="row-hover border-b border-line">
                     <td className="px-5 py-2.5 font-semibold">{CATEGORY_LABEL[c.category]}</td>
-                    <td className="px-3 py-2.5 text-right num">{fmtMan(c.budget, { unit: false })}</td>
-                    <td className="px-3 py-2.5 text-right num">{fmtMan(c.incurred, { unit: false })}</td>
-                    <td className="px-3 py-2.5 text-right num">{fmtMan(c.remaining, { unit: false })}</td>
-                    <td className="px-3 py-2.5 text-right num font-bold">{fmtMan(c.eac, { unit: false })}</td>
+                    <td className="px-3 py-2.5 text-right num">{fmtManNum(c.budget)}</td>
+                    <td className="px-3 py-2.5 text-right num">{fmtManNum(c.incurred)}</td>
+                    <td className="px-3 py-2.5 text-right num">{fmtManNum(c.remaining)}</td>
+                    <td className="px-3 py-2.5 text-right num font-bold">{fmtManNum(c.eac)}</td>
                     <td className={cx("px-5 py-2.5 text-right num font-bold", c.variancePct > db.thresholds.overrunPct ? "text-err" : c.variance > 0 ? "text-warn" : "text-ok")}>
-                      {c.variance === 0 ? "0" : `${c.variance > 0 ? "+" : "−"}${fmtMan(Math.abs(c.variance), { unit: false })}`} ({fmtPct(c.variancePct)})
+                      {c.variance === 0 ? "0" : `${c.variance > 0 ? "+" : "−"}${fmtManNum(Math.abs(c.variance))}`} ({fmtPct(c.variancePct)})
                     </td>
                   </tr>
                 ))}
                 <tr className="bg-surface-2 font-bold">
                   <td className="px-5 py-2.5">합계</td>
-                  <td className="px-3 py-2.5 text-right num">{fmtMan(f.plannedCost, { unit: false })}</td>
-                  <td className="px-3 py-2.5 text-right num">{fmtMan(f.incurred, { unit: false })}</td>
-                  <td className="px-3 py-2.5 text-right num">{fmtMan(f.remaining, { unit: false })}</td>
-                  <td className="px-3 py-2.5 text-right num">{fmtMan(f.eac, { unit: false })}</td>
-                  <td className="px-5 py-2.5 text-right num">{fmtMan(f.eac - f.plannedCost, { unit: false })}</td>
+                  <td className="px-3 py-2.5 text-right num">{fmtManNum(f.plannedCost)}</td>
+                  <td className="px-3 py-2.5 text-right num">{fmtManNum(f.incurred)}</td>
+                  <td className="px-3 py-2.5 text-right num">{fmtManNum(f.remaining)}</td>
+                  <td className="px-3 py-2.5 text-right num">{fmtManNum(f.eac)}</td>
+                  <td className="px-5 py-2.5 text-right num">{fmtManNum(f.eac - f.plannedCost)}</td>
                 </tr>
               </tbody>
             </table>

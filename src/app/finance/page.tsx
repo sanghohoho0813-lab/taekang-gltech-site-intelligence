@@ -80,7 +80,7 @@ export default function FinancePage() {
                   <tr key={s.id} className="row-hover border-b border-line">
                     <td className="px-5 py-2.5 font-bold">{s.shortName}</td>
                     <td className="px-3 py-2.5 text-right num">{fmtEok(f.contractAmount, { unit: false })}</td>
-                    <td className="px-3 py-2.5 text-right num">{f.approvedChange ? fmtMan(f.approvedChange, { unit: false }) : "—"}</td>
+                    <td className="px-3 py-2.5 text-right num">{f.approvedChange ? fmtEok(f.approvedChange, { unit: false }) : "—"}</td>
                     <td className="px-3 py-2.5 text-right num font-semibold">{fmtEok(f.adjustedContract, { unit: false })}</td>
                     <td className="px-3 py-2.5 text-right num">{fmtEok(f.expectedProfit, { unit: false })}</td>
                     <td className="px-3 py-2.5 text-right num">{fmtEok(f.billed, { unit: false })}</td>

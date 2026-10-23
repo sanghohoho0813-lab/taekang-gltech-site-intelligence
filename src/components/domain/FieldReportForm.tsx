@@ -252,7 +252,7 @@ export function FieldReportForm({ fixedSiteId, onClose, inSheet = false }: { fix
               </dl>
             ) : (
               <p className="mt-1.5 text-[0.88rem] text-ink-2">
-                입력한 원가 <b className="num">{fmtMan(done.costSum)}</b>이(가) 본사 손익 계산에 반영되었습니다. (이익률은 대표·관리자 화면에서 확인 — 권한 프리뷰)
+                입력한 원가 <b className="num">{fmtMan(done.costSum)}</b>이 본사 손익 계산에 반영되었습니다. (이익률은 대표·관리자 화면에서 확인 — 권한 프리뷰)
               </p>
             )}
           </div>

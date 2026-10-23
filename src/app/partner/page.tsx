@@ -76,7 +76,7 @@ export default function PartnerPage() {
               </>
             ) : (
               <Link href="/settings" aria-label="설정 · 역할 전환">
-                <Button size="sm" variant="ghost" icon={<Settings size={15} />}>
+                <Button size="sm" variant="ghost" icon={<Settings size={15} />} aria-label="역할 전환">
                   <span className="hidden sm:inline">역할 전환</span>
                 </Button>
               </Link>
@@ -273,7 +273,7 @@ function MyRequests({ requests }: { requests: PartnerRequest[] }) {
                     const h = r.history.find((x) => x.status === s);
                     return (
                       <li key={s} className="text-center">
-                        <span className={cx("mx-auto grid size-7 place-items-center rounded-full", i <= idx ? "bg-active text-white" : "bg-surface-3 text-ink-3")}>
+                        <span className={cx("mx-auto grid size-7 place-items-center rounded-full", i <= idx ? "bg-solid text-white" : "bg-surface-3 text-ink-3")}>
                           {i < idx || r.status === "answered" ? <CircleCheck size={15} /> : <Clock3 size={15} />}
                         </span>
                         <span className="mt-1 block text-[0.72rem] font-bold">{PARTNER_STATUS_LABEL[s]}</span>

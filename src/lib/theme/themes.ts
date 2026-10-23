@@ -89,10 +89,61 @@ export const THEMES: ThemeDef[] = [
 
 export const DEFAULT_THEME: ThemeId = "onyx-gold";
 
+/* ── WCAG 대비 보정 ─────────────────────────────────────────────
+ * Core 6색은 그대로 두고, 글자가 올라가는 파생 토큰(CTA 배경·흰 글자 배지·강조 텍스트)만
+ * 검은색을 조금씩 섞어 4.5:1(본문 기준)을 넘길 때까지 어둡게 한다. (QA_REPORT A11y, DECISIONS D-11)
+ */
+const rgb = (h: string) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+const toHex = (c: number[]) => "#" + c.map((v) => Math.round(v).toString(16).padStart(2, "0")).join("").toUpperCase();
+const lum = (c: number[]) => {
+  const a = c.map((v) => {
+    const x = v / 255;
+    return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * a[0] + 0.7152 * a[1] + 0.0722 * a[2];
+};
+export function contrast(a: string, b: string): number {
+  const [l1, l2] = [lum(rgb(a)), lum(rgb(b))];
+  return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+}
+const mixHex = (a: string, b: string, pA: number) => toHex(rgb(a).map((v, i) => v * pA + rgb(b)[i] * (1 - pA)));
+/** fg가 bg 위에서 min 대비를 넘을 때까지 검은색 비율을 2%씩 늘린다 */
+export function ensureContrast(fg: string, bg: string, min = 4.6): string {
+  let c = fg;
+  for (let k = 0; k < 40 && contrast(c, bg) < min; k++) c = mixHex(fg, "#000000", 1 - (k + 1) * 0.02);
+  return c;
+}
+
+/** 글자가 올라가는 차트 막대: 흰 글자 → 짙은 글자 → (둘 다 미달이면) 막대를 어둡게 + 흰 글자 */
+function labelPair(bg: string): { fill: string; text: string } {
+  if (contrast(bg, "#FFFFFF") >= 4.5) return { fill: bg, text: "#FFFFFF" };
+  if (contrast(bg, "#111418") >= 4.5) return { fill: bg, text: "#111418" };
+  return { fill: ensureContrast(bg, "#FFFFFF"), text: "#FFFFFF" };
+}
+
+/** 테마별 실제 사용 색 (CSS와 QA 테스트가 같은 값을 쓴다) */
+export function themeTokens(t: ThemeDef) {
+  const c = t.core;
+  const active = c[t.map.active];
+  const activeSoft = mixHex(active, "#FFFFFF", 0.12);
+  return {
+    cta: ensureContrast(c[t.map.cta], "#FFFFFF"),
+    active,
+    activeSoft,
+    solid: ensureContrast(active, "#FFFFFF"),
+    ink: ensureContrast(t.map.ink, activeSoft),
+    chart1Label: labelPair(c[t.map.chart[0]]),
+    chart2Label: labelPair(c[t.map.chart[1]]),
+    /** Shell 위 Wordmark 보조 문구 (밝은 Shell에서 연한 Highlight가 묻히지 않게) */
+    wordmark: ensureContrast(c[t.map.wordmark], c.shell),
+  };
+}
+
 export function themeCss(): string {
   return THEMES.map((t) => {
     const c = t.core;
     const v = (k: keyof ThemeDef["core"]) => c[k];
+    const tk = themeTokens(t);
     const dark = !t.shellLight;
     const lines = [
       `--t-shell:${c.shell}`,
@@ -101,12 +152,17 @@ export function themeCss(): string {
       `--t-accent:${c.accent}`,
       `--t-highlight:${c.highlight}`,
       `--t-soft:${c.soft}`,
-      `--t-cta:${v(t.map.cta)}`,
+      `--t-cta:${tk.cta}`,
       `--t-cta-text:#FFFFFF`,
-      `--t-active:${v(t.map.active)}`,
-      `--t-active-soft:color-mix(in srgb, ${v(t.map.active)} 12%, #FFFFFF)`,
-      `--t-ink:${t.map.ink}`,
-      `--t-wordmark:${v(t.map.wordmark)}`,
+      `--t-active:${tk.active}`,
+      `--t-active-soft:${tk.activeSoft}`,
+      `--t-solid:${tk.solid}`,
+      `--t-ink:${tk.ink}`,
+      `--t-chart-1-fill:${tk.chart1Label.fill}`,
+      `--t-chart-1-text:${tk.chart1Label.text}`,
+      `--t-chart-2-fill:${tk.chart2Label.fill}`,
+      `--t-chart-2-text:${tk.chart2Label.text}`,
+      `--t-wordmark:${tk.wordmark}`,
       `--t-chart-1:${v(t.map.chart[0])}`,
       `--t-chart-2:${v(t.map.chart[1])}`,
       `--t-chart-3:${v(t.map.chart[2])}`,
