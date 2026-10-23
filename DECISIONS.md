@@ -1,0 +1,46 @@
+# DECISIONS — TAEKANG SITE INTELLIGENCE
+
+> 큰 결정만 기록한다. 형식: DECISION / WHY / WHY NOT ALTERNATIVE / REVISIT WHEN
+
+---
+
+### D-01. 기술스택: Next.js 16.4 (App Router) + React 19.2 + TypeScript + Tailwind CSS 4
+- **WHY**: 전용 프롬프트·마스터 기본 권장 스택. 처음에 Next 15.5를 설치했으나 `npm audit`에서 Next 15.x 번들 PostCSS 취약점(high)이 확인되어 수정 버전인 16.4.2로 올림. 현재 `npm audit` 0건.
+- **WHY NOT**: Next 15 유지(취약점 잔존), Vite(서버 Route·향후 Supabase/AI 서버 API 확장에 불리).
+- **REVISIT WHEN**: Vercel 배포 시 빌드 이슈 발생.
+
+### D-02. 데이터 저장소: 브라우저 로컬 DEMO Repository (localStorage) + Repository 인터페이스, Supabase는 READY
+- **WHY**: Supabase 환경변수·권한이 없음. 전용 프롬프트 4절 "준비되지 않았다면 local demo repository … 운영 DB 연결 완료라고 표시하지 않는다". 같은 Origin의 PC 화면과 Mobile Frame(iframe)이 같은 저장소를 공유하므로 v4.1 "동일 Data/State"를 실제로 충족.
+- **WHY NOT**: 서버 메모리/파일 저장(Vercel 서버리스에서 인스턴스 간 비공유·쓰기 불가), 가짜 API(금지).
+- **한계**: 서로 다른 기기(노트북 ↔ 실제 휴대폰) 간 동기화는 안 됨 → 시연은 한 브라우저의 PC+Mobile 모드로 진행. 실기기 동기화는 Supabase 전환 후.
+- **REVISIT WHEN**: Supabase 프로젝트·키 제공 (USER ACTION QUEUE).
+
+### D-03. 원가 이벤트의 EAC 반영 방식: `forecast_impact` 3종으로 명시 (중복 계산 금지)
+- **WHY**: 전용 프롬프트 4절 "추가 비용 이벤트가 기존 EAC에 반영되는 방식을 데이터 모델에 명시하고 중복 계산 금지". `additional`(예상 외 추가 → EAC 증가), `within_forecast`(계획 내 집행 → 잔여예상 차감, EAC 불변), `baseline`(시드 기준 발생원가).
+- **WHY NOT**: 단순히 "발생원가 합계 + 고정 잔여" (계획 내 집행도 EAC를 키우는 이중 계산 발생).
+
+### D-04. 변경공사는 `approved`만 계약금액에 가산
+- **WHY**: 전용 프롬프트 4절. 청구 검토·요청 금액은 별도 "미반영" 영역과 "승인 시 시뮬레이션"으로만 표시.
+
+### D-05. 위험 판단은 결정론적 규칙(RULE v1) — 실제 AI API 미연결
+- **WHY**: API Key·대표 명시 승인 없음. 산술·이익률은 코드 계산(LLM 위임 금지). 화면에는 `규칙 기반 진단`으로 표기하고 AI Ready 모달에서 향후 LLM 요약 1개 기능의 입력 범위를 설명.
+- **WHY NOT**: 가짜 AI 호출 표현(전용 프롬프트·마스터 Strategic P0 위반).
+- **REVISIT WHEN**: 키 제공 + 대표 승인 → `현장 위험요인 요약` 1개만 서버 API로 연결.
+
+### D-06. 기본 Theme = 06 Onyx Gold(태강 오렌지 튜닝), 7개 유지
+- **WHY**: 참고 시안의 다크 차콜 Shell과 가장 가까운 Canonical Seed. 마스터 6절의 "Default Seed 선택 후 브랜드 Hue 미세조정"과 전용 프롬프트 6절 "회사 고유 오렌지 강조를 Brand Token으로 일관되게"를 함께 충족하도록 06의 Accent·Highlight 두 값만 오렌지 계열로 조정. 나머지 6개 Theme는 원본값 그대로.
+- **WHY NOT**: 8번째 Theme 추가(7개 고정 규칙 위반), 오렌지를 Theme와 무관하게 CTA에 고정(Theme 전환 시 Primary Button 미변경 → Theme Gate 위반).
+- **접근성**: 오렌지 CTA(#E25A1C)는 흰 글자 대비 3.68:1 → CTA 라벨은 굵게(700) 1rem 이상(대형 텍스트 기준 3:1 충족). 흰 배경 위 오렌지 텍스트는 `#C2410C`(5.18:1) 사용.
+
+### D-07. Device View: Demo Control Bar에 배치, 데이터·Theme·Role은 같은 저장소 공유
+- **WHY**: Mobile 단독 모드에서 PC 앱이 숨겨져도 전환 UI가 남아야 하고, 마스터 "Device View는 핵심 업무 Navigation을 밀어내면 안 된다"를 지키기 위해 제품 Header가 아닌 최상단 얇은 Demo Bar에 둠.
+- **모바일 시연 역할(옵션)**: 기본값은 `PC와 동일`(v4.1 동일 Session). PC+Mobile 시연에서 "대표는 손익, 현장은 원가 입력" 장면을 보여주기 위해 모바일 Frame만 `현장직원 관점`으로 바꿀 수 있는 선택을 둠. 데이터·Route·Theme는 그대로 공유되므로 "PC/Mobile 데이터 분리"가 아님.
+
+### D-08. Presentation / Tutorial은 비차단형 코치 패널 + 대상 강조선
+- **WHY**: 전체 화면 Backdrop은 Overlay 잔존(P0) 위험이 크고, PC+Mobile 시연 중 Mobile Frame 조작을 막음. 실제 Route를 자동 이동하며 대상 요소에 강조선만 표시.
+
+### D-09. 현장 사진: 브라우저에서 축소(최대 960px, JPEG) 후 로컬 DEMO 저장소에 저장, 시드에는 실제 사진 없음
+- **WHY**: 출처 불명 사진을 실제 현장 사진처럼 쓰지 않음(전용 프롬프트 6절). 현장 대표 이미지는 SVG 일러스트로 만들고 `일러스트 · 실제 현장 사진 아님` 표기.
+
+### D-10. 실명·실적 미사용
+- **WHY**: 미확인 사실 금지. 현장명은 `가상 현장 A/B/C`, 발주처는 `가상 발주처 A/B/C`, 인물은 `박관리 과장(가상)`, `최현장 소장(가상)`. 대표자는 실명 대신 `대표자(DEMO)`.
