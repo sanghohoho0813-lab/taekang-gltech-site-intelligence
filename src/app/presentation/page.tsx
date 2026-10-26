@@ -1,6 +1,6 @@
 "use client";
 
-import { PlayCircle, GraduationCap, RotateCcw, Monitor, Columns2 } from "lucide-react";
+import { PlayCircle, GraduationCap, RotateCcw, Monitor, Columns2, Smartphone } from "lucide-react";
 import { useState } from "react";
 import { PageBody, PageHeader } from "@/components/shell/AppShell";
 import { Badge, Button, Card, CardHeader, DemoBadge, Notice } from "@/components/ui/primitives";
@@ -19,7 +19,7 @@ export default function PresentationPage() {
       <PageHeader
         eyebrow={<DemoBadge />}
         title="대표자 시연 모드 (3~4분)"
-        desc="별도 슬라이드가 아니라 실제 화면을 순서대로 이동하며 안내합니다. 안내 패널은 화면을 가리지 않으므로 PC와 모바일을 그대로 조작할 수 있습니다."
+        desc="별도 슬라이드가 아니라 실제 화면을 순서대로 이동하며 안내합니다. 처음부터 끝까지 PC와 휴대폰 화면을 나란히 보여주고, 단계마다 휴대폰이 대표 → 현장소장 → 대표 관점으로 바뀝니다."
         right={
           <>
             <Button icon={<RotateCcw size={17} />} onClick={() => setReset(true)}>
@@ -32,10 +32,10 @@ export default function PresentationPage() {
         }
       />
       <Notice tone="info" title="미팅 직전 체크">
-        ① 상단 ‘데모 초기화’ ② 브라우저 폭 1280px 이상(PC+Mobile 단계) ③ 역할 = 대표자 ④ 인터넷 연결 없이도 동작 (데이터는 이 브라우저에 저장)
+        ① 상단 ‘데모 초기화’ ② 브라우저 폭 1280px 이상 (PC+Mobile 나란히 보기) ③ 역할 = 대표자 ④ 안내 패널은 ‘—’로 접을 수 있음 ⑤ 인터넷 연결 없이도 동작 (데이터는 이 브라우저에 저장)
       </Notice>
       <Card>
-        <CardHeader title="시연 순서" sub="각 단계에서 실제 Route로 자동 이동하고 대상 영역을 강조합니다" />
+        <CardHeader title="시연 순서" sub="각 단계에서 실제 화면으로 자동 이동하고 대상 영역을 강조합니다 · 1024px 미만 화면에서는 PC 화면만 안내" />
         <ol className="space-y-2.5 px-5 pb-5">
           {steps.map((s, i) => (
             <li key={i} className="flex gap-3 rounded-xl border border-line bg-surface-2 px-4 py-3">
@@ -50,7 +50,21 @@ export default function PresentationPage() {
                     <Badge tone="neutral" icon={<Monitor size={12} />}>PC</Badge>
                   )}
                 </p>
-                <p className="mt-0.5 text-[0.85rem] text-ink-2">{s.body}</p>
+                {(s.pc || s.mobile) && (
+                  <p className="mt-1.5 flex flex-wrap gap-1.5 text-[0.74rem] font-semibold">
+                    {s.pc && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-surface-3 px-2 py-0.5 text-ink-2">
+                        <Monitor size={12} aria-hidden /> PC · {s.pc}
+                      </span>
+                    )}
+                    {s.mobile && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-active-soft px-2 py-0.5 text-theme-ink">
+                        <Smartphone size={12} aria-hidden /> {s.mobile}
+                      </span>
+                    )}
+                  </p>
+                )}
+                <p className="mt-1 text-[0.85rem] text-ink-2">{s.body}</p>
               </div>
             </li>
           ))}

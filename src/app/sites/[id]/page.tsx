@@ -12,6 +12,7 @@ import { Facade } from "@/components/domain/Facade";
 import { Donut, ProfitStack } from "@/components/domain/Charts";
 import { Delta, HealthPill, MethodChip } from "@/components/domain/Widgets";
 import { FieldReportForm } from "@/components/domain/FieldReportForm";
+import { useFrameCommand } from "@/components/device/frameCommands";
 import { CostEntryList } from "@/components/domain/CostEntryList";
 import { simulateApprovedClaims, type SiteFinancials } from "@/lib/domain/calc";
 import { receivableAging } from "@/lib/domain/risk";
@@ -28,6 +29,18 @@ export default function SiteDetailPage() {
   const signals = useSignals(db);
   const [tab, setTab] = useState<Tab>("overview");
   const [sheet, setSheet] = useState(false);
+  // 시연 모드가 모바일 Frame의 입력 시트를 열고 닫을 수 있게 (저장은 사람이 직접)
+  useFrameCommand((cmd) => {
+    if (cmd === "close-report") {
+      setSheet(false);
+      return true;
+    }
+    if (cmd === "open-report" && role !== "partner") {
+      setSheet(true);
+      return true;
+    }
+    return false;
+  });
 
   if (!db) return <PageSkeleton />;
   const site = db.sites.find((s) => s.id === id);
@@ -370,7 +383,7 @@ function CostTab({ db, site, f, canSeeMoney }: { db: DemoDB; site: Site; f: Site
       {canSeeMoney && (
         <Card>
           <CardHeader title="원가항목별 예산 vs 총예상원가" sub="항목 EAC = 발생 + 잔여예상 · 예산 초과 5% 이상은 위험 신호" />
-          <div className="overflow-x-auto scroll-thin">
+          <div tabIndex={0} role="region" aria-label="원가항목별 예산 표 (가로 스크롤)" className="overflow-x-auto scroll-thin">
             <table className="w-full min-w-[42rem] text-[0.85rem]" data-testid="cost-table">
               <thead>
                 <tr className="border-y border-line bg-surface-2 text-left text-[0.75rem] font-semibold text-ink-3">

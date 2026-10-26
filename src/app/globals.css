@@ -296,6 +296,18 @@ body {
   z-index: 1;
   border-radius: 14px;
   animation: tk-pulse-ring 1.8s ease-in-out infinite;
+  /* 화면 가운데 정렬 시 하단 시연 안내 바에 가리지 않도록 */
+  scroll-margin: 6rem 0 11rem;
+}
+
+/* PC+Mobile 시연 중: 하단 안내 바(PC 영역 하단)만큼 PC 화면 끝을 띄우고, PC 알림을 안내 바 위로 */
+@media (min-width: 1024px) {
+  html[data-tour="dock"] .pc-pane main {
+    padding-bottom: 13rem;
+  }
+  html[data-tour="dock"] .toast-region {
+    bottom: 12.5rem;
+  }
 }
 
 [data-motion="reduce"] *,

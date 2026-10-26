@@ -125,7 +125,7 @@ export default function WhyAxPage() {
       </Section>
 
       <Section no="07" title="지금까지 vs 바뀌는 방향">
-        <div className="overflow-x-auto">
+        <div tabIndex={0} role="region" aria-label="지금까지 vs 바뀌는 방향 표 (가로 스크롤)" className="overflow-x-auto">
           <table className="w-full min-w-[34rem] text-[0.86rem]">
             <thead>
               <tr className="border-b border-line text-left text-[0.76rem] text-ink-3">
@@ -171,7 +171,7 @@ export default function WhyAxPage() {
       </Section>
 
       <Section no="09" title="AI는 실제로 무엇을 하나 — 정직한 구분">
-        <div className="overflow-x-auto">
+        <div tabIndex={0} role="region" aria-label="AI 역할 구분 표 (가로 스크롤)" className="overflow-x-auto">
           <table className="w-full min-w-[34rem] text-[0.85rem]">
             <thead>
               <tr className="border-b border-line text-left text-[0.76rem] text-ink-3">

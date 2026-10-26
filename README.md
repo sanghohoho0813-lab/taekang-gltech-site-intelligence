@@ -39,12 +39,12 @@ npm start            # http://localhost:3000
 
 | 기능 | 위치 |
 |---|---|
-| PC / Mobile / PC+Mobile (v4.1 Device View) | 상단 검은 바 가운데 — 1024px 이상 화면에서 표시, 선택값 유지 |
+| PC / Mobile / PC+Mobile (v4.1 Device View) | 상단 검은 바 가운데 — 1024px 이상 화면에서 표시. **기본값 PC+Mobile** (처음부터 PC와 휴대폰 나란히), 선택값 유지 |
 | 모바일 시연 역할 (PC+Mobile 전용) | 오른쪽 모바일 프레임 위 ‘역할’ (기본: PC와 동일) |
 | Demo 역할 (대표자/본사관리자/현장직원/발주처·협력사) | 상단 바 ‘역할’, 헤더 사용자 메뉴, `/settings` |
 | 데모 초기화 | 상단 바 ‘데모 초기화’, `/settings`, `/presentation` |
 | 발주처 포털 ↔ Business AX | 상단 바 ‘발주처 포털 보기 / Business AX 보기’ |
-| 시연 모드 (6단계 Guided Demo) | `/presentation` → 시연 시작 |
+| 시연 모드 (6단계 Guided Demo) | `/presentation` → 시연 시작 — 6단계 모두 PC+Mobile, 휴대폰이 대표 ↔ 현장소장 관점으로 자동 전환, 안내는 PC 아래 자막형 바(접기 가능) |
 | 튜토리얼 (4단계) | `/settings` → 튜토리얼 다시 보기 |
 | 테마 7종 · 글자 크기 · 모션 줄이기 | `/settings` |
 | CSV 원가 가져오기·내보내기 | `/settings` → 데이터 (본사관리자·대표자) |
@@ -96,8 +96,8 @@ tests/e2e              시연 흐름·Device View·역할·테마·CSV·반응�
 
 ```bash
 npm test                         # 단위 테스트 15 (계산·명령·위험 규칙·7 Theme 대비)
-npm run build && npm run e2e     # E2E 16 (Playwright, next start 자동 실행 · 포트 3100)
-QA_BASE_URL=http://127.0.0.1:3000 npm run qa:cuesheet   # 시연 큐시트 숫자 44개 검증 (서버 실행 중일 때)
+npm run build && npm run e2e     # E2E 20 (Playwright, next start 자동 실행 · 포트 3100)
+QA_BASE_URL=http://127.0.0.1:3000 npm run qa:cuesheet   # 시연 큐시트 PC·휴대폰 숫자 51개 검증 (서버 실행 중일 때)
 ```
 Playwright 브라우저가 없다면 `npx playwright install chromium` 후 실행하세요.
 

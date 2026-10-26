@@ -9,7 +9,7 @@ async function freshStart(page: Page, prefs: Record<string, unknown> = {}) {
     ([pk, dk, p]) => {
       localStorage.removeItem(dk as string);
       sessionStorage.clear();
-      localStorage.setItem(pk as string, JSON.stringify({ theme: "onyx-gold", fontScale: "md", reduceMotion: true, role: "ceo", deviceView: "pc", mobilePersona: "same", tutorialDone: true, ...(p as object) }));
+      localStorage.setItem(pk as string, JSON.stringify({ theme: "onyx-gold", fontScale: "md", reduceMotion: true, role: "ceo", deviceView: "pc", mobilePersona: "same", tutorialDone: true, viewRev: 2, ...(p as object) }));
     },
     [PREFS, DB, prefs] as const,
   );

@@ -42,12 +42,15 @@ export function DemoBar({ active }: { active: boolean }) {
       role="region"
       aria-label="시연 제어 바"
     >
-      <span className="inline-flex items-center gap-1.5 rounded-full bg-[#FFF7D6] px-2.5 py-0.5 font-bold text-[#7A5200]">
-        <span className="size-1.5 rounded-full bg-[#C98A00]" aria-hidden /> DEMO · 가상 시연 데이터
+      <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-[#FFF7D6] px-2.5 py-0.5 font-bold text-[#7A5200]">
+        <span className="size-1.5 rounded-full bg-[#C98A00]" aria-hidden />
+        <span>
+          DEMO<span className="hidden min-[1180px]:inline"> · 가상 시연 데이터</span>
+        </span>
       </span>
-      <span className="hidden font-semibold tracking-[0.06em] text-white/80 xl:inline">TAEKANG SITE INTELLIGENCE · 시연용 MVP</span>
+      <span className="hidden whitespace-nowrap font-semibold tracking-[0.06em] text-white/80 min-[1640px]:inline">TAEKANG SITE INTELLIGENCE · 시연용 MVP</span>
 
-      <div className="mx-auto flex items-center gap-1 rounded-xl bg-white/8 p-0.5" role="radiogroup" aria-label="화면 보기 모드 (Device View)" data-testid="device-switch">
+      <div className="mx-auto flex shrink-0 items-center gap-1 rounded-xl bg-white/8 p-0.5" role="radiogroup" aria-label="화면 보기 모드 (Device View)" data-testid="device-switch">
         {(
           [
             { v: "pc", label: "PC", I: Monitor },
@@ -65,7 +68,7 @@ export function DemoBar({ active }: { active: boolean }) {
               onClick={() => setDevice(v)}
               data-testid={`device-${v}`}
               className={cx(
-                "press inline-flex h-[1.85rem] items-center gap-1.5 rounded-lg px-2.5 font-bold",
+                "press inline-flex h-[1.85rem] items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 font-bold",
                 on ? "bg-white text-[#111] shadow-sm" : "text-white/75 hover:bg-white/10 hover:text-white",
               )}
             >
@@ -84,14 +87,14 @@ export function DemoBar({ active }: { active: boolean }) {
               router.push("/dashboard");
             } else router.push("/partner");
           }}
-          className="press inline-flex h-[1.85rem] items-center gap-1.5 rounded-lg px-2.5 font-semibold text-white/85 hover:bg-white/10"
+          className="press inline-flex h-[1.85rem] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 font-semibold text-white/85 hover:bg-white/10"
           data-testid="surface-switch"
         >
           {onPartner ? <LayoutDashboard size={15} aria-hidden /> : <Handshake size={15} aria-hidden />}
           {onPartner ? "Business AX 보기" : "발주처 포털 보기"}
         </button>
-        <label className="inline-flex items-center gap-1.5">
-          <span className="text-white/60">역할</span>
+        <label className="inline-flex shrink-0 items-center gap-1.5">
+          <span className="whitespace-nowrap text-white/60">역할</span>
           <select
             value={prefs.role}
             onChange={(e) => setRole(e.target.value as RoleId)}
@@ -109,14 +112,14 @@ export function DemoBar({ active }: { active: boolean }) {
         <button
           type="button"
           onClick={() => (tour.active ? tour.stop() : router.push("/presentation"))}
-          className="press inline-flex h-[1.85rem] items-center gap-1.5 rounded-lg px-2.5 font-semibold text-white/85 hover:bg-white/10"
+          className="press inline-flex h-[1.85rem] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 font-semibold text-white/85 hover:bg-white/10"
         >
           <Presentation size={15} aria-hidden /> {tour.active ? "시연 종료" : "시연 모드"}
         </button>
         <button
           type="button"
           onClick={() => setConfirm(true)}
-          className="press inline-flex h-[1.85rem] items-center gap-1.5 rounded-lg px-2.5 font-semibold text-white/85 hover:bg-white/10"
+          className="press inline-flex h-[1.85rem] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 font-semibold text-white/85 hover:bg-white/10"
           data-testid="demo-reset"
         >
           <RotateCcw size={15} aria-hidden /> 데모 초기화

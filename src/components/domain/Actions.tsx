@@ -247,7 +247,7 @@ export function ActionCard({ db, action, compact = false }: { db: DemoDB; action
       </div>
       <h3 className="mt-1 text-[0.98rem] font-bold leading-snug text-ink">{action.title}</h3>
       {!compact && <p className="mt-0.5 text-[0.8rem] text-ink-3">{action.description}</p>}
-      <div className="mt-2.5 overflow-x-auto no-scrollbar">
+      <div tabIndex={0} role="region" aria-label="조치 진행 단계 (가로 스크롤)" className="mt-2.5 overflow-x-auto no-scrollbar">
         <StatusStepper status={action.status} />
       </div>
       <p className="mt-2 text-[0.78rem] text-ink-2">

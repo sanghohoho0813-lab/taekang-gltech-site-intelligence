@@ -17,8 +17,10 @@ import { AppShell } from "@/components/shell/AppShell";
 import { DemoBar } from "./DemoBar";
 import { cx } from "@/components/ui/primitives";
 import { TourLayer } from "@/components/tour/Tour";
+import { CMD_MSG, FRAME_CMDS, deliverFrameCmd, type FrameCmd } from "./frameCommands";
 
 const MSG = "tk:route";
+const AT_MSG = "tk:at";
 
 function useIsDesktop() {
   const [v, setV] = useState(false);
@@ -59,7 +61,7 @@ export function DeviceStage({ children }: { children: ReactNode }) {
       {mode === "mobile" && <PhoneStage mode="mobile" />}
       {mode === "dual" && (
         <div className="flex w-full min-w-0" data-testid="dual-view">
-          <div className="min-w-0 flex-1 overflow-x-clip" style={{ contain: "layout paint" }}>
+          <div className="pc-pane min-w-0 flex-1 overflow-x-clip" style={{ contain: "layout paint" }}>
             <AppShell compactSidebar>{children}</AppShell>
           </div>
           <PhoneStage mode="dual" />
@@ -81,6 +83,8 @@ function FrameBridge() {
   useEffect(() => {
     if (fromParent.current === pathname) {
       fromParent.current = null;
+      // 부모가 보낸 이동 완료를 알림 (부모는 다시 이동하지 않고 표시만 갱신)
+      window.parent.postMessage({ type: AT_MSG, path: pathname }, window.location.origin);
       return;
     }
     window.parent.postMessage({ type: MSG, path: pathname }, window.location.origin);
@@ -89,7 +93,11 @@ function FrameBridge() {
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
       if (e.origin !== window.location.origin || e.source !== window.parent) return;
-      const d = e.data as { type?: string; path?: string };
+      const d = e.data as { type?: string; path?: string; cmd?: string };
+      if (d?.type === CMD_MSG) {
+        if (FRAME_CMDS.includes(d.cmd as FrameCmd)) deliverFrameCmd(d.cmd as FrameCmd);
+        return;
+      }
       if (d?.type !== MSG || typeof d.path !== "string" || !d.path.startsWith("/")) return;
       if (d.path === pathRef.current) return;
       fromParent.current = d.path;
@@ -138,6 +146,11 @@ function PhoneStage({ mode }: { mode: "mobile" | "dual" }) {
       if (!iframeRef.current || e.source !== iframeRef.current.contentWindow) return;
       const d = e.data as { type?: string; path?: string };
       if (typeof d?.path !== "string" || !d.path.startsWith("/")) return;
+      if (d.type === AT_MSG) {
+        framePath.current = d.path;
+        setShownPath(d.path);
+        return;
+      }
       if (d.type === "tk:ready") {
         framePath.current = d.path;
         setShownPath(d.path);

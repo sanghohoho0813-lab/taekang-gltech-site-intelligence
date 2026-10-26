@@ -9,7 +9,7 @@ async function freshStart(page: Page, prefs: Record<string, unknown> = {}) {
     ([pk, dk, p]) => {
       localStorage.removeItem(dk as string);
       sessionStorage.clear();
-      localStorage.setItem(pk as string, JSON.stringify({ theme: "onyx-gold", fontScale: "md", reduceMotion: true, role: "ceo", deviceView: "pc", mobilePersona: "same", tutorialDone: true, ...(p as object) }));
+      localStorage.setItem(pk as string, JSON.stringify({ theme: "onyx-gold", fontScale: "md", reduceMotion: true, role: "ceo", deviceView: "pc", mobilePersona: "same", tutorialDone: true, viewRev: 2, ...(p as object) }));
     },
     [PREFS, DB, prefs] as const,
   );
@@ -141,24 +141,97 @@ test("되돌리기: 보고 등록 후 되돌리면 손익 원복 / 튜토리얼 
   await expect(page).toHaveURL(/\/dashboard$/);
 });
 
-test("시연 모드: 6단계가 실제 Route로 이동", async ({ page }) => {
+test("시연 모드: 처음부터 PC+Mobile, 단계마다 휴대폰 화면이 바뀌고 실제 입력이 반영됨", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await freshStart(page);
+  await freshStart(page); // PC 모드에서 시작해도 시연은 PC+Mobile로 진행
   await page.goto("/presentation");
   await page.getByTestId("start-presentation").click();
+  const frame = page.frameLocator('[data-testid="device-frame"]');
+  const panel = page.getByTestId("tour-panel");
+  const next = () => page.getByTestId("tour-next").click();
+
+  // ① 대표 대시보드 — 대표 휴대폰에 같은 대시보드
   await expect(page).toHaveURL(/\/dashboard$/);
-  await page.getByTestId("tour-next").click();
-  await expect(page).toHaveURL(/\/sites\/site-a$/);
-  await page.getByTestId("tour-next").click();
   await expect(page.getByTestId("dual-view")).toBeVisible();
-  await page.getByTestId("tour-next").click();
-  await page.getByTestId("tour-next").click();
+  await expect(panel).toHaveAttribute("data-layout", "dock");
+  await expect(frame.getByTestId("kpi-strip")).toContainText("30.7억");
+
+  // ② A현장 — 대표 휴대폰에도 손익 엔진
+  await next();
+  await expect(page).toHaveURL(/\/sites\/site-a$/);
+  await expect(frame.getByTestId("m-eac")).toContainText("8.5억 원");
+
+  // ③ 현장소장 휴대폰 — 입력 창이 열리고, 저장은 사람이 직접
+  await next();
+  await expect(frame.getByTestId("report-sheet")).toBeVisible();
+  await expect(frame.getByTestId("m-eac")).toHaveCount(0); // 현장직원 화면에는 손익 없음
+  await expect(page.getByTestId("tour-live")).toHaveAttribute("data-state", "waiting");
+  await frame.getByTestId("fill-demo").click();
+  await frame.getByTestId("submit-report").click();
+  await expect(page.getByTestId("tour-live")).toHaveAttribute("data-state", "done");
+
+  // ④ 대표 PC·휴대폰 동시 재계산
+  await next();
+  await expect(frame.getByTestId("report-sheet")).toHaveCount(0);
+  await expect(frame.getByTestId("m-eac")).toContainText("8.9억 원");
+  await expect(frame.getByTestId("m-margin")).toContainText("11%");
+  await expect(page.getByTestId("m-eac")).toContainText("8.9억 원");
+  await expect(page.getByTestId("tour-live")).toContainText("8.5억 → 8.9억");
+
+  // ⑤ 본사 조치 배정 → 현장소장 휴대폰 '내 조치'
+  await next();
   await expect(page).toHaveURL(/\/insights$/);
-  await page.getByTestId("tour-next").click();
+  await expect(frame.getByRole("heading", { name: "내 조치" })).toBeVisible();
+  await page.getByTestId("signal-board").locator('[data-rule="UNBILLED_CHANGE"]').getByTestId("create-action").click();
+  await page.getByTestId("assign-confirm").click();
+  await expect(frame.getByTestId("action-card").filter({ hasText: "추가공사 청구가능성 검토" })).toBeVisible();
+  await expect(page.getByTestId("tour-live")).toContainText("배정됨");
+
+  // 안내 접기·펼치기
+  await page.getByTestId("tour-collapse").click();
+  await expect(panel).toHaveAttribute("data-collapsed", "1");
+  await page.getByTestId("tour-expand").click();
+
+  // ⑥ 대표 보고서 — 대표 휴대폰에도 같은 보고서
+  await next();
   await expect(page).toHaveURL(/\/report$/);
+  await expect(frame.getByTestId("report-summary")).toContainText("3.56억");
+
   await page.getByTestId("tour-exit").click();
-  await expect(page.getByTestId("tour-panel")).toHaveCount(0);
+  await expect(panel).toHaveCount(0);
+  await expect(page.getByTestId("mobile-persona")).toHaveValue("same");
 });
+
+test("첫 방문·이전 버전 설정: 넓은 화면은 PC+Mobile로 시작", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/dashboard");
+  await page.evaluate(([pk, dk]) => {
+    localStorage.removeItem(dk);
+    localStorage.setItem(pk, JSON.stringify({ theme: "onyx-gold", role: "ceo", deviceView: "pc", tutorialDone: true })); // viewRev 없음 = 이전 버전 설정
+  }, [PREFS, DB] as const);
+  await page.reload();
+  await expect(page.getByTestId("dual-view")).toBeVisible();
+  await expect(page.getByTestId("device-dual")).toHaveAttribute("aria-checked", "true");
+  // 사용자가 PC를 고르면 그 선택은 유지
+  await page.getByTestId("device-pc").click();
+  await page.reload();
+  await expect(page.getByTestId("dual-view")).toHaveCount(0);
+});
+
+for (const w of [1280, 1440, 1920]) {
+  test(`PC+Mobile ${w}px: 가로 넘침 없음, 상단 바 한 줄`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: 900 });
+    await freshStart(page, { deviceView: "dual" });
+    for (const r of ["/dashboard", "/sites/site-a", "/insights", "/finance", "/report", "/partner"]) {
+      await page.goto(r);
+      await page.waitForTimeout(250);
+      const over = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      expect(over, `${r} @${w}px dual overflow`).toBeLessThanOrEqual(1);
+      const barH = await page.getByTestId("demo-bar").evaluate((el) => el.scrollHeight - el.clientHeight);
+      expect(barH, `${r} @${w}px demo bar wraps`).toBeLessThanOrEqual(0);
+    }
+  });
+}
 
 for (const w of [390, 430, 768, 1024, 1280, 1440, 1920]) {
   test(`반응형 ${w}px: 가로 넘침 없음 (주요 화면)`, async ({ page }) => {

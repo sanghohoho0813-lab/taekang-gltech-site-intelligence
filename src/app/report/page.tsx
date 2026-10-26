@@ -97,7 +97,7 @@ export default function ReportPage() {
 
       <Card className="print-card">
         <CardHeader title="2. 현장별 변경 전후 손익" sub="단위 억 원 · 부가세 별도 · 승인 전 변경공사는 이익 미반영" />
-        <div className="overflow-x-auto scroll-thin">
+        <div tabIndex={0} role="region" aria-label="현장별 변경 전후 손익 표 (가로 스크롤)" className="overflow-x-auto scroll-thin">
           <table className="w-full min-w-[50rem] text-[0.84rem]" data-testid="report-compare">
             <thead>
               <tr className="border-y border-line bg-surface-2 text-left text-[0.74rem] font-semibold text-ink-3">
@@ -215,7 +215,7 @@ export default function ReportPage() {
         {db.actions.length === 0 ? (
           <EmptyState title="조치가 없습니다." />
         ) : (
-          <div className="overflow-x-auto scroll-thin">
+          <div tabIndex={0} role="region" aria-label="조치 상태 표 (가로 스크롤)" className="overflow-x-auto scroll-thin">
             <table className="w-full min-w-[48rem] text-[0.83rem]" data-testid="report-actions">
               <thead>
                 <tr className="border-y border-line bg-surface-2 text-left text-[0.74rem] font-semibold text-ink-3">

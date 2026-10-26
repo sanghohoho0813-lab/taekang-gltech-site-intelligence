@@ -119,7 +119,7 @@ export default function SettingsPage() {
             </button>
           ))}
         </div>
-        <div className="mt-3 overflow-x-auto scroll-thin px-5 pb-5">
+        <div tabIndex={0} role="region" aria-label="권한 매트릭스 표 (가로 스크롤)" className="mt-3 overflow-x-auto scroll-thin px-5 pb-5">
           <table className="w-full min-w-[40rem] text-[0.82rem]">
             <thead>
               <tr className="border-b border-line text-left text-[0.74rem] text-ink-3">

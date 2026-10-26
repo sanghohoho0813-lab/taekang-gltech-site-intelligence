@@ -56,7 +56,7 @@ export default function FinancePage() {
 
       <Card>
         <CardHeader title="현장별 정산 현황" sub="단위 억 원 · 부가세 별도 · DEMO" />
-        <div className="overflow-x-auto scroll-thin">
+        <div tabIndex={0} role="region" aria-label="현장별 정산 현황 표 (가로 스크롤)" className="overflow-x-auto scroll-thin">
           <table className="w-full min-w-[56rem] text-[0.85rem]" data-testid="finance-table">
             <thead>
               <tr className="border-y border-line bg-surface-2 text-left text-[0.74rem] font-semibold text-ink-3">

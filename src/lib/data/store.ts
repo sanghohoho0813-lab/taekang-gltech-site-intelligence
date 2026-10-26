@@ -27,16 +27,21 @@ export interface Prefs {
   /** PC+Mobile 시연에서 모바일 Frame에 적용할 역할. same = PC와 동일 */
   mobilePersona: "same" | RoleId;
   tutorialDone: boolean;
+  /** 기본 화면 보기 개정 번호. 2 = PC+Mobile 기본 (이전 버전에서 저장된 설정도 한 번은 PC+Mobile로 시작) */
+  viewRev?: number;
 }
+
+const VIEW_REV = 2;
 
 export const DEFAULT_PREFS: Prefs = {
   theme: DEFAULT_THEME,
   fontScale: "md",
   reduceMotion: false,
   role: "ceo",
-  deviceView: "pc",
+  deviceView: "dual", // 넓은 화면은 처음부터 PC+Mobile 나란히 (1024px 미만은 DeviceStage가 PC 화면으로 표시)
   mobilePersona: "same",
   tutorialDone: false,
+  viewRev: VIEW_REV,
 };
 
 export interface Repository {
@@ -119,7 +124,12 @@ function readPrefs(): Prefs {
   if (raw === prefsRaw) return prefsCache;
   prefsRaw = raw;
   try {
-    prefsCache = raw ? { ...DEFAULT_PREFS, ...(JSON.parse(raw) as Partial<Prefs>) } : DEFAULT_PREFS;
+    const saved = raw ? (JSON.parse(raw) as Partial<Prefs>) : null;
+    if (saved && (saved.viewRev ?? 1) < VIEW_REV) {
+      saved.deviceView = "dual";
+      saved.viewRev = VIEW_REV;
+    }
+    prefsCache = saved ? { ...DEFAULT_PREFS, ...saved } : DEFAULT_PREFS;
   } catch {
     prefsCache = DEFAULT_PREFS;
   }

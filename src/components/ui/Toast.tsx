@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { CircleAlert, CircleCheck, Info, X } from "lucide-react";
 import { cx } from "./primitives";
+import { isFrameContext, usePrefs } from "@/lib/data/store";
 
 interface ToastItem {
   id: number;
@@ -30,11 +31,23 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     setItems((xs) => [...xs.slice(-3), { ...t, id, ttl: t.ttl ?? (t.action ? 10000 : 5000) }]);
   }, []);
   const value = useMemo(() => ({ push }), [push]);
+  const prefs = usePrefs();
+  const [frame, setFrame] = useState(false);
+  useEffect(() => setFrame(isFrameContext()), []);
+  // 모바일 Frame: 시연 역할이 바뀌면 이전 사용자의 알림은 지운다
+  useEffect(() => {
+    if (isFrameContext()) setItems([]);
+  }, [prefs.mobilePersona]);
+  // PC+Mobile: PC 알림은 PC 화면 영역 안(휴대폰 화면 왼쪽)에 띄운다
+  const dualParent = !frame && prefs.deviceView === "dual";
   return (
     <Ctx.Provider value={value}>
       {children}
       <div
-        className="pointer-events-none fixed inset-x-0 bottom-[calc(5.2rem+env(safe-area-inset-bottom))] z-[100] flex flex-col items-center gap-2 px-3 md:bottom-6 md:right-6 md:left-auto md:items-end"
+        className={cx(
+          "toast-region pointer-events-none fixed inset-x-0 bottom-[calc(5.2rem+env(safe-area-inset-bottom))] z-[100] flex flex-col items-center gap-2 px-3 md:bottom-6 md:right-6 md:left-auto md:items-end",
+          dualParent && "lg:right-[calc(max(33vw,27rem)_+_1.5rem)]",
+        )}
         aria-live="polite"
         role="status"
       >

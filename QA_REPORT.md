@@ -1,6 +1,6 @@
 # QA_REPORT — TAEKANG SITE INTELLIGENCE (DEMO MVP)
 
-> 검증일: 2026-10-23 · 환경: 로컬 `next build` → `next start` (Node 22.22, Next 16.4.2) · 브라우저: Playwright 1.56.1 + Chromium(headless)
+> 검증일: 2026-10-23 (10/26 PC+Mobile 시연 개선 후 재검증) · 환경: 로컬 `next build` → `next start` (Node 22.22, Next 16.4.2) · 브라우저: Playwright 1.56.1 + Chromium(headless)
 > **배포 URL 없음** (Vercel 계정 연결 필요 — README 2절). 아래 결과는 모두 로컬 Production 빌드 기준이다.
 > 점수는 **자체 평가**이며 고객 검증 결과가 아니다.
 
@@ -12,10 +12,10 @@
 |---|---|
 | 빌드 (`npm run build`) | ✅ 성공 · TypeScript 오류 0 |
 | 단위 테스트 (`npm test`) | ✅ **15 / 15** — 미팅 시나리오 계산, 중복 계산 방지, 승인 전 변경공사 미반영, 되돌리기·수정·중복 저장 방지, 위험 규칙, 조치·Proof, 파트너 요청, CSV, **7 Theme 대비 4.5:1** |
-| E2E (`npm run e2e`) | ✅ **16 / 16** (1.3분) — 색 대비 수정 후 재실행 결과 |
-| 시연 큐시트 숫자 검증 (`npm run qa:cuesheet`) | ✅ **44 / 44** — `DEMO_SCRIPT.md` 순서대로 PC+Mobile 조작, 큐시트에 적힌 숫자 전부 화면과 일치, 15초 무중단 |
-| 접근성 자동 검사 (axe-core 4.10) | ✅ 위반 **0** — 기본 Theme 14개 화면 + 나머지 6개 Theme × 6개 화면 (수정 전: 위반 규칙 5종 87개 노드) |
-| Console / Page Error | ✅ **0** — 17개 Route × 4개 역할 × PC(1440)·모바일(390) + PC+Mobile 4개 Route, 총 140회 방문 (존재하지 않는 Route의 404 리소스 응답은 제외) |
+| E2E (`npm run e2e`) | ✅ **20 / 20** (1.2분) — 10/26 추가: 시연 모드 6단계 PC+Mobile·단계별 휴대폰 화면, 첫 방문 PC+Mobile 기본값, PC+Mobile 1280/1440/1920 넘침·상단 바 한 줄 |
+| 시연 큐시트 숫자 검증 (`npm run qa:cuesheet`) | ✅ **51 / 51** — `DEMO_SCRIPT.md` 순서대로 처음부터 PC+Mobile로 조작, PC와 휴대폰에 나오는 숫자 전부 일치, 16초 무중단 |
+| 접근성 자동 검사 (axe-core 4.10) | ✅ 위반 **0** — 기본 Theme 14개 화면 + 나머지 6개 Theme × 6개 화면 + **시연 모드 6단계 × 3개 Theme (PC+Mobile)** (최초 수정 전: 위반 규칙 5종 87개 노드) |
+| Console / Page Error | ✅ **0** — 17개 Route × 4개 역할 × PC+Mobile(1440)·모바일(390) + PC+Mobile 4개 Route, 총 140회 방문 (존재하지 않는 Route의 404 리소스 응답은 제외) |
 | `npm audit` | ✅ 취약점 0 |
 | Strategic P0 | **0** |
 | Product P0 | **0** (이번 QA에서 발견한 P1 6건 수정 완료 — 5절) |
@@ -31,19 +31,19 @@
 | 5 | 되돌리기·수정·중복저장 방지·Demo Reset | ✅ PASS | 단위 테스트(멱등 키·되돌리기·수정) · E2E `되돌리기` · 큐시트 3:45 초기화 후 원복 |
 | 6 | 미청구 변경공사를 계약증액/매출로 계산하지 않음 | ✅ PASS | 단위 테스트 · 큐시트 2:50 (청구 검토 4,000만 등록 후에도 11%, `승인 시 14.4%`는 시뮬레이션으로만 표시) |
 | 7 | 파트너 요청이 관리자 화면에 나타나고 처리 후 포털에 반영 | ✅ PASS | E2E `파트너 Closed Loop` (접수 → 검토 중 → 회신 완료, 포털에 금액·이익률·타 현장 비노출 정규식 검사) |
-| 8 | PC/Mobile/PC+Mobile 실제 작동, 390px, Route Sync, 재귀 없음 | ✅ PASS | E2E `v4.1 PC+Mobile`(양방향 Route Sync, 프레임 안 Device 전환 UI 없음) · `Mobile 단독 모드`(390px 프레임, 새로고침 후 유지) |
+| 8 | PC/Mobile/PC+Mobile 실제 작동, 390px, Route Sync, 재귀 없음 | ✅ PASS | E2E `v4.1 PC+Mobile`(양방향 Route Sync, 프레임 안 Device 전환 UI 없음) · `Mobile 단독 모드`(390px 프레임, 새로고침 후 유지) · 기본 화면 PC+Mobile · 시연 모드 6단계 전부 PC+Mobile |
 | 9 | 역할을 바꾸면 메뉴와 데이터가 달라짐 | ✅ PASS | E2E `역할 프리뷰` (현장직원: 손익·정산 숨김, 파트너: 내부 화면 차단) · 권한 프리뷰 표기 |
 | 10 | 7 Theme, Hover/Press/Motion, Modal, 모바일 스크롤, 반응형 | ✅ PASS | E2E `7 Theme`·`반응형 7개 폭` · axe 7 Theme · 모션 줄이기 설정 |
 | 11 | Console Error·핵심 Dead Button 없음, 시작/빌드/테스트 통과 | ✅ PASS (조건부) | Console 0 (140회) · 핵심 버튼은 E2E·큐시트로 실제 클릭 검증. **모든 버튼의 전수 자동 검증은 아님** |
 | 12 | 공개금액·성과를 회사 실적으로 허위 표기하지 않음 | ✅ PASS | 가상 현장·가상 인물, Baseline `UNKNOWN`, 개선율 미산출, 보장 표현 없음 |
-| 13 | 3~4분 시연 무중단 1회 이상 재현 + QA 기록 | ✅ PASS (자동) / ⏳ 사람 리허설 | 큐시트 자동 재현 44/44. **사람이 직접 3~4분 말하며 하는 리허설은 미팅 전 1회 필요** (USER ACTION) |
+| 13 | 3~4분 시연 무중단 1회 이상 재현 + QA 기록 | ✅ PASS (자동) / ⏳ 사람 리허설 | 큐시트 자동 재현 51/51 · 시연 모드 6단계 E2E. **사람이 직접 3~4분 말하며 하는 리허설은 미팅 전 1회 필요** (USER ACTION) |
 
 ## 3. 화면 폭 · Theme · 모드
 
 | 항목 | 검증 범위 | 결과 |
 |---|---|---|
 | 반응형 | 390 · 430 · 768 · 1024 · 1280 · 1440 · 1920px — 대시보드·현장 상세·현장 보고·위험 분석·기성·보고서·포털 등 주요 화면 가로 넘침 검사 | ✅ 넘침 0 |
-| Device View | PC / Mobile(390 프레임) / PC+Mobile(1024px 이상) | ✅ |
+| Device View | PC / Mobile(390 프레임) / PC+Mobile(1024px 이상, **기본값**) — PC+Mobile 1280·1440·1920px 넘침 0, 상단 바 한 줄 | ✅ |
 | Theme 7 | 01 Deep Navy · 02 Navy Gold · 03 Emerald Gold · 04 Forest Sage · 05 Deep Teal · 06 Onyx Gold(기본, 태강 오렌지 튜닝) · 07 Pure White — 실제 전환, 모바일 프레임 동시 반영, 대비 4.5:1 | ✅ |
 | 글자 크기 | 작게 / 기본 / 크게 | ✅ |
 | 실제 기기 · Safari(iOS) | — | ❌ **미검증** (이 환경에는 Chromium만 있음) |
@@ -73,6 +73,15 @@
 | RT-04 | 회의적인 대표 | 보고서·위험 분석 요약이 "5건 · 경고 2 · 주의 2"로 합계가 안 맞아 보임 (확인 등급 누락) | "확인 N" 추가, 대시보드와 동일 형식 |
 | RT-05 | QA | 큐시트에 적힌 숫자가 코드 변경 후 어긋날 위험 | `npm run qa:cuesheet` 44개 숫자 자동 검증 추가 |
 | RT-06 | 회의적인 대표 | "내 휴대폰으로 해보자" → 노트북과 데이터 공유 안 됨 | DEMO_SCRIPT 대응 문구 추가 (휴대폰 단독으로는 전 과정 동작) |
+
+### 10/26 대표 피드백 반영 (P1)
+| ID | 발견 | 조치 |
+|---|---|---|
+| FB-01 | 시연 모드에서 휴대폰이 ③단계부터만 보임 | 기본 화면·시연 6단계 모두 PC+Mobile (D-16) |
+| FB-02 | ③·④단계 화면이 똑같음 (강조 박스만 이동) | ③ 현장소장 입력 창 자동 열림 + 입력 대기/완료 표시, ④ 휴대폰이 대표 관점으로 바뀌어 재계산된 손익 + 전후 비교 표시 |
+| FB-03 | (QA 중 발견) 1280px에서 상단 데모 바 글자 두 줄 | 줄바꿈 금지·긴 문구 축약, E2E로 한 줄 고정 |
+| FB-04 | (QA 중 발견) PC+Mobile에서 안내 카드가 PC 화면을 넓게 가림, PC 알림이 휴대폰 위에 뜸, 역할 전환 후 이전 사용자 알림 잔존, 휴대폰 위 주소 표시 갱신 안 됨 | PC 하단 자막형 안내 바(접기 가능), PC 알림은 PC 영역 안, 역할 전환 시 휴대폰 알림 정리, 주소 표시 동기화 |
+| FB-05 | (QA 중 발견) PC+Mobile 보고서 등 좁은 PC 영역의 가로 스크롤 표가 키보드로 스크롤 불가 (axe) | 가로 스크롤 영역에 포커스·이름 부여 |
 
 ### 남은 위험 (수용 · NEXT)
 | ID | 관점 | 내용 | 대응 |
@@ -133,7 +142,7 @@
 ```bash
 npm install && npm run build
 npm test                    # 15
-npm run e2e                 # 16 (포트 3100에서 next start 자동 실행)
+npm run e2e                 # 20 (포트 3100에서 next start 자동 실행)
 npm start                   # 다른 터미널
-QA_BASE_URL=http://127.0.0.1:3000 npm run qa:cuesheet   # 44
+QA_BASE_URL=http://127.0.0.1:3000 npm run qa:cuesheet   # 51
 ```
