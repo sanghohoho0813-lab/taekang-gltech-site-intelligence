@@ -35,10 +35,10 @@ function dateOnly(iso: string): string {
 
 export const DEMO_USERS: DemoUser[] = [
   { id: "u-ceo", role: "ceo", name: "대표자", title: "DEMO" },
-  { id: "u-manager", role: "manager", name: "박관리", title: "과장 (가상)" },
-  { id: "u-field", role: "field", name: "최현장", title: "현장소장 (가상)" },
-  { id: "u-field2", role: "field", name: "정공무", title: "공무 대리 (가상)" },
-  { id: "u-partner", role: "partner", name: "가상 발주처 A", title: "공사 담당자", partnerSiteIds: ["site-a"] },
+  { id: "u-manager", role: "manager", name: "박지훈", title: "공무과장 (가상)" },
+  { id: "u-field", role: "field", name: "최성민", title: "현장소장 (가상)" },
+  { id: "u-field2", role: "field", name: "정우진", title: "현장소장 (가상)" },
+  { id: "u-partner", role: "partner", name: "가상 A건설", title: "원청 현장 공무", partnerSiteIds: ["site-a"] },
 ];
 
 export const ROLE_DEFAULT_USER: Record<string, string> = {
@@ -71,7 +71,7 @@ const SITES: SiteSeed[] = [
       workType: "커튼월·창호",
       region: "경기 남부 (가상)",
       clientId: "client-a",
-      clientName: "가상 발주처 A(주)",
+      clientName: "가상 A건설(주) · 원청",
       status: "active",
       progressPct: 58,
       managerUserId: "u-manager",
@@ -111,7 +111,7 @@ const SITES: SiteSeed[] = [
       workType: "창호 교체·단열유리",
       region: "서울 (가상)",
       clientId: "client-b",
-      clientName: "가상 발주처 B(주)",
+      clientName: "가상 건축주 B(주) · 직발주",
       status: "active",
       progressPct: 72,
       managerUserId: "u-manager",
@@ -149,7 +149,7 @@ const SITES: SiteSeed[] = [
       workType: "유리 아트리움·금속구조물",
       region: "충청권 (가상)",
       clientId: "client-c",
-      clientName: "가상 발주처 C (공공)",
+      clientName: "가상 C건설(주) · 원청 (공공공사)",
       status: "active",
       progressPct: 35,
       managerUserId: "u-manager",
@@ -386,9 +386,9 @@ export function createSeed(now = new Date()): DemoDB {
     signalKey: "RECEIVABLE_OVERDUE:site-b",
     rule: "RECEIVABLE_OVERDUE",
     siteId: "site-b",
-    title: "2차 기성 잔금 수금 요청 (발주처 B)",
+    title: "2차 기성 잔금 수금 요청 (건축주 B)",
     description: "60일 경과 미수 잔액에 대해 지급 일정 확인 공문 발송",
-    signalTitle: "B현장 2차 기성 미수 · 60일 경과",
+    signalTitle: "B현장 2차 기성 미수 5,000만 원 · 기준 60일 초과",
     signalWhy: ["확정 기성 4억 − 수금 2.5억 = 미수 1.5억", "2차 잔액 5,000만 원 60일 초과"],
     signalDetectedAt: dayOffset(now, -35),
     causeEntryIds: [],
@@ -406,7 +406,7 @@ export function createSeed(now = new Date()): DemoDB {
       adjustedContract: fB.adjustedContract,
       pendingClaimAmount: fB.pendingChangeAmount,
     },
-    notes: [{ at: dayOffset(now, -2), by: "u-manager", text: "발주처 B 재무팀 통화 — 공문 요청받음 (DEMO)" }],
+    notes: [{ at: dayOffset(now, -2), by: "u-manager", text: "건축주 B 재무팀 통화 — 공문 요청받음 (DEMO)" }],
     history: [
       { at: dayOffset(now, -3), by: "u-manager", to: "assigned" },
       { at: dayOffset(now, -2), by: "u-manager", from: "assigned", to: "in_progress" },
@@ -427,12 +427,12 @@ export function createSeed(now = new Date()): DemoDB {
 /** 미팅 시나리오 입력값 — '데모 값 채우기' 버튼에서 사용 */
 export const DEMO_SCENARIO = {
   siteId: "site-a",
-  workDone: "3층 남측 커튼월 유닛 10개 설치. 발주처 요청으로 3층 일부 구간 유리 사양을 로이복층 → 삼중유리로 변경 시공.",
-  issues: "사양 변경으로 유리 추가 발주 및 야간 추가 인력 투입 발생. 변경공사 청구 근거 확보 필요.",
-  tomorrowPlan: "3층 남측 실링 작업, 변경 구간 시공 사진 정리.",
+  workDone: "3층 남측 커튼월 유닛 10개 설치. 원청 요청(건축주 지시)으로 3층 남측 회의실 구간 유리 사양 상향 — 로이복층 → 삼중 로이유리, 글레이징 부자재 변경 포함.",
+  issues: "사양 변경으로 유리 차액·부자재와 추가 인력 투입 발생. 원청 서면 작업지시서 미수령 — 변경공사 청구 근거 확보 필요.",
+  tomorrowPlan: "3층 남측 실링 작업, 변경 구간 시공 사진·물량 정리.",
   costs: [
-    { category: "material" as const, amount: 30_000_000, note: "삼중유리 추가 발주 (사양 변경분)" },
-    { category: "labor" as const, amount: 10_000_000, note: "변경 구간 야간 추가 인력" },
+    { category: "material" as const, amount: 30_000_000, note: "변경 구간 유리 차액(로이복층→삼중)·글레이징 부자재 (개략)" },
+    { category: "labor" as const, amount: 10_000_000, note: "변경 구간 추가 투입 인원 (약 30공수, 연장 작업)" },
   ],
   reason: "design_change" as const,
 };

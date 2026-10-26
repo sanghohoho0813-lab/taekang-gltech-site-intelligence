@@ -184,7 +184,7 @@ function CeoDashboard() {
                 <thead>
                   <tr className="border-y border-line bg-surface-2 text-left text-[0.75rem] font-semibold text-ink-3">
                     <th className="px-5 py-2.5">현장</th>
-                    <th className="px-3 py-2.5 text-right">조정 계약</th>
+                    <th className="px-3 py-2.5 text-right" title="승인된 변경계약 포함">계약금액</th>
                     <th className="px-3 py-2.5 text-right">총예상원가(EAC)</th>
                     <th className="px-3 py-2.5 text-right">예상이익</th>
                     <th className="whitespace-nowrap px-3 py-2.5 text-right">이익률 (계획→현재)</th>

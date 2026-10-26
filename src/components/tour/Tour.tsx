@@ -11,7 +11,6 @@ import { getPrefs, setPrefs, useDb, usePrefs, type DeviceView } from "@/lib/data
 import type { RoleId } from "@/lib/domain/types";
 import { siteFinancials } from "@/lib/domain/calc";
 import { fmtEok, fmtMan, fmtPct, fmtPp } from "@/lib/domain/format";
-import { ACTION_STATUS_LABEL } from "@/lib/domain/labels";
 import { Button, cx } from "@/components/ui/primitives";
 import { sendFrameCmd, type FrameCmd } from "@/components/device/frameCommands";
 
@@ -57,9 +56,9 @@ export const TOURS: Record<TourId, { name: string; steps: TourStep[] }> = {
         target: "profit-engine",
         device: "dual",
         persona: "same",
-        pc: "A현장 손익 엔진",
+        pc: "A현장 손익",
         mobile: "대표 휴대폰 · A현장 손익",
-        title: "② A현장 손익 엔진",
+        title: "② A현장 손익 — 끝날 때 얼마 남나",
         body: "계약 10억 · 총예상원가(EAC) 8.5억(발생 5.1억 + 잔여 3.4억) → 예상이익 1.5억 · 15%. 계산식이 그대로 보이고, 휴대폰에서도 손익이 맨 위에 있습니다.",
       },
       {
@@ -91,17 +90,19 @@ export const TOURS: Record<TourId, { name: string; steps: TourStep[] }> = {
         target: "signal-board",
         device: "dual",
         persona: "field",
+        role: "manager",
         live: "action-status",
-        pc: "위험 분석·조치 (본사)",
+        pc: "위험 분석·조치 (본사 공무과장)",
         mobile: "현장소장 휴대폰 · 내 조치",
-        title: "⑤ 위험 감지 → 조치 배정 → 현장 휴대폰",
-        body: "규칙으로 A현장 위험 3건이 감지됩니다. ‘설계변경’ 카드의 ‘조치 생성·배정’ → 현장소장 휴대폰 ‘내 조치’에 바로 표시 → 진행·완료하면 Proof Event가 남습니다.",
+        title: "⑤ 본사 배정 → 현장 처리 → 본사 확인",
+        body: "PC는 본사 공무과장 화면입니다. ‘설계변경’ 카드의 ‘조치 생성·배정’ → 현장소장 휴대폰 ‘내 조치’에 바로 표시 → 휴대폰에서 ‘진행 시작’·‘완료 처리’ → PC에서 ‘결과 확인’. 대표님은 결과만 보고서로 받습니다.",
       },
       {
         route: "/report",
         target: "report-summary",
         device: "dual",
         persona: "same",
+        role: "ceo",
         pc: "대표자 보고서",
         mobile: "대표 휴대폰 · 같은 보고서",
         title: "⑥ 대표자 보고서 — 자동 요약",
@@ -166,7 +167,10 @@ export function TourProvider({ children }: { children: ReactNode }) {
     setTourId((id) => {
       if (id === "tutorial") setPrefs({ tutorialDone: true });
       // 시연 종료 시 모바일 화면 역할을 기본값(PC와 동일)으로 되돌린다
-      if (id === "presentation" && getPrefs().mobilePersona !== "same") setPrefs({ mobilePersona: "same" });
+      if (id === "presentation") {
+        const p = getPrefs();
+        if (p.mobilePersona !== "same" || p.role !== "ceo") setPrefs({ mobilePersona: "same", role: "ceo" });
+      }
       return null;
     });
     setStep(0);
@@ -197,7 +201,10 @@ function useIsDesktop() {
   const [v, setV] = useState(false);
   useEffect(() => {
     const mq = window.matchMedia("(min-width: 1024px)");
-    const on = () => setV(mq.matches);
+    // 인쇄 중에는 용지 폭 때문에 화면 모드를 바꾸지 않는다 (재마운트되면 보고서가 빈 페이지로 인쇄됨)
+    const on = () => {
+      if (!window.matchMedia("print").matches) setV(mq.matches);
+    };
     on();
     mq.addEventListener("change", on);
     return () => mq.removeEventListener("change", on);
@@ -391,7 +398,7 @@ export function TourLayer() {
   // PC 단독 / 1024px 미만: 떠 있는 안내 카드
   if (collapsed) {
     return (
-      <div {...common} data-collapsed="1" className="no-print fixed bottom-4 left-4 z-[90] flex max-w-[calc(100vw-2rem)] items-center gap-2 rounded-2xl border border-line bg-surface py-2 pl-3 pr-2 shadow-pop outline-none anim-pop lg:bottom-6 lg:left-[17.5rem]">
+      <div {...common} data-collapsed="1" className="no-print fixed bottom-[calc(5.6rem+env(safe-area-inset-bottom))] left-4 z-[90] flex max-w-[calc(100vw-2rem)] items-center gap-2 rounded-2xl border border-line bg-surface py-2 pl-3 pr-2 shadow-pop outline-none anim-pop lg:bottom-6 lg:left-[17.5rem]">
         <Presentation size={15} className="shrink-0 text-theme-ink" aria-hidden />
         <span className="min-w-0 truncate text-[0.8rem] font-bold text-ink">
           {step + 1}/{total} · {shortTitle}
@@ -404,7 +411,7 @@ export function TourLayer() {
     );
   }
   return (
-    <div {...common} className="no-print fixed bottom-4 left-4 z-[90] w-[min(27rem,calc(100vw-2rem))] rounded-2xl border border-line bg-surface p-4 shadow-pop outline-none anim-pop lg:bottom-6 lg:left-[17.5rem]">
+    <div {...common} className="no-print fixed bottom-[calc(5.6rem+env(safe-area-inset-bottom))] left-4 z-[90] max-h-[calc(100dvh-11rem)] w-[min(27rem,calc(100vw-2rem))] overflow-y-auto rounded-2xl border border-line bg-surface p-4 shadow-pop outline-none anim-pop lg:bottom-6 lg:left-[17.5rem]">
       <div className="flex items-center justify-between gap-2">
         <span className="inline-flex items-center gap-1.5 text-[0.75rem] font-bold text-theme-ink">
           <Presentation size={15} aria-hidden /> {TOURS[tourId].name} · {step + 1}/{total}
@@ -416,6 +423,11 @@ export function TourLayer() {
       </div>
       <div className="mt-2">{progress}</div>
       <h2 className="mt-3 text-[1.02rem] font-bold text-ink">{s.title}</h2>
+      {!desktop && tourId === "presentation" && (
+        <p className="mt-1.5 rounded-lg bg-info-bg px-2.5 py-1.5 text-[0.75rem] font-semibold text-info" data-testid="tour-small-note">
+          이 화면 폭에서는 PC 화면만 안내합니다. PC와 휴대폰을 나란히 보려면 노트북(1280px 이상)에서 진행하세요.
+        </p>
+      )}
       <p className="mt-1.5 text-[0.86rem] leading-relaxed text-ink-2">{s.body}</p>
       {s.live && <LiveStatus kind={s.live} onBack={back} />}
       <div className="mt-4 flex items-center justify-between gap-2">
@@ -483,25 +495,64 @@ function LiveStatus({ kind, onBack }: { kind: NonNullable<TourStep["live"]>; onB
     );
   }
 
-  // action-status
+  // action-status — 본사 배정 → 현장 진행 → 현장 완료 → 본사 결과 확인
   const acts = db.actions.filter((a) => a.siteId === DEMO_SITE).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const latest = acts[0];
-  if (!latest) return <Live testId="tour-live">대기 — 신호 카드의 ‘조치 생성·배정’을 누르세요.</Live>;
-  const proofs = db.proofEvents.filter((p) => p.site_id === DEMO_SITE).length;
-  return latest.status === "done" ? (
-    <Live ok testId="tour-live">
-      조치 완료 — Proof Event {proofs}건 기록. ‘다음’에서 대표 보고서로 이동합니다.
-    </Live>
-  ) : (
-    <Live ok testId="tour-live">
-      배정됨 — 현장소장 휴대폰 ‘내 조치’에 표시 · 현재 상태: {ACTION_STATUS_LABEL[latest.status]}
+  if (!latest) return <Live testId="tour-live">대기 — PC의 ‘설계변경’ 카드에서 ‘조치 생성·배정’을 누르세요.</Live>;
+  const proof = db.proofEvents.find((p) => p.proof_event_id === latest.proofEventId);
+  if (proof?.status === "confirmed") {
+    return (
+      <Live ok testId="tour-live" stage="confirmed">
+        결과 확인 완료 — 조치 증빙 기록(Proof Event) 확정. ‘다음’에서 대표 보고서로 이동합니다.
+      </Live>
+    );
+  }
+  if (latest.status === "done") {
+    return (
+      <>
+        <FocusActionCard actionId={latest.id} />
+        <Live ok testId="tour-live" stage="done">
+          현장 완료 — 이제 PC 조치 카드에서 ‘결과 확인’을 누르세요 (본사 확인).
+        </Live>
+      </>
+    );
+  }
+  if (latest.status === "in_progress") {
+    return (
+      <Live ok testId="tour-live" stage="in_progress">
+        현장 진행 중 — 휴대폰에서 ‘완료 처리’ → ‘DEMO 결과 채우기’ → ‘완료 처리’.
+      </Live>
+    );
+  }
+  return (
+    <Live ok testId="tour-live" stage="assigned">
+      배정됨 — 현장소장 휴대폰 ‘내 조치’에 표시. 휴대폰에서 ‘진행 시작’을 누르세요.
     </Live>
   );
 }
 
-function Live({ ok, children, testId }: { ok?: boolean; children: ReactNode; testId: string }) {
+/** 현장 완료 직후: PC 화면을 해당 조치 카드로 옮기고 강조 (결과 확인 버튼을 찾지 않아도 되게) */
+function FocusActionCard({ actionId }: { actionId: string }) {
+  useEffect(() => {
+    let el: Element | null = null;
+    const t = window.setTimeout(() => {
+      el = document.querySelector(`[data-testid="action-board"] [data-action-id="${actionId}"]`);
+      if (!el) return;
+      el.classList.add("tour-target");
+      el.scrollIntoView({ block: "center", behavior: document.documentElement.dataset.motion === "reduce" ? "auto" : "smooth" });
+    }, 300);
+    return () => {
+      window.clearTimeout(t);
+      el?.classList.remove("tour-target");
+    };
+  }, [actionId]);
+  return null;
+}
+
+function Live({ ok, children, testId, stage }: { ok?: boolean; children: ReactNode; testId: string; stage?: string }) {
   return (
     <p
+      data-stage={stage}
       className={cx("mt-2.5 flex items-start gap-1.5 rounded-xl px-3 py-2 text-[0.8rem] font-semibold", ok ? "bg-ok-bg text-ok" : "bg-warn-bg text-warn")}
       data-testid={testId}
       data-state={ok ? "done" : "waiting"}

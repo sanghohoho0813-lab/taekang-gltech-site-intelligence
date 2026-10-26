@@ -35,7 +35,7 @@ export function DemoBar({ active }: { active: boolean }) {
   return (
     <div
       className={cx(
-        "only-top sticky top-0 z-50 hidden h-[var(--demo-bar-h)] items-center gap-3 border-b border-black/30 bg-[#0E1013] px-3 text-[0.75rem] text-[#D5DAE1] lg:flex",
+        "only-top no-print sticky top-0 z-50 hidden h-[var(--demo-bar-h)] items-center gap-3 border-b border-black/30 bg-[#0E1013] px-3 text-[0.75rem] text-[#D5DAE1] lg:flex",
         !active && "lg:hidden",
       )}
       data-testid="demo-bar"

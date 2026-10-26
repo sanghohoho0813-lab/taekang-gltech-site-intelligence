@@ -37,7 +37,7 @@ export default function SitesPage() {
                 {canSeeMoney && (
                   <dl className="grid grid-cols-3 gap-2 border-t border-line pt-2.5 text-center">
                     <div>
-                      <dt className="text-[0.7rem] text-ink-3">조정 계약</dt>
+                      <dt className="text-[0.7rem] text-ink-3" title="승인된 변경계약 포함">계약금액</dt>
                       <dd className="text-[0.88rem] font-bold num">{fmtEok(f.adjustedContract)}</dd>
                     </div>
                     <div>

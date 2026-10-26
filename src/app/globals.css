@@ -375,6 +375,32 @@ html.tk-scroll-lock {
   .no-print {
     display: none !important;
   }
+  /* 등장 애니메이션 시작 프레임(투명)으로 인쇄되지 않게 */
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+  .toast-region {
+    display: none !important;
+  }
+  .pc-pane {
+    contain: none !important;
+    overflow: visible !important;
+  }
+  main#main {
+    padding-bottom: 0 !important;
+  }
+  /* 가로 스크롤 표는 용지 폭에 맞춰 줄여서 잘리지 않게 */
+  main [role="region"][tabindex] {
+    overflow: visible !important;
+  }
+  main table {
+    min-width: 0 !important;
+    width: 100% !important;
+    font-size: 9.5pt !important;
+  }
   html,
   body {
     background: #fff !important;

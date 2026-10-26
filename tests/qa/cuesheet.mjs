@@ -54,6 +54,8 @@ const siteASignals = await board.locator("[data-rule]").filter({ hasText: "A현�
 results.push(["2:05", "A현장 신호 3건", "3", siteASignals === 3]);
 const unb = board.locator('[data-rule="UNBILLED_CHANGE"]');
 check("2:05", "설계변경 신호", await unb.innerText(), ["4,000만"]);
+await page.getByTestId("demo-role").selectOption("manager"); // ⑤는 본사 공무과장이 배정
+await page.waitForTimeout(500);
 await unb.getByTestId("create-action").click();
 const mv = await page.getByTestId("assign-modal").locator("input, textarea").evaluateAll((els) => els.map((e) => e.value).join(" "));
 check("2:05", "조치 모달 제목", mv, ["추가공사 청구가능성 검토"]);
@@ -61,14 +63,19 @@ results.push(["2:05", "담당 기본값 최현장", "u-field", (await page.getBy
 await page.getByTestId("assign-confirm").click();
 await f.getByTestId("action-card").filter({ hasText: "추가공사 청구가능성 검토" }).waitFor({ timeout: 5000 });
 results.push(["2:05", "모바일에 배정 조치 즉시 표시", "visible", true]);
-const card = page.getByTestId("action-board").getByTestId("action-card").filter({ hasText: "추가공사 청구가능성 검토" });
-await card.getByTestId("action-start").click(); await page.waitForTimeout(300);
-await card.getByTestId("action-complete").click();
-const cm = page.getByTestId("complete-modal");
+// 현장소장 휴대폰에서 진행 시작 → 완료 (청구 검토 등록), 본사 PC에서 결과 확인
+const phoneCard = f.getByTestId("action-card").filter({ hasText: "추가공사 청구가능성 검토" });
+await phoneCard.getByTestId("action-start").click(); await page.waitForTimeout(400);
+await phoneCard.getByTestId("action-complete").click();
+const cm = f.getByTestId("complete-modal");
 await cm.getByTestId("fill-result").click();
-check("2:50", "완료 모달 청구 4,000만", await cm.innerText(), ["4,000"]);
-await cm.getByTestId("complete-confirm").click(); await page.waitForTimeout(800);
-check("2:50", "완료 카드", await card.innerText(), ["완료", /결과 확인|Proof/]);
+check("2:50", "휴대폰 완료 창 청구 4,000만 (직접비 기준)", await cm.innerText(), ["4,000", "직접비"]);
+await cm.getByTestId("complete-confirm").click(); await page.waitForTimeout(900);
+const card = page.getByTestId("action-board").getByTestId("action-card").filter({ hasText: "추가공사 청구가능성 검토" });
+check("2:50", "PC 조치 카드 완료 · 확인 대기", await card.innerText(), ["완료", "결과 확인"]);
+await card.getByTestId("proof-confirm").click(); await page.waitForTimeout(600);
+check("2:50", "본사 결과 확인", await card.innerText(), [/Proof Event 결과 확인/]);
+await page.getByTestId("demo-role").selectOption("ceo");
 await page.goto(B + "/sites/site-a"); await page.waitForTimeout(1200);
 const eng3 = await txt(page.locator('[data-tour="profit-engine"]'));
 check("2:50", "승인 전 변경공사 미반영 + 시뮬레이션", eng3, ["4,000만", "14.4%", "11%"]);

@@ -4,9 +4,9 @@
  * EAC(총예상원가) = Σ_c ( 발생원가_c + 잔여예상원가_c )
  *   발생원가_c   = Σ 유효 원가이벤트 (category = c)
  *   잔여예상_c   = max(0, 기준 잔여예상_c − Σ 유효 '계획 내 집행' 이벤트_c)
- * 조정 계약금액 = 계약금액 + Σ 승인(approved) 변경공사
- * 예상이익     = 조정 계약금액 − EAC
- * 예상이익률   = 예상이익 / 조정 계약금액 × 100
+ * 변경 반영 계약금액 = 계약금액 + Σ 승인(approved) 변경공사
+ * 예상이익     = 변경 반영 계약금액 − EAC
+ * 예상이익률   = 예상이익 / 변경 반영 계약금액 × 100
  * 미수금       = Σ 확정 기성청구 − Σ 실제 수금
  */
 import type { CostCategory, CostEntry, DemoDB, FinancialSnapshot } from "./types";

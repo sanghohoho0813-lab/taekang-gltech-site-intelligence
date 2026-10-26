@@ -134,7 +134,7 @@ export function ProfitStack({ incurred, remaining, profit, contract }: { incurre
       </div>
       <div className="mt-1.5 flex justify-between text-[0.72rem] text-ink-3 num">
         <span>0</span>
-        <span>{loss ? `EAC가 조정 계약금액을 초과 (손실 ${fmtEok(-profit)})` : `조정 계약금액 ${fmtEok(contract)}`}</span>
+        <span>{loss ? `EAC가 변경 반영 계약금액을 초과 (손실 ${fmtEok(-profit)})` : `변경 반영 계약금액 ${fmtEok(contract)}`}</span>
       </div>
     </div>
   );

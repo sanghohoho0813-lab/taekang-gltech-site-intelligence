@@ -74,14 +74,14 @@ export default function WhyAxPage() {
         </ul>
       </Section>
 
-      <Section no="03" title="AX란 무엇인가 — 중학생도 이해할 수 있게">
+      <Section no="03" title="AX란 무엇인가 — 한 문장으로">
         <p className="rounded-xl bg-surface-2 px-4 py-3 text-ink">
           회사의 일을 <b>하나의 데이터 흐름</b>으로 연결하고, 반복 계산은 시스템이 하며, 중요한 판단에는 <b>근거와 다음 행동</b>을 함께 보여주는 것입니다.
         </p>
         <p>AI를 많이 넣는 것이 목표가 아닙니다. 계산할 수 있는 것은 정확하게 계산하고, 사람이 놓치기 쉬운 것을 먼저 알려주는 것이 목표입니다.</p>
       </Section>
 
-      <Section no="04" title="창호·커튼월 공사에서 특히 중요한 이유" company={<p>유리·프레임은 선발주·제작 기간이 길고, 발주처 요청으로 사양(로이복층 → 삼중유리 등)이 바뀌면 자재비와 야간 인력이 함께 늘어납니다. 이 비용을 ‘변경공사’로 정리하지 않으면 그대로 현장 이익에서 빠집니다.</p>}>
+      <Section no="04" title="창호·커튼월 공사에서 특히 중요한 이유" company={<p>유리·프레임은 선발주·제작 기간이 길고, 원청·건축주 요청으로 사양(로이복층 → 삼중유리 등)이 바뀌면 자재비와 추가 인력이 함께 늘어납니다. 구두 지시만 받고 시공한 변경분을 서면 근거와 함께 ‘변경공사’로 정리하지 않으면 그대로 현장 이익에서 빠집니다.</p>}>
         <div className="grid gap-2 @min-[600px]:grid-cols-3">
           {[
             ["긴 공기", "착공~준공 사이 원가가 계속 바뀜"],
@@ -112,9 +112,9 @@ export default function WhyAxPage() {
       <Section no="06" title="반복되는 문제 — 돈·시간·매출이 새는 곳">
         <div className="grid gap-2 @min-[760px]:grid-cols-3">
           {[
-            ["MONEY LEAK", "원가 초과를 늦게 인지 / 설계변경 추가원가 미청구 / 미수금 장기화", "err"],
-            ["TIME LEAK", "같은 내용 재입력 / 전화로 현황 확인 / 월말 손익 수작업 집계", "warn"],
-            ["DECISION LEAK", "대표가 ‘지금 무엇을 조치해야 하는지’를 바로 알기 어려움", "info"],
+            ["돈이 새는 곳", "원가 초과를 늦게 인지 / 설계변경 추가원가 미청구 / 미수금 장기화", "err"],
+            ["시간이 새는 곳", "같은 내용 재입력 / 전화로 현황 확인 / 월말 손익 수작업 집계", "warn"],
+            ["판단이 늦는 곳", "대표가 ‘지금 무엇을 조치해야 하는지’를 바로 알기 어려움", "info"],
           ].map(([t, d, tone]) => (
             <div key={t} className={cx("rounded-xl px-3.5 py-3", tone === "err" ? "bg-err-bg" : tone === "warn" ? "bg-warn-bg" : "bg-info-bg")}>
               <p className="text-[0.78rem] font-extrabold tracking-wide text-ink">{t}</p>
@@ -260,7 +260,7 @@ export default function WhyAxPage() {
         <div className="grid gap-2 @min-[600px]:grid-cols-2">
           {[
             [<Building2 key="b" size={16} />, "다현장 통합 관리", "현장 수가 늘어도 같은 기준으로 손익 비교"],
-            [<Handshake key="h" size={16} />, "발주처 전자 기성 승인", "청구·승인 이력 공유"],
+            [<Handshake key="h" size={16} />, "건축주 기성 확인 요청", "직발주 현장의 기성 내역·사진 공유"],
             [<Truck key="t" size={16} />, "협력사 자재 납품 일정", "유리·프레임 반입 일정 공유"],
             [<Wrench key="w" size={16} />, "하자보수 요청·이력", "준공 후 고객 관리"],
           ].map(([i, t, d]) => (

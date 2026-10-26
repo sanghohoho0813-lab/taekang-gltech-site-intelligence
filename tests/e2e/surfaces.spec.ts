@@ -178,14 +178,26 @@ test("시연 모드: 처음부터 PC+Mobile, 단계마다 휴대폰 화면이 �
   await expect(page.getByTestId("m-eac")).toContainText("8.9억 원");
   await expect(page.getByTestId("tour-live")).toContainText("8.5억 → 8.9억");
 
-  // ⑤ 본사 조치 배정 → 현장소장 휴대폰 '내 조치'
+  // ⑤ 본사 공무과장 배정 → 현장소장 휴대폰에서 진행·완료 → 본사 결과 확인
   await next();
   await expect(page).toHaveURL(/\/insights$/);
+  await expect(page.getByTestId("demo-role")).toHaveValue("manager");
   await expect(frame.getByRole("heading", { name: "내 조치" })).toBeVisible();
   await page.getByTestId("signal-board").locator('[data-rule="UNBILLED_CHANGE"]').getByTestId("create-action").click();
   await page.getByTestId("assign-confirm").click();
-  await expect(frame.getByTestId("action-card").filter({ hasText: "추가공사 청구가능성 검토" })).toBeVisible();
-  await expect(page.getByTestId("tour-live")).toContainText("배정됨");
+  const phoneCard = frame.getByTestId("action-card").filter({ hasText: "추가공사 청구가능성 검토" });
+  await expect(phoneCard).toBeVisible();
+  await expect(page.getByTestId("tour-live")).toHaveAttribute("data-stage", "assigned");
+  await phoneCard.getByTestId("action-start").click();
+  await expect(page.getByTestId("tour-live")).toHaveAttribute("data-stage", "in_progress");
+  await phoneCard.getByTestId("action-complete").click();
+  await frame.getByTestId("fill-result").click();
+  await frame.getByTestId("complete-confirm").click();
+  await expect(page.getByTestId("tour-live")).toHaveAttribute("data-stage", "done");
+  const pcCard = page.getByTestId("action-board").getByTestId("action-card").filter({ hasText: "추가공사 청구가능성 검토" });
+  await expect(pcCard).toHaveClass(/tour-target/); // 결과 확인할 카드로 이동·강조
+  await pcCard.getByTestId("proof-confirm").click();
+  await expect(page.getByTestId("tour-live")).toHaveAttribute("data-stage", "confirmed");
 
   // 안내 접기·펼치기
   await page.getByTestId("tour-collapse").click();
@@ -195,7 +207,9 @@ test("시연 모드: 처음부터 PC+Mobile, 단계마다 휴대폰 화면이 �
   // ⑥ 대표 보고서 — 대표 휴대폰에도 같은 보고서
   await next();
   await expect(page).toHaveURL(/\/report$/);
+  await expect(page.getByTestId("demo-role")).toHaveValue("ceo");
   await expect(frame.getByTestId("report-summary")).toContainText("3.56억");
+  await expect(page.getByTestId("report-actions")).toContainText("청구 검토 0원 → 4,000만 원");
 
   await page.getByTestId("tour-exit").click();
   await expect(panel).toHaveCount(0);

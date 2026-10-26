@@ -42,8 +42,8 @@ export default function FinancePage() {
 
       <div className="grid gap-3 @min-[900px]:grid-cols-4" aria-label="개념 정의">
         {[
-          ["계약금액 → 조정 계약금액", "원 계약 + 발주처가 승인한 변경계약. 청구 검토·승인 대기는 제외."],
-          ["예상이익", "조정 계약금액 − 총예상원가(EAC). 매출·입금과 다른 ‘준공 시 예상’ 개념."],
+          ["계약금액 → 변경 반영 계약금액", "원 계약 + 원청·발주처가 승인한 변경계약. 청구 검토·승인 대기는 제외."],
+          ["예상이익", "변경 반영 계약금액 − 총예상원가(EAC). 매출·입금과 다른 ‘준공 시 예상’ 개념."],
           ["기성청구액 (확정)", "공정 진행에 따라 발주처에 청구해 확정된 금액. 받은 돈이 아님."],
           ["입금액 · 미수금", "실제 통장에 들어온 금액. 미수금 = 확정 기성청구 − 입금."],
         ].map(([t, d]) => (
@@ -63,7 +63,7 @@ export default function FinancePage() {
                 <th className="px-5 py-2.5">현장</th>
                 <th className="px-3 py-2.5 text-right">원 계약</th>
                 <th className="px-3 py-2.5 text-right">승인 변경</th>
-                <th className="px-3 py-2.5 text-right">조정 계약</th>
+                <th className="px-3 py-2.5 text-right" title="승인된 변경계약 포함">계약금액</th>
                 <th className="px-3 py-2.5 text-right">예상이익</th>
                 <th className="px-3 py-2.5 text-right">확정 기성(누계)</th>
                 <th className="px-3 py-2.5 text-right">기성률</th>
@@ -99,7 +99,7 @@ export default function FinancePage() {
       </Card>
 
       <Card>
-        <CardHeader title="변경공사" sub="‘승인(계약 반영)’만 조정 계약금액에 가산됩니다 — 청구 검토·발주처 청구 단계는 이익 미반영" />
+        <CardHeader title="변경공사" sub="‘승인(계약 반영)’만 변경 반영 계약금액에 가산됩니다 — 청구 검토·발주처 청구 단계는 이익 미반영" />
         {db.changeOrders.length === 0 ? (
           <EmptyState title="변경공사가 없습니다." />
         ) : (
@@ -219,7 +219,7 @@ function ChangeOrderModal({ db, c, to, onClose }: { db: DemoDB; c: ChangeOrder; 
               <input id="co-amt" inputMode="numeric" className={cx(inputCls, "num text-right")} value={amountText} onChange={(e) => setAmountText(e.target.value.replace(/[^\d]/g, "") ? Number(e.target.value.replace(/[^\d]/g, "")).toLocaleString("ko-KR") : "")} />
             </Field>
             <Notice tone="info" title="반영 결과 (확정)">
-              조정 계약 {fmtEok(f.adjustedContract)} → {fmtEok(afterAdj)} · 예상이익률 {fmtPct(f.marginPct)} → {fmtPct(afterMargin)}
+              변경 반영 계약 {fmtEok(f.adjustedContract)} → {fmtEok(afterAdj)} · 예상이익률 {fmtPct(f.marginPct)} → {fmtPct(afterMargin)}
             </Notice>
             <p className="text-[0.76rem] text-ink-3">발주처의 실제 승인(공문·변경계약서)을 확인한 경우에만 승인 반영하세요. DEMO 환경입니다.</p>
           </>
@@ -280,7 +280,7 @@ function MoneyFormModal({ db, kind, onClose }: { db: DemoDB; kind: "billing" | "
             ))}
           </select>
         </Field>
-        <Field label="금액 (원, 공급가액)" htmlFor="m-amt" error={err} hint={kind === "payment" ? `현재 미수금 ${fmtMan(f.outstanding)}` : amount ? `= ${fmtMan(amount)}` : undefined}>
+        <Field label={kind === "payment" ? "입금액 (원, 부가세 제외 환산)" : "기성 청구액 (원, 공급가액)"} htmlFor="m-amt" error={err} hint={kind === "payment" ? `현재 미수금 ${fmtMan(f.outstanding)}` : amount ? `= ${fmtMan(amount)}` : undefined}>
           <input id="m-amt" inputMode="numeric" className={cx(inputCls, "num text-right")} value={amountText} onChange={(e) => setAmountText(e.target.value.replace(/[^\d]/g, "") ? Number(e.target.value.replace(/[^\d]/g, "")).toLocaleString("ko-KR") : "")} />
         </Field>
         <Field label={kind === "billing" ? "청구일" : "입금일"} htmlFor="m-date">

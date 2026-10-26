@@ -52,7 +52,7 @@ export function Sidebar({ compact }: { compact: boolean }) {
   return (
     <aside
       className={cx(
-        "hidden lg:flex shrink-0 flex-col bg-shell text-shell-text border-r border-shell-line",
+        "no-print hidden lg:flex shrink-0 flex-col bg-shell text-shell-text border-r border-shell-line",
         "sticky top-[var(--demo-bar-h)] h-[calc(100dvh-var(--demo-bar-h))]",
         compact ? "w-[4.6rem]" : "w-[14.2rem] 2xl:w-[15.2rem]",
       )}

@@ -30,18 +30,18 @@ export const CATEGORY_SHORT: Record<CostCategory, string> = {
 
 export const IMPACT_LABEL: Record<ForecastImpact, string> = {
   baseline: "기준 발생원가",
-  additional: "예상 외 추가원가",
-  within_forecast: "계획 내 집행",
+  additional: "실행예산 외 추가비용",
+  within_forecast: "실행예산 내 집행",
 };
 
 export const IMPACT_HELP: Record<ForecastImpact, string> = {
   baseline: "기준 시점에 이미 잔여예상원가 산정에 반영된 발생원가입니다.",
-  additional: "원래 예상에 없던 비용입니다. 총예상원가(EAC)가 그만큼 늘어납니다.",
-  within_forecast: "원래 예상하던 비용을 집행한 것입니다. 잔여예상원가에서 빠지므로 EAC는 변하지 않습니다.",
+  additional: "실행예산에 없던 비용입니다. 본사 총예상원가(EAC)가 그만큼 늘어납니다.",
+  within_forecast: "실행예산에 이미 잡혀 있던 비용입니다. 남은 예산에서 빠지므로 총예상원가는 변하지 않습니다.",
 };
 
 export const REASON_LABEL: Record<CostReason, string> = {
-  design_change: "설계변경·발주처 요청",
+  design_change: "설계변경·원청(발주처) 요청",
   price_increase: "자재 단가 상승",
   quantity_increase: "물량 증가",
   rework: "재시공·하자 보수",

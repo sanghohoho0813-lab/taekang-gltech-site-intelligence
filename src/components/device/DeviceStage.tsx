@@ -26,7 +26,10 @@ function useIsDesktop() {
   const [v, setV] = useState(false);
   useEffect(() => {
     const mq = window.matchMedia("(min-width: 1024px)");
-    const on = () => setV(mq.matches);
+    // 인쇄 중에는 용지 폭 때문에 화면 모드를 바꾸지 않는다 (재마운트되면 보고서가 빈 페이지로 인쇄됨)
+    const on = () => {
+      if (!window.matchMedia("print").matches) setV(mq.matches);
+    };
     on();
     mq.addEventListener("change", on);
     return () => mq.removeEventListener("change", on);
@@ -172,7 +175,7 @@ function PhoneStage({ mode }: { mode: "mobile" | "dual" }) {
   return (
     <aside
       className={cx(
-        "only-top flex flex-col items-center",
+        "only-top no-print flex flex-col items-center",
         mode === "dual"
           ? "sticky top-[var(--demo-bar-h)] h-[calc(100dvh-var(--demo-bar-h))] w-[max(33%,27rem)] shrink-0 border-l border-line bg-[#E9EBEF] px-3 pt-3"
           : "h-[calc(100dvh-var(--demo-bar-h))] w-full bg-[radial-gradient(ellipse_at_top,#F7F8FA,#E3E6EB)] px-4 pt-4",

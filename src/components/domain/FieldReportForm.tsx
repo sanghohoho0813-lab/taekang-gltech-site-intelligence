@@ -363,8 +363,8 @@ export function FieldReportForm({ fixedSiteId, onClose, inSheet = false }: { fix
       <div className="rounded-2xl border border-line bg-surface-2 p-3.5" data-testid="cost-section">
         <div className="flex items-center justify-between gap-2">
           <div>
-            <p className="text-[0.92rem] font-bold text-ink">추가 비용 입력</p>
-            <p className="text-[0.74rem] text-ink-3">원 단위 · 공급가액(부가세 별도)</p>
+            <p className="text-[0.92rem] font-bold text-ink">추가 비용 (개략 금액)</p>
+            <p className="text-[0.74rem] text-ink-3">부가세 별도 · 개략이면 충분 — 본사 공무가 견적·세금계산서로 확정</p>
           </div>
           <Button
             type="button"
@@ -418,7 +418,7 @@ export function FieldReportForm({ fixedSiteId, onClose, inSheet = false }: { fix
                       <label key={imp} className={cx("press cursor-pointer rounded-xl border px-3 py-2 text-[0.8rem]", c.impact === imp ? "border-active bg-active-soft" : "border-line bg-surface hover:bg-surface-2")}>
                         <input type="radio" name={`impact-${c.key}`} className="sr-only" checked={c.impact === imp} onChange={() => setCosts((x) => x.map((r) => (r.key === c.key ? { ...r, impact: imp } : r)))} />
                         <span className="block font-bold text-ink">{IMPACT_LABEL[imp]}</span>
-                        <span className="block text-[0.7rem] leading-snug text-ink-3">{imp === "additional" ? "EAC 증가" : "잔여예상에서 차감 · EAC 불변"}</span>
+                        <span className="block text-[0.7rem] leading-snug text-ink-3">{imp === "additional" ? "본사 예상원가 증가" : "예상원가 변동 없음"}</span>
                       </label>
                     ))}
                   </div>
@@ -428,7 +428,7 @@ export function FieldReportForm({ fixedSiteId, onClose, inSheet = false }: { fix
                   <label htmlFor={`c-note-${i}`} className="sr-only">
                     비용 {i + 1} 메모
                   </label>
-                  <input id={`c-note-${i}`} value={c.note} maxLength={100} onChange={(e) => setCosts((x) => x.map((r) => (r.key === c.key ? { ...r, note: e.target.value } : r)))} className={inputCls} placeholder="메모 (예: 삼중유리 추가 발주)" />
+                  <input id={`c-note-${i}`} value={c.note} maxLength={100} onChange={(e) => setCosts((x) => x.map((r) => (r.key === c.key ? { ...r, note: e.target.value } : r)))} className={inputCls} placeholder="메모 (예: 변경 구간 유리 차액)" />
                 </div>
               </div>
             );

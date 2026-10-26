@@ -102,7 +102,7 @@ export default function ReportPage() {
             <thead>
               <tr className="border-y border-line bg-surface-2 text-left text-[0.74rem] font-semibold text-ink-3">
                 <th className="px-5 py-2.5">현장</th>
-                <th className="px-3 py-2.5 text-right">조정 계약</th>
+                <th className="px-3 py-2.5 text-right" title="승인된 변경계약 포함">계약금액</th>
                 <th className="px-3 py-2.5 text-right">EAC 기준 → 현재</th>
                 <th className="px-3 py-2.5 text-right">예상이익 기준 → 현재</th>
                 <th className="px-3 py-2.5 text-right">이익률 기준 → 현재</th>
@@ -244,7 +244,9 @@ export default function ReportPage() {
                           <>
                             <Badge tone={p.status === "confirmed" ? "ok" : "warn"}>{p.status === "confirmed" ? "결과 확인" : "확인 대기"}</Badge>
                             <span className="mt-1 block num text-ink-3">
-                              이익률 {String(p.kpi_before["예상이익률"])} → {String(p.kpi_after["예상이익률"])} · 대응 {p.response_minutes ? `${p.response_minutes}분` : "1분 미만"}
+                              {p.kpi_before["청구 검토·승인대기 변경공사"] !== p.kpi_after["청구 검토·승인대기 변경공사"]
+                                ? `청구 검토 ${String(p.kpi_before["청구 검토·승인대기 변경공사"]).replace(/^0만 원$/, "0원")} → ${String(p.kpi_after["청구 검토·승인대기 변경공사"])} (승인 전 · 이익 미반영)`
+                                : `이익률 ${String(p.kpi_before["예상이익률"])} → ${String(p.kpi_after["예상이익률"])}`}
                             </span>
                           </>
                         ) : (

@@ -37,7 +37,7 @@ export function AppShell({ children, compactSidebar }: { children: ReactNode; co
 
 function DesktopHeader() {
   return (
-    <header className="sticky top-[var(--demo-bar-h)] z-30 hidden h-16 items-center gap-3 border-b border-line bg-surface/92 px-5 backdrop-blur lg:flex">
+    <header className="no-print sticky top-[var(--demo-bar-h)] z-30 hidden h-16 items-center gap-3 border-b border-line bg-surface/92 px-5 backdrop-blur lg:flex">
       <GlobalSearch className="w-full min-w-[11rem] max-w-[26rem]" />
       <div className="ml-auto flex items-center gap-2">
         <span className="hidden text-[0.85rem] text-ink-2 @3xl/shell:inline">
@@ -59,7 +59,7 @@ function MobileHeader() {
   useEffect(() => setOpen(false), [pathname]);
   return (
     <>
-      <header className="sticky top-[var(--demo-bar-h)] z-30 flex h-[3.6rem] items-center gap-2 border-b border-line bg-surface/95 px-3 backdrop-blur pt-[env(safe-area-inset-top)] lg:hidden" data-testid="mobile-header">
+      <header className="no-print sticky top-[var(--demo-bar-h)] z-30 flex h-[3.6rem] items-center gap-2 border-b border-line bg-surface/95 px-3 backdrop-blur pt-[env(safe-area-inset-top)] lg:hidden" data-testid="mobile-header">
         <button type="button" onClick={() => setOpen(true)} className="press grid size-11 place-items-center rounded-xl text-ink hover:bg-surface-3" aria-label="전체 메뉴 열기" data-testid="mobile-menu-button">
           <Menu size={23} />
         </button>
@@ -159,7 +159,7 @@ function BottomNav() {
   return (
     <>
       <nav
-        className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-surface/97 backdrop-blur pb-[env(safe-area-inset-bottom)] lg:hidden"
+        className="no-print fixed inset-x-0 bottom-0 z-40 border-t border-line bg-surface/97 backdrop-blur pb-[env(safe-area-inset-bottom)] lg:hidden"
         aria-label="하단 메뉴"
         data-testid="bottom-nav"
       >

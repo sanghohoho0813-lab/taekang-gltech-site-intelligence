@@ -273,7 +273,7 @@ function ReplyModal({ req, onClose }: { req: PartnerRequest; onClose: () => void
         </Field>
         <button
           type="button"
-          onClick={() => setText("요청하신 변경 범위를 현장에서 확인했습니다. 추가 물량·단가 검토 후 변경공사 견적을 회신드리겠습니다. (DEMO 회신)")}
+          onClick={() => setText("서면 작업지시 접수했습니다. 변경 범위를 현장에서 확인했고, 계약 내역단가 기준으로 변경공사 견적을 회신드리겠습니다. (DEMO 회신)")}
           className="press rounded-lg bg-[#FFF7D6] px-2 py-1 text-[0.75rem] font-bold text-[#7A5200]"
         >
           DEMO 회신 채우기

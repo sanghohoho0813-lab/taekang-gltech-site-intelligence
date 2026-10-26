@@ -19,10 +19,10 @@ import { LogoMark } from "@/components/shell/Logo";
 import { Clock } from "@/components/shell/Clock";
 
 const FUTURE = [
-  { title: "전자 기성 승인", items: ["기성 청구서 온라인 확인·승인", "승인 이력 보관", "결재 알림"] },
+  { title: "기성 확인 요청 (직발주 건축주)", items: ["기성 내역·진행 사진 온라인 확인", "확인 이력 보관", "확인 요청 알림"] },
   { title: "자재 납품 일정 공유 (협력사)", items: ["유리·프레임 반입 일정 등록", "현장 반입 확인", "지연 알림"] },
   { title: "하자보수 요청", items: ["준공 후 하자 접수·사진 첨부", "처리 상태 확인", "보수 이력"] },
-  { title: "다현장 통합 리포트 (B2B)", items: ["발주처별 여러 현장 진행률 한 화면", "월간 리포트 PDF", "구독형 검토"] },
+  { title: "다현장 진행 리포트", items: ["건축주·원청별 여러 현장 진행률 한 화면", "월간 진행 리포트 PDF", "공유 링크 발송"] },
 ];
 
 export default function PartnerPage() {
@@ -99,7 +99,7 @@ export default function PartnerPage() {
 
       <main id="main" className="mx-auto max-w-[1240px] space-y-5 px-4 py-6 pb-16">
         {preview && (
-          <Notice tone="info" title="관리자 미리보기 — ‘가상 발주처 A 담당자’에게 보이는 화면입니다">
+          <Notice tone="info" title="관리자 미리보기 — ‘가상 A건설(원청) 현장 공무’에게 보이는 화면입니다">
             내부 원가·예상이익·미수금·다른 현장 정보는 이 포털에 표시되지 않습니다. 요청 등록은 발주처 역할로 전환해 시연하세요.{" "}
             <button type="button" className="font-bold text-theme-ink underline" onClick={() => setPrefs({ role: "partner" })} data-testid="switch-to-partner">
               발주처 역할로 전환
@@ -212,7 +212,7 @@ function RequestForm({ siteId, disabled }: { siteId: string; disabled: boolean }
           {disabled && <Notice tone="info">미리보기 모드에서는 요청을 등록할 수 없습니다. 위의 ‘발주처 역할로 전환’을 누르세요.</Notice>}
           <Field label="요청 유형" htmlFor="p-type">
             <select id="p-type" className={inputCls} value={type} onChange={(e) => setType(e.target.value as PartnerRequest["type"])} disabled={disabled}>
-              <option value="change_review">변경공사 검토 요청</option>
+              <option value="change_review">설계변경 지시·변경견적 요청</option>
               <option value="schedule">일정 문의</option>
               <option value="other">기타</option>
             </select>
@@ -232,8 +232,8 @@ function RequestForm({ siteId, disabled }: { siteId: string; disabled: boolean }
               disabled={disabled}
               onClick={() => {
                 setType("change_review");
-                setTitle("3층 남측 커튼월 유리 사양 변경 검토 요청");
-                setDesc("3층 남측 회의실 구간 유리를 삼중유리로 변경하는 범위와 일정·비용 영향을 검토해주세요. (DEMO 요청)");
+                setTitle("3층 남측 커튼월 유리 사양 변경 — 작업지시 및 변경견적 요청");
+                setDesc("건축주 지시로 3층 남측 회의실 구간 유리를 삼중 로이유리로 변경합니다. 서면 작업지시로 남기며, 변경 범위·일정·변경견적을 회신해주세요. (DEMO 요청)");
               }}
               className="press rounded-lg bg-[#FFF7D6] px-2 py-1 text-[0.75rem] font-bold text-[#7A5200] disabled:opacity-50"
               data-testid="partner-fill"

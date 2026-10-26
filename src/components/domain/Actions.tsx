@@ -58,7 +58,7 @@ export function AssignModal({ db, signal, open, onClose }: { db: DemoDB; signal:
       open={open}
       onClose={onClose}
       title="조치 생성 · 담당자 배정"
-      description="규칙 기반 추천을 사람이 확인·승인해 조치로 만듭니다 (L3: 사람 승인)."
+      description="규칙 기반 추천을 사람이 확인·승인해 조치로 만듭니다."
       size="md"
       testId="assign-modal"
       footer={
@@ -135,14 +135,14 @@ export function CompleteModal({ db, action, open, onClose }: { db: DemoDB; actio
   const amount = Number(amountText.replace(/[^\d]/g, ""));
   const f = siteFinancials(db, action.siteId);
   const demoResult = isClaim
-    ? "발주처 사양 변경 지시 공문·현장 사진·추가 물량 산출서를 확보해 변경공사 청구 가능으로 판단. 청구서 초안 작성."
-    : "원인 확인 및 잔여 공정 원가 재검토 완료. 대체 견적 2건 비교.";
+    ? "원청에 서면 작업지시서 요청·수령, 회의록·변경 구간 사진·물량 산출서 정리 → 청구 가능 판단. 본사 공무에 내역단가 기준 변경견적 작성 요청."
+    : "원인 확인 완료. 설계변경분은 변경공사 청구로 분리하고, 잔여 발주 단가·물량 재확인.";
   return (
     <Modal
       open={open}
       onClose={onClose}
       title="조치 완료 · 결과 입력"
-      description="완료하면 조치 결과와 전·후 지표가 Proof Event로 기록됩니다."
+      description="완료하면 조치 결과와 전·후 지표가 조치 증빙 기록(Proof Event)으로 남습니다."
       size="md"
       testId="complete-modal"
       footer={
@@ -155,7 +155,7 @@ export function CompleteModal({ db, action, open, onClose }: { db: DemoDB; actio
             onClick={() => {
               try {
                 const r = dispatch((d, ctx) => completeAction(d, action.id, { result, claimAmount: register ? amount : undefined, registerChangeOrder: register, confirm, idempotencyKey: key }, ctx));
-                toast.push({ tone: "ok", title: "조치 완료 · Proof Event 기록", desc: r.changeOrderId ? `변경공사 청구 검토 ${fmtMan(amount)} 등록 (발주처 승인 전 · 이익 미반영)` : "실증 Evidence에서 확인할 수 있습니다." });
+                toast.push({ tone: "ok", title: "조치 완료 · Proof Event 기록", desc: r.changeOrderId ? `변경공사 청구 검토 ${fmtMan(amount)} 등록 (원청 승인 전 · 이익 미반영)` : "실증 Evidence에서 확인할 수 있습니다." });
                 onClose();
               } catch (e) {
                 setErr(e instanceof CommandError ? e.message : "완료 처리 실패");
@@ -183,12 +183,12 @@ export function CompleteModal({ db, action, open, onClose }: { db: DemoDB; actio
               <input type="checkbox" checked={register} onChange={(e) => setRegister(e.target.checked)} className="mt-1 size-4 accent-[var(--t-active)]" />
               <span>
                 <b>변경공사 청구 검토 건으로 등록</b>
-                <span className="block text-[0.75rem] text-ink-3">‘청구 검토 중’ 상태로 등록되며, 발주처 승인 전까지 계약금액·예상이익에 반영되지 않습니다.</span>
+                <span className="block text-[0.75rem] text-ink-3">본사 공무가 변경견적을 작성하는 ‘청구 검토 중’ 건으로 등록됩니다. 원청(발주처) 승인 전까지 계약금액·예상이익에 반영되지 않습니다.</span>
               </span>
             </label>
             {register && (
               <div className="mt-2.5">
-                <Field label="청구 검토 금액 (원)" htmlFor="c-amt" hint={amount ? `= ${fmtMan(amount)} · 원인 원가 합계 ${fmtMan(causeSum)}` : undefined}>
+                <Field label="청구 검토 금액 — 직접비 기준 (원)" htmlFor="c-amt" hint={amount ? `= ${fmtMan(amount)} · 원인 원가 합계 ${fmtMan(causeSum)} · 실제 변경견적은 계약 내역단가 + 제경비·이윤으로 공무가 작성` : undefined}>
                   <input id="c-amt" inputMode="numeric" className={cx(inputCls, "num text-right")} value={amountText} onChange={(e) => setAmountText(e.target.value.replace(/[^\d]/g, "") ? Number(e.target.value.replace(/[^\d]/g, "")).toLocaleString("ko-KR") : "")} />
                 </Field>
                 {amount > 0 && (
@@ -238,7 +238,7 @@ export function ActionCard({ db, action, compact = false }: { db: DemoDB; action
   };
 
   return (
-    <article className="rounded-2xl border border-line bg-surface p-4 shadow-card" data-testid="action-card" data-status={action.status}>
+    <article className="rounded-2xl border border-line bg-surface p-4 shadow-card" data-testid="action-card" data-status={action.status} data-action-id={action.id}>
       <div className="flex flex-wrap items-center gap-1.5 text-[0.74rem] text-ink-3">
         <b className="text-ink-2">{site?.shortName}</b>
         <span>{RULE_LABEL[action.rule]}</span>

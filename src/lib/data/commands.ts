@@ -406,6 +406,13 @@ export interface CompleteActionInput {
   idempotencyKey?: string;
 }
 
+/** 변경공사 청구 건 이름: 조치 이름이 아니라 공사 범위로 (예: 설계변경 추가공사 — 변경 구간 유리 차액…) */
+function changeOrderTitle(db: DemoDB, a: ActionItem): string {
+  if (a.rule !== "UNBILLED_CHANGE") return `${a.title} — 청구 검토분`;
+  const note = db.costEntries.find((e) => a.causeEntryIds.includes(e.id) && e.note.trim())?.note.replace(/\s*\(개략\)\s*$/, "").trim();
+  return `설계변경 추가공사${note ? ` — ${note}` : ""}`;
+}
+
 export function completeAction(db0: DemoDB, actionId: string, input: CompleteActionInput, ctx: Ctx) {
   const db = clone(db0);
   claimKey(db, input.idempotencyKey);
@@ -422,13 +429,13 @@ export function completeAction(db0: DemoDB, actionId: string, input: CompleteAct
     const co: ChangeOrder = {
       id: uid("co"),
       siteId: a.siteId,
-      title: `${a.title} — 청구 검토분`,
+      title: changeOrderTitle(db, a),
       amount: input.claimAmount,
       status: "review",
       requestedAt: at,
       sourceEntryIds: a.causeEntryIds,
       sourceActionId: a.id,
-      note: "조치 결과로 등록된 변경공사 청구 검토 건 — 발주처 승인 전까지 계약·이익 미반영",
+      note: "조치 결과로 등록된 변경공사 청구 검토 건 (직접비 기준) — 원청(발주처) 승인 전까지 계약·이익 미반영",
     };
     db.changeOrders.push(co);
     coId = co.id;
@@ -599,7 +606,7 @@ export function setChangeOrderStatus(db0: DemoDB, coId: string, status: ChangeOr
     ctx,
     "change_order",
     status === "approved"
-      ? `${site.shortName} 변경공사 승인 ${fmtMan(co.approvedAmount ?? 0)} → 조정 계약 ${fmtEok(before.adjustedContract)} → ${fmtEok(after.adjustedContract)}, 이익률 ${fmtPct(before.marginPct)} → ${fmtPct(after.marginPct)}`
+      ? `${site.shortName} 변경공사 승인 ${fmtMan(co.approvedAmount ?? 0)} → 변경 반영 계약 ${fmtEok(before.adjustedContract)} → ${fmtEok(after.adjustedContract)}, 이익률 ${fmtPct(before.marginPct)} → ${fmtPct(after.marginPct)}`
       : `${site.shortName} 변경공사 ${status === "submitted" ? "발주처 청구" : "반려"}: ${co.title}`,
     co.siteId,
     "/finance",

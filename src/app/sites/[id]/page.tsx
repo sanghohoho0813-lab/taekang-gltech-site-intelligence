@@ -101,7 +101,7 @@ export default function SiteDetailPage() {
             <div className="flex items-center gap-4">
               <Donut value={site.progressPct} label="공정률" size={112} stroke={12} />
               <dl className="min-w-0 flex-1">
-                <KeyValue k="발주처" v={<span className="text-[0.82rem]">{site.clientName}</span>} />
+                <KeyValue k="원청·발주처" v={<span className="text-[0.82rem]">{site.clientName}</span>} />
                 <KeyValue k="현장 담당" v={<span className="text-[0.82rem]">{userLabel(db, site.fieldUserId)}</span>} />
                 {canSeeMoney && <KeyValue k="원가 진척률" v={fmtPct(f.costProgressPct)} />}
               </dl>
@@ -207,7 +207,7 @@ function ProfitEngine({ db, site, f }: { db: DemoDB; site: Site; f: SiteFinancia
   return (
     <Card className="flex h-full flex-col" data-tour="profit-engine" data-testid="profit-engine">
       <CardHeader
-        title="현장 손익 엔진"
+        title="현장 손익 (자동 계산)"
         sub="원가 이벤트 합산 → 총예상원가(EAC) → 예상이익 자동 재계산 · 단위 원, 부가세 별도"
         right={
           <button type="button" onClick={() => setDef(true)} className="press inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[0.78rem] font-bold text-ink-2 hover:bg-surface-3">
@@ -216,7 +216,7 @@ function ProfitEngine({ db, site, f }: { db: DemoDB; site: Site; f: SiteFinancia
         }
       />
       <div className="grid grid-cols-2 gap-3 px-5 @min-[900px]:grid-cols-4">
-        <Metric label="조정 계약금액" value={<CountUp value={f.adjustedContract} format={(v) => fmtEok(v)} />} sub={f.approvedChange ? `승인 변경 +${fmtMan(f.approvedChange)}` : "승인 변경 없음"} testId="m-contract" />
+        <Metric label="변경 반영 계약금액" value={<CountUp value={f.adjustedContract} format={(v) => fmtEok(v)} />} sub={f.approvedChange ? `승인 변경 +${fmtMan(f.approvedChange)}` : "승인 변경 없음"} testId="m-contract" />
         <Metric label="총예상원가 (EAC)" value={<CountUp value={f.eac} format={(v) => fmtEok(v)} />} sub={`발생 ${fmtEok(f.incurred)} + 잔여 ${fmtEok(f.remaining)}`} testId="m-eac" />
         <Metric
           label="예상이익"
@@ -236,7 +236,7 @@ function ProfitEngine({ db, site, f }: { db: DemoDB; site: Site; f: SiteFinancia
       <div className="px-5 pt-4">
         <ProfitStack incurred={f.incurred} remaining={f.remaining} profit={f.expectedProfit} contract={f.adjustedContract} />
         <p className="mt-2 rounded-lg bg-surface-2 px-3 py-2 text-[0.76rem] text-ink-2 num">
-          EAC <b>{fmtEok(f.eac)}</b> = 발생원가 {fmtEok(f.incurred)} + 잔여예상원가 {fmtEok(f.remaining)} · 예상이익 <b>{fmtEok(f.expectedProfit)}</b> = 조정 계약 {fmtEok(f.adjustedContract)} − EAC · 이익률 = 예상이익 ÷ 조정 계약
+          EAC <b>{fmtEok(f.eac)}</b> = 발생원가 {fmtEok(f.incurred)} + 잔여예상원가 {fmtEok(f.remaining)} · 예상이익 <b>{fmtEok(f.expectedProfit)}</b> = 변경 반영 계약 {fmtEok(f.adjustedContract)} − EAC · 이익률 = 예상이익 ÷ 변경 반영 계약
         </p>
       </div>
       <div className="px-5 pt-4">
@@ -279,8 +279,8 @@ function ProfitEngine({ db, site, f }: { db: DemoDB; site: Site; f: SiteFinancia
             ["발생원가", "지금까지 실제로 발생·집행된 원가의 합계 (유효한 원가 이벤트만, 무효 처리 제외)."],
             ["잔여예상원가", "완료까지 앞으로 들어갈 것으로 예상하는 원가. ‘계획 내 집행’ 원가가 들어오면 그만큼 줄어듭니다."],
             ["총예상원가 (EAC)", "Estimate At Completion. 발생원가 + 잔여예상원가. ‘예상 외 추가원가’는 EAC를 늘리고, ‘계획 내 집행’은 EAC를 바꾸지 않습니다 (중복 계산 금지)."],
-            ["조정 계약금액", "원 계약금액 + 발주처가 승인한 변경계약 금액. 청구 검토·승인 대기 금액은 포함하지 않습니다."],
-            ["예상이익 / 이익률", "조정 계약금액 − EAC, 이를 조정 계약금액으로 나눈 비율. 매출·입금액과는 다른 개념입니다."],
+            ["변경 반영 계약금액", "원 계약금액 + 원청·발주처가 승인한 변경계약 금액. 청구 검토·승인 대기 금액은 포함하지 않습니다."],
+            ["예상이익 / 이익률", "변경 반영 계약금액 − EAC, 이를 변경 반영 계약금액으로 나눈 비율. 매출·입금액과는 다른 개념입니다."],
             ["계획 이익률", "계약 시점의 실행예산 기준 이익률 (계약금액 − 실행예산) ÷ 계약금액."],
           ].map(([k, v]) => (
             <div key={k}>
@@ -511,7 +511,7 @@ function ContractTab({ db, site, f }: { db: DemoDB; site: Site; f: SiteFinancial
         <dl className="px-5 pb-4">
           <KeyValue k="원 계약금액" v={fmtWonEok(contract.contractAmount)} />
           <KeyValue k="승인된 변경계약" v={fmtWonEok(f.approvedChange)} />
-          <KeyValue k="조정 계약금액" v={fmtWonEok(f.adjustedContract)} />
+          <KeyValue k="변경 반영 계약금액" v={fmtWonEok(f.adjustedContract)} />
           <KeyValue k="실행예산 (계획 원가)" v={fmtWonEok(contract.plannedCostTotal)} />
           <KeyValue k="계획 이익률" v={fmtPct(f.plannedMarginPct)} />
           <KeyValue k="계약일" v={fmtDate(contract.signedDate)} />
