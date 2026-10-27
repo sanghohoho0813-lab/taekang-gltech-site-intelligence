@@ -111,10 +111,11 @@ export function DemoBar({ active }: { active: boolean }) {
         </label>
         <button
           type="button"
-          onClick={() => (tour.active ? tour.stop() : router.push("/presentation"))}
+          onClick={() => (tour.active ? tour.stop() : tour.start("presentation"))}
+          data-testid="demo-tour"
           className="press inline-flex h-[1.85rem] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 font-semibold text-white/85 hover:bg-white/10"
         >
-          <Presentation size={15} aria-hidden /> {tour.active ? "시연 종료" : "시연 모드"}
+          <Presentation size={15} aria-hidden /> {tour.active ? "시연 종료" : "시연 시작"}
         </button>
         <button
           type="button"

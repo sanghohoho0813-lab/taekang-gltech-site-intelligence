@@ -141,7 +141,7 @@ test("되돌리기: 보고 등록 후 되돌리면 손익 원복 / 튜토리얼 
   await expect(page).toHaveURL(/\/dashboard$/);
 });
 
-test("시연 모드: 처음부터 PC+Mobile, 단계마다 휴대폰 화면이 바뀌고 실제 입력이 반영됨", async ({ page }) => {
+test("시연 모드: 처음부터 PC+Mobile, 안내 바 버튼만으로 끝까지 진행 (타자 없음)", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await freshStart(page); // PC 모드에서 시작해도 시연은 PC+Mobile로 진행
   await page.goto("/presentation");
@@ -149,6 +149,12 @@ test("시연 모드: 처음부터 PC+Mobile, 단계마다 휴대폰 화면이 �
   const frame = page.frameLocator('[data-testid="device-frame"]');
   const panel = page.getByTestId("tour-panel");
   const next = () => page.getByTestId("tour-next").click();
+  const act = async (key: string) => {
+    const b = page.getByTestId("tour-action");
+    await expect(b).toHaveAttribute("data-action", key);
+    await b.click();
+    await expect(page.getByTestId("tour-action").and(page.locator(`[data-action="${key}"]`))).toHaveCount(0, { timeout: 15000 });
+  };
 
   // ① 대표 대시보드 — 대표 휴대폰에 같은 대시보드
   await expect(page).toHaveURL(/\/dashboard$/);
@@ -156,19 +162,18 @@ test("시연 모드: 처음부터 PC+Mobile, 단계마다 휴대폰 화면이 �
   await expect(panel).toHaveAttribute("data-layout", "dock");
   await expect(frame.getByTestId("kpi-strip")).toContainText("30.7억");
 
-  // ② A현장 — 대표 휴대폰에도 손익 엔진
+  // ② A현장 — 대표 휴대폰에도 손익
   await next();
   await expect(page).toHaveURL(/\/sites\/site-a$/);
   await expect(frame.getByTestId("m-eac")).toContainText("8.5억 원");
 
-  // ③ 현장소장 휴대폰 — 입력 창이 열리고, 저장은 사람이 직접
+  // ③ 현장소장 휴대폰 — 버튼 2번 (비용 입력 → 보고 등록)
   await next();
   await expect(frame.getByTestId("report-sheet")).toBeVisible();
   await expect(frame.getByTestId("m-eac")).toHaveCount(0); // 현장직원 화면에는 손익 없음
-  await expect(page.getByTestId("tour-live")).toHaveAttribute("data-state", "waiting");
-  await frame.getByTestId("fill-demo").click();
-  await frame.getByTestId("submit-report").click();
-  await expect(page.getByTestId("tour-live")).toHaveAttribute("data-state", "done");
+  await act("fill");
+  await act("submit");
+  await expect(page.getByTestId("tour-live")).toContainText("+4,000만 원");
 
   // ④ 대표 PC·휴대폰 동시 재계산
   await next();
@@ -178,26 +183,18 @@ test("시연 모드: 처음부터 PC+Mobile, 단계마다 휴대폰 화면이 �
   await expect(page.getByTestId("m-eac")).toContainText("8.9억 원");
   await expect(page.getByTestId("tour-live")).toContainText("8.5억 → 8.9억");
 
-  // ⑤ 본사 공무과장 배정 → 현장소장 휴대폰에서 진행·완료 → 본사 결과 확인
+  // ⑤ 본사 공무과장 배정 → 현장소장 휴대폰 진행·완료 → 본사 결과 확인 (버튼 4번)
   await next();
   await expect(page).toHaveURL(/\/insights$/);
   await expect(page.getByTestId("demo-role")).toHaveValue("manager");
-  await expect(frame.getByRole("heading", { name: "내 조치" })).toBeVisible();
-  await page.getByTestId("signal-board").locator('[data-rule="UNBILLED_CHANGE"]').getByTestId("create-action").click();
-  await page.getByTestId("assign-confirm").click();
-  const phoneCard = frame.getByTestId("action-card").filter({ hasText: "추가공사 청구가능성 검토" });
-  await expect(phoneCard).toBeVisible();
-  await expect(page.getByTestId("tour-live")).toHaveAttribute("data-stage", "assigned");
-  await phoneCard.getByTestId("action-start").click();
-  await expect(page.getByTestId("tour-live")).toHaveAttribute("data-stage", "in_progress");
-  await phoneCard.getByTestId("action-complete").click();
-  await frame.getByTestId("fill-result").click();
-  await frame.getByTestId("complete-confirm").click();
-  await expect(page.getByTestId("tour-live")).toHaveAttribute("data-stage", "done");
+  await act("assign");
+  await expect(frame.getByTestId("action-card").filter({ hasText: "추가공사 청구가능성 검토" })).toBeVisible();
+  await act("start");
+  await act("complete");
   const pcCard = page.getByTestId("action-board").getByTestId("action-card").filter({ hasText: "추가공사 청구가능성 검토" });
   await expect(pcCard).toHaveClass(/tour-target/); // 결과 확인할 카드로 이동·강조
-  await pcCard.getByTestId("proof-confirm").click();
-  await expect(page.getByTestId("tour-live")).toHaveAttribute("data-stage", "confirmed");
+  await act("confirm");
+  await expect(page.getByTestId("tour-live")).toContainText("결과 확인 완료");
 
   // 안내 접기·펼치기
   await page.getByTestId("tour-collapse").click();
@@ -211,9 +208,16 @@ test("시연 모드: 처음부터 PC+Mobile, 단계마다 휴대폰 화면이 �
   await expect(frame.getByTestId("report-summary")).toContainText("3.56억");
   await expect(page.getByTestId("report-actions")).toContainText("청구 검토 0원 → 4,000만 원");
 
-  await page.getByTestId("tour-exit").click();
+  // 시연 종료 → 다시 시작하면 이전 시연 데이터와 관계없이 처음 상태
+  await page.getByTestId("demo-tour").click();
   await expect(panel).toHaveCount(0);
   await expect(page.getByTestId("mobile-persona")).toHaveValue("same");
+  await page.getByTestId("demo-tour").click();
+  await expect(page).toHaveURL(/\/dashboard$/);
+  await expect(page.getByTestId("kpi-strip")).toContainText("3.96억");
+  await expect(page.getByTestId("tour-panel")).toHaveAttribute("aria-label", /1\/6/);
+  const left = await page.evaluate(() => JSON.parse(localStorage.getItem("tk-site-intel:db:v1") || "{}").actions.filter((a: { siteId: string }) => a.siteId === "site-a").length);
+  expect(left).toBe(0);
 });
 
 test("첫 방문·이전 버전 설정: 넓은 화면은 PC+Mobile로 시작", async ({ page }) => {

@@ -6,8 +6,9 @@
  */
 import { usePathname, useRouter } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ChevronLeft, ChevronRight, X, Presentation, Minus, Maximize2, Monitor, Smartphone, CircleCheck, Hourglass } from "lucide-react";
-import { getPrefs, setPrefs, useDb, usePrefs, type DeviceView } from "@/lib/data/store";
+import { ChevronLeft, ChevronRight, X, Presentation, Minus, Maximize2, CircleCheck, Hourglass, MousePointerClick, Loader2 } from "lucide-react";
+import { getPrefs, resetDemo, setPrefs, useDb, usePrefs, type DeviceView } from "@/lib/data/store";
+import { useToast } from "@/components/ui/Toast";
 import type { RoleId } from "@/lib/domain/types";
 import { siteFinancials } from "@/lib/domain/calc";
 import { fmtEok, fmtMan, fmtPct, fmtPp } from "@/lib/domain/format";
@@ -22,13 +23,15 @@ export interface TourStep {
   device?: DeviceView;
   persona?: "same" | RoleId;
   role?: RoleId;
-  /** PC+Mobile에서 각 화면이 무엇을 보여주는지 (시연자·참석자 안내용) */
+  /** 시연 페이지 목록에 표시: 각 화면이 무엇을 보여주는지 */
   pc?: string;
   mobile?: string;
-  /** 모바일 Frame 화면 명령 (입력 시트 열기/닫기 — 저장은 사람이 직접) */
+  /** 모바일 Frame 화면 명령 (입력 시트 열기/닫기) */
   frameCmd?: FrameCmd;
-  /** 실제 데이터로 계산한 진행 상태를 안내 패널에 표시 */
-  live?: "report-status" | "profit-delta" | "action-status";
+  /** 실제 데이터로 계산한 결과를 안내 바에 한 줄로 표시 */
+  live?: "profit-delta";
+  /** 안내 바의 원클릭 실행 버튼 흐름 (화면의 실제 버튼을 순서대로 눌러 준다) */
+  flow?: "report" | "action";
 }
 
 export type TourId = "presentation" | "tutorial";
@@ -38,7 +41,7 @@ const DEMO_SITE = "site-a";
 
 export const TOURS: Record<TourId, { name: string; steps: TourStep[] }> = {
   presentation: {
-    name: "대표자 시연 (3~4분)",
+    name: "대표자 시연",
     steps: [
       {
         route: "/dashboard",
@@ -47,9 +50,9 @@ export const TOURS: Record<TourId, { name: string; steps: TourStep[] }> = {
         persona: "same",
         role: "ceo",
         pc: "대표 대시보드",
-        mobile: "대표 휴대폰 · 같은 대시보드",
-        title: "① 대표 대시보드 — PC와 휴대폰, 같은 숫자",
-        body: "가상 현장 3곳의 계약·예상이익·미수금·위험을 한 화면에서 봅니다. 오른쪽은 스크린샷이 아니라 같은 앱을 대표님 휴대폰(390px)으로 연 화면입니다.",
+        mobile: "대표 휴대폰",
+        title: "① 대표 대시보드",
+        body: "PC와 대표님 휴대폰에 같은 숫자가 보입니다.",
       },
       {
         route: `/sites/${DEMO_SITE}`,
@@ -57,9 +60,9 @@ export const TOURS: Record<TourId, { name: string; steps: TourStep[] }> = {
         device: "dual",
         persona: "same",
         pc: "A현장 손익",
-        mobile: "대표 휴대폰 · A현장 손익",
-        title: "② A현장 손익 — 끝날 때 얼마 남나",
-        body: "계약 10억 · 총예상원가(EAC) 8.5억(발생 5.1억 + 잔여 3.4억) → 예상이익 1.5억 · 15%. 계산식이 그대로 보이고, 휴대폰에서도 손익이 맨 위에 있습니다.",
+        mobile: "대표 휴대폰",
+        title: "② A현장 손익",
+        body: "계약 10억 · 예상원가 8.5억 → 예상이익 1.5억 (15%)",
       },
       {
         route: `/sites/${DEMO_SITE}`,
@@ -67,11 +70,11 @@ export const TOURS: Record<TourId, { name: string; steps: TourStep[] }> = {
         device: "dual",
         persona: "field",
         frameCmd: "open-report",
-        live: "report-status",
-        pc: "A현장 손익 (입력 전)",
-        mobile: "현장소장 휴대폰 · 현장 보고 입력",
-        title: "③ 현장소장 휴대폰 — 원가 입력",
-        body: "휴대폰이 현장소장 화면으로 바뀌고 입력 창이 열립니다. ‘데모 값 채우기’(자재 3,000만 + 노무 1,000만) → ‘보고 등록’을 직접 누르세요. 현장 화면에는 이익률이 없습니다.",
+        flow: "report",
+        pc: "A현장 손익",
+        mobile: "현장소장 휴대폰 · 비용 입력",
+        title: "③ 현장소장 휴대폰 — 비용 입력",
+        body: "설계변경 추가 비용 4,000만 원을 휴대폰으로 보고합니다.",
       },
       {
         route: `/sites/${DEMO_SITE}`,
@@ -82,8 +85,8 @@ export const TOURS: Record<TourId, { name: string; steps: TourStep[] }> = {
         live: "profit-delta",
         pc: "A현장 손익 (재계산)",
         mobile: "대표 휴대폰 · 바뀐 손익",
-        title: "④ 저장 즉시 — 대표 PC와 휴대폰이 함께 재계산",
-        body: "현장에서 저장한 원가가 같은 데이터로 합산되어 대표님 PC와 휴대폰의 손익이 동시에 바뀝니다. 바꿔 넣은 숫자가 아니라 다시 계산한 결과입니다.",
+        title: "④ PC·휴대폰 손익 동시 재계산",
+        body: "저장 즉시 같은 데이터로 다시 계산됩니다.",
       },
       {
         route: "/insights",
@@ -91,11 +94,11 @@ export const TOURS: Record<TourId, { name: string; steps: TourStep[] }> = {
         device: "dual",
         persona: "field",
         role: "manager",
-        live: "action-status",
-        pc: "위험 분석·조치 (본사 공무과장)",
+        flow: "action",
+        pc: "위험·조치 (본사 공무과장)",
         mobile: "현장소장 휴대폰 · 내 조치",
         title: "⑤ 본사 배정 → 현장 처리 → 본사 확인",
-        body: "PC는 본사 공무과장 화면입니다. ‘설계변경’ 카드의 ‘조치 생성·배정’ → 현장소장 휴대폰 ‘내 조치’에 바로 표시 → 휴대폰에서 ‘진행 시작’·‘완료 처리’ → PC에서 ‘결과 확인’. 대표님은 결과만 보고서로 받습니다.",
+        body: "위험이 감지되면 본사가 배정하고, 소장이 휴대폰으로 처리합니다.",
       },
       {
         route: "/report",
@@ -104,9 +107,9 @@ export const TOURS: Record<TourId, { name: string; steps: TourStep[] }> = {
         persona: "same",
         role: "ceo",
         pc: "대표자 보고서",
-        mobile: "대표 휴대폰 · 같은 보고서",
-        title: "⑥ 대표자 보고서 — 자동 요약",
-        body: "변경 전후 손익, 원인이 된 현장 보고, 위험, 조치, Proof Event가 자동 정리되고 휴대폰에서도 같은 보고서를 봅니다. 끝나면 상단 ‘데모 초기화’.",
+        mobile: "대표 휴대폰",
+        title: "⑥ 대표자 보고서",
+        body: "변경 전후 손익과 조치 결과가 자동 정리됩니다.",
       },
     ],
   },
@@ -139,6 +142,7 @@ const SS_KEY = "tk-site-intel:tour";
 export function TourProvider({ children }: { children: ReactNode }) {
   const [tourId, setTourId] = useState<TourId | null>(null);
   const [step, setStep] = useState(0);
+  const toast = useToast();
 
   useEffect(() => {
     try {
@@ -166,7 +170,7 @@ export function TourProvider({ children }: { children: ReactNode }) {
   const stop = useCallback(() => {
     setTourId((id) => {
       if (id === "tutorial") setPrefs({ tutorialDone: true });
-      // 시연 종료 시 모바일 화면 역할을 기본값(PC와 동일)으로 되돌린다
+      // 시연 종료 시 대표자 화면 · 휴대폰 'PC와 동일'로 되돌린다
       if (id === "presentation") {
         const p = getPrefs();
         if (p.mobilePersona !== "same" || p.role !== "ceo") setPrefs({ mobilePersona: "same", role: "ceo" });
@@ -181,6 +185,13 @@ export function TourProvider({ children }: { children: ReactNode }) {
       tourId,
       step,
       start: (id) => {
+        // 시연을 켤 때마다 이전 시연 데이터와 관계없이 처음 상태에서 시작
+        if (id === "presentation") {
+          resetDemo();
+          clearDrafts();
+          setPrefs({ role: "ceo", mobilePersona: "same" });
+          toast.push({ tone: "ok", title: "처음 상태로 초기화하고 시연을 시작합니다", desc: "A현장 10억 · 8.5억 · 1.5억 · 15%" });
+        }
         setTourId(id);
         setStep(0);
       },
@@ -192,9 +203,23 @@ export function TourProvider({ children }: { children: ReactNode }) {
       },
       back: () => setStep((s) => Math.max(0, s - 1)),
     }),
-    [tourId, step, stop],
+    [tourId, step, stop, toast],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+}
+
+/** 현장 보고 임시저장도 함께 지운다 (이전 시연에서 남은 입력값이 다시 뜨지 않게) */
+function clearDrafts() {
+  try {
+    const keys: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k?.startsWith("tk-site-intel:draft:")) keys.push(k);
+    }
+    keys.forEach((k) => localStorage.removeItem(k));
+  } catch {
+    // 무시
+  }
 }
 
 function useIsDesktop() {
@@ -212,6 +237,117 @@ function useIsDesktop() {
   return v;
 }
 
+/* ── 원클릭 실행: 안내 바의 버튼이 화면의 '실제 버튼'을 순서대로 눌러 준다 (같은 데이터 경로 · 직접 눌러도 됨) ── */
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const frameDoc = () => document.querySelector<HTMLIFrameElement>('[data-testid="device-frame"]')?.contentDocument ?? null;
+async function clickWhen(find: () => HTMLElement | null, timeout = 4000): Promise<boolean> {
+  const t0 = Date.now();
+  while (Date.now() - t0 < timeout) {
+    const el = find();
+    if (el && !(el as HTMLButtonElement).disabled) {
+      el.scrollIntoView({ block: "center", behavior: "smooth" });
+      await sleep(350);
+      el.click();
+      return true;
+    }
+    await sleep(120);
+  }
+  return false;
+}
+const inFrame = (sel: string) => () => frameDoc()?.querySelector<HTMLElement>(sel) ?? null;
+const inPage = (sel: string) => () => document.querySelector<HTMLElement>(sel);
+
+interface FlowAction {
+  key: string;
+  label: string;
+  where: "PC" | "휴대폰";
+  run: () => Promise<boolean>;
+}
+interface FlowState {
+  actionId?: string;
+  stages?: { label: string; done: boolean }[];
+  action?: FlowAction;
+  doneText?: string;
+}
+
+/** 현재 데이터·화면 상태로 '다음에 누를 버튼' 결정 */
+function useFlow(flow: TourStep["flow"]): FlowState {
+  const db = useDb();
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (!flow) return;
+    const t = window.setInterval(() => setTick((x) => x + 1), 500);
+    return () => window.clearInterval(t);
+  }, [flow]);
+  void tick;
+  if (!flow || !db || !db.sites.some((x) => x.id === DEMO_SITE)) return {};
+  const base = db.baseline[DEMO_SITE];
+  const added = base ? siteFinancials(db, DEMO_SITE).eac - base.eac : 0;
+
+  if (flow === "report") {
+    if (Math.abs(added) >= 1) return { doneText: `휴대폰 보고 저장 완료 — A현장 예상원가 +${fmtMan(added)} 반영` };
+    const doc = frameDoc();
+    const filled = !!doc?.querySelector<HTMLTextAreaElement>("#f-work")?.value && !!doc?.querySelector("#c-amt-0");
+    if (filled) {
+      return { action: { key: "submit", label: "보고 등록", where: "휴대폰", run: () => clickWhen(inFrame('[data-testid="submit-report"]')) } };
+    }
+    return {
+      action: {
+        key: "fill",
+        label: "비용 입력 (데모 값)",
+        where: "휴대폰",
+        run: async () => {
+          if (!frameDoc()?.querySelector('[data-testid="fill-demo"]')) sendFrameCmd("open-report");
+          return clickWhen(inFrame('[data-testid="fill-demo"]'));
+        },
+      },
+    };
+  }
+
+  // action: 본사 배정 → 현장 진행 → 현장 완료 → 본사 확인
+  const a = db.actions.filter((x) => x.siteId === DEMO_SITE).sort((x, y) => y.createdAt.localeCompare(x.createdAt))[0];
+  const proof = a ? db.proofEvents.find((p) => p.proof_event_id === a.proofEventId) : undefined;
+  const lv = !a ? 0 : proof?.status === "confirmed" ? 4 : a.status === "done" ? 3 : a.status === "in_progress" ? 2 : 1;
+  const stages = ["본사 배정", "현장 진행", "현장 완료", "본사 확인"].map((label, i) => ({ label, done: lv > i }));
+  if (lv === 0) {
+    return {
+      stages,
+      action: {
+        key: "assign",
+        label: "조치 배정",
+        where: "PC",
+        run: async () => {
+          if (!(await clickWhen(inPage('[data-testid="signal-board"] [data-rule="UNBILLED_CHANGE"] [data-testid="create-action"]')))) return false;
+          await sleep(700);
+          return clickWhen(inPage('[data-testid="assign-confirm"]'));
+        },
+      },
+    };
+  }
+  const card = `[data-action-id="${a.id}"]`;
+  const actionId = a.id;
+  if (lv === 1) return { actionId, stages, action: { key: "start", label: "진행 시작", where: "휴대폰", run: () => clickWhen(inFrame(`${card} [data-testid="action-start"]`)) } };
+  if (lv === 2) {
+    return {
+      actionId,
+      stages,
+      action: {
+        key: "complete",
+        label: "완료 처리",
+        where: "휴대폰",
+        run: async () => {
+          if (!(await clickWhen(inFrame(`${card} [data-testid="action-complete"]`)))) return false;
+          if (!(await clickWhen(inFrame('[data-testid="fill-result"]')))) return false;
+          await sleep(700);
+          return clickWhen(inFrame('[data-testid="complete-confirm"]'));
+        },
+      },
+    };
+  }
+  if (lv === 3) return { actionId, stages, action: { key: "confirm", label: "결과 확인", where: "PC", run: () => clickWhen(inPage(`[data-testid="action-board"] ${card} [data-testid="proof-confirm"]`)) } };
+  return { actionId, stages, doneText: "결과 확인 완료 — 조치 기록이 보고서에 반영됩니다" };
+}
+
 /** 부모(최상위) 화면에서만 렌더링 — Frame 안에서는 생성하지 않는다 */
 export function TourLayer() {
   const { active, tourId, step, next, back, stop } = useTour();
@@ -222,7 +358,9 @@ export function TourLayer() {
   const highlighted = useRef<Element | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const [collapsed, setCollapsed] = useState(false);
+  const [running, setRunning] = useState(false);
   const s = tourId ? TOURS[tourId].steps[step] : null;
+  const flow = useFlow(s?.flow);
   // PC+Mobile: 안내는 PC 영역 하단 자막형 바 — 휴대폰 화면은 절대 가리지 않는다
   const dock = active && desktop && prefs.deviceView === "dual";
 
@@ -305,18 +443,38 @@ export function TourLayer() {
   const total = TOURS[tourId].steps.length;
   const label = `${TOURS[tourId].name} ${step + 1}/${total}`;
   const shortTitle = s.title.replace(/^[①-⑥]\s*/, "");
-  const nextBtn = (
-    <Button size="sm" variant="cta" onClick={next} data-testid="tour-next">
-      {step === total - 1 ? "완료" : "다음"} {step < total - 1 && <ChevronRight size={16} />}
+  const act = flow.action;
+  const runAct = async () => {
+    if (!act || running) return;
+    setRunning(true);
+    try {
+      await act.run();
+    } finally {
+      setRunning(false);
+    }
+  };
+  // 실행할 동작이 있으면 그 버튼이 주 버튼, 없으면 '다음'이 주 버튼
+  const primary = act ? (
+    <Button variant="cta" onClick={runAct} disabled={running} icon={running ? <Loader2 size={17} className="animate-spin" /> : <MousePointerClick size={17} />} data-testid="tour-action" data-action={act.key}>
+      <span className="text-[0.72rem] font-semibold opacity-85">{act.where}</span> {act.label}
+    </Button>
+  ) : (
+    <Button variant="cta" onClick={next} data-testid="tour-next">
+      {step === total - 1 ? (tourId === "presentation" ? "시연 끝" : "완료") : "다음"} {step < total - 1 && <ChevronRight size={17} />}
+    </Button>
+  );
+  const secondaryNext = act && (
+    <Button size="sm" variant="ghost" onClick={next} data-testid="tour-next">
+      다음 <ChevronRight size={15} />
     </Button>
   );
   const backBtn = (
-    <Button size="sm" onClick={back} disabled={step === 0} icon={<ChevronLeft size={16} />}>
+    <Button size="sm" variant="ghost" onClick={back} disabled={step === 0} icon={<ChevronLeft size={15} />}>
       이전
     </Button>
   );
   const progress = (
-    <div className="flex min-w-[6rem] flex-1 gap-1" aria-hidden>
+    <div className="flex w-24 shrink-0 gap-1" aria-hidden>
       {Array.from({ length: total }).map((_, i) => (
         <span key={i} className={`h-1.5 flex-1 rounded-full ${i <= step ? "bg-active" : "bg-surface-3"}`} />
       ))}
@@ -333,19 +491,28 @@ export function TourLayer() {
       <X size={18} />
     </button>
   );
-  const screens = (s.pc || s.mobile) && (
-    <span className="inline-flex flex-wrap gap-1.5 text-[0.72rem] font-semibold" data-testid="tour-screens">
-      {s.pc && (
-        <span className="inline-flex items-center gap-1 rounded-full bg-surface-3 px-2 py-0.5 text-ink-2">
-          <Monitor size={12} aria-hidden /> PC · {s.pc}
+  const status = (
+    <>
+      {flow.stages && (
+        <span className="flex flex-wrap items-center gap-1.5 text-[0.75rem] font-semibold" data-testid="tour-stages">
+          {flow.stages.map((g, i) => (
+            <span key={g.label} className="inline-flex items-center gap-1">
+              {i > 0 && <span className="text-ink-3">→</span>}
+              <span className={cx("inline-flex items-center gap-1 rounded-full px-2 py-0.5", g.done ? "bg-ok-bg text-ok" : "bg-surface-3 text-ink-3")}>
+                {g.done && <CircleCheck size={13} aria-hidden />} {g.label}
+              </span>
+            </span>
+          ))}
         </span>
       )}
-      {s.mobile && (
-        <span className="inline-flex items-center gap-1 rounded-full bg-active-soft px-2 py-0.5 text-theme-ink">
-          <Smartphone size={12} aria-hidden /> {s.mobile}
+      {flow.doneText && (
+        <span className="inline-flex items-center gap-1 rounded-lg bg-ok-bg px-2 py-0.5 text-[0.78rem] font-semibold text-ok" data-testid="tour-live" data-state="done" role="status">
+          <CircleCheck size={14} aria-hidden /> {flow.doneText}
         </span>
       )}
-    </span>
+      {s.live && <LiveStatus onBack={back} />}
+      {flow.action?.key === "confirm" && flow.actionId && <FocusActionCard actionId={flow.actionId} />}
+    </>
   );
   const common = { ref: panelRef, tabIndex: -1, role: "dialog", "aria-modal": false, "aria-label": label, "data-testid": "tour-panel" } as const;
 
@@ -362,33 +529,33 @@ export function TourLayer() {
           <div className="flex items-center gap-2 px-5 py-2.5">
             <Presentation size={15} className="shrink-0 text-theme-ink" aria-hidden />
             <span className="min-w-0 flex-1 truncate text-[0.82rem] font-bold text-ink">
-              시연 {step + 1}/{total} · {shortTitle}
+              {step + 1}/{total} · {shortTitle}
             </span>
             <Button size="sm" variant="ghost" onClick={() => setCollapsed(false)} icon={<Maximize2 size={15} />} data-testid="tour-expand">
               펼치기
             </Button>
-            {nextBtn}
+            {primary}
           </div>
         ) : (
-          <div className="px-5 pb-4 pt-3">
-            <div className="flex items-center gap-3">
-              <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-[0.75rem] font-bold text-theme-ink">
-                <Presentation size={15} aria-hidden /> 대표자 시연 · {step + 1}/{total}
-              </span>
-              <span className="max-w-[12rem] flex-1">{progress}</span>
-              <span className="ml-auto flex shrink-0 items-center gap-1.5">
-                {backBtn}
-                {nextBtn}
-                {collapseBtn}
-                {exitBtn}
-              </span>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3">
+            <div className="min-w-[19rem] flex-1">
+              <div className="flex items-center gap-2.5">
+                {progress}
+                <span className="shrink-0 text-[0.72rem] font-bold text-theme-ink">
+                  {step + 1}/{total}
+                </span>
+                <h2 className="min-w-0 text-[1.02rem] font-bold leading-snug text-ink">{shortTitle}</h2>
+              </div>
+              <p className="mt-1 text-[0.84rem] text-ink-2">{s.body}</p>
+              <div className="mt-1.5 flex flex-wrap items-center gap-2 empty:hidden">{status}</div>
             </div>
-            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
-              <h2 className="text-[1.02rem] font-bold text-ink">{s.title}</h2>
-              {screens}
+            <div className="ml-auto flex shrink-0 items-center gap-1">
+              {backBtn}
+              {secondaryNext}
+              {primary}
+              {collapseBtn}
+              {exitBtn}
             </div>
-            <p className="mt-1 text-[0.84rem] leading-relaxed text-ink-2">{s.body}</p>
-            {s.live && <LiveStatus kind={s.live} onBack={back} />}
           </div>
         )}
       </div>
@@ -406,134 +573,79 @@ export function TourLayer() {
         <Button size="sm" variant="ghost" onClick={() => setCollapsed(false)} icon={<Maximize2 size={15} />} data-testid="tour-expand">
           펼치기
         </Button>
-        {nextBtn}
+        {primary}
       </div>
     );
   }
   return (
-    <div {...common} className="no-print fixed bottom-[calc(5.6rem+env(safe-area-inset-bottom))] left-4 z-[90] max-h-[calc(100dvh-11rem)] w-[min(27rem,calc(100vw-2rem))] overflow-y-auto rounded-2xl border border-line bg-surface p-4 shadow-pop outline-none anim-pop lg:bottom-6 lg:left-[17.5rem]">
-      <div className="flex items-center justify-between gap-2">
-        <span className="inline-flex items-center gap-1.5 text-[0.75rem] font-bold text-theme-ink">
-          <Presentation size={15} aria-hidden /> {TOURS[tourId].name} · {step + 1}/{total}
+    <div {...common} className="no-print fixed bottom-[calc(5.6rem+env(safe-area-inset-bottom))] left-4 z-[90] max-h-[calc(100dvh-11rem)] w-[min(26rem,calc(100vw-2rem))] overflow-y-auto rounded-2xl border border-line bg-surface p-4 shadow-pop outline-none anim-pop lg:bottom-6 lg:left-[17.5rem]">
+      <div className="flex items-center gap-2">
+        {progress}
+        <span className="text-[0.72rem] font-bold text-theme-ink">
+          {step + 1}/{total}
         </span>
-        <span className="flex items-center gap-0.5">
+        <span className="ml-auto flex items-center gap-0.5">
           {collapseBtn}
           {exitBtn}
         </span>
       </div>
-      <div className="mt-2">{progress}</div>
-      <h2 className="mt-3 text-[1.02rem] font-bold text-ink">{s.title}</h2>
+      <h2 className="mt-2 text-[1.02rem] font-bold text-ink">{shortTitle}</h2>
       {!desktop && tourId === "presentation" && (
         <p className="mt-1.5 rounded-lg bg-info-bg px-2.5 py-1.5 text-[0.75rem] font-semibold text-info" data-testid="tour-small-note">
-          이 화면 폭에서는 PC 화면만 안내합니다. PC와 휴대폰을 나란히 보려면 노트북(1280px 이상)에서 진행하세요.
+          PC와 휴대폰을 나란히 보려면 노트북(1280px 이상)에서 진행하세요.
         </p>
       )}
-      <p className="mt-1.5 text-[0.86rem] leading-relaxed text-ink-2">{s.body}</p>
-      {s.live && <LiveStatus kind={s.live} onBack={back} />}
-      <div className="mt-4 flex items-center justify-between gap-2">
-        <Button size="sm" variant="ghost" onClick={stop}>
-          건너뛰기
-        </Button>
-        <div className="flex gap-2">
-          {backBtn}
-          {nextBtn}
+      <p className="mt-1 text-[0.86rem] text-ink-2">{s.body}</p>
+      <div className="mt-2 flex flex-wrap items-center gap-2 empty:hidden">{status}</div>
+      <div className="mt-3 flex items-center justify-between gap-2">
+        {backBtn}
+        <div className="flex items-center gap-1.5">
+          {secondaryNext}
+          {primary}
         </div>
       </div>
     </div>
   );
 }
 
-/** 안내 패널의 진행 상태 — 고정 문구가 아니라 저장된 데이터로 매번 계산 */
-function LiveStatus({ kind, onBack }: { kind: NonNullable<TourStep["live"]>; onBack: () => void }) {
+/** ④ 시연 시작 대비 변화 — 저장된 데이터로 계산 (입력 전이면 숫자를 보여주지 않음) */
+function LiveStatus({ onBack }: { onBack: () => void }) {
   const db = useDb();
   if (!db || !db.sites.some((x) => x.id === DEMO_SITE)) return null;
   const base = db.baseline[DEMO_SITE];
+  if (!base) return null;
   const f = siteFinancials(db, DEMO_SITE);
-  const added = base ? f.eac - base.eac : 0;
-  const changed = Math.abs(added) >= 1;
-
-  if (kind === "report-status") {
-    return changed ? (
-      <Live ok testId="tour-live">
-        등록 완료 — A현장 총예상원가 {added > 0 ? "+" : "−"}
-        {fmtMan(Math.abs(added))} 반영. ‘다음’에서 대표 PC·휴대폰 변화를 봅니다.
-      </Live>
-    ) : (
-      <Live testId="tour-live">모바일 입력 대기 중 — 휴대폰에서 ‘보고 등록’을 누르면 여기에 표시됩니다.</Live>
-    );
-  }
-
-  if (kind === "profit-delta") {
-    if (!base) return null;
-    if (!changed) {
-      return (
-        <Live testId="tour-live">
-          아직 반영된 입력이 없습니다.{" "}
-          <button type="button" onClick={onBack} className="font-bold underline underline-offset-2">
-            이전 단계
-          </button>
-          에서 휴대폰 입력을 먼저 해주세요.
-        </Live>
-      );
-    }
-    const items: [string, string, string, string][] = [
-      ["총예상원가", fmtEok(base.eac, { unit: false }), fmtEok(f.eac, { unit: false }), `${added > 0 ? "+" : "−"}${fmtMan(Math.abs(added), { unit: false })}`],
-      ["예상이익", fmtEok(base.expectedProfit, { unit: false }), fmtEok(f.expectedProfit, { unit: false }), `${f.expectedProfit >= base.expectedProfit ? "+" : "−"}${fmtMan(Math.abs(f.expectedProfit - base.expectedProfit), { unit: false })}`],
-      ["이익률", fmtPct(base.marginPct), fmtPct(f.marginPct), fmtPp(f.marginPct - base.marginPct)],
-    ];
+  const added = f.eac - base.eac;
+  if (Math.abs(added) < 1) {
     return (
-      <div className="mt-2.5 rounded-xl border border-line bg-surface-2 px-3 py-2" data-testid="tour-live" data-state="done" role="status">
-        <p className="text-[0.7rem] font-bold text-ink-3">A현장 · 시연 시작 대비 (저장된 데이터로 계산)</p>
-        <p className="mt-0.5 flex flex-wrap gap-x-4 gap-y-0.5 text-[0.82rem]">
-          {items.map(([k, b, a, d]) => (
-            <span key={k} className="whitespace-nowrap num">
-              <span className="text-ink-3">{k}</span> {b} → <b className="text-ink">{a}</b> <b className="text-err">({d})</b>
-            </span>
-          ))}
-        </p>
-      </div>
+      <span className="inline-flex items-center gap-1 rounded-lg bg-warn-bg px-2 py-0.5 text-[0.78rem] font-semibold text-warn" data-testid="tour-live" data-state="waiting" role="status">
+        <Hourglass size={14} aria-hidden /> 아직 입력 전입니다 —{" "}
+        <button type="button" onClick={onBack} className="font-bold underline underline-offset-2">
+          이전 단계
+        </button>
+      </span>
     );
   }
-
-  // action-status — 본사 배정 → 현장 진행 → 현장 완료 → 본사 결과 확인
-  const acts = db.actions.filter((a) => a.siteId === DEMO_SITE).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  const latest = acts[0];
-  if (!latest) return <Live testId="tour-live">대기 — PC의 ‘설계변경’ 카드에서 ‘조치 생성·배정’을 누르세요.</Live>;
-  const proof = db.proofEvents.find((p) => p.proof_event_id === latest.proofEventId);
-  if (proof?.status === "confirmed") {
-    return (
-      <Live ok testId="tour-live" stage="confirmed">
-        결과 확인 완료 — 조치 증빙 기록(Proof Event) 확정. ‘다음’에서 대표 보고서로 이동합니다.
-      </Live>
-    );
-  }
-  if (latest.status === "done") {
-    return (
-      <>
-        <FocusActionCard actionId={latest.id} />
-        <Live ok testId="tour-live" stage="done">
-          현장 완료 — 이제 PC 조치 카드에서 ‘결과 확인’을 누르세요 (본사 확인).
-        </Live>
-      </>
-    );
-  }
-  if (latest.status === "in_progress") {
-    return (
-      <Live ok testId="tour-live" stage="in_progress">
-        현장 진행 중 — 휴대폰에서 ‘완료 처리’ → ‘DEMO 결과 채우기’ → ‘완료 처리’.
-      </Live>
-    );
-  }
+  const items: [string, string, string, string][] = [
+    ["예상원가", fmtEok(base.eac, { unit: false }), fmtEok(f.eac, { unit: false }), `+${fmtMan(added, { unit: false })}`],
+    ["예상이익", fmtEok(base.expectedProfit, { unit: false }), fmtEok(f.expectedProfit, { unit: false }), `${f.expectedProfit >= base.expectedProfit ? "+" : "−"}${fmtMan(Math.abs(f.expectedProfit - base.expectedProfit), { unit: false })}`],
+    ["이익률", fmtPct(base.marginPct), fmtPct(f.marginPct), fmtPp(f.marginPct - base.marginPct)],
+  ];
   return (
-    <Live ok testId="tour-live" stage="assigned">
-      배정됨 — 현장소장 휴대폰 ‘내 조치’에 표시. 휴대폰에서 ‘진행 시작’을 누르세요.
-    </Live>
+    <span className="flex flex-wrap gap-x-4 gap-y-0.5 text-[0.84rem]" data-testid="tour-live" data-state="done" role="status">
+      {items.map(([k, b, a, d]) => (
+        <span key={k} className="whitespace-nowrap num">
+          <span className="text-ink-3">{k}</span> {b} → <b className="text-ink">{a}</b> <b className="text-err">({d})</b>
+        </span>
+      ))}
+    </span>
   );
 }
 
 /** 현장 완료 직후: PC 화면을 해당 조치 카드로 옮기고 강조 (결과 확인 버튼을 찾지 않아도 되게) */
 function FocusActionCard({ actionId }: { actionId: string }) {
   useEffect(() => {
+    if (!actionId) return;
     let el: Element | null = null;
     const t = window.setTimeout(() => {
       el = document.querySelector(`[data-testid="action-board"] [data-action-id="${actionId}"]`);
@@ -547,19 +659,4 @@ function FocusActionCard({ actionId }: { actionId: string }) {
     };
   }, [actionId]);
   return null;
-}
-
-function Live({ ok, children, testId, stage }: { ok?: boolean; children: ReactNode; testId: string; stage?: string }) {
-  return (
-    <p
-      data-stage={stage}
-      className={cx("mt-2.5 flex items-start gap-1.5 rounded-xl px-3 py-2 text-[0.8rem] font-semibold", ok ? "bg-ok-bg text-ok" : "bg-warn-bg text-warn")}
-      data-testid={testId}
-      data-state={ok ? "done" : "waiting"}
-      role="status"
-    >
-      {ok ? <CircleCheck size={16} className="mt-0.5 shrink-0" aria-hidden /> : <Hourglass size={16} className="mt-0.5 shrink-0 motion-safe:animate-pulse" aria-hidden />}
-      <span>{children}</span>
-    </p>
-  );
 }

@@ -28,7 +28,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const remove = useCallback((id: number) => setItems((xs) => xs.filter((x) => x.id !== id)), []);
   const push = useCallback((t: Omit<ToastItem, "id" | "ttl"> & { ttl?: number }) => {
     const id = ++seq.current;
-    setItems((xs) => [...xs.slice(-3), { ...t, id, ttl: t.ttl ?? (t.action ? 10000 : 5000) }]);
+    setItems((xs) => [...xs.slice(-1), { ...t, id, ttl: t.ttl ?? (t.action ? 10000 : 5000) }]);
   }, []);
   const value = useMemo(() => ({ push }), [push]);
   const prefs = usePrefs();

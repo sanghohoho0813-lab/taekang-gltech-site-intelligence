@@ -18,21 +18,21 @@ export default function PresentationPage() {
     <PageBody className="max-w-[1100px]">
       <PageHeader
         eyebrow={<DemoBadge />}
-        title="대표자 시연 모드 (3~4분)"
-        desc="별도 슬라이드가 아니라 실제 화면을 순서대로 이동하며 안내합니다. 처음부터 끝까지 PC와 휴대폰 화면을 나란히 보여주고, 단계마다 휴대폰이 대표 → 현장소장 → 대표 관점으로 바뀝니다."
+        title="대표자 시연 (3~4분)"
+        desc="‘시연 시작’을 누르면 데이터가 처음 상태로 초기화되고, 아래쪽 안내 바의 주황 버튼만 차례로 누르면 됩니다. 타자 입력은 없습니다."
         right={
           <>
             <Button icon={<RotateCcw size={17} />} onClick={() => setReset(true)}>
               데모 초기화
             </Button>
             <Button variant="cta" size="lg" icon={<PlayCircle size={19} />} onClick={() => tour.start("presentation")} data-testid="start-presentation">
-              시연 시작
+              시연 시작 (처음 상태로)
             </Button>
           </>
         }
       />
-      <Notice tone="info" title="미팅 직전 체크">
-        ① 상단 ‘데모 초기화’ ② 브라우저 폭 1280px 이상 (PC+Mobile 나란히 보기) ③ 역할 = 대표자 ④ 안내 패널은 ‘—’로 접을 수 있음 ⑤ 인터넷 연결 없이도 동작 (데이터는 이 브라우저에 저장)
+      <Notice tone="info" title="노트북 창 폭 1280px 이상에서 진행하세요">
+        시연 중 언제든 상단 ‘시연 종료’ → 다시 ‘시연 시작’을 누르면 처음 상태로 돌아갑니다.
       </Notice>
       <Card>
         <CardHeader title="시연 순서" sub="각 단계에서 실제 화면으로 자동 이동하고 대상 영역을 강조합니다 · 1024px 미만 화면에서는 PC 화면만 안내" />
@@ -65,6 +65,7 @@ export default function PresentationPage() {
                   </p>
                 )}
                 <p className="mt-1 text-[0.85rem] text-ink-2">{s.body}</p>
+                {s.flow && <p className="mt-0.5 text-[0.78rem] font-semibold text-theme-ink">{s.flow === "report" ? "누를 버튼: 비용 입력 → 보고 등록" : "누를 버튼: 조치 배정 → 진행 시작 → 완료 처리 → 결과 확인"}</p>}
               </div>
             </li>
           ))}
