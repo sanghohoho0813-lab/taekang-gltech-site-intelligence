@@ -50,7 +50,14 @@ export async function open(url: string): Promise<Db> {
 
 async function openPglite(location: string): Promise<Db> {
   const { PGlite } = await import("@electric-sql/pglite");
-  const pg = location === "memory" || location === "" ? new PGlite() : new PGlite(location);
+  const inMemory = location === "memory" || location === "";
+  if (!inMemory) {
+    // PGlite는 상위 폴더를 만들지 않는다 → 처음 실행할 때 .data 폴더가 없어도 되게
+    const { mkdirSync } = await import("node:fs");
+    const { dirname, resolve } = await import("node:path");
+    mkdirSync(dirname(resolve(location)), { recursive: true });
+  }
+  const pg = inMemory ? new PGlite() : new PGlite(location);
   await pg.waitReady;
   const run: Tx["query"] = async (text, params) => (await pg.query(text, params as unknown[] | undefined)).rows as never;
   // PGlite는 연결이 1개 — 트랜잭션을 순서대로 실행되게 줄 세운다
