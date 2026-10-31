@@ -8,8 +8,8 @@ import { Badge, Button, Card, CardHeader, DemoBadge, EmptyState, Field, Notice, 
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { Freshness } from "@/components/domain/Widgets";
-import { addBilling, addPayment, setChangeOrderStatus, CommandError } from "@/lib/data/commands";
-import { dispatch } from "@/lib/data/store";
+import { CommandError } from "@/lib/data/commands";
+import { run } from "@/lib/data/store";
 import { siteFinancials } from "@/lib/domain/calc";
 import { receivableAging } from "@/lib/domain/risk";
 import { CO_STATUS_LABEL } from "@/lib/domain/labels";
@@ -196,9 +196,9 @@ function ChangeOrderModal({ db, c, to, onClose }: { db: DemoDB; c: ChangeOrder; 
           <Button onClick={onClose}>취소</Button>
           <Button
             variant={to === "rejected" ? "danger" : "cta"}
-            onClick={() => {
+            onClick={async () => {
               try {
-                const r = dispatch((d, ctx) => setChangeOrderStatus(d, c.id, to, to === "approved" ? amount : undefined, ctx));
+                const r = await run("setChangeOrderStatus", { coId: c.id, status: to, approvedAmount: to === "approved" ? amount : undefined });
                 toast.push({ tone: "ok", title: `${title} 완료`, desc: to === "approved" ? `이익률 ${fmtPct(r.before.marginPct)} → ${fmtPct(r.after.marginPct)}` : undefined });
                 onClose();
               } catch (e) {
@@ -254,10 +254,10 @@ function MoneyFormModal({ db, kind, onClose }: { db: DemoDB; kind: "billing" | "
           <Button onClick={onClose}>취소</Button>
           <Button
             variant="cta"
-            onClick={() => {
+            onClick={async () => {
               try {
-                if (kind === "billing") dispatch((d, ctx) => addBilling(d, { siteId, amount, billedDate: date, idempotencyKey: key }, ctx));
-                else dispatch((d, ctx) => addPayment(d, { siteId, amount, receivedDate: date, idempotencyKey: key }, ctx));
+                if (kind === "billing") await run("addBilling", { siteId, amount, billedDate: date, idempotencyKey: key });
+                else await run("addPayment", { siteId, amount, receivedDate: date, idempotencyKey: key });
                 toast.push({ tone: "ok", title: kind === "billing" ? "기성청구를 등록했습니다" : "입금을 등록했습니다", desc: `${db.sites.find((s) => s.id === siteId)?.shortName} ${fmtMan(amount)}` });
                 onClose();
               } catch (e) {

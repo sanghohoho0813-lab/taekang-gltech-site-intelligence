@@ -17,6 +17,7 @@ import { AppShell } from "@/components/shell/AppShell";
 import { DemoBar } from "./DemoBar";
 import { cx } from "@/components/ui/primitives";
 import { TourLayer } from "@/components/tour/Tour";
+import { IS_LIVE } from "@/lib/mode";
 import { CMD_MSG, FRAME_CMDS, deliverFrameCmd, type FrameCmd } from "./frameCommands";
 
 const MSG = "tk:route";
@@ -38,6 +39,12 @@ function useIsDesktop() {
 }
 
 export function DeviceStage({ children }: { children: ReactNode }) {
+  // 실제 운영(LIVE): 시연용 화면 모드·데모 바·시연 안내 없이 앱만
+  if (IS_LIVE) return <AppShell compactSidebar={false}>{children}</AppShell>;
+  return <DemoStage>{children}</DemoStage>;
+}
+
+function DemoStage({ children }: { children: ReactNode }) {
   const [mounted, setMounted] = useState(false);
   const [frame, setFrame] = useState(false);
   const isDesktop = useIsDesktop();

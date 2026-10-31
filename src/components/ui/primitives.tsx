@@ -4,6 +4,7 @@ import { forwardRef, useEffect, useRef, useState, type ButtonHTMLAttributes, typ
 import { AlertTriangle, CircleAlert, CircleCheck, Info, Loader2 } from "lucide-react";
 import type { Severity } from "@/lib/domain/types";
 import { SEVERITY_LABEL } from "@/lib/domain/labels";
+import { IS_LIVE } from "@/lib/mode";
 
 export function cx(...c: (string | false | null | undefined)[]) {
   return c.filter(Boolean).join(" ");
@@ -86,6 +87,8 @@ export function Badge({ tone = "neutral", children, className, icon }: { tone?: 
 }
 
 export function DemoBadge({ compact = false, className }: { compact?: boolean; className?: string }) {
+  // 실제 운영(LIVE) 데이터에는 가상 데이터 표시를 하지 않는다
+  if (IS_LIVE) return null;
   return (
     <Badge tone="demo" className={className}>
       <span aria-hidden className="inline-block size-1.5 rounded-full bg-[#C98A00]" />

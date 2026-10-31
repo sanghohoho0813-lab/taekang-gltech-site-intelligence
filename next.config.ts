@@ -2,6 +2,8 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // DEMO·LIVE 빌드를 나란히 둘 수 있게 (예: NEXT_DIST_DIR=.next-live)
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   poweredByHeader: false,
   // LIVE 모드 서버 DB 드라이버는 번들하지 않고 node_modules에서 그대로 불러온다 (PGlite WASM 포함)
   serverExternalPackages: ["@electric-sql/pglite", "postgres"],

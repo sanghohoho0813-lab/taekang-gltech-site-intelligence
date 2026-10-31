@@ -7,8 +7,8 @@ import type { ActionItem, ActionStatus, DemoDB, RiskSignal } from "@/lib/domain/
 import { ACTION_STATUS_LABEL, RULE_LABEL } from "@/lib/domain/labels";
 import { fmtDate, fmtDateTime, fmtEok, fmtMan, fmtPct, fmtRelative, todayIso } from "@/lib/domain/format";
 import { siteFinancials } from "@/lib/domain/calc";
-import { addActionNote, assignAction, completeAction, confirmProofEvent, createAction, setActionStatus, CommandError } from "@/lib/data/commands";
-import { dispatch } from "@/lib/data/store";
+import { CommandError } from "@/lib/data/commands";
+import { run } from "@/lib/data/store";
 import { useMe, userLabel } from "@/lib/data/hooks";
 import { uid } from "@/lib/domain/ids";
 import { Badge, Button, Field, Notice, cx, inputCls } from "@/components/ui/primitives";
@@ -68,9 +68,9 @@ export function AssignModal({ db, signal, open, onClose }: { db: DemoDB; signal:
             variant="cta"
             icon={<UserPlus size={17} />}
             data-testid="assign-confirm"
-            onClick={() => {
+            onClick={async () => {
               try {
-                dispatch((d, ctx) => createAction(d, { signal, title, description: desc, assigneeUserId: assignee, dueDate: due, idempotencyKey: key }, ctx));
+                await run("createAction", { signal, title, description: desc, assigneeUserId: assignee, dueDate: due, idempotencyKey: key });
                 toast.push({ tone: "ok", title: "조치를 생성하고 담당자에게 배정했습니다", desc: `${userLabel(db, assignee)} · 기한 ${fmtDate(due)}` });
                 onClose();
               } catch (e) {
@@ -152,9 +152,9 @@ export function CompleteModal({ db, action, open, onClose }: { db: DemoDB; actio
             variant="cta"
             icon={<CircleCheck size={17} />}
             data-testid="complete-confirm"
-            onClick={() => {
+            onClick={async () => {
               try {
-                const r = dispatch((d, ctx) => completeAction(d, action.id, { result, claimAmount: register ? amount : undefined, registerChangeOrder: register, confirm, idempotencyKey: key }, ctx));
+                const r = await run("completeAction", { actionId: action.id, input: { result, claimAmount: register ? amount : undefined, registerChangeOrder: register, confirm, idempotencyKey: key } });
                 toast.push({ tone: "ok", title: "조치 완료 · Proof Event 기록", desc: r.changeOrderId ? `변경공사 청구 검토 ${fmtMan(amount)} 등록 (원청 승인 전 · 이익 미반영)` : "실증 Evidence에서 확인할 수 있습니다." });
                 onClose();
               } catch (e) {
@@ -228,9 +228,9 @@ export function ActionCard({ db, action, compact = false }: { db: DemoDB; action
   const mine = action.assigneeUserId === userId;
   const canWork = isManager || mine;
 
-  const move = (to: ActionStatus, note?: string) => {
+  const move = async (to: ActionStatus, note?: string) => {
     try {
-      dispatch((d, ctx) => setActionStatus(d, action.id, to, note, ctx));
+      await run("setActionStatus", { actionId: action.id, to, note });
       toast.push({ tone: "ok", title: `상태 변경: ${ACTION_STATUS_LABEL[to]}`, desc: action.title });
     } catch (e) {
       toast.push({ tone: "err", title: e instanceof Error ? e.message : "변경 실패" });
@@ -323,9 +323,9 @@ export function ActionCard({ db, action, compact = false }: { db: DemoDB; action
             size="sm"
             variant="soft"
             icon={<BadgeCheck size={15} />}
-            onClick={() => {
+            onClick={async () => {
               try {
-                dispatch((d, ctx) => confirmProofEvent(d, proof.proof_event_id, ctx));
+                await run("confirmProofEvent", { proofId: proof.proof_event_id });
                 toast.push({ tone: "ok", title: "결과를 확인했습니다 (Proof Event 확정)" });
               } catch (e) {
                 toast.push({ tone: "err", title: e instanceof Error ? e.message : "실패" });
@@ -383,9 +383,9 @@ function NoteModal({ action, onClose }: { action: ActionItem; onClose: () => voi
           <Button onClick={onClose}>취소</Button>
           <Button
             variant="cta"
-            onClick={() => {
+            onClick={async () => {
               try {
-                dispatch((d, ctx) => addActionNote(d, action.id, text, photo, ctx));
+                await run("addActionNote", { actionId: action.id, text, photoDataUrl: photo });
                 toast.push({ tone: "ok", title: "메모를 추가했습니다" });
                 onClose();
               } catch (e) {
@@ -447,9 +447,9 @@ function ReassignModal({ db, action, onClose }: { db: DemoDB; action: ActionItem
           <Button onClick={onClose}>취소</Button>
           <Button
             variant="cta"
-            onClick={() => {
+            onClick={async () => {
               try {
-                dispatch((d, ctx) => assignAction(d, action.id, u, due, ctx));
+                await run("assignAction", { actionId: action.id, assigneeUserId: u, dueDate: due });
                 toast.push({ tone: "ok", title: "담당자를 배정했습니다", desc: userLabel(db, u) });
                 onClose();
               } catch (e) {

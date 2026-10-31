@@ -6,6 +6,7 @@ import { siteFinancials, portfolioTotals, type SiteFinancials } from "@/lib/doma
 import { computeSignals } from "@/lib/domain/risk";
 import { useDb, useRole } from "./store";
 import { ROLE_DEFAULT_USER } from "./seed";
+import { IS_LIVE } from "@/lib/mode";
 
 /** 1분마다 다시 그려 경과일·상대시간을 갱신 */
 export function useMinuteTick() {
@@ -46,7 +47,7 @@ export function siteHealth(signals: RiskSignal[], siteId: string): Health {
 export function useMe() {
   const role = useRole();
   const db = useDb();
-  const userId = ROLE_DEFAULT_USER[role];
+  const userId = IS_LIVE ? (db?.me ?? "") : ROLE_DEFAULT_USER[role];
   const user = db?.users.find((u) => u.id === userId);
   const canSeeMoney = role === "ceo" || role === "manager";
   return { role, userId, user, canSeeMoney, db };

@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Bell, Search, ChevronDown, UserRound, ShieldAlert, Handshake, ListChecks } from "lucide-react";
-import { useDb, useRole, setPrefs, usePrefs, isFrameContext } from "@/lib/data/store";
+import { useDb, useRole, setPrefs, usePrefs, isFrameContext, currentUserId, logout } from "@/lib/data/store";
+import { IS_LIVE } from "@/lib/mode";
 import { computeSignals } from "@/lib/domain/risk";
 import { ROLE_LABEL } from "@/lib/domain/labels";
 import { ROLE_DEFAULT_USER } from "@/lib/data/seed";
@@ -130,11 +131,11 @@ export function NotificationBell() {
         out.push({ href: "/insights#requests", title: `발주처 요청: ${r.title}`, sub: "신규 접수 — 검토 필요", at: r.createdAt, icon: <Handshake size={16} /> });
     }
     if (role === "field") {
-      for (const a of db.actions.filter((x) => x.assigneeUserId === ROLE_DEFAULT_USER.field && ["assigned", "in_progress"].includes(x.status)))
+      for (const a of db.actions.filter((x) => x.assigneeUserId === currentUserId() && ["assigned", "in_progress"].includes(x.status)))
         out.push({ href: "/my-actions", title: `배정된 조치: ${a.title}`, sub: db.sites.find((s) => s.id === a.siteId)?.shortName ?? "", at: a.createdAt, icon: <ListChecks size={16} /> });
     }
     if (role === "partner") {
-      for (const r of db.partnerRequests.filter((x) => x.partnerUserId === ROLE_DEFAULT_USER.partner && x.status !== "received"))
+      for (const r of db.partnerRequests.filter((x) => x.partnerUserId === currentUserId() && x.status !== "received"))
         out.push({ href: "/partner", title: `요청 처리: ${r.title}`, sub: r.status === "answered" ? "회신 완료" : "검토 중", at: r.updatedAt, icon: <Handshake size={16} /> });
     }
     return out;
@@ -193,7 +194,7 @@ export function UserMenu() {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   useOutside(box, open, () => setOpen(false));
-  const user = db?.users.find((u) => u.id === ROLE_DEFAULT_USER[role]);
+  const user = db?.users.find((u) => u.id === currentUserId());
   const personaLocked = isFrameContext() && prefs.deviceView === "dual" && prefs.mobilePersona !== "same";
 
   return (
@@ -211,11 +212,27 @@ export function UserMenu() {
         </span>
         <span className="hidden text-left leading-tight whitespace-nowrap @4xl/shell:block">
           <span className="block text-[0.82rem] font-bold text-ink">{user ? `${user.name} · ${user.title}` : "—"}</span>
-          <span className="block text-[0.72rem] text-ink-3">{ROLE_LABEL[role]} · 권한 프리뷰</span>
+          <span className="block text-[0.72rem] text-ink-3">{ROLE_LABEL[role]}{IS_LIVE ? "" : " · 권한 프리뷰"}</span>
         </span>
         <ChevronDown size={16} className="text-ink-3" />
       </button>
-      {open && (
+      {open && IS_LIVE && (
+        <div className="anim-pop absolute right-0 top-[calc(100%+6px)] z-40 w-64 overflow-hidden rounded-2xl border border-line bg-surface p-2 shadow-pop" data-testid="account-menu">
+          <p className="px-3 pb-2 pt-1.5 text-[0.78rem] text-ink-3">{user ? `${user.name} ${user.title}` : ""} · {ROLE_LABEL[role]}</p>
+          <Link href="/account" onClick={() => setOpen(false)} className="row-hover block rounded-xl px-3 py-2.5 text-[0.88rem] font-semibold text-ink-2">
+            내 계정 · 비밀번호 변경
+          </Link>
+          {(role === "ceo" || role === "manager") && (
+            <Link href="/admin" onClick={() => setOpen(false)} className="row-hover block rounded-xl px-3 py-2.5 text-[0.88rem] font-semibold text-ink-2">
+              운영 관리 (현장·사용자·설정)
+            </Link>
+          )}
+          <button type="button" onClick={() => void logout()} className="row-hover block w-full rounded-xl px-3 py-2.5 text-left text-[0.88rem] font-semibold text-err" data-testid="logout">
+            로그아웃
+          </button>
+        </div>
+      )}
+      {open && !IS_LIVE && (
         <div className="anim-pop absolute right-0 top-[calc(100%+6px)] z-40 w-72 overflow-hidden rounded-2xl border border-line bg-surface p-2 shadow-pop">
           <p className="px-2.5 pb-2 pt-1.5 text-[0.75rem] text-ink-3">Demo 역할 전환 — 실제 로그인·보안이 아닌 <b>화면 권한 프리뷰</b>입니다.</p>
           {personaLocked && <p className="mx-2.5 mb-2 rounded-lg bg-warn-bg px-2 py-1.5 text-[0.72rem] text-warn">이 모바일 화면은 시연 역할로 고정되어 있습니다 (PC 화면에서 변경).</p>}

@@ -3,14 +3,14 @@
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { Check, Download, Upload, RotateCcw, Presentation, GraduationCap, FileSpreadsheet, Database, Sparkles, ShieldCheck, Gauge } from "lucide-react";
-import { dispatch, resetDemo, setPrefs, usePrefs, type FontScale } from "@/lib/data/store";
+import { resetDemo, setPrefs, usePrefs, type FontScale, run } from "@/lib/data/store";
 import { useMe } from "@/lib/data/hooks";
 import { THEMES } from "@/lib/theme/themes";
 import { PERMISSION_MATRIX, canAccess, homeFor } from "@/lib/nav";
 import { ROLE_LABEL } from "@/lib/domain/labels";
 import type { RiskThresholds, RoleId } from "@/lib/domain/types";
 import { CSV_FIELD_GUIDE, sampleCsv, toCsv, validateCostCsv, type CsvValidation } from "@/lib/domain/csv";
-import { importCostRows, setThresholds, CommandError } from "@/lib/data/commands";
+import { CommandError } from "@/lib/data/commands";
 import { fmtDateTime, fmtMan } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
 import { PageBody, PageHeader } from "@/components/shell/AppShell";
@@ -276,9 +276,9 @@ function DataSection() {
                 variant="cta"
                 size="sm"
                 disabled={!result.rows.length || result.errors.length > 0}
-                onClick={() => {
+                onClick={async () => {
                   try {
-                    const r = dispatch((d, ctx) => importCostRows(d, result.rows, key, ctx));
+                    const r = await run("importCostRows", { rows: result.rows, idempotencyKey: key });
                     toast.push({ tone: "ok", title: `CSV 원가 ${r.count}건을 가져왔습니다`, desc: "현장 상세 > 원가 탭에서 확인·되돌리기 가능" });
                     setText("");
                     setResult(null);
@@ -368,9 +368,9 @@ function ThresholdCard({ thresholds }: { thresholds: RiskThresholds }) {
         <Button onClick={() => setT(thresholds)}>되돌리기</Button>
         <Button
           variant="cta"
-          onClick={() => {
+          onClick={async () => {
             try {
-              dispatch((d, ctx) => setThresholds(d, t, ctx));
+              await run("setThresholds", t);
               toast.push({ tone: "ok", title: "위험 판단 기준을 저장했습니다", desc: "모든 위험 신호가 새 기준으로 다시 계산됩니다." });
             } catch (e) {
               toast.push({ tone: "err", title: e instanceof Error ? e.message : "실패" });

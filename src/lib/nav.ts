@@ -1,5 +1,6 @@
-/** Grouped Navigation (v4.0 B절) + Role 권한 프리뷰 — 실제 보안이 아니라 화면 노출 제어다. */
+/** Grouped Navigation (v4.0 B절) + 역할별 화면 노출. LIVE에서 실제 데이터 보안은 서버(src/server/authz.ts)가 담당한다. */
 import type { RoleId } from "@/lib/domain/types";
+import { IS_LIVE } from "@/lib/mode";
 
 export type GroupId = "ops" | "growth" | "ax" | "admin";
 
@@ -12,6 +13,8 @@ export interface NavItem {
   /** 메뉴에는 없지만 역할별 대체 화면으로 접근 가능한 역할 (예: 현장직원의 /dashboard = 현장 홈) */
   alsoAccess?: RoleId[];
   desc: string;
+  /** DEMO(영업 시연)에서만 / LIVE(실제 운영)에서만 보이는 메뉴 */
+  only?: "demo" | "live";
 }
 
 export const GROUPS: { id: GroupId; label: string; color: string }[] = [
@@ -34,21 +37,25 @@ export const NAV: NavItem[] = [
   { href: "/partner", label: "발주처 포털", icon: "Handshake", group: "growth", roles: ["ceo", "manager", "partner"], desc: "발주처·협력사 상태 공유" },
   { href: "/insights", label: "위험 분석·조치", icon: "ShieldAlert", group: "ax", roles: INTERNAL, alsoAccess: ["field"], desc: "규칙 기반 진단 → 조치 → 결과" },
   { href: "/evidence", label: "실증 Evidence", icon: "BadgeCheck", group: "ax", roles: INTERNAL, desc: "Proof Event·KPI·12주 계획" },
-  { href: "/why-ax", label: "기획의도", icon: "Lightbulb", group: "ax", roles: ALL_INTERNAL, desc: "왜 이 AX인가" },
-  { href: "/settings", label: "설정", icon: "Settings", group: "admin", roles: ["ceo", "manager", "field", "partner"], desc: "테마·글자·역할·데모·데이터" },
-  { href: "/presentation", label: "시연 모드", icon: "Presentation", group: "admin", roles: INTERNAL, desc: "실제 화면 Guided Demo" },
+  { href: "/why-ax", label: "기획의도", icon: "Lightbulb", group: "ax", roles: ALL_INTERNAL, desc: "왜 이 AX인가", only: "demo" },
+  { href: "/admin", label: "운영 관리", icon: "Building2", group: "admin", roles: INTERNAL, desc: "현장 등록·사용자·운영 설정·공무 확인", only: "live" },
+  { href: "/settings", label: "설정", icon: "Settings", group: "admin", roles: ["ceo", "manager", "field", "partner"], desc: IS_LIVE ? "화면·위험 기준·데이터 가져오기" : "테마·글자·역할·데모·데이터" },
+  { href: "/presentation", label: "시연 모드", icon: "Presentation", group: "admin", roles: INTERNAL, desc: "실제 화면 Guided Demo", only: "demo" },
 ];
+
+const visible = (n: NavItem) => !n.only || n.only === (IS_LIVE ? "live" : "demo");
 
 /** 경로별 접근 가능 역할 (권한 프리뷰) */
 export function canAccess(role: RoleId, pathname: string): boolean {
   if (pathname === "/") return true;
   const item = NAV.find((n) => pathname === n.href || pathname.startsWith(n.href + "/"));
   if (!item) return true;
+  if (!visible(item)) return false;
   return item.roles.includes(role) || !!item.alsoAccess?.includes(role);
 }
 
 export function navFor(role: RoleId): NavItem[] {
-  return NAV.filter((n) => n.roles.includes(role));
+  return NAV.filter((n) => visible(n) && n.roles.includes(role));
 }
 
 export function homeFor(role: RoleId): string {

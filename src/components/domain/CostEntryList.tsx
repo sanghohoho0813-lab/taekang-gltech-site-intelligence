@@ -6,8 +6,8 @@ import type { CostCategory, CostEntry, DemoDB } from "@/lib/domain/types";
 import { CATEGORY_LABEL, COST_CATEGORIES, IMPACT_LABEL, REASON_LABEL } from "@/lib/domain/labels";
 import { fmtDate, fmtEok, fmtMan, fmtPct, fmtRelative } from "@/lib/domain/format";
 import { entryEacImpact } from "@/lib/domain/calc";
-import { CommandError, editCostEntry, voidCostEntry } from "@/lib/data/commands";
-import { dispatch } from "@/lib/data/store";
+import { CommandError } from "@/lib/data/commands";
+import { run } from "@/lib/data/store";
 import { useMe, userLabel } from "@/lib/data/hooks";
 import { Badge, Button, EmptyState, Field, cx, inputCls } from "@/components/ui/primitives";
 import { Modal } from "@/components/ui/Modal";
@@ -90,10 +90,10 @@ export function CostEntryList({ db, entries, showSite = false, emptyText = "입�
             <Button onClick={() => setVoiding(null)}>취소</Button>
             <Button
               variant="danger"
-              onClick={() => {
+              onClick={async () => {
                 if (!voiding) return;
                 try {
-                  const r = dispatch((d, ctx) => voidCostEntry(d, voiding.id, reason.trim() || "오입력 되돌리기", ctx));
+                  const r = await run("voidCostEntry", { entryId: voiding.id, reason: reason.trim() || "오입력 되돌리기" });
                   toast.push({ tone: "info", title: "원가를 무효 처리했습니다", desc: canSeeMoney ? `EAC ${fmtEok(r.before.eac)} → ${fmtEok(r.after.eac)} · 이익률 ${fmtPct(r.before.marginPct)} → ${fmtPct(r.after.marginPct)}` : "손익 계산에서 제외됩니다." });
                   setVoiding(null);
                 } catch (err) {
@@ -142,9 +142,9 @@ function EditCostModal({ entry, onClose, canSeeMoney }: { entry: CostEntry; onCl
           <Button onClick={onClose}>취소</Button>
           <Button
             variant="cta"
-            onClick={() => {
+            onClick={async () => {
               try {
-                const r = dispatch((d, ctx) => editCostEntry(d, entry.id, { amount, category, note, forecastImpact: impact as "additional" | "within_forecast" }, ctx));
+                const r = await run("editCostEntry", { entryId: entry.id, patch: { amount, category, note, forecastImpact: impact as "additional" | "within_forecast" } });
                 toast.push({ tone: "ok", title: "원가를 수정했습니다", desc: canSeeMoney ? `EAC ${fmtEok(r.before.eac)} → ${fmtEok(r.after.eac)}` : undefined });
                 onClose();
               } catch (e) {

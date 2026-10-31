@@ -11,7 +11,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "playwright test",
-    "qa:cuesheet": "node tests/qa/cuesheet.mjs"
+    "qa:cuesheet": "node tests/qa/cuesheet.mjs",
+    "build:live": "NEXT_PUBLIC_DATA_MODE=live NEXT_DIST_DIR=.next-live next build",
+    "start:live": "NEXT_PUBLIC_DATA_MODE=live NEXT_DIST_DIR=.next-live next start -p 3000",
+    "dev:live": "NEXT_PUBLIC_DATA_MODE=live NEXT_DIST_DIR=.next-live next dev"
   },
   "engines": {
     "node": ">=20"

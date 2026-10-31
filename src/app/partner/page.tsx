@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { useState } from "react";
 import { Send, CircleCheck, Clock3, Inbox, ChevronRight, Lock, Settings, LayoutDashboard, Sparkles, X } from "lucide-react";
-import { dispatch, setPrefs } from "@/lib/data/store";
+import { setPrefs, run } from "@/lib/data/store";
 import { useMe } from "@/lib/data/hooks";
-import { createPartnerRequest, CommandError } from "@/lib/data/commands";
+import { CommandError } from "@/lib/data/commands";
 import { PARTNER_STATUS_LABEL } from "@/lib/domain/labels";
 import { fmtDate, fmtDateTime, fmtRelative } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
@@ -193,10 +193,10 @@ function RequestForm({ siteId, disabled }: { siteId: string; disabled: boolean }
       ) : (
         <form
           className="space-y-3 px-5 pb-5"
-          onSubmit={(e) => {
+          onSubmit={async (e) => {
             e.preventDefault();
             try {
-              dispatch((d, ctx) => createPartnerRequest(d, { idempotencyKey: key, siteId, title, description: desc, desiredDate: date, type }, ctx));
+              await run("createPartnerRequest", { idempotencyKey: key, siteId, title, description: desc, desiredDate: date, type });
               setSent(true);
               setErrors({});
               toast.push({ tone: "ok", title: "요청을 접수했습니다", desc: "본사 ‘위험 분석·조치 > 요청함’에 표시됩니다." });

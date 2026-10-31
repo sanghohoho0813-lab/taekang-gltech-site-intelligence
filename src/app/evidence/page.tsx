@@ -7,8 +7,7 @@ import { useMe, userLabel } from "@/lib/data/hooks";
 import { PageBody, PageHeader } from "@/components/shell/AppShell";
 import { Badge, Button, Card, CardHeader, DemoBadge, EmptyState, Notice, PageSkeleton, cx } from "@/components/ui/primitives";
 import { MethodChip } from "@/components/domain/Widgets";
-import { confirmProofEvent } from "@/lib/data/commands";
-import { dispatch } from "@/lib/data/store";
+import { run } from "@/lib/data/store";
 import { useToast } from "@/components/ui/Toast";
 import { fmtDateTime } from "@/lib/domain/format";
 import type { ProofEvent } from "@/lib/domain/types";
@@ -67,9 +66,9 @@ export default function EvidencePage() {
                 approver={userLabel(db, p.human_approval.by)}
                 user={userLabel(db, p.user_id)}
                 canConfirm={isManager}
-                onConfirm={() => {
+                onConfirm={async () => {
                   try {
-                    dispatch((d, ctx) => confirmProofEvent(d, p.proof_event_id, ctx));
+                    await run("confirmProofEvent", { proofId: p.proof_event_id });
                     toast.push({ tone: "ok", title: "결과를 확인했습니다" });
                   } catch (e) {
                     toast.push({ tone: "err", title: e instanceof Error ? e.message : "실패" });

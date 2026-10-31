@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Camera, CircleCheck, Plus, Trash2, Undo2, Wand2, X, CalendarDays } from "lucide-react";
-import { dispatch, useDb } from "@/lib/data/store";
+import { useDb, run } from "@/lib/data/store";
 import { useMe } from "@/lib/data/hooks";
-import { CommandError, submitFieldReport, voidReport, type CostLineInput, type FieldReportResult } from "@/lib/data/commands";
+import { IS_LIVE } from "@/lib/mode";
+import { CommandError, submitFieldReport, type CostLineInput, type FieldReportResult } from "@/lib/data/commands";
 import { DEMO_SCENARIO } from "@/lib/data/seed";
 import { CATEGORY_LABEL, COST_CATEGORIES, IMPACT_HELP, IMPACT_LABEL, REASON_LABEL } from "@/lib/domain/labels";
 import type { CostCategory, CostReason } from "@/lib/domain/types";
@@ -76,7 +77,8 @@ export function FieldReportForm({ fixedSiteId, onClose, inSheet = false }: { fix
   const [idemKey, setIdemKey] = useState(() => uid("idem"));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
-  const [done, setDone] = useState<(FieldReportResult & { siteName: string; costSum: number }) | null>(null);
+  // LIVE에서 현장직원은 서버가 금액(before/after)을 빼고 돌려준다 → 선택 항목으로 다룬다
+  const [done, setDone] = useState<(Omit<FieldReportResult, "before" | "after"> & Partial<Pick<FieldReportResult, "before" | "after">> & { siteId: string; siteName: string; costSum: number }) | null>(null);
   const [undone, setUndone] = useState(false);
   const [draftNotice, setDraftNotice] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -160,18 +162,18 @@ export function FieldReportForm({ fixedSiteId, onClose, inSheet = false }: { fix
     setUndone(false);
   };
 
-  const submit = () => {
+  const submit = async () => {
     if (submitting) return;
     setSubmitting(true);
     try {
-      const result = dispatch((d, ctx) => submitFieldReport(d, input, ctx));
+      const result = await run("submitFieldReport", input);
       try {
         localStorage.removeItem(DRAFT_KEY + siteId);
       } catch {
         // 무시
       }
       const costSum = costLines.reduce((s, c) => s + c.amount, 0);
-      setDone({ ...result, siteName: site?.shortName ?? "", costSum });
+      setDone({ ...result, siteId, siteName: site?.shortName ?? "", costSum });
       setErrors({});
       toast.push({
         tone: "ok",
@@ -190,9 +192,9 @@ export function FieldReportForm({ fixedSiteId, onClose, inSheet = false }: { fix
     }
   };
 
-  const undo = (reportId: string) => {
+  const undo = async (reportId: string) => {
     try {
-      dispatch((d, ctx) => voidReport(d, reportId, ctx));
+      await run("voidReport", { reportId });
       setUndone(true);
       toast.push({ tone: "info", title: "현장 보고를 되돌렸습니다", desc: "포함된 원가가 무효 처리되어 손익이 원래대로 계산됩니다." });
     } catch (e) {
@@ -233,10 +235,18 @@ export function FieldReportForm({ fixedSiteId, onClose, inSheet = false }: { fix
           <p className="text-[1.15rem] font-bold">{undone ? "보고를 되돌렸습니다" : "현장 보고 등록 완료"}</p>
           <p className="text-[0.85rem] text-ink-3">{done.siteName} · {reportDate}</p>
         </div>
-        {!undone && done.costSum > 0 && (
+        {!undone && done.costSum > 0 && done.pendingReview && (
+          <div className="rounded-2xl border border-line bg-surface-2 p-4" data-testid="report-impact" data-pending="1">
+            <p className="text-[0.82rem] font-bold text-ink">저장 완료 → 본사 공무 확인 대기</p>
+            <p className="mt-1.5 text-[0.88rem] text-ink-2">
+              입력한 원가 <b className="num">{fmtMan(done.costSum)}</b>은 본사 공무가 견적·세금계산서로 확인한 뒤 손익에 반영됩니다.
+            </p>
+          </div>
+        )}
+        {!undone && done.costSum > 0 && !done.pendingReview && (
           <div className="rounded-2xl border border-line bg-surface-2 p-4" data-testid="report-impact">
             <p className="text-[0.82rem] font-bold text-ink">공통 데이터에 저장 → 본사 손익에 즉시 반영</p>
-            {canSeeMoney ? (
+            {canSeeMoney && done.before && done.after ? (
               <dl className="mt-2 grid grid-cols-3 gap-2 text-center">
                 {[
                   ["총예상원가", fmtEok(done.before.eac), fmtEok(done.after.eac)],
@@ -252,7 +262,7 @@ export function FieldReportForm({ fixedSiteId, onClose, inSheet = false }: { fix
               </dl>
             ) : (
               <p className="mt-1.5 text-[0.88rem] text-ink-2">
-                입력한 원가 <b className="num">{fmtMan(done.costSum)}</b>이 본사 손익 계산에 반영되었습니다. (이익률은 대표·관리자 화면에서 확인 — 권한 프리뷰)
+                입력한 원가 <b className="num">{fmtMan(done.costSum)}</b>이 본사 손익 계산에 반영되었습니다. (이익률은 대표·관리자 화면에서 확인{IS_LIVE ? "" : " — 권한 프리뷰"})
               </p>
             )}
           </div>
@@ -272,7 +282,7 @@ export function FieldReportForm({ fixedSiteId, onClose, inSheet = false }: { fix
             </Button>
           )}
           {!onClose && done && (
-            <Link href={`/sites/${done.after.siteId}`} className="col-span-2">
+            <Link href={`/sites/${done.siteId}`} className="col-span-2">
               <Button variant="ghost" block>
                 현장 상세 보기
               </Button>
@@ -459,7 +469,12 @@ export function FieldReportForm({ fixedSiteId, onClose, inSheet = false }: { fix
                 EAC {fmtEok(preview.before.eac)} → <b>{fmtEok(preview.after.eac)}</b> · 예상이익 {fmtEok(preview.before.expectedProfit)} → <b>{fmtEok(preview.after.expectedProfit)}</b> · 이익률 {fmtPct(preview.before.marginPct)} → <b>{fmtPct(preview.after.marginPct)}</b>
               </p>
             ) : (
-              <p className="mt-0.5 num text-ink-2">본사 총예상원가 영향: <b>{preview.after.eac - preview.before.eac === 0 ? "변동 없음 (계획 내 집행)" : `+${fmtMan(preview.after.eac - preview.before.eac)}`}</b></p>
+              // 현장 화면은 실행예산 정보가 없으므로 입력한 비용 성격 기준으로 안내 (금액 계산은 본사 화면에서)
+              <p className="mt-0.5 num text-ink-2">
+                실행예산 외 추가비용 <b>{fmtMan(costLines.filter((c) => c.forecastImpact === "additional").reduce((s, c) => s + c.amount, 0))}</b> → 본사 예상원가에 추가
+                {costLines.some((c) => c.forecastImpact === "within_forecast") && <> · 실행예산 내 집행 {fmtMan(costLines.filter((c) => c.forecastImpact === "within_forecast").reduce((s, c) => s + c.amount, 0))}</>}
+                {(db.settings?.costApproval ?? "immediate") === "review" && <> · 본사 공무 확인 후 반영</>}
+              </p>
             )}
           </div>
         )}

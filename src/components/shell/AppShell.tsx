@@ -5,11 +5,11 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { Lock, Menu, MoreHorizontal, X } from "lucide-react";
 import { GROUPS, bottomNavFor, canAccess, homeFor, navFor } from "@/lib/nav";
-import { useDb, usePrefs, useRole } from "@/lib/data/store";
+import { useDb, usePrefs, useRole, currentUserId } from "@/lib/data/store";
 import { ROLE_LABEL } from "@/lib/domain/labels";
-import { ROLE_DEFAULT_USER } from "@/lib/data/seed";
 import { NavIcon } from "@/components/ui/Icon";
-import { Button, cx, DemoBadge } from "@/components/ui/primitives";
+import { Button, cx, DemoBadge, PageSkeleton } from "@/components/ui/primitives";
+import { IS_LIVE } from "@/lib/mode";
 import { Sidebar, GroupIcon, isActivePath } from "./Sidebar";
 import { Clock } from "./Clock";
 import { GlobalSearch, NotificationBell, UserMenu } from "./HeaderTools";
@@ -19,7 +19,8 @@ import { LogoMark } from "./Logo";
 export function AppShell({ children, compactSidebar }: { children: ReactNode; compactSidebar: boolean }) {
   const pathname = usePathname();
   const isPartnerSurface = pathname === "/partner" || pathname.startsWith("/partner/");
-  if (isPartnerSurface) return <>{children}</>;
+  // 로그인·최초 설정 화면은 메뉴 없이
+  if (isPartnerSurface || pathname === "/login" || pathname === "/setup" || pathname === "/account") return <>{children}</>;
   return (
     <div className="flex min-h-[calc(100dvh-var(--demo-bar-h))] w-full min-w-0">
       <Sidebar compact={compactSidebar} />
@@ -88,7 +89,7 @@ export function MobileDrawer({ open, onClose }: { open: boolean; onClose: () => 
   const pathname = usePathname();
   const db = useDb();
   const items = navFor(role);
-  const user = db?.users.find((u) => u.id === ROLE_DEFAULT_USER[role]);
+  const user = db?.users.find((u) => u.id === currentUserId());
   useEffect(() => {
     if (!open) return;
     document.documentElement.classList.add("tk-scroll-lock");
@@ -203,6 +204,9 @@ function AccessGate({ children }: { children: ReactNode }) {
   const role = useRole();
   const prefs = usePrefs();
   const router = useRouter();
+  const db = useDb();
+  // LIVE: 로그인 사용자를 확인하기 전에는 '권한 없음'을 띄우지 않는다
+  if (IS_LIVE && !db) return <PageSkeleton />;
   if (canAccess(role, pathname)) return <>{children}</>;
   const home = homeFor(role);
   return (
@@ -212,7 +216,9 @@ function AccessGate({ children }: { children: ReactNode }) {
       </div>
       <h1 className="text-[1.3rem] font-bold">{ROLE_LABEL[role]} 역할에서는 볼 수 없는 화면입니다</h1>
       <p className="mt-2 text-[0.9rem] text-ink-3">
-        권한 프리뷰(DEMO): 현장 손익·이익률·정산 정보는 대표자·본사관리자에게만 표시됩니다. 실제 로그인·RLS가 적용되면 서버에서 동일하게 차단됩니다.
+        {IS_LIVE
+          ? "현장 손익·이익률·정산 정보는 대표자·본사관리자만 볼 수 있습니다. 필요한 권한은 관리자에게 요청하세요."
+          : "권한 프리뷰(DEMO): 현장 손익·이익률·정산 정보는 대표자·본사관리자에게만 표시됩니다. 실제 운영(LIVE)에서는 서버에서 동일하게 차단됩니다."}
       </p>
       {prefs.mobilePersona !== "same" && prefs.deviceView === "dual" && (
         <p className="mt-2 text-[0.8rem] text-ink-3">PC+Mobile 시연 중 모바일 화면은 ‘{ROLE_LABEL[role]}’ 관점으로 표시됩니다.</p>

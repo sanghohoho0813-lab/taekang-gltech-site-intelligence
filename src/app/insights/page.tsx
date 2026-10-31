@@ -13,8 +13,7 @@ import { ActionCard, AssignModal } from "@/components/domain/Actions";
 import { MyActionsView } from "@/components/domain/MyActionsView";
 import { ACTION_STATUS_LABEL, PARTNER_STATUS_LABEL, RULE_LABEL } from "@/lib/domain/labels";
 import { fmtDateTime, fmtMan, fmtRelative } from "@/lib/domain/format";
-import { updatePartnerRequest } from "@/lib/data/commands";
-import { dispatch } from "@/lib/data/store";
+import { run } from "@/lib/data/store";
 import type { DemoDB, PartnerRequest, RiskSignal } from "@/lib/domain/types";
 import { ShieldAlert, ListChecks, Inbox } from "lucide-react";
 
@@ -198,9 +197,9 @@ function PartnerInbox({ db }: { db: DemoDB }) {
                       <Button
                         size="sm"
                         variant="soft"
-                        onClick={() => {
+                        onClick={async () => {
                           try {
-                            dispatch((d, ctx) => updatePartnerRequest(d, r.id, { status: "reviewing" }, ctx));
+                            await run("updatePartnerRequest", { requestId: r.id, patch: { status: "reviewing" } });
                             toast.push({ tone: "ok", title: "검토를 시작했습니다", desc: "발주처 포털에 ‘검토 중’으로 표시됩니다." });
                           } catch (e) {
                             toast.push({ tone: "err", title: e instanceof Error ? e.message : "실패" });
@@ -248,12 +247,10 @@ function ReplyModal({ req, onClose }: { req: PartnerRequest; onClose: () => void
             variant="cta"
             icon={<Send size={16} />}
             data-testid="reply-confirm"
-            onClick={() => {
+            onClick={async () => {
               try {
-                if (req.status === "received") dispatch((d, ctx) => updatePartnerRequest(d, req.id, { status: "reviewing" }, ctx));
-                dispatch((d, ctx) =>
-                  updatePartnerRequest(d, req.id, { status: "answered", reply: text, registerChangeOrder: register && amount > 0 ? { title: req.title, amount } : undefined }, ctx),
-                );
+                if (req.status === "received") await run("updatePartnerRequest", { requestId: req.id, patch: { status: "reviewing" } });
+                await run("updatePartnerRequest", { requestId: req.id, patch: { status: "answered", reply: text, registerChangeOrder: register && amount > 0 ? { title: req.title, amount } : undefined } });
                 toast.push({ tone: "ok", title: "회신했습니다", desc: "발주처 포털에 ‘회신 완료’와 회신 내용이 표시됩니다." });
                 onClose();
               } catch (e) {
