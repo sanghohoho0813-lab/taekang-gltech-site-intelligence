@@ -6,11 +6,12 @@ import { GROUPS, navFor, type NavItem } from "@/lib/nav";
 import { NavIcon } from "@/components/ui/Icon";
 import { cx } from "@/components/ui/primitives";
 import { Logo } from "./Logo";
-import { useDb, useRole, usePrefs } from "@/lib/data/store";
+import { useDb, useRole, usePrefs, useLiveStatus } from "@/lib/data/store";
 import { THEMES } from "@/lib/theme/themes";
 import { fmtTime } from "@/lib/domain/format";
 import { computeSignals } from "@/lib/domain/risk";
 import { useMemo } from "react";
+import { IS_LIVE } from "@/lib/mode";
 
 export function isActivePath(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(href + "/");
@@ -117,12 +118,33 @@ export function Sidebar({ compact }: { compact: boolean }) {
       </nav>
       {!compact && (
         <div className="m-2.5 rounded-xl border border-shell-line bg-shell-card px-3 py-2.5 text-[0.7rem] leading-relaxed text-shell-muted" data-testid="data-freshness">
-          <p><b className="text-shell-strong">DEMO</b> · 로컬 저장소 (운영 DB 아님)</p>
-          <p>
-            업데이트 <span className="num text-shell-text">{db ? fmtTime(db.updatedAt, true) : "—"}</span> · 규칙 기반 진단
-          </p>
+          {IS_LIVE ? (
+            <LiveFreshness />
+          ) : (
+            <>
+              <p><b className="text-shell-strong">DEMO</b> · 로컬 저장소 (운영 DB 아님)</p>
+              <p>
+                업데이트 <span className="num text-shell-text">{db ? fmtTime(db.updatedAt, true) : "—"}</span> · 규칙 기반 진단
+              </p>
+            </>
+          )}
         </div>
       )}
     </aside>
+  );
+}
+
+/** LIVE: 서버 동기화 상태 (5초 간격 확인) */
+function LiveFreshness() {
+  const { syncedAt, error } = useLiveStatus();
+  return error ? (
+    <p className="font-semibold text-[#F3B07E]" role="status">⚠ {error}</p>
+  ) : (
+    <>
+      <p><b className="text-shell-strong">운영 DB</b> · 자동 동기화</p>
+      <p>
+        확인 <span className="num text-shell-text">{syncedAt ? fmtTime(syncedAt, true) : "—"}</span> · 규칙 기반 진단
+      </p>
+    </>
   );
 }

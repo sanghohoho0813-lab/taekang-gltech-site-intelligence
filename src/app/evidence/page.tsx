@@ -11,6 +11,7 @@ import { run } from "@/lib/data/store";
 import { useToast } from "@/components/ui/Toast";
 import { fmtDateTime } from "@/lib/domain/format";
 import type { ProofEvent } from "@/lib/domain/types";
+import { IS_LIVE } from "@/lib/mode";
 
 const KPIS = [
   { type: "COST", name: "원가 초과 인지 리드타임", unit: "일", point: "원가 발생일(cost_entries.date) → 위험 감지 → 조치 생성(actions.created_at)", why: "월말·준공 무렵에야 알던 원가 초과를 며칠 만에 아는지" },
@@ -39,9 +40,15 @@ export default function EvidencePage() {
         desc="‘좋아 보이는 화면’이 아니라 실제 행동과 결과가 바뀌었는지를 기록합니다. Trigger → Decision → 사람 승인 → Action → Result → KPI 전후."
         right={<DemoBadge />}
       />
-      <Notice tone="warn" title="아래 Proof Event는 시연 중 클릭으로 생성된 DEMO 기록입니다">
-        data_source = DEMO_LOCAL · 실제 현장 실증 성과가 아니며, 개선율은 Baseline 확보 전까지 산출하지 않습니다 (Baseline not yet established).
-      </Notice>
+      {IS_LIVE ? (
+        <Notice tone="info" title="조치 기록(Proof Event)은 실제 조치 완료 시 자동으로 남습니다">
+          개선율은 도입 전 기준값(Baseline)을 측정한 뒤에만 산출합니다 — 그 전에는 건수와 처리 기록만 봅니다.
+        </Notice>
+      ) : (
+        <Notice tone="warn" title="아래 Proof Event는 시연 중 클릭으로 생성된 DEMO 기록입니다">
+          data_source = DEMO_LOCAL · 실제 현장 실증 성과가 아니며, 개선율은 Baseline 확보 전까지 산출하지 않습니다 (Baseline not yet established).
+        </Notice>
+      )}
 
       <Card data-testid="proof-list">
         <CardHeader title={`Proof Event ${db.proofEvents.length}건`} sub="조치 완료 시 자동 생성 · 결과 확인(관리자) 후 확정" right={<MethodChip />} />
@@ -109,7 +116,7 @@ export default function EvidencePage() {
 
       <div className="grid gap-5 @min-[1000px]:grid-cols-2">
         <Card>
-          <CardHeader title="12주 실증 계획 (안)" sub="PILOT 전환 시 적용 — 현재 단계는 DEMO" />
+          <CardHeader title="12주 실증 계획 (안)" sub={IS_LIVE ? "실제 운영 12주 실증 계획" : "PILOT 전환 시 적용 — 현재 단계는 DEMO"} />
           <ol className="relative mx-5 mb-5 border-l-2 border-line pl-5">
             {WEEKS.map((w, i) => (
               <li key={w.w} className="relative pb-4 last:pb-0">
@@ -151,7 +158,7 @@ function ProofItem({ p, site, approver, user, canConfirm, onConfirm }: { p: Proo
         <Badge tone={p.status === "confirmed" ? "ok" : "warn"} icon={<BadgeCheck size={13} />}>
           {p.status === "confirmed" ? "결과 확인" : "확인 대기"}
         </Badge>
-        <Badge tone="demo">DEMO_LOCAL</Badge>
+        <Badge tone={p.data_source === "LIVE" ? "info" : "demo"}>{p.data_source === "LIVE" ? "실제 기록" : "DEMO_LOCAL"}</Badge>
         <b className="text-ink-2">{site}</b> · {fmtDateTime(p.created_at)}
         {typeof p.response_minutes === "number" && <span>· 감지→완료 {p.response_minutes ? `${p.response_minutes}분` : "1분 미만"} (시연 측정값)</span>}
       </div>

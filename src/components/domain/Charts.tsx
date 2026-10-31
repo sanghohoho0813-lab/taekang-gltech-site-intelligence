@@ -3,6 +3,7 @@
 /** 모든 차트는 실제 DB 계산값만 그린다 (라벨·값·단위 표시 — 가짜 그래프 금지). */
 import { fmtEok, fmtPct } from "@/lib/domain/format";
 import { cx } from "@/components/ui/primitives";
+import { IS_LIVE } from "@/lib/mode";
 
 export function MarginBars({
   rows,
@@ -41,7 +42,7 @@ export function MarginBars({
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 text-[0.72rem] text-ink-3">
         <span className="inline-flex items-center gap-1.5"><span className="h-2 w-4 rounded-full bg-[color-mix(in_srgb,var(--t-chart-2)_35%,#D5DAE0)]" />계획 이익률</span>
         <span className="inline-flex items-center gap-1.5"><span className="h-2 w-4 rounded-full bg-chart-1" />현재 예상이익률</span>
-        <span className="inline-flex items-center gap-1.5"><span className="h-3 w-px bg-ink-2" />목표 {target}% (DEMO 기준)</span>
+        <span className="inline-flex items-center gap-1.5"><span className="h-3 w-px bg-ink-2" />목표 {target}%{IS_LIVE ? "" : " (DEMO 기준)"}</span>
       </div>
     </div>
   );

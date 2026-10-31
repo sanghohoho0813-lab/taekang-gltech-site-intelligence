@@ -8,6 +8,7 @@ import { Modal } from "@/components/ui/Modal";
 import type { Health } from "@/lib/data/hooks";
 import { useDb } from "@/lib/data/store";
 import { fmtTime } from "@/lib/domain/format";
+import { IS_LIVE } from "@/lib/mode";
 
 export function HealthPill({ health }: { health: Health }) {
   const m = {
@@ -36,7 +37,7 @@ export function Freshness({ className }: { className?: string }) {
   return (
     <span className={cx("inline-flex items-center gap-1.5 text-[0.75rem] text-ink-3", className)} data-testid="freshness">
       <Database size={13} aria-hidden />
-      DEMO · 브라우저 로컬 저장소 · 마지막 업데이트 <span className="num font-semibold text-ink-2">{db ? fmtTime(db.updatedAt, true) : "—"}</span>
+      {IS_LIVE ? "운영 DB · 마지막 변경" : "DEMO · 브라우저 로컬 저장소 · 마지막 업데이트"} <span className="num font-semibold text-ink-2">{db ? fmtTime(db.updatedAt, true) : "—"}</span>
     </span>
   );
 }

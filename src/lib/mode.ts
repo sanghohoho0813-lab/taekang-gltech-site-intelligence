@@ -5,3 +5,6 @@
  */
 export const DATA_MODE: "demo" | "live" = process.env.NEXT_PUBLIC_DATA_MODE === "live" ? "live" : "demo";
 export const IS_LIVE = DATA_MODE === "live";
+
+/** 손익 변화의 기준 시점 표기 */
+export const BASE_LABEL = IS_LIVE ? "현장 등록 시점" : "데모 초기";

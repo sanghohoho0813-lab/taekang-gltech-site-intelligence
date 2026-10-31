@@ -22,7 +22,7 @@ export function CostEntryList({ db, entries, showSite = false, emptyText = "입�
 
   if (!entries.length) return <EmptyState title={emptyText} />;
 
-  const canModify = (e: CostEntry) => e.source !== "SEED" && e.status === "active" && (role === "ceo" || role === "manager" || e.createdBy === userId);
+  const canModify = (e: CostEntry) => e.source !== "SEED" && (e.status === "active" || e.status === "pending") && (role === "ceo" || role === "manager" || e.createdBy === userId);
 
   return (
     <>
@@ -31,14 +31,17 @@ export function CostEntryList({ db, entries, showSite = false, emptyText = "입�
           const impact = entryEacImpact(db, e);
           const site = db.sites.find((s) => s.id === e.siteId);
           return (
-            <li key={e.id} className={cx("flex flex-wrap items-start gap-x-3 gap-y-1.5 py-3", e.status === "voided" && "opacity-60")} data-testid="cost-entry">
+            <li key={e.id} className={cx("flex flex-wrap items-start gap-x-3 gap-y-1.5 py-3", (e.status === "voided" || e.status === "rejected") && "opacity-60")} data-testid="cost-entry" data-status={e.status}>
               <div className="min-w-0 flex-1">
                 <p className="flex flex-wrap items-center gap-1.5 text-[0.88rem]">
                   {showSite && site && <b className="text-ink">{site.shortName}</b>}
                   <span className="font-semibold text-ink">{CATEGORY_LABEL[e.category]}</span>
-                  <b className={cx("num", e.status === "voided" && "line-through")}>{fmtMan(e.amount)}</b>
+                  <b className={cx("num", (e.status === "voided" || e.status === "rejected") && "line-through")}>{fmtMan(e.amount)}</b>
+                  {e.qty && <span className="num text-[0.75rem] text-ink-3">공수 {e.qty.manDays} × {fmtMan(e.qty.dayRate)}</span>}
                   <Badge tone={e.forecastImpact === "additional" ? "err" : "neutral"}>{IMPACT_LABEL[e.forecastImpact]}</Badge>
                   {e.status === "voided" && <Badge tone="neutral">무효 처리됨</Badge>}
+                  {e.status === "pending" && <Badge tone="warn">공무 확인 대기 · 손익 미반영</Badge>}
+                  {e.status === "rejected" && <Badge tone="err">공무 반려</Badge>}
                   {e.editedAt && <Badge tone="info">수정됨</Badge>}
                 </p>
                 <p className="mt-0.5 text-[0.76rem] text-ink-3">
@@ -46,9 +49,10 @@ export function CostEntryList({ db, entries, showSite = false, emptyText = "입�
                 </p>
                 {e.note && <p className="mt-0.5 text-[0.78rem] text-ink-2">{e.note}</p>}
                 {e.status === "voided" && e.voidReason && <p className="mt-0.5 text-[0.74rem] text-ink-3">무효 사유: {e.voidReason}</p>}
+                {e.status === "rejected" && e.reviewNote && <p className="mt-0.5 text-[0.74rem] text-err">반려 사유: {e.reviewNote}</p>}
               </div>
               <div className="flex items-center gap-2">
-                {e.status === "active" && (
+                {e.status === "active" && canSeeMoney && (
                   <span className={cx("rounded-md px-1.5 py-0.5 text-[0.72rem] font-bold num", impact > 0 ? "bg-err-bg text-err" : "bg-surface-3 text-ink-3")} title="이 원가가 총예상원가(EAC)에 준 영향">
                     EAC {impact > 0 ? `+${fmtMan(impact)}` : "변동 없음"}
                   </span>

@@ -115,7 +115,7 @@ export function MobileDrawer({ open, onClose }: { open: boolean; onClose: () => 
         </div>
         <div className="border-b border-shell-line px-4 py-3 text-[0.8rem]">
           <p className="font-bold text-shell-strong">{user ? `${user.name} ${user.title}` : ""}</p>
-          <p className="text-shell-muted">{ROLE_LABEL[role]} · 권한 프리뷰 (설정에서 전환)</p>
+          <p className="text-shell-muted">{ROLE_LABEL[role]}{IS_LIVE ? "" : " · 권한 프리뷰 (설정에서 전환)"}</p>
         </div>
         <nav className="flex-1 overflow-y-auto px-2.5 py-3 space-y-4">
           {GROUPS.map((g) => {
@@ -146,7 +146,7 @@ export function MobileDrawer({ open, onClose }: { open: boolean; onClose: () => 
             );
           })}
         </nav>
-        <p className="border-t border-shell-line px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] text-[0.72rem] text-shell-muted">DEMO · 가상 시연 데이터 · 규칙 기반 진단</p>
+        <p className="border-t border-shell-line px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] text-[0.72rem] text-shell-muted">{IS_LIVE ? "운영 DB · 규칙 기반 진단" : "DEMO · 가상 시연 데이터 · 규칙 기반 진단"}</p>
       </div>
     </div>
   );

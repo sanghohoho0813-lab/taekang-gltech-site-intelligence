@@ -15,6 +15,7 @@ import { Badge, Button, Field, Notice, cx, inputCls } from "@/components/ui/prim
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { MethodChip } from "./Widgets";
+import { IS_LIVE } from "@/lib/mode";
 
 const STEPS: ActionStatus[] = ["recommended", "assigned", "in_progress", "done"];
 
@@ -174,9 +175,9 @@ export function CompleteModal({ db, action, open, onClose }: { db: DemoDB; actio
         <Field label="조치 결과" htmlFor="c-result" required>
           <textarea id="c-result" rows={3} className={inputCls} value={result} onChange={(e) => setResult(e.target.value)} maxLength={400} placeholder="무엇을 확인했고 어떤 결과가 나왔는지" />
         </Field>
-        <button type="button" onClick={() => setResult(demoResult)} className="press inline-flex items-center gap-1 rounded-lg bg-[#FFF7D6] px-2 py-1 text-[0.75rem] font-bold text-[#7A5200]" data-testid="fill-result">
+        {!IS_LIVE && (<button type="button" onClick={() => setResult(demoResult)} className="press inline-flex items-center gap-1 rounded-lg bg-[#FFF7D6] px-2 py-1 text-[0.75rem] font-bold text-[#7A5200]" data-testid="fill-result">
           <Wand2 size={14} aria-hidden /> DEMO 결과 채우기
-        </button>
+        </button>)}
         {isClaim && (
           <div className="rounded-xl border border-line bg-surface-2 p-3">
             <label className="flex items-start gap-2.5 text-[0.86rem]">

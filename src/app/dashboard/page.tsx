@@ -12,6 +12,7 @@ import { BillingBars, MarginBars } from "@/components/domain/Charts";
 import { fmtEok, fmtMan, fmtPct, fmtPp, fmtRelative } from "@/lib/domain/format";
 import { CATEGORY_LABEL, RULE_LABEL } from "@/lib/domain/labels";
 import { FieldHome } from "@/components/domain/FieldHome";
+import { IS_LIVE, BASE_LABEL } from "@/lib/mode";
 
 export default function DashboardPage() {
   const role = useRole();
@@ -66,8 +67,10 @@ function CeoDashboard() {
       />
       <Freshness />
 
+      {IS_LIVE && db.sites.length === 0 && <GettingStarted userCount={db.users.filter((u) => !u.inactive).length} />}
+
       <div className="stagger grid grid-cols-2 gap-3 @min-[760px]:grid-cols-3 @min-[1080px]:grid-cols-5" data-tour="kpi-strip" data-testid="kpi-strip">
-        <StatCard label="운영 현장" value={`${total.activeCount}곳`} sub={`가상 현장 ${total.siteCount}곳 · 진행 중`} icon={<Building2 size={21} />} href="/sites" />
+        <StatCard label="운영 현장" value={`${total.activeCount}곳`} sub={IS_LIVE ? `전체 ${total.siteCount}곳 중 진행 중` : `가상 현장 ${total.siteCount}곳 · 진행 중`} icon={<Building2 size={21} />} href="/sites" />
         <StatCard
           label="총 계약 규모 (승인 변경 포함)"
           value={<CountUp value={total.adjustedContract} format={(v) => fmtEok(v)} />}
@@ -114,7 +117,7 @@ function CeoDashboard() {
         <Card>
           <CardHeader
             title="현장별 손익 현황"
-            sub={`기준(데모 초기) 평균 이익률 ${fmtPct(baseMargin)} → 현재 ${fmtPct(total.marginPct)} · 단위 억 원, 부가세 별도`}
+            sub={`기준(${BASE_LABEL}) 평균 이익률 ${fmtPct(baseMargin)} → 현재 ${fmtPct(total.marginPct)} · 단위 억 원, 부가세 별도`}
             right={
               <div className="flex gap-1" role="tablist" aria-label="현장 필터">
                 {(
@@ -138,7 +141,7 @@ function CeoDashboard() {
             }
           />
           {sites.length === 0 ? (
-            <EmptyState title="해당 조건의 현장이 없습니다." desc="필터를 '전체'로 바꿔보세요." />
+            db.sites.length === 0 ? <EmptyState title="등록된 현장이 없습니다." desc="운영 관리에서 첫 현장을 등록하면 손익이 계산됩니다." /> : <EmptyState title="해당 조건의 현장이 없습니다." desc="필터를 '전체'로 바꿔보세요." />
           ) : (
             <>
             <ul className="divide-y divide-line border-t border-line @min-[760px]:hidden" data-testid="site-list-mobile">
@@ -338,8 +341,41 @@ function CeoDashboard() {
       </div>
 
       <p className="text-[0.75rem] text-ink-3">
-        * 모든 현장·금액·인물은 가상 시연 데이터이며 (주)태강지엘텍의 실제 실적이 아닙니다. 이익률 하락 기준 {fmtPp(-db.thresholds.marginDropPp)}, 목표 이익률 {db.thresholds.targetMarginPct}%는 DEMO 설정값입니다.
+        {IS_LIVE ? (
+          <>* 예상이익은 본사 관리비를 빼기 전 현장 이익입니다. 위험 기준(이익률 하락 {fmtPp(-db.thresholds.marginDropPp)}, 목표 이익률 {db.thresholds.targetMarginPct}%)은 설정에서 바꿀 수 있습니다.</>
+        ) : (
+          <>* 모든 현장·금액·인물은 가상 시연 데이터이며 (주)태강지엘텍의 실제 실적이 아닙니다. 이익률 하락 기준 {fmtPp(-db.thresholds.marginDropPp)}, 목표 이익률 {db.thresholds.targetMarginPct}%는 DEMO 설정값입니다.</>
+        )}
       </p>
     </PageBody>
   );
 }
+
+/** LIVE 첫 사용: 현장이 하나도 없을 때 시작 순서 안내 */
+function GettingStarted({ userCount }: { userCount: number }) {
+  const steps = [
+    { n: 1, t: "직원·발주처 계정 추가", d: "현장소장·공무 담당 계정을 만들면 임시 비밀번호가 나옵니다.", href: "/admin?tab=members", done: userCount > 1, cta: "사용자 추가" },
+    { n: 2, t: "첫 현장 등록", d: "원 계약금액·실행예산(5개 항목)·현장 담당을 넣으면 계획 이익률이 계산됩니다.", href: "/admin?tab=sites", done: false, cta: "현장 등록" },
+    { n: 3, t: "현장소장 첫 보고", d: "현장소장이 휴대폰으로 로그인해 작업·추가 비용을 보고하면 이 화면이 바뀝니다.", href: "/admin?tab=settings", done: false, cta: "반영 방식 확인" },
+  ];
+  return (
+    <Card data-testid="getting-started">
+      <CardHeader title="시작하기 — 3단계" sub="실제 현장 1곳으로 먼저 시작하는 것을 권장합니다" />
+      <ol className="grid gap-3 px-5 pb-5 @min-[900px]:grid-cols-3">
+        {steps.map((s) => (
+          <li key={s.n} className={cx("rounded-2xl border p-4", s.done ? "border-ok/30 bg-ok-bg" : "border-line bg-surface-2")}>
+            <p className="text-[0.75rem] font-bold text-theme-ink">{s.done ? "완료" : `${s.n}단계`}</p>
+            <p className="mt-0.5 font-bold">{s.t}</p>
+            <p className="mt-1 text-[0.8rem] text-ink-2">{s.d}</p>
+            <Link href={s.href} className="mt-3 inline-block">
+              <Button size="sm" variant={s.done ? "ghost" : "cta"}>
+                {s.cta}
+              </Button>
+            </Link>
+          </li>
+        ))}
+      </ol>
+    </Card>
+  );
+}
+

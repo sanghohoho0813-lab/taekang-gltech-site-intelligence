@@ -1,5 +1,6 @@
 "use client";
 
+import { IS_LIVE } from "@/lib/mode";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { ListChecks, ChevronRight, HardHat } from "lucide-react";
@@ -15,7 +16,8 @@ import { ROLE_LABEL } from "@/lib/domain/labels";
 /** /field — 현장직원 홈 (현장직원 역할의 /dashboard에서도 이 화면을 사용) */
 export function FieldHome() {
   const { db, role, userId, user } = useMe();
-  const mySites = useMemo(() => (!db ? [] : role === "field" ? db.sites.filter((s) => s.fieldUserId === userId) : db.sites), [db, role, userId]);
+  // LIVE: 서버가 이미 담당 현장만 보낸다
+  const mySites = useMemo(() => (!db ? [] : role === "field" && !IS_LIVE ? db.sites.filter((s) => s.fieldUserId === userId) : db.sites), [db, role, userId]);
   const [selected, setSelected] = useState<string | null>(null);
   if (!db) return <PageSkeleton />;
   const siteId = selected ?? mySites[0]?.id;

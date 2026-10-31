@@ -279,7 +279,7 @@ export interface ProofEvent {
   result: string;
   kpi_before: Record<string, string | number>;
   kpi_after: Record<string, string | number>;
-  data_source: "DEMO_LOCAL";
+  data_source: "DEMO_LOCAL" | "LIVE";
   user_id: string;
   created_at: string;
   result_confirmed_at?: string;

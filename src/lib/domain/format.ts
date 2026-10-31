@@ -28,6 +28,7 @@ export function fmtMan(v: number, opts: { unit?: boolean } = {}): string {
   const unit = opts.unit ?? true;
   const sign = v < 0 ? "−" : "";
   const abs = Math.abs(Math.round(v));
+  if (abs === 0) return unit ? "0원" : "0";
   if (abs >= 100_000_000) {
     const eok = Math.floor(abs / 100_000_000);
     const rest = Math.round((abs % 100_000_000) / 10_000);

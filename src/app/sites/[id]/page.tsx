@@ -19,6 +19,7 @@ import { receivableAging } from "@/lib/domain/risk";
 import { fmtDate, fmtDateTime, fmtEok, fmtMan, fmtManNum, fmtPct, fmtPp, fmtRelative } from "@/lib/domain/format";
 import { CATEGORY_LABEL, CO_STATUS_LABEL, PARTNER_STATUS_LABEL, RULE_LABEL } from "@/lib/domain/labels";
 import type { DemoDB, Site } from "@/lib/domain/types";
+import { IS_LIVE, BASE_LABEL } from "@/lib/mode";
 
 type Tab = "overview" | "cost" | "progress" | "reports" | "contract" | "billing" | "requests" | "history";
 
@@ -260,7 +261,7 @@ function ProfitEngine({ db, site, f }: { db: DemoDB; site: Site; f: SiteFinancia
       <div className="mt-auto space-y-2 px-5 py-4">
         {changed && base && (
           <div className="anim-flash rounded-xl border border-err/25 bg-err-bg px-3.5 py-2.5 text-[0.82rem]" data-testid="change-banner">
-            <p className="font-bold text-ink">기준(데모 초기) 대비 변화</p>
+            <p className="font-bold text-ink">기준({BASE_LABEL}) 대비 변화</p>
             <p className="num text-ink-2">
               EAC {fmtEok(base.eac)} → <b>{fmtEok(f.eac)}</b> ({f.eac - base.eac >= 0 ? "+" : "−"}
               {fmtMan(Math.abs(f.eac - base.eac))}) · 예상이익 {fmtEok(base.expectedProfit)} → <b>{fmtEok(f.expectedProfit)}</b> · 이익률 {fmtPct(base.marginPct)} → <b>{fmtPct(f.marginPct)}</b>
@@ -309,7 +310,7 @@ function FieldSiteSummary({ db, site }: { db: DemoDB; site: Site }) {
   const sum = mine.reduce((s, e) => s + e.amount, 0);
   return (
     <Card data-tour="profit-engine" data-testid="field-site-summary">
-      <CardHeader title="현장 원가 입력 현황" sub="현장직원 화면 · 권한 프리뷰" />
+      <CardHeader title="현장 원가 입력 현황" sub={IS_LIVE ? "현장직원 화면" : "현장직원 화면 · 권한 프리뷰"} />
       <div className="space-y-3 px-5 pb-5">
         <div className="grid grid-cols-2 gap-3">
           <div className="rounded-xl border border-line bg-surface-2 p-3">
@@ -419,7 +420,7 @@ function CostTab({ db, site, f, canSeeMoney }: { db: DemoDB; site: Site; f: Site
               </tbody>
             </table>
           </div>
-          <p className="px-5 py-2.5 text-[0.72rem] text-ink-3">단위: 만 원 · 부가세 별도 · DEMO</p>
+          <p className="px-5 py-2.5 text-[0.72rem] text-ink-3">단위: 만 원 · 부가세 별도{IS_LIVE ? "" : " · DEMO"}</p>
         </Card>
       )}
       <Card>
@@ -458,7 +459,7 @@ function ReportsTab({ db, site }: { db: DemoDB; site: Site }) {
   const reports = db.reports.filter((r) => r.siteId === site.id);
   return (
     <Card>
-      <CardHeader title="현장 보고·사진" sub="사진은 이 브라우저 DEMO 저장소에 저장된 첨부만 표시" />
+      <CardHeader title="현장 보고·사진" sub={IS_LIVE ? "현장 보고에 첨부된 사진" : "사진은 이 브라우저 DEMO 저장소에 저장된 첨부만 표시"} />
       {reports.length === 0 ? (
         <EmptyState icon={<ImageIcon size={28} />} title="보고가 없습니다." />
       ) : (

@@ -19,6 +19,7 @@ import { useToast } from "@/components/ui/Toast";
 import { useTour } from "@/components/tour/Tour";
 import { ResetDialog } from "@/components/device/DemoBar";
 import { AiReadyButton } from "@/components/domain/Widgets";
+import { IS_LIVE } from "@/lib/mode";
 
 function download(name: string, text: string) {
   const blob = new Blob(["﻿" + text], { type: "text/csv;charset=utf-8" });
@@ -99,7 +100,21 @@ export default function SettingsPage() {
         </div>
       </Card>
 
-      <Card>
+      {IS_LIVE && (
+        <Card>
+          <CardHeader title="계정 · 운영 관리" sub="로그인한 사용자 기준으로 메뉴와 데이터가 정해집니다 (서버 권한 검사)" />
+          <div className="flex flex-wrap gap-2 px-5 pb-5">
+            <Button onClick={() => router.push("/account")}>내 계정 · 비밀번호 변경</Button>
+            {isManager && (
+              <Button variant="cta" onClick={() => router.push("/admin")}>
+                운영 관리 (현장·사용자·설정)
+              </Button>
+            )}
+          </div>
+        </Card>
+      )}
+
+      {!IS_LIVE && (<Card>
         <CardHeader title="사용자 · 권한 프리뷰" sub="실제 로그인·보안이 아닙니다 — 역할별 화면 노출을 미리 보여주는 DEMO 기능입니다" right={<Badge tone="warn" icon={<ShieldCheck size={13} />}>RLS 미적용 (READY)</Badge>} />
         <div className="flex flex-wrap gap-2 px-5" role="radiogroup" aria-label="Demo 역할">
           {(["ceo", "manager", "field", "partner"] as RoleId[]).map((r) => (
@@ -145,9 +160,9 @@ export default function SettingsPage() {
             </tbody>
           </table>
         </div>
-      </Card>
+      </Card>)}
 
-      <Card>
+      {!IS_LIVE && (<Card>
         <CardHeader title="데모" sub="미팅 직전 초기화로 시나리오를 처음 상태로 되돌립니다" />
         <div className="flex flex-wrap gap-2 px-5 pb-5">
           <Button variant="cta" icon={<RotateCcw size={17} />} onClick={() => setReset(true)} data-testid="settings-reset">
@@ -163,7 +178,7 @@ export default function SettingsPage() {
           )}
         </div>
         <p className="px-5 pb-5 text-[0.78rem] text-ink-3">데이터 시드 생성: {fmtDateTime(db.seededAt)} · 저장 버전 rev {db.rev}</p>
-      </Card>
+      </Card>)}
 
       {isManager && <DataSection />}
 
@@ -211,7 +226,11 @@ function DataSection() {
 
   return (
     <Card data-testid="data-section">
-      <CardHeader title="데이터 · 실데이터 전환 경로" sub="Demo Seed → Repository Layer → CSV / Supabase 교체 지점" right={<Badge tone="demo">DEMO · 브라우저 로컬 저장소</Badge>} />
+      <CardHeader
+        title={IS_LIVE ? "데이터 가져오기·내보내기" : "데이터 · 실데이터 전환 경로"}
+        sub={IS_LIVE ? "기존 엑셀 원가를 CSV로 한 번에 넣거나, 입력된 원가를 CSV로 받습니다" : "Demo Seed → Repository Layer → CSV / Supabase 교체 지점"}
+        right={IS_LIVE ? <Badge tone="ok">운영 DB</Badge> : <Badge tone="demo">DEMO · 브라우저 로컬 저장소</Badge>}
+      />
       <div className="grid gap-5 px-5 pb-5 @min-[1000px]:grid-cols-2">
         <div className="space-y-3">
           <p className="text-[0.9rem] font-bold">원가 CSV 가져오기</p>
@@ -314,7 +333,7 @@ function DataSection() {
             <p className="mt-2 text-ink-3">현장코드: {codes.join(", ")}</p>
           </details>
         </div>
-        <div className="space-y-3 text-[0.84rem]">
+        {!IS_LIVE && (<div className="space-y-3 text-[0.84rem]">
           <p className="text-[0.9rem] font-bold">실데이터 전환 경로</p>
           <ol className="space-y-2">
             {[
@@ -337,7 +356,7 @@ function DataSection() {
           <p className="flex items-center gap-1.5 text-[0.76rem] text-ink-3">
             <Database size={14} /> 저장 위치: 이 브라우저 localStorage · 운영 DB 연결 아님
           </p>
-        </div>
+        </div>)}
       </div>
     </Card>
   );
@@ -356,7 +375,7 @@ function ThresholdCard({ thresholds }: { thresholds: RiskThresholds }) {
   ];
   return (
     <Card>
-      <CardHeader title="위험 판단 기준 (DEMO 설정값)" sub="규칙 기반 진단의 기준 — 회사 실제 기준은 미팅 후 확정" right={<Gauge size={18} className="text-ink-3" />} />
+      <CardHeader title={IS_LIVE ? "위험 판단 기준" : "위험 판단 기준 (DEMO 설정값)"} sub={IS_LIVE ? "규칙 기반 진단의 기준 — 바꾸면 모든 위험 신호가 다시 계산됩니다" : "규칙 기반 진단의 기준 — 회사 실제 기준은 미팅 후 확정"} right={<Gauge size={18} className="text-ink-3" />} />
       <div className="grid grid-cols-2 gap-3 px-5">
         {fields.map((f) => (
           <Field key={f.k} label={`${f.label} (${f.unit})`} htmlFor={`th-${f.k}`}>

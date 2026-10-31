@@ -16,6 +16,7 @@ import { CO_STATUS_LABEL } from "@/lib/domain/labels";
 import { fmtDate, fmtEok, fmtMan, fmtPct, todayIso } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
 import type { ChangeOrder, DemoDB } from "@/lib/domain/types";
+import { IS_LIVE } from "@/lib/mode";
 
 export default function FinancePage() {
   const { db } = useMe();
@@ -55,7 +56,7 @@ export default function FinancePage() {
       </div>
 
       <Card>
-        <CardHeader title="현장별 정산 현황" sub="단위 억 원 · 부가세 별도 · DEMO" />
+        <CardHeader title="현장별 정산 현황" sub={IS_LIVE ? "단위 억 원 · 부가세 별도" : "단위 억 원 · 부가세 별도 · DEMO"} />
         <div tabIndex={0} role="region" aria-label="현장별 정산 현황 표 (가로 스크롤)" className="overflow-x-auto scroll-thin">
           <table className="w-full min-w-[56rem] text-[0.85rem]" data-testid="finance-table">
             <thead>
@@ -221,7 +222,7 @@ function ChangeOrderModal({ db, c, to, onClose }: { db: DemoDB; c: ChangeOrder; 
             <Notice tone="info" title="반영 결과 (확정)">
               변경 반영 계약 {fmtEok(f.adjustedContract)} → {fmtEok(afterAdj)} · 예상이익률 {fmtPct(f.marginPct)} → {fmtPct(afterMargin)}
             </Notice>
-            <p className="text-[0.76rem] text-ink-3">발주처의 실제 승인(공문·변경계약서)을 확인한 경우에만 승인 반영하세요. DEMO 환경입니다.</p>
+            <p className="text-[0.76rem] text-ink-3">원청·발주처의 실제 승인(공문·변경계약서)을 확인한 경우에만 승인 반영하세요.{IS_LIVE ? "" : " DEMO 환경입니다."}</p>
           </>
         ) : to === "submitted" ? (
           <p>청구 검토 중 → ‘발주처 청구(승인 대기)’로 바뀝니다. 계약금액·이익에는 아직 반영되지 않습니다.</p>
@@ -286,7 +287,7 @@ function MoneyFormModal({ db, kind, onClose }: { db: DemoDB; kind: "billing" | "
         <Field label={kind === "billing" ? "청구일" : "입금일"} htmlFor="m-date">
           <input id="m-date" type="date" className={inputCls} value={date} onChange={(e) => setDate(e.target.value)} />
         </Field>
-        <p className="text-[0.74rem] text-ink-3">현재 Demo 역할 사용자로 활동 이력에 기록됩니다 (DEMO 저장소).</p>
+        <p className="text-[0.74rem] text-ink-3">{IS_LIVE ? "로그인한 사용자 이름으로 활동 이력에 기록됩니다." : "현재 Demo 역할 사용자로 활동 이력에 기록됩니다 (DEMO 저장소)."}</p>
       </div>
     </Modal>
   );

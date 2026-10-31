@@ -155,7 +155,7 @@ export function viewFor(m: Member, db: DemoDB): DemoDB {
     ...base,
     ...empty,
     scope: "partner",
-    users: users.filter((u) => u.role !== "partner" || u.id === m.id),
+    users: users.filter((u) => u.role !== "partner" || u.id === m.id).map((u) => (u.id === m.id ? { ...u, partnerSiteIds: m.partnerSiteIds } : u)),
     sites: db.sites.filter((s) => sites.has(s.id)),
     contracts: [...sites].map(zeroContract),
     partnerRequests: db.partnerRequests.filter((r) => sites.has(r.siteId) && r.partnerUserId === m.id),

@@ -16,6 +16,7 @@ import { fmtDateTime, fmtMan, fmtRelative } from "@/lib/domain/format";
 import { run } from "@/lib/data/store";
 import type { DemoDB, PartnerRequest, RiskSignal } from "@/lib/domain/types";
 import { ShieldAlert, ListChecks, Inbox } from "lucide-react";
+import { IS_LIVE } from "@/lib/mode";
 
 export default function InsightsPage() {
   const { role } = useMe();
@@ -268,6 +269,7 @@ function ReplyModal({ req, onClose }: { req: PartnerRequest; onClose: () => void
         <Field label="회신 내용 (발주처에 표시)" htmlFor="rp-text" required>
           <textarea id="rp-text" rows={3} className={inputCls} value={text} onChange={(e) => setText(e.target.value)} maxLength={400} placeholder="예) 변경 범위 확인했습니다. 단가 검토 후 11월 첫 주 견적 회신 드리겠습니다." />
         </Field>
+        {!IS_LIVE && (
         <button
           type="button"
           onClick={() => setText("서면 작업지시 접수했습니다. 변경 범위를 현장에서 확인했고, 계약 내역단가 기준으로 변경공사 견적을 회신드리겠습니다. (DEMO 회신)")}
@@ -275,6 +277,7 @@ function ReplyModal({ req, onClose }: { req: PartnerRequest; onClose: () => void
         >
           DEMO 회신 채우기
         </button>
+        )}
         {req.type === "change_review" && (
           <div className="rounded-xl border border-line bg-surface-2 p-3">
             <label className="flex items-start gap-2.5 text-[0.85rem]">

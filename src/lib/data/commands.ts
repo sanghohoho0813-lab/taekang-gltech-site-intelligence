@@ -27,6 +27,7 @@ import { ACTION_STATUS_LABEL, CATEGORY_LABEL, COST_CATEGORIES, PARTNER_STATUS_LA
 import { fmtEok, fmtMan, fmtPct } from "@/lib/domain/format";
 import { DECISION_METHOD } from "@/lib/domain/risk";
 import { uid } from "@/lib/domain/ids";
+import { IS_LIVE } from "@/lib/mode";
 
 export interface Ctx {
   userId: string;
@@ -499,7 +500,7 @@ export function completeAction(db0: DemoDB, actionId: string, input: CompleteAct
       "총예상원가(EAC)": fmtEok(fAfter.eac),
       "청구 검토·승인대기 변경공사": fmtMan(fAfter.pendingChangeAmount),
     },
-    data_source: "DEMO_LOCAL",
+    data_source: IS_LIVE ? "LIVE" : "DEMO_LOCAL",
     user_id: ctx.userId,
     created_at: at,
     result_confirmed_at: confirmed ? at : undefined,

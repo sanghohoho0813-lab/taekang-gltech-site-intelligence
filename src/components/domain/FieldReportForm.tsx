@@ -21,6 +21,17 @@ interface CostRow {
   amountText: string;
   impact: "additional" | "within_forecast";
   note: string;
+  /** 노무비를 공수 × 일당으로 입력 */
+  byQty?: boolean;
+  manDays?: string;
+  dayRate?: string;
+}
+
+/** 공수 × 일당 → 원 (공수는 0.5 단위까지) */
+function qtyAmount(c: CostRow): number {
+  const md = Number((c.manDays ?? "").replace(/[^\d.]/g, ""));
+  const rate = parseAmount(c.dayRate ?? "");
+  return md > 0 && rate > 0 ? Math.round(md * rate) : NaN;
 }
 
 const REASONS: CostReason[] = ["design_change", "price_increase", "quantity_increase", "rework", "schedule", "planned", "other"];
@@ -62,7 +73,8 @@ export function FieldReportForm({ fixedSiteId, onClose, inSheet = false }: { fix
   const toast = useToast();
   const mySites = useMemo(() => {
     if (!db) return [];
-    return role === "field" ? db.sites.filter((s) => s.fieldUserId === userId) : db.sites;
+    // LIVE에서는 서버가 이미 담당 현장만 보내므로 그대로 사용
+    return role === "field" && !IS_LIVE ? db.sites.filter((s) => s.fieldUserId === userId) : db.sites;
   }, [db, role, userId]);
 
   const [siteId, setSiteId] = useState(fixedSiteId ?? "");
@@ -74,6 +86,7 @@ export function FieldReportForm({ fixedSiteId, onClose, inSheet = false }: { fix
   const [costs, setCosts] = useState<CostRow[]>([]);
   const [reason, setReason] = useState<CostReason | "">("");
   const [reasonNote, setReasonNote] = useState("");
+  const [progressText, setProgressText] = useState("");
   const [idemKey, setIdemKey] = useState(() => uid("idem"));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
@@ -106,7 +119,12 @@ export function FieldReportForm({ fixedSiteId, onClose, inSheet = false }: { fix
     }
   }, [siteId]);
 
-  const costLines: CostLineInput[] = costs.map((c) => ({ category: c.category, amount: parseAmount(c.amountText), forecastImpact: c.impact, note: c.note }));
+  const costLines: CostLineInput[] = costs.map((c) =>
+    c.byQty && c.category === "labor"
+      ? { category: c.category, amount: qtyAmount(c), forecastImpact: c.impact, note: c.note, qty: { manDays: Number((c.manDays ?? "").replace(/[^\d.]/g, "")), dayRate: parseAmount(c.dayRate ?? "") } }
+      : { category: c.category, amount: parseAmount(c.amountText), forecastImpact: c.impact, note: c.note },
+  );
+  const progressPct = progressText.trim() === "" ? undefined : Math.max(0, Math.min(100, Math.round(Number(progressText))));
 
   const input = {
     idempotencyKey: idemKey,
@@ -120,6 +138,7 @@ export function FieldReportForm({ fixedSiteId, onClose, inSheet = false }: { fix
     reason: reason || undefined,
     reasonNote,
     source: (inSheet || role === "field" ? "FIELD" : "PC") as "FIELD" | "PC",
+    ...(progressPct !== undefined && Number.isFinite(progressPct) ? { progressPct } : {}),
   };
 
   // 저장 전 영향 미리보기 — 같은 계산 엔진에 가상으로 적용 (저장하지 않음)
@@ -149,6 +168,7 @@ export function FieldReportForm({ fixedSiteId, onClose, inSheet = false }: { fix
   };
 
   const resetForm = () => {
+    setProgressText("");
     setWorkDone("");
     setIssues("");
     setTomorrowPlan("");
@@ -305,12 +325,12 @@ export function FieldReportForm({ fixedSiteId, onClose, inSheet = false }: { fix
       noValidate
       data-testid="field-report-form"
     >
-      <div className="flex items-center justify-between gap-2 rounded-xl bg-[#FFF7D6] px-3 py-2 text-[0.78rem] text-[#7A5200]">
+      {!IS_LIVE && <div className="flex items-center justify-between gap-2 rounded-xl bg-[#FFF7D6] px-3 py-2 text-[0.78rem] text-[#7A5200]">
         <span>DEMO · 미팅 시나리오 값을 자동으로 채울 수 있습니다</span>
         <button type="button" onClick={fillDemo} className="press inline-flex shrink-0 items-center gap-1 rounded-lg bg-white/70 px-2 py-1 font-bold hover:bg-white" data-testid="fill-demo">
           <Wand2 size={14} aria-hidden /> 데모 값 채우기
         </button>
-      </div>
+      </div>}
       {draftNotice && (
         <Notice tone="info" title="임시저장된 보고를 불러왔습니다">
           보고 등록 전까지는 손익에 반영되지 않습니다.
@@ -339,6 +359,15 @@ export function FieldReportForm({ fixedSiteId, onClose, inSheet = false }: { fix
         <textarea id="f-work" rows={3} maxLength={500} value={workDone} onChange={(e) => setWorkDone(e.target.value)} className={inputCls} placeholder="예) 3층 남측 커튼월 유닛 10개 설치 완료" />
       </Field>
 
+      {site && (
+        <Field label="오늘 기준 공정률 (선택)" htmlFor="f-progress" error={errors.progressPct} hint={`현재 ${site.progressPct}% — 바뀌었을 때만 입력`}>
+          <div className="flex items-center gap-2">
+            <input id="f-progress" type="number" inputMode="numeric" min={0} max={100} value={progressText} onChange={(e) => setProgressText(e.target.value)} className={cx(inputCls, "num w-28 text-right")} placeholder={String(site.progressPct)} />
+            <span className="text-ink-3">%</span>
+          </div>
+        </Field>
+      )}
+
       <div className="space-y-1.5">
         <div className="flex items-baseline justify-between">
           <span className="text-[0.88rem] font-semibold text-ink">작업 사진</span>
@@ -362,7 +391,7 @@ export function FieldReportForm({ fixedSiteId, onClose, inSheet = false }: { fix
             </label>
           )}
         </div>
-        <p className="text-[0.72rem] text-ink-3">사진은 이 브라우저의 DEMO 저장소에 축소 저장됩니다 (외부 전송 없음).</p>
+        <p className="text-[0.72rem] text-ink-3">{IS_LIVE ? "사진은 축소해서 회사 서버에 저장되고, 대표·관리자와 담당 현장 직원만 볼 수 있습니다." : "사진은 이 브라우저의 DEMO 저장소에 축소 저장됩니다 (외부 전송 없음)."}</p>
       </div>
 
       <Field label="이슈 / 위험 사항" htmlFor="f-issue" counter={`${issues.length}/500`}>
@@ -409,18 +438,57 @@ export function FieldReportForm({ fixedSiteId, onClose, inSheet = false }: { fix
                       ))}
                     </select>
                   </Field>
-                  <Field label="금액 (원)" htmlFor={`c-amt-${i}`} error={errors[`costs.${i}.amount`]} hint={Number.isFinite(amt) && amt > 0 ? `= ${fmtMan(amt)}` : "예) 30,000,000"}>
-                    <input
-                      id={`c-amt-${i}`}
-                      inputMode="numeric"
-                      autoComplete="off"
-                      value={c.amountText}
-                      onChange={(e) => setCosts((x) => x.map((r) => (r.key === c.key ? { ...r, amountText: withCommas(e.target.value) } : r)))}
-                      className={cx(inputCls, "num text-right font-semibold")}
-                      placeholder="0"
-                    />
-                  </Field>
+                  {c.byQty && c.category === "labor" ? (
+                    <Field label="공수 × 일당" htmlFor={`c-md-${i}`} error={errors[`costs.${i}.amount`]} hint={Number.isFinite(qtyAmount(c)) ? `= ${fmtMan(qtyAmount(c))}` : "예) 30공수 × 300,000원"}>
+                      <div className="grid grid-cols-[1fr_auto_1.4fr] items-center gap-1.5">
+                        <input
+                          id={`c-md-${i}`}
+                          inputMode="decimal"
+                          aria-label={`비용 ${i + 1} 공수`}
+                          value={c.manDays ?? ""}
+                          onChange={(e) => setCosts((x) => x.map((r) => (r.key === c.key ? { ...r, manDays: e.target.value.replace(/[^\d.]/g, "") } : r)))}
+                          className={cx(inputCls, "num text-right font-semibold")}
+                          placeholder="공수"
+                        />
+                        <span className="text-ink-3">×</span>
+                        <input
+                          inputMode="numeric"
+                          aria-label={`비용 ${i + 1} 일당`}
+                          value={c.dayRate ?? ""}
+                          onChange={(e) => setCosts((x) => x.map((r) => (r.key === c.key ? { ...r, dayRate: withCommas(e.target.value) } : r)))}
+                          className={cx(inputCls, "num text-right")}
+                          placeholder="일당"
+                        />
+                      </div>
+                    </Field>
+                  ) : (
+                    <Field label="금액 (원)" htmlFor={`c-amt-${i}`} error={errors[`costs.${i}.amount`]} hint={Number.isFinite(amt) && amt > 0 ? `= ${fmtMan(amt)}` : "예) 30,000,000"}>
+                      <input
+                        id={`c-amt-${i}`}
+                        inputMode="numeric"
+                        autoComplete="off"
+                        value={c.amountText}
+                        onChange={(e) => setCosts((x) => x.map((r) => (r.key === c.key ? { ...r, amountText: withCommas(e.target.value) } : r)))}
+                        className={cx(inputCls, "num text-right font-semibold")}
+                        placeholder="0"
+                      />
+                    </Field>
+                  )}
                 </div>
+                {c.category === "labor" && (
+                  <label className="mt-1.5 inline-flex items-center gap-2 text-[0.8rem] font-semibold text-ink-2">
+                    <input
+                      type="checkbox"
+                      className="size-4 accent-[var(--t-active)]"
+                      checked={!!c.byQty}
+                      onChange={(e) =>
+                        setCosts((x) => x.map((r) => (r.key === c.key ? { ...r, byQty: e.target.checked, dayRate: r.dayRate || (db.settings?.laborDayRate ?? 300_000).toLocaleString("ko-KR") } : r)))
+                      }
+                      data-testid={`cost-byqty-${i}`}
+                    />
+                    공수 × 일당으로 입력
+                  </label>
+                )}
                 <fieldset className="mt-2">
                   <legend className="mb-1 text-[0.8rem] font-semibold text-ink">비용 성격</legend>
                   <div className="grid grid-cols-2 gap-2">

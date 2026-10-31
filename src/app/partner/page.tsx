@@ -17,6 +17,7 @@ import { Facade } from "@/components/domain/Facade";
 import { Donut } from "@/components/domain/Charts";
 import { LogoMark } from "@/components/shell/Logo";
 import { Clock } from "@/components/shell/Clock";
+import { IS_LIVE } from "@/lib/mode";
 
 const FUTURE = [
   { title: "기성 확인 요청 (직발주 건축주)", items: ["기성 내역·진행 사진 온라인 확인", "확인 이력 보관", "확인 요청 알림"] },
@@ -33,7 +34,7 @@ export default function PartnerPage() {
       <div className="mx-auto max-w-xl px-5 py-16 text-center" data-testid="access-denied">
         <Lock size={28} className="mx-auto text-ink-3" />
         <h1 className="mt-3 text-[1.25rem] font-bold">현장직원 역할에서는 발주처 포털을 볼 수 없습니다</h1>
-        <p className="mt-2 text-[0.88rem] text-ink-3">권한 프리뷰(DEMO)</p>
+        {!IS_LIVE && <p className="mt-2 text-[0.88rem] text-ink-3">권한 프리뷰(DEMO)</p>}
         <Link href="/field">
           <Button variant="cta" className="mt-5">현장 보고로 이동</Button>
         </Link>
@@ -41,8 +42,32 @@ export default function PartnerPage() {
     );
   }
   const preview = role !== "partner";
-  const partner = db.users.find((u) => u.id === (preview ? "u-partner" : userId))!;
-  const site = db.sites.find((s) => partner.partnerSiteIds?.includes(s.id))!;
+  // 관리자 미리보기: 현장이 지정된 첫 발주처 계정 기준 / 발주처: 본인 계정
+  const partner = preview ? db.users.find((u) => u.role === "partner" && !u.inactive && (u.partnerSiteIds ?? []).some((id) => db.sites.some((s) => s.id === id))) : db.users.find((u) => u.id === userId);
+  const mySites = db.sites.filter((s) => partner?.partnerSiteIds?.includes(s.id));
+  if (!partner || mySites.length === 0) {
+    return (
+      <div className="mx-auto max-w-xl px-5 py-16" data-testid="partner-portal">
+        <EmptyState
+          title={preview ? "발주처 포털을 볼 수 있는 계정이 아직 없습니다" : "볼 수 있는 현장이 아직 없습니다"}
+          desc={preview ? "운영 관리 → 사용자에서 ‘발주처·협력사’ 계정을 만들고 공개할 현장을 지정하세요." : "태강지엘텍 담당자에게 현장 공개를 요청해주세요."}
+          action={
+            preview ? (
+              <Link href={IS_LIVE ? "/admin" : "/settings"}>
+                <Button variant="cta">{IS_LIVE ? "운영 관리로" : "설정으로"}</Button>
+              </Link>
+            ) : undefined
+          }
+        />
+      </div>
+    );
+  }
+  return <PartnerPortal db={db} partner={partner} sites={mySites} preview={preview} />;
+}
+
+function PartnerPortal({ db, partner, sites: mySites, preview }: { db: NonNullable<ReturnType<typeof useMe>["db"]>; partner: NonNullable<ReturnType<typeof useMe>["db"]>["users"][number]; sites: NonNullable<ReturnType<typeof useMe>["db"]>["sites"]; preview: boolean }) {
+  const [siteId, setSiteId] = useState(mySites[0].id);
+  const site = mySites.find((s) => s.id === siteId) ?? mySites[0];
   const requests = db.partnerRequests.filter((r) => r.siteId === site.id && r.partnerUserId === partner.id);
   const nextStage = site.stages.find((s) => s.progressPct < 100);
 
@@ -99,12 +124,26 @@ export default function PartnerPage() {
 
       <main id="main" className="mx-auto max-w-[1240px] space-y-5 px-4 py-6 pb-16">
         {preview && (
-          <Notice tone="info" title="관리자 미리보기 — ‘가상 A건설(원청) 현장 공무’에게 보이는 화면입니다">
-            내부 원가·예상이익·미수금·다른 현장 정보는 이 포털에 표시되지 않습니다. 요청 등록은 발주처 역할로 전환해 시연하세요.{" "}
-            <button type="button" className="font-bold text-theme-ink underline" onClick={() => setPrefs({ role: "partner" })} data-testid="switch-to-partner">
-              발주처 역할로 전환
-            </button>
+          <Notice tone="info" title={`관리자 미리보기 — ‘${partner.name} ${partner.title}’에게 보이는 화면입니다`}>
+            내부 원가·예상이익·미수금·다른 현장 정보는 이 포털에 표시되지 않습니다.
+            {!IS_LIVE && (
+              <>
+                {" "}요청 등록은 발주처 역할로 전환해 시연하세요.{" "}
+                <button type="button" className="font-bold text-theme-ink underline" onClick={() => setPrefs({ role: "partner" })} data-testid="switch-to-partner">
+                  발주처 역할로 전환
+                </button>
+              </>
+            )}
           </Notice>
+        )}
+        {mySites.length > 1 && (
+          <div className="flex flex-wrap gap-2" role="tablist" aria-label="현장 선택">
+            {mySites.map((s) => (
+              <button key={s.id} type="button" role="tab" aria-selected={s.id === site.id} onClick={() => setSiteId(s.id)} className={cx("press rounded-full border px-3.5 py-1.5 text-[0.85rem] font-bold", s.id === site.id ? "border-active bg-active-soft text-theme-ink" : "border-line bg-surface text-ink-2")}>
+                {s.shortName}
+              </button>
+            ))}
+          </div>
         )}
 
         <section id="status" className="grid gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
@@ -153,7 +192,9 @@ export default function PartnerPage() {
         </section>
 
         <p className="text-center text-[0.74rem] text-ink-3">
-          DEMO · 가상 시연 데이터 · 이 포털에는 내부 원가·이익·미수금·다른 고객 현장 정보가 표시되지 않습니다 (권한 프리뷰, 실제 보안은 Supabase RLS 전환 후 적용).
+          {IS_LIVE
+            ? "이 포털에는 내부 원가·이익·미수금·다른 고객 현장 정보가 표시되지 않습니다 (서버에서 차단)."
+            : "DEMO · 가상 시연 데이터 · 이 포털에는 내부 원가·이익·미수금·다른 고객 현장 정보가 표시되지 않습니다 (권한 프리뷰 — 실제 운영에서는 서버에서 차단)."}
         </p>
       </main>
     </div>
@@ -227,7 +268,7 @@ function RequestForm({ siteId, disabled }: { siteId: string; disabled: boolean }
             <input id="p-date" type="date" className={inputCls} value={date} onChange={(e) => setDate(e.target.value)} disabled={disabled} />
           </Field>
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <button
+            {IS_LIVE ? <span /> : <button
               type="button"
               disabled={disabled}
               onClick={() => {
@@ -239,7 +280,7 @@ function RequestForm({ siteId, disabled }: { siteId: string; disabled: boolean }
               data-testid="partner-fill"
             >
               DEMO 요청 채우기
-            </button>
+            </button>}
             <Button type="submit" variant="cta" size="lg" icon={<Send size={17} />} disabled={disabled} data-testid="partner-submit">
               요청 보내기
             </Button>

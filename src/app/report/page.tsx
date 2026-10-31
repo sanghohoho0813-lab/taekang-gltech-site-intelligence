@@ -12,6 +12,7 @@ import { entryEacImpact, simulateApprovedClaims } from "@/lib/domain/calc";
 import { ACTION_STATUS_LABEL, CATEGORY_LABEL, CO_STATUS_LABEL, IMPACT_LABEL, REASON_LABEL, RULE_LABEL } from "@/lib/domain/labels";
 import { fmtDate, fmtDateTime, fmtEok, fmtMan, fmtPct, fmtPp } from "@/lib/domain/format";
 import { receivableAging } from "@/lib/domain/risk";
+import { IS_LIVE, BASE_LABEL } from "@/lib/mode";
 
 export default function ReportPage() {
   const { db } = useMe();
@@ -58,7 +59,7 @@ export default function ReportPage() {
     bullets.push({ tone: "warn", text: `${s?.shortName} ‘${a.title}’ ${ACTION_STATUS_LABEL[a.status]} — 담당 ${userLabel(db, a.assigneeUserId)}` });
   }
   if (unhandled.length) bullets.push({ tone: "info", text: `조치가 없는 위험 신호 ${unhandled.length}건 — ${unhandled.slice(0, 2).map((s) => s.title).join(" / ")}` });
-  if (!bullets.length) bullets.push({ tone: "info", text: "기준(데모 초기) 이후 손익 변화가 없습니다. 모바일 현장보고로 원가를 입력하면 이 보고서가 자동으로 갱신됩니다." });
+  if (!bullets.length) bullets.push({ tone: "info", text: IS_LIVE ? "현장 등록 시점 이후 손익 변화가 없습니다. 현장 보고로 원가가 입력되면 이 보고서가 자동으로 바뀝니다." : "기준(데모 초기) 이후 손익 변화가 없습니다. 모바일 현장보고로 원가를 입력하면 이 보고서가 자동으로 갱신됩니다." });
 
   return (
     <PageBody className="print-full">
@@ -69,7 +70,7 @@ export default function ReportPage() {
           </span>
         }
         title="대표자 보고서 · 현장 수익 현황"
-        desc="모든 수치는 저장된 원가·계약·기성 데이터에서 자동 계산됩니다. 기준 = 데모 초기 상태 (가상 시연 데이터 · 실제 실적 아님)."
+        desc={IS_LIVE ? "모든 수치는 저장된 원가·계약·기성 데이터에서 자동 계산됩니다. 기준 = 각 현장 등록 시점." : "모든 수치는 저장된 원가·계약·기성 데이터에서 자동 계산됩니다. 기준 = 데모 초기 상태 (가상 시연 데이터 · 실제 실적 아님)."}
         right={
           <Button icon={<Printer size={17} />} onClick={() => window.print()} className="no-print">
             인쇄 / PDF
@@ -78,7 +79,7 @@ export default function ReportPage() {
       />
 
       <Card className="print-card" data-tour="report-summary" data-testid="report-summary">
-        <CardHeader title="1. 요약" sub="기준(데모 초기) 대비 현재" right={<MethodChip />} />
+        <CardHeader title="1. 요약" sub={`기준(${BASE_LABEL}) 대비 현재`} right={<MethodChip />} />
         <div className="grid grid-cols-2 gap-3 px-5 @min-[900px]:grid-cols-4">
           <Tile label="예상이익 합계" before={fmtEok(base.profit)} after={fmtEok(total.expectedProfit)} delta={<Delta value={total.expectedProfit - base.profit} format={(v) => fmtMan(v)} />} />
           <Tile label="평균 예상이익률" before={fmtPct(base.margin)} after={fmtPct(total.marginPct)} delta={<span className={cx("font-bold num", total.marginPct < base.margin - 0.05 ? "text-err" : "text-ink-3")}>{fmtPp(total.marginPct - base.margin)}</span>} />
@@ -154,7 +155,7 @@ export default function ReportPage() {
 
       <div className="grid gap-5 @min-[1000px]:grid-cols-2">
         <Card className="print-card">
-          <CardHeader title="3. 관련 현장보고 · 원가 이벤트" sub="데모 초기 이후 입력분" />
+          <CardHeader title="3. 관련 현장보고 · 원가 이벤트" sub={`${BASE_LABEL} 이후 입력분`} />
           {sessionEntries.length === 0 && sessionReports.length === 0 ? (
             <EmptyState title="입력된 현장보고가 없습니다." action={<Link href="/field"><Button size="sm" icon={<ArrowRight size={15} />}>현장 보고</Button></Link>} />
           ) : (
@@ -245,7 +246,7 @@ export default function ReportPage() {
                             <Badge tone={p.status === "confirmed" ? "ok" : "warn"}>{p.status === "confirmed" ? "결과 확인" : "확인 대기"}</Badge>
                             <span className="mt-1 block num text-ink-3">
                               {p.kpi_before["청구 검토·승인대기 변경공사"] !== p.kpi_after["청구 검토·승인대기 변경공사"]
-                                ? `청구 검토 ${String(p.kpi_before["청구 검토·승인대기 변경공사"]).replace(/^0만 원$/, "0원")} → ${String(p.kpi_after["청구 검토·승인대기 변경공사"])} (승인 전 · 이익 미반영)`
+                                ? `청구 검토 ${String(p.kpi_before["청구 검토·승인대기 변경공사"])} → ${String(p.kpi_after["청구 검토·승인대기 변경공사"])} (승인 전 · 이익 미반영)`
                                 : `이익률 ${String(p.kpi_before["예상이익률"])} → ${String(p.kpi_after["예상이익률"])}`}
                             </span>
                           </>
@@ -306,7 +307,9 @@ export default function ReportPage() {
       </div>
 
       <Notice tone="warn" title="보고서 해석 주의">
-        본 보고서는 DEMO(가상 시연 데이터)와 규칙 기반 계산 결과이며, AI 모델 예측이나 실증 성과가 아닙니다. 실제 개선율은 Baseline 확보 후 12주 실증에서만 산출합니다.
+        {IS_LIVE
+          ? "본 보고서는 입력된 원가·계약·기성 데이터의 규칙 기반 계산 결과이며 AI 모델 예측이 아닙니다. 현장 입력이 늦거나 빠지면 숫자도 늦게 바뀝니다."
+          : "본 보고서는 DEMO(가상 시연 데이터)와 규칙 기반 계산 결과이며, AI 모델 예측이나 실증 성과가 아닙니다. 실제 개선율은 Baseline 확보 후 12주 실증에서만 산출합니다."}
       </Notice>
     </PageBody>
   );
