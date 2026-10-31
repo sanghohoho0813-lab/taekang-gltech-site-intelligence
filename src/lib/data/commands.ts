@@ -46,31 +46,31 @@ export class CommandError extends Error {
 
 export const MAX_AMOUNT = 5_000_000_000; // 1건 50억 원 상한 (입력 오류 방지)
 
-function clone(db: DemoDB): DemoDB {
+export function clone(db: DemoDB): DemoDB {
   return structuredClone(db);
 }
-function nowIso(ctx: Ctx): string {
+export function nowIso(ctx: Ctx): string {
   return (ctx.now ?? new Date()).toISOString();
 }
-function userName(db: DemoDB, id: string): string {
+export function userName(db: DemoDB, id: string): string {
   const u = db.users.find((x) => x.id === id);
   return u ? `${u.name} ${u.title}`.trim() : id;
 }
-function log(db: DemoDB, ctx: Ctx, type: string, summary: string, siteId?: string, link?: string) {
+export function log(db: DemoDB, ctx: Ctx, type: string, summary: string, siteId?: string, link?: string) {
   db.activityLogs.unshift({ id: uid("log"), at: nowIso(ctx), by: ctx.userId, type, siteId, summary, link });
   if (db.activityLogs.length > 300) db.activityLogs.length = 300;
 }
-function touch(db: DemoDB, ctx: Ctx) {
+export function touch(db: DemoDB, ctx: Ctx) {
   db.rev += 1;
   db.updatedAt = nowIso(ctx);
 }
-function claimKey(db: DemoDB, key: string | undefined) {
+export function claimKey(db: DemoDB, key: string | undefined) {
   if (!key) return;
   if (db.idempotencyKeys.includes(key)) throw new CommandError("이미 저장된 요청입니다. (중복 저장 방지)", "DUPLICATE");
   db.idempotencyKeys.push(key);
   if (db.idempotencyKeys.length > 500) db.idempotencyKeys.splice(0, db.idempotencyKeys.length - 500);
 }
-function requireSite(db: DemoDB, siteId: string) {
+export function requireSite(db: DemoDB, siteId: string) {
   const s = db.sites.find((x) => x.id === siteId);
   if (!s) throw new CommandError("현장을 찾을 수 없습니다.", "NOT_FOUND");
   return s;
@@ -102,6 +102,8 @@ export interface CostLineInput {
   amount: number;
   forecastImpact: Exclude<ForecastImpact, "baseline">;
   note?: string;
+  /** 노무비를 공수 × 일당으로 입력한 경우 (금액 = 공수 × 일당) */
+  qty?: { manDays: number; dayRate: number };
 }
 
 export interface FieldReportInput {
@@ -116,6 +118,8 @@ export interface FieldReportInput {
   reason?: CostReason;
   reasonNote?: string;
   source?: "FIELD" | "PC";
+  /** 오늘 기준 공정률 (선택, 0~100) */
+  progressPct?: number;
 }
 
 export interface FieldReportResult {
@@ -123,6 +127,8 @@ export interface FieldReportResult {
   entryIds: string[];
   before: SiteFinancials;
   after: SiteFinancials;
+  /** 공무 확인 대기로 저장되어 아직 손익에 반영되지 않았는지 */
+  pendingReview?: boolean;
 }
 
 export function submitFieldReport(db0: DemoDB, input: FieldReportInput, ctx: Ctx): { db: DemoDB; result: FieldReportResult } {
@@ -137,7 +143,13 @@ export function submitFieldReport(db0: DemoDB, input: FieldReportInput, ctx: Ctx
     if (!Number.isInteger(c.amount) || c.amount <= 0) errors[`costs.${i}.amount`] = "0보다 큰 금액(원)을 입력해주세요.";
     else if (c.amount > MAX_AMOUNT) errors[`costs.${i}.amount`] = `${fmtEok(MAX_AMOUNT)} 이하로 입력해주세요.`;
     if (c.forecastImpact !== "additional" && c.forecastImpact !== "within_forecast") errors[`costs.${i}.impact`] = "비용 성격을 선택해주세요.";
+    if (c.qty) {
+      const { manDays, dayRate } = c.qty;
+      if (!(manDays > 0) || manDays > 10_000 || !(dayRate > 0) || !Number.isInteger(dayRate)) errors[`costs.${i}.amount`] = "공수와 일당을 확인해주세요.";
+      else if (Math.round(manDays * dayRate) !== c.amount) errors[`costs.${i}.amount`] = "금액이 공수 × 일당과 다릅니다.";
+    }
   });
+  if (input.progressPct !== undefined && (!Number.isFinite(input.progressPct) || input.progressPct < 0 || input.progressPct > 100)) errors.progressPct = "공정률은 0~100 사이";
   if (costs.length > 0 && !input.reason) errors.reason = "비용 발생 사유를 선택해주세요.";
   if ((input.photos ?? []).length > 3) errors.photos = "사진은 최대 3장";
   if (Object.keys(errors).length) throw new CommandError("입력값을 확인해주세요.", "VALIDATION", errors);
@@ -163,6 +175,8 @@ export function submitFieldReport(db0: DemoDB, input: FieldReportInput, ctx: Ctx
     photoIds.push(photo.id);
   }
 
+  // 회사 설정이 '공무 확인 후 반영'이면 현장 입력 원가는 확인 대기로 저장 (손익 미반영)
+  const pendingReview = (db.settings?.costApproval ?? "immediate") === "review" && (input.source ?? "FIELD") === "FIELD";
   const entryIds: string[] = [];
   for (const c of costs) {
     const entry: CostEntry = {
@@ -178,7 +192,8 @@ export function submitFieldReport(db0: DemoDB, input: FieldReportInput, ctx: Ctx
       reportId,
       createdBy: ctx.userId,
       createdAt: at,
-      status: "active",
+      status: pendingReview ? "pending" : "active",
+      ...(c.qty ? { qty: { manDays: c.qty.manDays, dayRate: c.qty.dayRate } } : {}),
     };
     db.costEntries.push(entry);
     entryIds.push(entry.id);
@@ -199,21 +214,27 @@ export function submitFieldReport(db0: DemoDB, input: FieldReportInput, ctx: Ctx
   };
   db.reports.unshift(report);
 
-  const after = siteFinancials(db, input.siteId);
   const site = requireSite(db, input.siteId);
+  if (input.progressPct !== undefined && Math.round(input.progressPct) !== site.progressPct) {
+    log(db, ctx, "progress", `${site.shortName} 공정률 ${site.progressPct}% → ${Math.round(input.progressPct)}% (현장보고)`, input.siteId, `/sites/${input.siteId}`);
+    site.progressPct = Math.round(input.progressPct);
+  }
+  const after = siteFinancials(db, input.siteId);
   const costSum = costs.reduce((s, c) => s + c.amount, 0);
   log(
     db,
     ctx,
     "report",
     costs.length
-      ? `${site.shortName} 현장보고 + 원가 ${costs.length}건 ${fmtMan(costSum)} 등록 → EAC ${fmtEok(before.eac)} → ${fmtEok(after.eac)}`
+      ? pendingReview
+        ? `${site.shortName} 현장보고 + 원가 ${costs.length}건 ${fmtMan(costSum)} 등록 → 본사 공무 확인 대기 (손익 미반영)`
+        : `${site.shortName} 현장보고 + 원가 ${costs.length}건 ${fmtMan(costSum)} 등록 → EAC ${fmtEok(before.eac)} → ${fmtEok(after.eac)}`
       : `${site.shortName} 현장보고 등록 (원가 변동 없음)`,
     input.siteId,
     `/sites/${input.siteId}`,
   );
   touch(db, ctx);
-  return { db, result: { reportId, entryIds, before, after } };
+  return { db, result: { reportId, entryIds, before, after, pendingReview } };
 }
 
 export function voidCostEntry(db0: DemoDB, entryId: string, reason: string, ctx: Ctx) {
@@ -221,6 +242,7 @@ export function voidCostEntry(db0: DemoDB, entryId: string, reason: string, ctx:
   const e = db.costEntries.find((x) => x.id === entryId);
   if (!e) throw new CommandError("원가 이벤트를 찾을 수 없습니다.", "NOT_FOUND");
   if (e.status === "voided") throw new CommandError("이미 무효 처리된 원가입니다.", "STATE");
+  if (e.status === "rejected") throw new CommandError("공무가 반려한 원가는 무효 처리할 필요가 없습니다.", "STATE");
   if (e.source === "SEED") throw new CommandError("기준 발생원가(시드)는 무효 처리할 수 없습니다. Demo Reset을 사용하세요.", "STATE");
   const before = siteFinancials(db0, e.siteId);
   e.status = "voided";
@@ -243,7 +265,7 @@ export function voidReport(db0: DemoDB, reportId: string, ctx: Ctx) {
   r.status = "voided";
   for (const id of r.costEntryIds) {
     const e = db.costEntries.find((x) => x.id === id);
-    if (e && e.status === "active") {
+    if (e && (e.status === "active" || e.status === "pending")) {
       e.status = "voided";
       e.voidedAt = nowIso(ctx);
       e.voidedBy = ctx.userId;
@@ -266,7 +288,7 @@ export function editCostEntry(
   const db = clone(db0);
   const e = db.costEntries.find((x) => x.id === entryId);
   if (!e) throw new CommandError("원가 이벤트를 찾을 수 없습니다.", "NOT_FOUND");
-  if (e.status !== "active") throw new CommandError("무효 처리된 원가는 수정할 수 없습니다.", "STATE");
+  if (e.status !== "active" && e.status !== "pending") throw new CommandError("무효·반려된 원가는 수정할 수 없습니다.", "STATE");
   if (e.source === "SEED") throw new CommandError("기준 발생원가(시드)는 수정할 수 없습니다.", "STATE");
   validateAmount(patch.amount);
   if (!COST_CATEGORIES.includes(patch.category)) throw new CommandError("비용 항목을 선택해주세요.");

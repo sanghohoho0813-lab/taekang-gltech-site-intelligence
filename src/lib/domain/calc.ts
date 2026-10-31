@@ -39,14 +39,20 @@ export function activeEntries(entries: CostEntry[], siteId: string): CostEntry[]
   return entries.filter((e) => e.siteId === siteId && e.status === "active");
 }
 
+/** 잔여예상 재추정 이후에 등록된 원가인지 (재추정 전 집행분은 이미 새 잔여예상에 반영됨) */
+function afterBasis(e: CostEntry, basisAt: string | undefined): boolean {
+  return !basisAt || e.createdAt >= basisAt;
+}
+
 export function categoryBreakdown(db: DemoDB, siteId: string): CategoryBreakdown[] {
   const entries = activeEntries(db.costEntries, siteId);
   return COST_CATEGORIES.map((category) => {
     const budget = db.budgets.find((b) => b.siteId === siteId && b.category === category)?.amount ?? 0;
-    const forecast = db.forecasts.find((f) => f.siteId === siteId && f.category === category)?.remaining ?? 0;
+    const fc = db.forecasts.find((f) => f.siteId === siteId && f.category === category);
+    const forecast = fc?.remaining ?? 0;
     const inCat = entries.filter((e) => e.category === category);
     const incurred = inCat.reduce((s, e) => s + e.amount, 0);
-    const consumedWithin = inCat.filter((e) => e.forecastImpact === "within_forecast").reduce((s, e) => s + e.amount, 0);
+    const consumedWithin = inCat.filter((e) => e.forecastImpact === "within_forecast" && afterBasis(e, fc?.basisAt)).reduce((s, e) => s + e.amount, 0);
     const remaining = Math.max(0, forecast - consumedWithin);
     const eac = incurred + remaining;
     const variance = eac - budget;
@@ -165,9 +171,11 @@ export function entryEacImpact(db: DemoDB, entry: CostEntry): number {
   if (entry.forecastImpact === "additional") return entry.amount;
   if (entry.forecastImpact === "within_forecast") {
     // 잔여예상을 초과해 집행된 부분은 EAC를 증가시킨다
-    const forecast = db.forecasts.find((f) => f.siteId === entry.siteId && f.category === entry.category)?.remaining ?? 0;
+    const fc = db.forecasts.find((f) => f.siteId === entry.siteId && f.category === entry.category);
+    if (!afterBasis(entry, fc?.basisAt)) return 0;
+    const forecast = fc?.remaining ?? 0;
     const within = activeEntries(db.costEntries, entry.siteId)
-      .filter((e) => e.category === entry.category && e.forecastImpact === "within_forecast")
+      .filter((e) => e.category === entry.category && e.forecastImpact === "within_forecast" && afterBasis(e, fc?.basisAt))
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     let left = forecast;
     for (const e of within) {

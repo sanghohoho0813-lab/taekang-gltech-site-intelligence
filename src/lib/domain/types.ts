@@ -13,6 +13,8 @@ export interface DemoUser {
   title: string;
   /** 파트너 사용자가 볼 수 있는 현장 */
   partnerSiteIds?: string[];
+  /** LIVE: 비활성(퇴사·접근 중지) 사용자 — 이력 표시용으로만 남는다 */
+  inactive?: boolean;
 }
 
 export type CostCategory = "material" | "labor" | "subcontract" | "equipment" | "overhead";
@@ -83,6 +85,8 @@ export interface CostForecast {
   /** 기준 시점의 완료까지 잔여 예상원가 */
   remaining: number;
   basisDate: string;
+  /** 재추정 시각 (ISO). 있으면 이 시각 이후 등록된 '실행예산 내 집행'만 잔여에서 차감 — 재추정 전 집행분 이중 차감 방지 */
+  basisAt?: string;
   note?: string;
 }
 
@@ -99,7 +103,13 @@ export interface CostEntry {
   reportId?: string;
   createdBy: string;
   createdAt: string;
-  status: "active" | "voided";
+  /** pending = 공무 확인 대기 (손익 미반영), rejected = 공무 반려 */
+  status: "active" | "voided" | "pending" | "rejected";
+  /** 노무비를 공수 × 일당으로 입력한 경우 */
+  qty?: { manDays: number; dayRate: number };
+  reviewedAt?: string;
+  reviewedBy?: string;
+  reviewNote?: string;
   voidedAt?: string;
   voidedBy?: string;
   voidReason?: string;
@@ -315,6 +325,16 @@ export interface RiskThresholds {
   changeOrderPendingDays: number;
 }
 
+/** 회사 운영 설정 (LIVE 운영에서 대표·관리자가 변경) */
+export interface CompanySettings {
+  /** 현장 입력 원가 반영 방식: immediate = 저장 즉시 손익 반영, review = 본사 공무 확인 후 반영 */
+  costApproval: "immediate" | "review";
+  /** 노무 공수 입력 시 기본 일당 (원) */
+  laborDayRate: number;
+}
+
+export const DEFAULT_SETTINGS: CompanySettings = { costApproval: "immediate", laborDayRate: 300_000 };
+
 export interface DemoDB {
   version: 1;
   rev: number;
@@ -340,4 +360,9 @@ export interface DemoDB {
   baseline: Record<string, FinancialSnapshot>;
   thresholds: RiskThresholds;
   idempotencyKeys: string[];
+  settings?: CompanySettings;
+  /** LIVE: 현재 로그인 사용자 id (서버가 채움). DEMO에서는 없음 */
+  me?: string;
+  /** LIVE: 서버가 역할별로 걸러 보낸 데이터인지 */
+  scope?: "full" | "field" | "partner";
 }
