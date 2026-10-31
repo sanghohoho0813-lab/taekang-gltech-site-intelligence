@@ -18,6 +18,7 @@ import { Donut } from "@/components/domain/Charts";
 import { LogoMark } from "@/components/shell/Logo";
 import { Clock } from "@/components/shell/Clock";
 import { IS_LIVE } from "@/lib/mode";
+import { SampleDataBanner } from "@/components/shell/AppShell";
 
 const FUTURE = [
   { title: "기성 확인 요청 (직발주 건축주)", items: ["기성 내역·진행 사진 온라인 확인", "확인 이력 보관", "확인 요청 알림"] },
@@ -62,7 +63,12 @@ export default function PartnerPage() {
       </div>
     );
   }
-  return <PartnerPortal db={db} partner={partner} sites={mySites} preview={preview} />;
+  return (
+    <>
+      <SampleDataBanner />
+      <PartnerPortal db={db} partner={partner} sites={mySites} preview={preview} />
+    </>
+  );
 }
 
 function PartnerPortal({ db, partner, sites: mySites, preview }: { db: NonNullable<ReturnType<typeof useMe>["db"]>; partner: NonNullable<ReturnType<typeof useMe>["db"]>["users"][number]; sites: NonNullable<ReturnType<typeof useMe>["db"]>["sites"]; preview: boolean }) {

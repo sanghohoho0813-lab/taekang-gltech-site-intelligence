@@ -69,6 +69,16 @@ describe("스키마·최초 설정", () => {
     expect(Math.round(f.marginPct)).toBe(15);
     expect(db.users.map((u) => u.id).sort()).toEqual(["u-ceo", "u-field", "u-field2", "u-manager", "u-partner"]);
   });
+  it("가상 데이터로 시작한 회사는 표시가 남고, 운영 설정을 바꿔도 지워지지 않는다", async () => {
+    expect((await svc.getView(ceo)).db.settings?.sampleData).toBe(true);
+    await svc.executeCommand(ceo, "setCompanySettings", { laborDayRate: 310_000 });
+    expect((await svc.getView(ceo)).db.settings?.sampleData).toBe(true);
+    // 발주처에는 표시만 전달하고 내부 일당은 숨긴다
+    const p = (await svc.getView(partner)).db.settings;
+    expect(p?.sampleData).toBe(true);
+    expect(p?.laborDayRate).toBe(0);
+    await svc.executeCommand(ceo, "setCompanySettings", { laborDayRate: 300_000 });
+  });
 });
 
 describe("로그인·세션", () => {

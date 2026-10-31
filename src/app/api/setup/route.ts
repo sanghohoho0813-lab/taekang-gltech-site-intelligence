@@ -10,7 +10,7 @@ export async function GET() {
   const blocked = notLive();
   if (blocked) return blocked;
   try {
-    return json({ needsSetup: await needsSetup() });
+    return json({ needsSetup: await needsSetup(), codeRequired: !!setupCode() });
   } catch (e) {
     return errorResponse(e);
   }
@@ -23,7 +23,10 @@ export async function POST(req: NextRequest) {
   try {
     const body = (await readJson(req, 10_000)) as SetupInput;
     // 운영 환경에서는 설정 코드가 있어야 최초 설정 가능 (배포 직후 다른 사람이 먼저 가로채지 못하게)
-    const code = process.env.SETUP_CODE?.trim();
+    const code = setupCode();
+    if (!code && process.env.VERCEL && process.env.NODE_ENV === "production") {
+      return json({ error: "배포 환경변수 SETUP_CODE를 먼저 등록하고 다시 배포해주세요. (배포 직후 다른 사람이 최초 설정을 가로채지 못하게 막는 장치)", code: "SETUP_CODE_MISSING" }, 503);
+    }
     if (code && (body as { setupCode?: string }).setupCode !== code) return json({ error: "설정 코드가 맞지 않습니다.", fieldErrors: { setupCode: "확인 필요" } }, 403);
     const r = await setupCompany(body);
     const res = json({ me: meBody(r.member) });
@@ -32,4 +35,8 @@ export async function POST(req: NextRequest) {
   } catch (e) {
     return errorResponse(e);
   }
+}
+
+function setupCode(): string | undefined {
+  return process.env.SETUP_CODE?.trim() || undefined;
 }

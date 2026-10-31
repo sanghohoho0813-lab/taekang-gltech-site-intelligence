@@ -159,7 +159,8 @@ export function viewFor(m: Member, db: DemoDB): DemoDB {
     sites: db.sites.filter((s) => sites.has(s.id)),
     contracts: [...sites].map(zeroContract),
     partnerRequests: db.partnerRequests.filter((r) => sites.has(r.siteId) && r.partnerUserId === m.id),
-    settings: undefined,
+    // 내부 운영 설정(일당 등)은 숨기고, 가상 데이터 회사라는 표시만 전달
+    settings: db.settings?.sampleData ? { costApproval: "immediate", laborDayRate: 0, sampleData: true } : undefined,
     thresholds: db.thresholds,
   };
 }

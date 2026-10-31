@@ -331,6 +331,8 @@ export interface CompanySettings {
   costApproval: "immediate" | "review";
   /** 노무 공수 입력 시 기본 일당 (원) */
   laborDayRate: number;
+  /** 최초 설정 때 '가상 현장으로 시작'을 고른 회사 — 화면에 가상 데이터 표시를 계속 띄운다 (운영 설정으로 끌 수 없음) */
+  sampleData?: boolean;
 }
 
 export const DEFAULT_SETTINGS: CompanySettings = { costApproval: "immediate", laborDayRate: 300_000 };

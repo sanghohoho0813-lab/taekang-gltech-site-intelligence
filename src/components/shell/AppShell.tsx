@@ -28,10 +28,22 @@ export function AppShell({ children, compactSidebar }: { children: ReactNode; co
         <DesktopHeader />
         <MobileHeader />
         <main id="main" className="@container min-w-0 flex-1 pb-[calc(5.4rem+env(safe-area-inset-bottom))] lg:pb-10">
+          <SampleDataBanner />
           <AccessGate>{children}</AccessGate>
         </main>
         <BottomNav />
       </div>
+    </div>
+  );
+}
+
+/** 운영(LIVE) 서버인데 '가상 현장으로 시작'한 회사 — 실제 데이터로 오해하지 않도록 모든 화면·인쇄물에 표시 */
+export function SampleDataBanner() {
+  const db = useDb();
+  if (!IS_LIVE || !db?.settings?.sampleData) return null;
+  return (
+    <div role="note" className="border-b border-[#E7C66A] bg-[#FFF6DA] px-4 py-2 text-center text-[0.8rem] font-semibold text-[#6B4E00]" data-testid="sample-data-banner">
+      DEMO · 가상 시연 데이터로 시작한 회사입니다 — 현장·금액·인물은 실제가 아닙니다
     </div>
   );
 }

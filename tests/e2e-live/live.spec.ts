@@ -49,6 +49,7 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     await expect(page).toHaveURL(/\/dashboard/);
     await expect(page.getByTestId("getting-started")).toBeVisible();
     await expect(page.getByTestId("demo-bar")).toHaveCount(0);
+    await expect(page.getByTestId("sample-data-banner")).toHaveCount(0);
     await expect(page.getByText("DEMO · 가상 시연 데이터")).toHaveCount(0);
     // 두 번째 설정 시도는 거부
     const again = await page.request.post("/api/setup", { data: { companyName: "x", name: "x", email: "x@x.test", password: "abcd1234" } });

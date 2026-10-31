@@ -111,7 +111,7 @@ export async function setupCompany(input: SetupInput): Promise<{ token: string; 
     const seed = createSeed();
     const ownerId = input.withDemoData ? "u-ceo" : uid("u");
     const state: DemoDB = input.withDemoData
-      ? { ...seed, company: { ...seed.company, name: input.companyName.trim() }, settings: DEFAULT_SETTINGS }
+      ? { ...seed, company: { ...seed.company, name: input.companyName.trim() }, settings: { ...DEFAULT_SETTINGS, sampleData: true } }
       : {
           ...seed,
           company: { ...seed.company, name: input.companyName.trim() },

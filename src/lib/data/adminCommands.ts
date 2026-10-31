@@ -235,6 +235,7 @@ export function setCompanySettings(db0: DemoDB, input: CompanySettingsInput, ctx
   db.settings = {
     costApproval: input.costApproval ?? prev.costApproval,
     laborDayRate: input.laborDayRate ?? prev.laborDayRate,
+    ...(prev.sampleData ? { sampleData: true } : {}),
   };
   if (input.companyName) db.company = { ...db.company, name: input.companyName.trim() };
   log(db, ctx, "settings", `운영 설정 변경 — 원가 반영: ${db.settings.costApproval === "review" ? "본사 공무 확인 후" : "저장 즉시"} · 기본 일당 ${fmtMan(db.settings.laborDayRate)}`);

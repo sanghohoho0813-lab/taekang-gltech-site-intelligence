@@ -12,9 +12,13 @@ export default function SetupPage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [codeRequired, setCodeRequired] = useState(false);
 
   useEffect(() => {
-    void api<{ needsSetup: boolean }>("/api/setup").then((r) => setState(r.data?.needsSetup ? "open" : "done"));
+    void api<{ needsSetup: boolean; codeRequired?: boolean }>("/api/setup").then((r) => {
+      setCodeRequired(!!r.data?.codeRequired);
+      setState(r.data?.needsSetup ? "open" : "done");
+    });
   }, []);
 
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement>) => setF({ ...f, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value });
@@ -69,9 +73,11 @@ export default function SetupPage() {
             <input id="s-pw2" type="password" className={inputCls} value={f.confirm} onChange={set("confirm")} autoComplete="new-password" />
           </Field>
         </div>
-        <Field label="설정 코드" htmlFor="s-code" error={errors.setupCode} hint="배포할 때 SETUP_CODE를 정했다면 입력 (정하지 않았으면 비워 두기)">
-          <input id="s-code" className={inputCls} value={f.setupCode} onChange={set("setupCode")} autoComplete="off" />
-        </Field>
+        {codeRequired && (
+          <Field label="설정 코드" htmlFor="s-code" required error={errors.setupCode} hint="배포할 때 환경변수 SETUP_CODE로 정한 값">
+            <input id="s-code" className={inputCls} value={f.setupCode} onChange={set("setupCode")} autoComplete="off" />
+          </Field>
+        )}
         <label className="flex items-start gap-2.5 rounded-xl border border-line bg-surface-2 p-3 text-[0.86rem]">
           <input type="checkbox" checked={f.withDemoData} onChange={set("withDemoData")} className="mt-1 size-4 accent-[var(--t-active)]" data-testid="setup-demo" />
           <span>
