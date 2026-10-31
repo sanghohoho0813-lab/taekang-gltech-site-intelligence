@@ -106,6 +106,10 @@ export async function runMigrations(db: Tx & { transaction?: <R>(fn: (tx: Tx) =>
   for (const m of MIGRATIONS) {
     if (done.has(m.name)) continue;
     const apply = async (tx: Tx) => {
+      // 서버 여러 대(서버리스)가 동시에 처음 뜰 때 한 곳만 적용하도록 잠금 → 잠금을 얻은 뒤 다시 확인
+      await tx.query(`select pg_advisory_xact_lock(7240311)`);
+      const [again] = await tx.query<{ n: string | number }>(`select count(*) as n from schema_migrations where name = $1`, [m.name]);
+      if (Number(again?.n ?? 0) > 0) return;
       for (const st of statements(m.sql)) await tx.query(st);
       await tx.query(`insert into schema_migrations (name) values ($1) on conflict (name) do nothing`, [m.name]);
     };
