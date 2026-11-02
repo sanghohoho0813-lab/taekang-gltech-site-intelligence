@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { GROUPS, navFor, type NavItem } from "@/lib/nav";
+import { GROUPS, navFor, navLabel, type NavItem } from "@/lib/nav";
 import { NavIcon } from "@/components/ui/Icon";
 import { cx } from "@/components/ui/primitives";
 import { Logo } from "./Logo";
@@ -84,7 +84,7 @@ export function Sidebar({ compact }: { compact: boolean }) {
                     <li key={item.href}>
                       <Link
                         href={item.href}
-                        title={compact ? `${item.label} — ${item.desc}` : item.desc}
+                        title={compact ? `${navLabel(item, role)} — ${item.desc}` : item.desc}
                         aria-current={active ? "page" : undefined}
                         data-testid={`nav-${item.href.slice(1)}`}
                         className={cx(
@@ -95,7 +95,7 @@ export function Sidebar({ compact }: { compact: boolean }) {
                       >
                         {active && <span className="absolute left-0 top-2 bottom-2 w-[3px] rounded-r-full bg-active" aria-hidden />}
                         <GroupIcon item={item} active={active} size={16} />
-                        {!compact && <span className="truncate">{item.label}</span>}
+                        {!compact && <span className="truncate">{navLabel(item, role)}</span>}
                         {badge > 0 && (
                           <span
                             className={cx(

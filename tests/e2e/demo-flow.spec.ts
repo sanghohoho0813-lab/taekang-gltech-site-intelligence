@@ -135,7 +135,7 @@ test("v4.1 PC+Mobile: 같은 Route·같은 데이터, 양방향 Route Sync, 재�
   await expect(frame.getByTestId("action-card").filter({ hasText: "추가공사 청구가능성 검토" })).toBeVisible();
 
   // Mobile → PC Route Sync (현장직원 하단 메뉴)
-  await frame.getByTestId("bottom-nav").getByText("현장보고").click();
+  await frame.getByTestId("fieldnav-field").click();
   await expect(page).toHaveURL(/\/field$/);
 
   expect(errors, errors.join("\n")).toEqual([]);

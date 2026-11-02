@@ -15,6 +15,13 @@ export interface NavItem {
   desc: string;
   /** DEMO(영업 시연)에서만 / LIVE(실제 운영)에서만 보이는 메뉴 */
   only?: "demo" | "live";
+  /** 현장 직원에게 보이는 쉬운 이름 */
+  fieldLabel?: string;
+}
+
+/** 역할에 맞는 메뉴 이름 (현장 직원은 쉬운 말) */
+export function navLabel(item: Pick<NavItem, "label" | "fieldLabel">, role: RoleId): string {
+  return role === "field" && item.fieldLabel ? item.fieldLabel : item.label;
 }
 
 export const GROUPS: { id: GroupId; label: string; color: string }[] = [
@@ -29,9 +36,10 @@ const ALL_INTERNAL: RoleId[] = ["ceo", "manager", "field"];
 
 export const NAV: NavItem[] = [
   { href: "/dashboard", label: "대시보드", icon: "LayoutDashboard", group: "ops", roles: INTERNAL, alsoAccess: ["field"], desc: "전체 현장 손익·위험 한눈에" },
-  { href: "/sites", label: "현장 관리", icon: "Building2", group: "ops", roles: ALL_INTERNAL, desc: "현장별 손익·원가·공정" },
-  { href: "/field", label: "현장 보고", icon: "ClipboardPen", group: "ops", roles: ALL_INTERNAL, desc: "모바일 일보·추가 비용 입력" },
-  { href: "/my-actions", label: "내 조치", icon: "ListChecks", group: "ops", roles: ALL_INTERNAL, desc: "배정된 위험 조치 처리" },
+  { href: "/sites", label: "현장 관리", fieldLabel: "내 현장", icon: "Building2", group: "ops", roles: ALL_INTERNAL, desc: "현장별 손익·원가·공정" },
+  { href: "/field", label: "현장 보고", fieldLabel: "홈", icon: "ClipboardPen", group: "ops", roles: ALL_INTERNAL, desc: "모바일 일보·추가 비용 입력" },
+  { href: "/my-actions", label: "내 조치", fieldLabel: "본사 요청", icon: "ListChecks", group: "ops", roles: ALL_INTERNAL, desc: "배정된 위험 조치 처리" },
+  { href: "/my", label: "내 정보", icon: "UserRound", group: "ops", roles: ["field"], alsoAccess: ["ceo", "manager"], desc: "글자 크기·내가 보낸 보고·비밀번호" },
   { href: "/finance", label: "기성·수금", icon: "Wallet", group: "growth", roles: INTERNAL, desc: "계약·변경공사·기성·입금·미수" },
   { href: "/report", label: "대표 보고서", icon: "FileBarChart", group: "growth", roles: INTERNAL, desc: "실시간 손익 변화 보고" },
   { href: "/partner", label: "발주처 포털", icon: "Handshake", group: "growth", roles: ["ceo", "manager", "partner"], desc: "발주처·협력사 상태 공유" },
@@ -68,9 +76,10 @@ export function homeFor(role: RoleId): string {
 export function bottomNavFor(role: RoleId): { href: string; label: string; icon: string }[] {
   if (role === "field")
     return [
-      { href: "/field", label: "현장보고", icon: "ClipboardPen" },
-      { href: "/my-actions", label: "내 조치", icon: "ListChecks" },
-      { href: "/sites", label: "내 현장", icon: "Building2" },
+      { href: "/field", label: "홈", icon: "Home" },
+      { href: "/field/report", label: "보고하기", icon: "ClipboardPen" },
+      { href: "/my-actions", label: "본사 요청", icon: "ListChecks" },
+      { href: "/my", label: "내 정보", icon: "UserRound" },
     ];
   if (role === "partner")
     return [

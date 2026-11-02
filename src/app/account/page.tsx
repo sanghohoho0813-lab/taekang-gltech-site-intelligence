@@ -4,7 +4,8 @@ import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { KeyRound, LogOut } from "lucide-react";
 import { AuthFrame } from "@/components/auth/AuthFrame";
-import { Button, Field, Notice, inputCls } from "@/components/ui/primitives";
+import { Notice } from "@/components/ui/primitives";
+import { BigLabel, PasswordInput, PasswordRules } from "@/components/auth/BigInputs";
 import { api } from "@/lib/live/api";
 import { homeFor } from "@/lib/nav";
 import { logout } from "@/lib/data/store";
@@ -26,6 +27,7 @@ function AccountForm() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [done, setDone] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [show, setShow] = useState(false);
 
   useEffect(() => {
     void api<{ me: Me }>("/api/auth/me").then((r) => {
@@ -57,35 +59,42 @@ function AccountForm() {
   return (
     <AuthFrame title="내 계정" desc={me ? `${me.name} ${me.title} · ${ROLE_LABEL[me.role]} · ${me.email}` : "불러오는 중…"}>
       {(force || me?.mustChangePassword) && (
-        <Notice tone="warn" title="처음 로그인 — 비밀번호를 바꿔주세요">
-          관리자가 정한 임시 비밀번호로 로그인했습니다. 본인만 아는 비밀번호로 바꾼 뒤 사용할 수 있습니다.
+        <Notice tone="warn" title="처음 한 번만 — 비밀번호를 바꿔 주세요">
+          받은 임시 비밀번호를 먼저 넣고, 앞으로 쓸 비밀번호를 두 번 넣으세요. 영어 글자와 숫자를 섞어 8자 이상이면 됩니다.
         </Notice>
       )}
       {done && <Notice tone="ok" title="비밀번호를 바꿨습니다. 다른 기기의 로그인은 끊겼습니다." />}
-      <form onSubmit={submit} className="mt-3 space-y-4" noValidate data-testid="password-form">
-        <Field label="현재 비밀번호" htmlFor="a-cur" required error={errors.current}>
-          <input id="a-cur" type="password" autoComplete="current-password" className={inputCls} value={f.current} onChange={(e) => setF({ ...f, current: e.target.value })} />
-        </Field>
-        <Field label="새 비밀번호" htmlFor="a-new" required error={errors.next} hint="8자 이상, 영문·숫자 포함">
-          <input id="a-new" type="password" autoComplete="new-password" className={inputCls} value={f.next} onChange={(e) => setF({ ...f, next: e.target.value })} />
-        </Field>
-        <Field label="새 비밀번호 확인" htmlFor="a-new2" required error={errors.confirm}>
-          <input id="a-new2" type="password" autoComplete="new-password" className={inputCls} value={f.confirm} onChange={(e) => setF({ ...f, confirm: e.target.value })} />
-        </Field>
-        <Button type="submit" variant="cta" size="lg" block loading={busy} icon={<KeyRound size={18} />} data-testid="password-submit">
-          비밀번호 바꾸기
-        </Button>
+      <form onSubmit={submit} className="mt-3 space-y-5" noValidate data-testid="password-form">
+        <div>
+          <BigLabel htmlFor="a-cur">{force || me?.mustChangePassword ? "받은 임시 비밀번호" : "지금 비밀번호"}</BigLabel>
+          <PasswordInput id="a-cur" value={f.current} onChange={(v) => setF({ ...f, current: v })} autoComplete="current-password" show={show} onToggle={() => setShow((x) => !x)} />
+          {errors.current && <p className="mt-1.5 text-[1.02rem] font-bold text-err">{errors.current}</p>}
+        </div>
+        <div>
+          <BigLabel htmlFor="a-new">새 비밀번호</BigLabel>
+          <PasswordInput id="a-new" value={f.next} onChange={(v) => setF({ ...f, next: v })} autoComplete="new-password" show={show} onToggle={() => setShow((x) => !x)} />
+          {errors.next && <p className="mt-1.5 text-[1.02rem] font-bold text-err">{errors.next}</p>}
+        </div>
+        <div>
+          <BigLabel htmlFor="a-new2">새 비밀번호 한 번 더</BigLabel>
+          <PasswordInput id="a-new2" value={f.confirm} onChange={(v) => setF({ ...f, confirm: v })} autoComplete="new-password" show={show} onToggle={() => setShow((x) => !x)} />
+          {errors.confirm && <p className="mt-1.5 text-[1.02rem] font-bold text-err">{errors.confirm}</p>}
+        </div>
+        <PasswordRules value={f.next} confirm={f.confirm} />
+        <button type="submit" disabled={busy} aria-busy={busy || undefined} className="press inline-flex h-[4rem] w-full items-center justify-center gap-2 rounded-2xl bg-cta text-[1.25rem] font-extrabold text-cta-text disabled:opacity-60" data-testid="password-submit">
+          <KeyRound size={22} aria-hidden /> 비밀번호 바꾸기
+        </button>
       </form>
-      <div className="mt-5 flex items-center justify-between border-t border-line pt-4 text-[0.85rem]">
+      <div className="mt-5 flex items-center justify-between border-t border-line pt-4 text-[1.02rem]">
         {me && !me.mustChangePassword && !force ? (
-          <a href={homeFor(me.role)} className="font-semibold text-theme-ink hover:underline">
-            ← 업무 화면으로
+          <a href={homeFor(me.role)} className="press inline-flex h-12 items-center rounded-xl px-2 font-bold text-theme-ink underline underline-offset-4">
+            ← 처음 화면으로
           </a>
         ) : (
           <span />
         )}
-        <button type="button" onClick={() => void logout()} className="inline-flex items-center gap-1.5 font-semibold text-ink-3 hover:text-err">
-          <LogOut size={15} /> 로그아웃
+        <button type="button" onClick={() => void logout()} className="press inline-flex h-12 items-center gap-1.5 rounded-xl px-2 font-bold text-ink-2 hover:text-err">
+          <LogOut size={18} /> 로그아웃
         </button>
       </div>
     </AuthFrame>

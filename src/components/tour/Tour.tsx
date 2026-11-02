@@ -214,7 +214,7 @@ function clearDrafts() {
     const keys: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
-      if (k?.startsWith("tk-site-intel:draft:")) keys.push(k);
+      if (k?.startsWith("tk-site-intel:draft:") || k?.startsWith("tk-site-intel:easy-draft:")) keys.push(k);
     }
     keys.forEach((k) => localStorage.removeItem(k));
   } catch {
@@ -287,7 +287,8 @@ function useFlow(flow: TourStep["flow"]): FlowState {
   if (flow === "report") {
     if (Math.abs(added) >= 1) return { doneText: `휴대폰 보고 저장 완료 — A현장 예상원가 +${fmtMan(added)} 반영` };
     const doc = frameDoc();
-    const filled = !!doc?.querySelector<HTMLTextAreaElement>("#f-work")?.value && !!doc?.querySelector("#c-amt-0");
+    // 쉬운 보고(현장 직원): 확인 화면까지 채워졌는지 / 한 화면 입력(대표·관리자): 작업·비용 칸이 채워졌는지
+    const filled = !!doc?.querySelector('[data-testid="easy-confirm"]') || (!!doc?.querySelector<HTMLTextAreaElement>("#f-work")?.value && !!doc?.querySelector("#c-amt-0"));
     if (filled) {
       return { action: { key: "submit", label: "보고 등록", where: "휴대폰", run: () => clickWhen(inFrame('[data-testid="submit-report"]')) } };
     }

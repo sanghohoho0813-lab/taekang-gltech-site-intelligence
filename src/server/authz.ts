@@ -60,12 +60,15 @@ export function authorize(m: Member, name: CommandName, argsIn: unknown, db: Dem
       case "voidReport": {
         const r = db.reports.find((x) => x.id === args.reportId);
         if (!r || r.createdBy !== m.id) throw new ForbiddenError("본인이 등록한 보고만 되돌릴 수 있습니다.");
+        // 본사 공무가 이미 확인(승인·반려)한 비용이 있으면 현장에서 혼자 취소할 수 없다
+        if (r.costEntryIds.some((id) => entry(id)?.reviewedAt)) throw new ForbiddenError("본사가 이미 확인한 보고입니다. 취소가 필요하면 본사에 요청해주세요.");
         return args;
       }
       case "voidCostEntry":
       case "editCostEntry": {
         const e = entry(args.entryId);
         if (!e || e.createdBy !== m.id || !sites.has(e.siteId)) throw new ForbiddenError("본인이 입력한 원가만 고칠 수 있습니다.");
+        if (e.reviewedAt) throw new ForbiddenError("본사가 이미 확인한 원가입니다. 바꾸려면 본사에 요청해주세요.");
         return args;
       }
       case "setActionStatus":

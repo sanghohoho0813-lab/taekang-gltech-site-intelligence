@@ -18,7 +18,7 @@ export { DB_KEY, PREFS_KEY };
 const CHANNEL = "tk-site-intel";
 
 export type DeviceView = "pc" | "mobile" | "dual";
-export type FontScale = "sm" | "md" | "lg";
+export type FontScale = "sm" | "md" | "lg" | "xl";
 
 export interface Prefs {
   theme: ThemeId;
@@ -358,7 +358,7 @@ export function setPrefs(patch: Partial<Prefs>) {
   emit();
 }
 
-const FONT_ROOT: Record<FontScale, string> = { sm: "0.9", md: "1", lg: "1.12" };
+const FONT_ROOT: Record<FontScale, string> = { sm: "0.9", md: "1", lg: "1.12", xl: "1.25" };
 
 export function applyPrefsToDocument(p: Prefs) {
   if (!isBrowser()) return;
@@ -415,7 +415,7 @@ export async function run<N extends CommandName>(name: N, args: CommandArgs<N>):
   try {
     r = await fetch("/api/commands", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify({ name, args }) });
   } catch {
-    throw new CommandError("서버에 연결할 수 없습니다. 인터넷 연결을 확인한 뒤 다시 시도해주세요.", "STATE");
+    throw new CommandError("서버에 연결할 수 없습니다. 인터넷 연결을 확인한 뒤 다시 시도해주세요.", "NETWORK");
   }
   const body = await r.json().catch(() => null);
   if (handleAuth(r.status, body)) throw new CommandError("로그인이 필요합니다.", "STATE");

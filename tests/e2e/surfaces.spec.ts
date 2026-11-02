@@ -58,7 +58,7 @@ test("역할 프리뷰: 현장직원은 손익·정산이 숨겨지고, 파트�
   await page.setViewportSize({ width: 1440, height: 900 });
   await freshStart(page, { role: "field" });
   await page.goto("/dashboard");
-  await expect(page.getByTestId("field-report-form")).toBeVisible();
+  await expect(page.getByTestId("easy-home")).toBeVisible();
   await expect(page.getByTestId("sidebar")).not.toContainText("기성·수금");
   await page.goto("/sites/site-a");
   await expect(page.getByTestId("field-site-summary")).toBeVisible();

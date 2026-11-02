@@ -12,6 +12,7 @@ import { Facade } from "@/components/domain/Facade";
 import { Donut, ProfitStack } from "@/components/domain/Charts";
 import { Delta, HealthPill, MethodChip } from "@/components/domain/Widgets";
 import { FieldReportForm } from "@/components/domain/FieldReportForm";
+import { EasyReport } from "@/components/easy/EasyReport";
 import { useFrameCommand } from "@/components/device/frameCommands";
 import { CostEntryList } from "@/components/domain/CostEntryList";
 import { simulateApprovedClaims, type SiteFinancials } from "@/lib/domain/calc";
@@ -186,15 +187,23 @@ export default function SiteDetailPage() {
 
       {/* 모바일 하단 고정 CTA — 같은 Route에서 Sheet로 입력 (PC+Mobile 시연 시 PC 화면은 그대로 유지) */}
       {role !== "partner" && (
-        <div className="fixed inset-x-0 bottom-[calc(3.9rem+env(safe-area-inset-bottom))] z-30 border-t border-line bg-surface/95 px-4 py-2.5 backdrop-blur lg:hidden">
+        <div className={cx("fixed inset-x-0 z-30 border-t border-line bg-surface/95 px-4 py-2.5 backdrop-blur lg:hidden", role === "field" ? "bottom-[calc(4.9rem+env(safe-area-inset-bottom))]" : "bottom-[calc(3.9rem+env(safe-area-inset-bottom))]")}>
           <Button variant="cta" size="lg" block icon={<ClipboardPen size={19} />} onClick={() => setSheet(true)} data-testid="open-report-sheet">
             현장 보고 · 비용 입력
           </Button>
         </div>
       )}
 
-      <Modal open={sheet} onClose={() => setSheet(false)} title={`현장 보고 · ${site.shortName}`} description="저장하면 공통 데이터에 기록되어 본사 손익·위험 분석에 즉시 반영됩니다." size="lg" testId="report-sheet">
-        <FieldReportForm fixedSiteId={site.id} onClose={() => setSheet(false)} inSheet />
+      <Modal
+        open={sheet}
+        onClose={() => setSheet(false)}
+        title={`현장 보고 · ${site.shortName}`}
+        description={role === "field" ? undefined : "저장하면 공통 데이터에 기록되어 본사 손익·위험 분석에 즉시 반영됩니다."}
+        size="lg"
+        testId="report-sheet"
+      >
+        {/* 현장 직원 = 한 화면에 질문 하나인 쉬운 보고 / 대표·관리자 = 한 화면 입력 */}
+        {role === "field" ? <EasyReport siteId={site.id} embedded onExit={() => setSheet(false)} /> : <FieldReportForm fixedSiteId={site.id} onClose={() => setSheet(false)} inSheet />}
       </Modal>
     </PageBody>
   );

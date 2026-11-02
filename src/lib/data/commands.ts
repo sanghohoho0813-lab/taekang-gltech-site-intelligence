@@ -37,7 +37,7 @@ export interface Ctx {
 export class CommandError extends Error {
   constructor(
     message: string,
-    public code: "VALIDATION" | "DUPLICATE" | "NOT_FOUND" | "STATE" = "VALIDATION",
+    public code: "VALIDATION" | "DUPLICATE" | "NOT_FOUND" | "STATE" | "NETWORK" = "VALIDATION",
     public fieldErrors: Record<string, string> = {},
   ) {
     super(message);

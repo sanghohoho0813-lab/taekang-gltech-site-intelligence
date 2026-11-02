@@ -209,6 +209,30 @@ describe("사진·이력·설정", () => {
     expect(siteFinancials((await svc.getView(ceo)).db, "site-b").eac).toBe(before + 2_800_000);
     await svc.executeCommand(ceo, "setCompanySettings", { costApproval: "immediate" });
   });
+  it("본사가 확인한 보고·원가는 현장에서 혼자 취소·수정할 수 없다", async () => {
+    await svc.executeCommand(ceo, "setCompanySettings", { costApproval: "review" });
+    const r = (await svc.executeCommand(field, "submitFieldReport", fieldReport("k-lock", { siteId: "site-b", costs: [{ category: "material", amount: 1_000_000, forecastImpact: "additional" }] }))).result as { reportId: string };
+    const e = (await svc.getView(ceo)).db.costEntries.find((x) => x.reportId === r.reportId)!;
+    expect(e.status).toBe("pending");
+    await svc.executeCommand(manager, "reviewCostEntry", { entryId: e.id, decision: "approve" });
+    await expect(svc.executeCommand(field, "voidReport", { reportId: r.reportId })).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(svc.executeCommand(field, "voidCostEntry", { entryId: e.id, reason: "x" })).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(svc.executeCommand(field, "editCostEntry", { entryId: e.id, patch: { amount: 1 } })).rejects.toBeInstanceOf(ForbiddenError);
+    // 확인 전 보고는 현장에서 취소 가능
+    const r2 = (await svc.executeCommand(field, "submitFieldReport", fieldReport("k-lock2", { siteId: "site-b", costs: [] }))).result as { reportId: string };
+    await svc.executeCommand(field, "voidReport", { reportId: r2.reportId });
+    await svc.executeCommand(ceo, "setCompanySettings", { costApproval: "immediate" });
+  });
+  it("현장 문의 전화번호: 형식 확인 후 현장 직원 화면에 전달 (비우면 숨김)", async () => {
+    await expect(svc.executeCommand(ceo, "setCompanySettings", { helpPhone: "전화주세요" })).rejects.toBeInstanceOf(CommandError);
+    await svc.executeCommand(ceo, "setCompanySettings", { helpPhone: "02-1234-5678" });
+    expect((await svc.getView(field)).db.settings?.helpPhone).toBe("02-1234-5678");
+    // 다른 설정을 바꿔도 번호는 유지
+    await svc.executeCommand(ceo, "setCompanySettings", { laborDayRate: 300_000 });
+    expect((await svc.getView(field)).db.settings?.helpPhone).toBe("02-1234-5678");
+    await svc.executeCommand(ceo, "setCompanySettings", { helpPhone: "" });
+    expect((await svc.getView(field)).db.settings?.helpPhone).toBeUndefined();
+  });
   it("활동 이력은 지워지지 않는다 (DB에는 계속 쌓임)", async () => {
     const db = await getDb();
     const [{ n }] = await db.query<{ n: string }>(`select count(*) as n from records where collection = 'activityLogs'`);

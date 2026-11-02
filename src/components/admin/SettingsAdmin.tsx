@@ -17,12 +17,13 @@ export function SettingsAdmin({ db }: { db: DemoDB }) {
   const [approval, setApproval] = useState(s.costApproval);
   const [rate, setRate] = useState(wonText(s.laborDayRate));
   const [name, setName] = useState(db.company.name);
+  const [phone, setPhone] = useState(s.helpPhone ?? "");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const save = async () => {
     setBusy(true);
     try {
-      await run("setCompanySettings", { costApproval: approval, laborDayRate: toWon(rate), companyName: name });
+      await run("setCompanySettings", { costApproval: approval, laborDayRate: toWon(rate), companyName: name, helpPhone: phone });
       setErrors({});
       toast.push({ tone: "ok", title: "운영 설정을 저장했습니다" });
     } catch (e) {
@@ -57,6 +58,9 @@ export function SettingsAdmin({ db }: { db: DemoDB }) {
           <MoneyField id="set-rate" label="노무 공수 기본 일당 (원)" value={rate} onChange={setRate} error={errors.laborDayRate} hint="현장 보고에서 ‘공수로 입력’할 때 기본값 (현장에서 바꿀 수 있음)" />
           <Field label="회사명" htmlFor="set-name" error={errors.companyName}>
             <input id="set-name" className={inputCls} value={name} onChange={(e) => setName(e.target.value)} />
+          </Field>
+          <Field label="현장 문의 전화번호" htmlFor="set-phone" error={errors.helpPhone} hint="현장 직원 첫 화면에 ‘본사에 전화하기’ 버튼으로 나옵니다 (비우면 숨김)">
+            <input id="set-phone" type="tel" inputMode="tel" className={inputCls} value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="예) 02-1234-5678" data-testid="settings-phone" />
           </Field>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2">

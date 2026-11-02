@@ -29,8 +29,8 @@ await persona.selectOption("field");
 await f.getByTestId("open-report-sheet").click();
 await f.getByTestId("fill-demo").click();
 const sheetText = await f.getByTestId("report-sheet").innerText();
-const vals = await f.locator('[data-testid="report-sheet"] input').evaluateAll((els) => els.map((e) => e.value).filter(Boolean));
-check("1:00", "모바일 입력값", vals.join(" "), ["30,000,000", "10,000,000"]);
+// 현장 직원 = 쉬운 보고 확인 화면 (자재 3,000만 · 인건비 1,000만)
+check("1:00", "모바일 입력값", sheetText, ["3,000만", "1,000만", "이렇게 보낼까요"]);
 await f.getByTestId("submit-report").click();
 await f.getByTestId("report-done").waitFor();
 const done = await f.getByTestId("report-done").innerText();

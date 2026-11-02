@@ -333,6 +333,8 @@ export interface CompanySettings {
   laborDayRate: number;
   /** 최초 설정 때 '가상 현장으로 시작'을 고른 회사 — 화면에 가상 데이터 표시를 계속 띄운다 (운영 설정으로 끌 수 없음) */
   sampleData?: boolean;
+  /** 현장 직원 화면의 '본사에 전화하기' 번호 (비우면 버튼 숨김) */
+  helpPhone?: string;
 }
 
 export const DEFAULT_SETTINGS: CompanySettings = { costApproval: "immediate", laborDayRate: 300_000 };

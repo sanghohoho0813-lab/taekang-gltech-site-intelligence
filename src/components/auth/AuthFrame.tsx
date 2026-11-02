@@ -16,8 +16,8 @@ export function AuthFrame({ title, desc, children, wide = false }: { title: stri
           </div>
         </div>
         <div className="rounded-3xl border border-line bg-surface p-6 shadow-card sm:p-7">
-          <h1 className="text-[1.35rem] font-bold text-ink">{title}</h1>
-          {desc && <p className="mt-1.5 text-[0.86rem] text-ink-3">{desc}</p>}
+          <h1 className="text-[1.65rem] font-extrabold text-ink">{title}</h1>
+          {desc && <p className="mt-1.5 text-[1.02rem] leading-relaxed text-ink-2">{desc}</p>}
           <div className="mt-5">{children}</div>
         </div>
       </div>

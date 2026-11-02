@@ -6,9 +6,17 @@ import { useMe } from "@/lib/data/hooks";
 import { PageBody, PageHeader } from "@/components/shell/AppShell";
 import { DemoBadge, EmptyState, PageSkeleton, Segmented } from "@/components/ui/primitives";
 import { ActionCard } from "./Actions";
+import { EasyActions } from "@/components/easy/EasyActions";
 
 /** /my-actions — 배정된 위험 조치 처리 (현장직원 역할의 /insights에서도 사용) */
 export function MyActionsView() {
+  const { role } = useMe();
+  // 현장 직원 = 큰 글씨·큰 버튼의 '본사 요청' 화면
+  if (role === "field") return <EasyActions />;
+  return <ManagerActionsView />;
+}
+
+function ManagerActionsView() {
   const { db, role, userId, user } = useMe();
   const isManager = role === "ceo" || role === "manager";
   const [scope, setScope] = useState<"mine" | "all">(isManager ? "all" : "mine");

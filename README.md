@@ -135,8 +135,10 @@ DEMO와 LIVE 빌드 결과는 서로 다른 폴더(`.next` / `.next-live`)에 �
 |---|---|
 | `/dashboard` | 대표 대시보드 (현장직원은 현장 홈 · LIVE 빈 회사는 ‘시작하기’ 안내) |
 | `/sites`, `/sites/[id]` | 현장 목록 / 현장 손익 엔진·원가·공정·보고·계약·기성·요청·이력 |
-| `/field` | 모바일 현장 보고 (작업·공정률·사진·이슈·추가 비용·**노무 공수×일당**·작성 이력·되돌리기) |
-| `/my-actions` | 배정된 위험 조치 처리 |
+| `/field` | 현장 직원: **쉬운 홈**(오늘 보고하기·사진만·추가 비용·본사 요청·본사 전화, 현장별 오늘 보고 여부) / 대표·관리자: 대리 입력 화면 |
+| `/field/report` | 현장 직원 **쉬운 보고** — 한 화면에 질문 하나, 누르기만으로 끝 (`?mode=photo` 사진만, `?mode=cost` 추가 비용만) |
+| `/my` | 내 정보 — 글자 크기(보통·크게·아주 크게)·내가 보낸 보고(본사 확인 중/반영됨/반려 이유)·비밀번호·로그아웃 |
+| `/my-actions` | 배정된 위험 조치 처리 (현장 직원에게는 ‘본사 요청’ — 시작했어요/다 했어요 큰 버튼) |
 | `/insights` | 규칙 기반 위험 신호 → 조치 생성·배정·진행·완료 → Proof Event, 발주처 요청함 |
 | `/finance` | 계약·변경공사(승인만 계약 반영)·기성·입금·미수 |
 | `/report` | 대표자 보고서 (인쇄/PDF) |
@@ -186,10 +188,10 @@ tests/e2e-live         LIVE 운영 흐름 (새 DB에서 처음부터) — Playwr
 ## 7. 테스트
 
 ```bash
-npm test                          # 단위 38 (계산·명령·위험 규칙·테마 대비 + 서버 DB·로그인·권한 23)
-npm run build && npm run e2e      # DEMO E2E 20 (포트 3100)
+npm test                          # 단위 40 (계산·명령·위험 규칙·테마 대비 + 서버 DB·로그인·권한 25)
+npm run build && npm run e2e      # DEMO E2E 23 (시연 20 + 현장 직원 쉬운 화면 3, 포트 3100)
 npm run build:live && npm run e2e:live   # LIVE E2E 9 (새 내장 DB, 포트 3300)
-QA_BASE_URL=http://127.0.0.1:3000 npm run qa:cuesheet   # 시연 큐시트 숫자 53개 (DEMO 서버 실행 중일 때)
+QA_BASE_URL=http://127.0.0.1:3000 npm run qa:cuesheet   # 시연 큐시트 54개 (DEMO 서버 실행 중일 때)
 ```
 - 서버 테스트는 내장 PGlite로 실제 Postgres SQL을 실행합니다. **Supabase 실제 연결은 계정이 생긴 뒤 1회 확인이 필요합니다.**
 - Playwright 브라우저가 없다면 `npx playwright install chromium`

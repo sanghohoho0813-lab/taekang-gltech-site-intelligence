@@ -14,6 +14,7 @@ import { fmtEok, fmtMan, fmtPct, todayIso } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
 import { Button, Field, Notice, cx, inputCls } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/Toast";
+import { downscalePhoto } from "@/components/easy/photo";
 
 interface CostRow {
   key: string;
@@ -45,25 +46,7 @@ function withCommas(t: string) {
   return c ? Number(c).toLocaleString("ko-KR") : "";
 }
 
-async function downscale(file: File, max = 960): Promise<string> {
-  const url = URL.createObjectURL(file);
-  try {
-    const img = await new Promise<HTMLImageElement>((res, rej) => {
-      const i = new Image();
-      i.onload = () => res(i);
-      i.onerror = () => rej(new Error("이미지를 읽을 수 없습니다."));
-      i.src = url;
-    });
-    const scale = Math.min(1, max / Math.max(img.width, img.height));
-    const c = document.createElement("canvas");
-    c.width = Math.round(img.width * scale);
-    c.height = Math.round(img.height * scale);
-    c.getContext("2d")!.drawImage(img, 0, 0, c.width, c.height);
-    return c.toDataURL("image/jpeg", 0.72);
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
+const downscale = (f: File) => downscalePhoto(f);
 
 const DRAFT_KEY = "tk-site-intel:draft:";
 

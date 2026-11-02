@@ -90,6 +90,7 @@ export default function SettingsPage() {
                 { value: "sm", label: "작게", testId: "font-sm" },
                 { value: "md", label: "기본", testId: "font-md" },
                 { value: "lg", label: "크게", testId: "font-lg" },
+                { value: "xl", label: "아주 크게", testId: "font-xl" },
               ]}
             />
           </div>

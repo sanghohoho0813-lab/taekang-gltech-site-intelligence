@@ -117,16 +117,32 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     await page.locator("#a-new2").fill(FIELD.password);
     await page.getByTestId("password-submit").click();
     await expect(page).toHaveURL(/\/field/);
-    await page.locator("#f-work").fill("1층 앵커·브라켓 설치");
-    await page.locator("#f-progress").fill("5");
-    await page.getByTestId("add-cost").click();
-    await page.locator("#c-cat-0").selectOption("labor");
-    await pick(page, "cost-byqty-0");
-    await page.locator("#c-md-0").fill("12");
-    await page.locator("#f-reason").selectOption("quantity_increase");
+    // 쉬운 화면 — 글자 입력 없이 누르기만으로 보고 (현장 1곳이면 현장 선택 생략)
+    await expect(page.getByTestId("easy-site-status")).toContainText("아직 안 보냄");
+    await page.getByTestId("easy-go-report").click();
+    await page.getByTestId("work-chip").filter({ hasText: "앵커·브라켓 설치" }).click();
+    await page.getByTestId("easy-next").click();
+    await page.getByTestId("progress-stepper-plus").click(); // 0% → 5%
+    await page.getByTestId("easy-next").click();
+    await page.getByTestId("easy-next").click(); // 사진 없이 다음
+    await page.getByTestId("issue-no").click();
+    await page.getByTestId("cost-yes").click();
+    await page.getByTestId("cost-cat-labor").click();
+    for (let i = 0; i < 3; i++) await page.getByTestId("labor-people-plus").click(); // 4명
+    for (let i = 0; i < 4; i++) await page.getByTestId("labor-days-plus").click(); // 3일
+    await expect(page.getByTestId("cost-readback")).toContainText("360만 원"); // 12공수 × 30만
+    await page.getByTestId("easy-next").click();
+    await page.getByTestId("impact-additional").click();
+    await page.getByTestId("easy-next").click();
+    await page.getByTestId("reason-quantity_increase").click();
+    await expect(page.getByTestId("easy-confirm")).toContainText("360만 원");
+    await expect(page.getByTestId("easy-confirm")).toContainText("0% → 5%");
     await page.getByTestId("submit-report").click();
     await expect(page.getByTestId("report-impact")).toHaveAttribute("data-pending", "1");
     await expect(page.getByTestId("report-impact")).toContainText("360만 원");
+    await page.getByTestId("report-home").click();
+    await expect(page.getByTestId("easy-site-status")).toContainText("오늘 보고 보냄");
+    await expect(page.getByTestId("my-records")).toContainText("본사 확인 중");
     // 현장소장에게는 금액·예산 데이터가 오지 않는다
     const st = await page.evaluate(async () => (await (await fetch("/api/state")).json()).db);
     expect(st.scope).toBe("field");

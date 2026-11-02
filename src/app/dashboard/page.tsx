@@ -11,12 +11,12 @@ import { AiReadyButton, Delta, Freshness, HealthPill, MethodChip, StatCard } fro
 import { BillingBars, MarginBars } from "@/components/domain/Charts";
 import { fmtEok, fmtMan, fmtPct, fmtPp, fmtRelative } from "@/lib/domain/format";
 import { CATEGORY_LABEL, RULE_LABEL } from "@/lib/domain/labels";
-import { FieldHome } from "@/components/domain/FieldHome";
+import { EasyHome } from "@/components/easy/EasyHome";
 import { IS_LIVE, BASE_LABEL } from "@/lib/mode";
 
 export default function DashboardPage() {
   const role = useRole();
-  if (role === "field") return <FieldHome />;
+  if (role === "field") return <EasyHome />;
   return <CeoDashboard />;
 }
 

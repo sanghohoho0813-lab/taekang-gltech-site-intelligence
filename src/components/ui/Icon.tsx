@@ -11,6 +11,8 @@ import {
   Lightbulb,
   Settings,
   Presentation,
+  Home,
+  UserRound,
   type LucideIcon,
 } from "lucide-react";
 
@@ -27,6 +29,8 @@ const MAP: Record<string, LucideIcon> = {
   Lightbulb,
   Settings,
   Presentation,
+  Home,
+  UserRound,
 };
 
 export function NavIcon({ name, className, size = 20 }: { name: string; className?: string; size?: number }) {

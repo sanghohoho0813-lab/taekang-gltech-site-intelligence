@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
-import { Lock, Menu, MoreHorizontal, X } from "lucide-react";
-import { GROUPS, bottomNavFor, canAccess, homeFor, navFor } from "@/lib/nav";
-import { useDb, usePrefs, useRole, currentUserId } from "@/lib/data/store";
+import { Lock, Menu, MoreHorizontal, Phone, X } from "lucide-react";
+import { GROUPS, bottomNavFor, canAccess, homeFor, navFor, navLabel } from "@/lib/nav";
+import { useDb, usePrefs, useRole, currentUserId, setPrefs, type FontScale } from "@/lib/data/store";
 import { ROLE_LABEL } from "@/lib/domain/labels";
 import { NavIcon } from "@/components/ui/Icon";
 import { Button, cx, DemoBadge, PageSkeleton } from "@/components/ui/primitives";
@@ -18,6 +18,7 @@ import { LogoMark } from "./Logo";
 /** 내부(Business AX) Surface 셸. /partner는 별도 Customer Surface 셸을 사용한다. */
 export function AppShell({ children, compactSidebar }: { children: ReactNode; compactSidebar: boolean }) {
   const pathname = usePathname();
+  const role = useRole();
   const isPartnerSurface = pathname === "/partner" || pathname.startsWith("/partner/");
   // 로그인·최초 설정 화면은 메뉴 없이
   if (isPartnerSurface || pathname === "/login" || pathname === "/setup" || pathname === "/account") return <>{children}</>;
@@ -26,12 +27,12 @@ export function AppShell({ children, compactSidebar }: { children: ReactNode; co
       <Sidebar compact={compactSidebar} />
       <div className="@container/shell flex min-w-0 flex-1 flex-col">
         <DesktopHeader />
-        <MobileHeader />
+        {role === "field" ? <FieldMobileHeader /> : <MobileHeader />}
         <main id="main" className="@container min-w-0 flex-1 pb-[calc(5.4rem+env(safe-area-inset-bottom))] lg:pb-10">
           <SampleDataBanner />
           <AccessGate>{children}</AccessGate>
         </main>
-        <BottomNav />
+        {role === "field" ? <FieldBottomNav /> : <BottomNav />}
       </div>
     </div>
   );
@@ -63,6 +64,81 @@ function DesktopHeader() {
         <UserMenu />
       </div>
     </header>
+  );
+}
+
+/** 현장 직원 휴대폰 머리글 — 메뉴·시계·알림 대신 ‘글자 크게’와 ‘본사 전화’만 */
+function FieldMobileHeader() {
+  const prefs = usePrefs();
+  const db = useDb();
+  const phone = db?.settings?.helpPhone;
+  const order: FontScale[] = ["md", "lg", "xl"];
+  const cur: FontScale = prefs.fontScale === "sm" ? "md" : prefs.fontScale;
+  const next = order[(order.indexOf(cur) + 1) % order.length];
+  return (
+    <header className="no-print sticky top-[var(--demo-bar-h)] z-30 flex h-[4.1rem] items-center gap-2 border-b border-line bg-surface/95 px-3 backdrop-blur pt-[env(safe-area-inset-top)] lg:hidden" data-testid="mobile-header">
+      <Link href="/field" className="flex min-w-0 items-center gap-2" aria-label="처음 화면">
+        <LogoMark size={28} />
+        <span className="truncate text-[0.95rem] font-extrabold tracking-[0.06em] text-ink">TAEKANG</span>
+      </Link>
+      <DemoBadge compact />
+      <div className="ml-auto flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setPrefs({ fontScale: next })}
+          className="press inline-flex h-12 items-center gap-1.5 rounded-xl border-2 border-line-strong bg-surface px-3 font-bold text-ink"
+          aria-label={cur === "xl" ? "글자를 보통 크기로" : "글자 더 크게"}
+          data-testid="font-toggle"
+        >
+          <span className="text-[1.35rem] font-extrabold leading-none" aria-hidden>
+            가
+          </span>
+          <span className="text-[0.95rem]">{cur === "xl" ? "보통으로" : "글자 크게"}</span>
+        </button>
+        {phone && (
+          <a href={`tel:${phone.replace(/[^\d+]/g, "")}`} className="press grid size-12 place-items-center rounded-xl bg-ok-bg text-ok" aria-label={`본사에 전화 ${phone}`}>
+            <Phone size={24} aria-hidden />
+          </a>
+        )}
+      </div>
+    </header>
+  );
+}
+
+/** 현장 직원 하단 메뉴 — 4개, 크게, 이름 그대로 */
+function FieldBottomNav() {
+  const pathname = usePathname();
+  const db = useDb();
+  const me = currentUserId();
+  const items = bottomNavFor("field");
+  const active = items
+    .map((i) => i.href)
+    .filter((h) => isActivePath(pathname, h))
+    .sort((a, b) => b.length - a.length)[0];
+  const open = db?.actions.filter((a) => a.assigneeUserId === me && !["done", "dismissed"].includes(a.status)).length ?? 0;
+  return (
+    <nav className="no-print fixed inset-x-0 bottom-0 z-40 border-t-2 border-line bg-surface pb-[env(safe-area-inset-bottom)] lg:hidden" aria-label="하단 메뉴" data-testid="bottom-nav">
+      <ul className="mx-auto flex max-w-xl">
+        {items.map((it) => {
+          const on = it.href === active;
+          return (
+            <li key={it.href} className="flex-1">
+              <Link href={it.href} aria-current={on ? "page" : undefined} className={cx("press relative flex h-[4.9rem] flex-col items-center justify-center gap-1 text-[0.98rem] font-extrabold", on ? "text-theme-ink" : "text-ink-2")} data-testid={`fieldnav-${it.href.replace(/\//g, "-").slice(1)}`}>
+                <span className={cx("grid h-9 w-14 place-items-center rounded-full", on && "bg-active-soft")}>
+                  <NavIcon name={it.icon} size={26} />
+                </span>
+                {it.label}
+                {it.href === "/my-actions" && open > 0 && (
+                  <span className="absolute right-[calc(50%-2.3rem)] top-1.5 grid min-w-6 place-items-center rounded-full bg-err px-1.5 text-[0.85rem] font-extrabold leading-6 text-white" aria-label={`해야 할 요청 ${open}건`}>
+                    {open}
+                  </span>
+                )}
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </nav>
   );
 }
 
@@ -148,7 +224,7 @@ export function MobileDrawer({ open, onClose }: { open: boolean; onClose: () => 
                     >
                       <GroupIcon item={item} active={active} />
                       <span className="min-w-0">
-                        <span className="block">{item.label}</span>
+                        <span className="block">{navLabel(item, role)}</span>
                         <span className="block text-[0.72rem] font-medium text-shell-muted">{item.desc}</span>
                       </span>
                     </Link>
