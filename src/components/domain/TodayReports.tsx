@@ -1,0 +1,65 @@
+"use client";
+
+/** 대표·관리자 — 오늘 현장 보고 현황 (어느 현장이 아직 보고하지 않았는지) */
+import Link from "next/link";
+import { CircleCheck, Clock3, ChevronRight } from "lucide-react";
+import type { DemoDB } from "@/lib/domain/types";
+import { todayIso } from "@/lib/domain/format";
+import { userLabel } from "@/lib/data/hooks";
+import { IS_LIVE } from "@/lib/mode";
+import { Card, CardHeader, cx } from "@/components/ui/primitives";
+
+function daysBetween(a: string, b: string) {
+  return Math.round((new Date(`${b}T00:00:00`).getTime() - new Date(`${a}T00:00:00`).getTime()) / 86_400_000);
+}
+
+export function TodayReports({ db }: { db: DemoDB }) {
+  const today = todayIso();
+  const sites = db.sites.filter((s) => s.status === "active");
+  if (sites.length === 0) return null;
+  const pending = db.costEntries.filter((e) => e.status === "pending").length;
+  const rows = sites.map((s) => {
+    const reports = db.reports.filter((r) => r.siteId === s.id && r.status !== "voided");
+    const todays = reports.filter((r) => r.reportDate === today);
+    const last = reports.map((r) => r.reportDate).sort().at(-1);
+    const photos = todays.reduce((n, r) => n + r.photoIds.length, 0);
+    const costs = todays.reduce((n, r) => n + r.costEntryIds.length, 0);
+    return { s, todays, last, photos, costs };
+  });
+  const missing = rows.filter((r) => r.todays.length === 0).length;
+  return (
+    <Card data-testid="today-reports">
+      <CardHeader
+        title="오늘 현장 보고"
+        sub={missing ? `${rows.length}곳 중 ${missing}곳 아직 보고 없음` : `${rows.length}곳 모두 보고함`}
+        right={
+          IS_LIVE && pending > 0 ? (
+            <Link href="/admin?tab=review" className="press inline-flex items-center gap-0.5 rounded-lg px-2 py-1 text-[0.8rem] font-bold text-theme-ink hover:bg-active-soft" data-testid="today-pending">
+              공무 확인 대기 {pending}건 <ChevronRight size={15} />
+            </Link>
+          ) : undefined
+        }
+      />
+      <ul className="divide-y divide-line border-t border-line">
+        {rows.map(({ s, todays, last, photos, costs }) => {
+          const ok = todays.length > 0;
+          const gap = last ? daysBetween(last, today) : null;
+          return (
+            <li key={s.id}>
+              <Link href={`/sites/${s.id}`} className="row-hover flex items-center gap-3 px-5 py-3" data-testid="today-report-row" data-reported={ok ? "1" : "0"}>
+                {ok ? <CircleCheck size={20} className="shrink-0 text-ok" aria-hidden /> : <Clock3 size={20} className="shrink-0 text-warn" aria-hidden />}
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[0.92rem] font-bold">{s.shortName}</span>
+                  <span className="block truncate text-[0.78rem] text-ink-3">현장 담당 {userLabel(db, s.fieldUserId)}</span>
+                </span>
+                <span className={cx("shrink-0 text-right text-[0.8rem] font-semibold", ok ? "text-ok" : "text-warn")}>
+                  {ok ? `보고 ${todays.length}건${photos ? ` · 사진 ${photos}` : ""}${costs ? ` · 비용 ${costs}` : ""}` : gap === null ? "보고 기록 없음" : gap === 1 ? "어제가 마지막" : `${gap}일째 없음`}
+                </span>
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </Card>
+  );
+}

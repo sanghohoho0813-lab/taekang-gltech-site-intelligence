@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { needsSetup, setupCompany, type SetupInput } from "@/server/service";
+import { RULES, clientIp, limited } from "@/server/rateLimit";
 import { crossSite, errorResponse, json, meBody, notLive, readJson, setSessionCookie } from "@/server/http";
 
 export const runtime = "nodejs";
@@ -18,7 +19,7 @@ export async function GET() {
 
 /** 회사 + 대표 계정 생성 (최초 1회만) */
 export async function POST(req: NextRequest) {
-  const blocked = notLive() ?? crossSite(req);
+  const blocked = notLive() ?? crossSite(req) ?? limited(RULES.setup, clientIp(req));
   if (blocked) return blocked;
   try {
     const body = (await readJson(req, 10_000)) as SetupInput;

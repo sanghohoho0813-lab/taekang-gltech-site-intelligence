@@ -1,12 +1,13 @@
 import type { NextRequest } from "next/server";
 import { login } from "@/server/auth";
+import { RULES, clientIp, limited } from "@/server/rateLimit";
 import { crossSite, errorResponse, json, meBody, notLive, readJson, setSessionCookie } from "@/server/http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
-  const blocked = notLive() ?? crossSite(req);
+  const blocked = notLive() ?? crossSite(req) ?? limited(RULES.login, clientIp(req));
   if (blocked) return blocked;
   try {
     const body = (await readJson(req, 10_000)) as { email?: unknown; password?: unknown };

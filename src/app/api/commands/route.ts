@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { executeCommand } from "@/server/service";
+import { RULES, limited } from "@/server/rateLimit";
 import { crossSite, errorResponse, json, notLive, readJson, requireMember } from "@/server/http";
 
 export const runtime = "nodejs";
@@ -12,6 +13,8 @@ export async function POST(req: NextRequest) {
   try {
     const m = await requireMember(req);
     if (m instanceof Response) return m;
+    const slow = limited(RULES.commands, m.id);
+    if (slow) return slow;
     const body = (await readJson(req)) as { name?: unknown; args?: unknown };
     return json(await executeCommand(m, body.name, body.args));
   } catch (e) {

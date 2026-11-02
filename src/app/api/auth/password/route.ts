@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { changePassword, SESSION_COOKIE } from "@/server/auth";
+import { RULES, limited } from "@/server/rateLimit";
 import { crossSite, errorResponse, json, notLive, readJson, requireMember } from "@/server/http";
 
 export const runtime = "nodejs";
@@ -11,6 +12,8 @@ export async function POST(req: NextRequest) {
   try {
     const m = await requireMember(req, true);
     if (m instanceof Response) return m;
+    const slow = limited(RULES.password, m.id);
+    if (slow) return slow;
     const body = (await readJson(req, 10_000)) as { current?: unknown; next?: unknown };
     const problem = await changePassword(m, body.current, body.next, req.cookies.get(SESSION_COOKIE)?.value ?? "");
     if (problem) return json({ error: problem, fieldErrors: { next: problem } }, 400);

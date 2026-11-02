@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { createMember, listMembers, type MemberInput } from "@/server/service";
+import { RULES, limited } from "@/server/rateLimit";
 import { crossSite, errorResponse, json, notLive, readJson, requireMember } from "@/server/http";
 
 export const runtime = "nodejs";
@@ -11,6 +12,8 @@ export async function GET(req: NextRequest) {
   try {
     const m = await requireMember(req);
     if (m instanceof Response) return m;
+    const slow = limited(RULES.members, m.id);
+    if (slow) return slow;
     return json({ members: await listMembers(m) });
   } catch (e) {
     return errorResponse(e);
@@ -23,6 +26,8 @@ export async function POST(req: NextRequest) {
   try {
     const m = await requireMember(req);
     if (m instanceof Response) return m;
+    const slow = limited(RULES.members, m.id);
+    if (slow) return slow;
     return json({ member: await createMember(m, (await readJson(req, 20_000)) as MemberInput) });
   } catch (e) {
     return errorResponse(e);

@@ -82,6 +82,23 @@ test("현장 직원 쉬운 화면: 타자 없이 보고 → 홈 상태·기록 �
   await expect(rec).toContainText("취소함");
   await expect(page.getByTestId("easy-site-status").filter({ hasText: "A현장" })).toContainText("아직 안 보냄");
 
+  // 다시 보고 → 대표 대시보드 '오늘 현장 보고'에 A현장 보고함 표시
+  await page.getByTestId("easy-go-photo").click();
+  await page.getByTestId("easy-site-site-a").click();
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+  await page.getByTestId("photo-album").setInputFiles({ name: "a.png", mimeType: "image/png", buffer: png });
+  await page.getByTestId("easy-next").click();
+  await page.getByTestId("submit-report").click();
+  await page.getByTestId("report-home").click();
+  await page.evaluate(([pk]) => localStorage.setItem(pk, JSON.stringify({ ...JSON.parse(localStorage.getItem(pk)!), role: "ceo" })), [PREFS] as const);
+  await page.goto("/dashboard");
+  const today = page.getByTestId("today-reports");
+  await expect(today.getByTestId("today-report-row").filter({ hasText: "A현장" })).toHaveAttribute("data-reported", "1");
+  await expect(today.getByTestId("today-report-row").filter({ hasText: "A현장" })).toContainText("사진 1");
+  await expect(today.getByTestId("today-report-row").filter({ hasText: "B현장" })).toHaveAttribute("data-reported", "0");
+  await page.evaluate(([pk]) => localStorage.setItem(pk, JSON.stringify({ ...JSON.parse(localStorage.getItem(pk)!), role: "field" })), [PREFS] as const);
+  await page.goto("/field");
+
   // 글자 크게 → 아주 크게 → 보통 (어디서든 한 번에)
   await page.getByTestId("font-toggle").click();
   await expect(page.locator("html")).toHaveAttribute("data-font", "lg");
