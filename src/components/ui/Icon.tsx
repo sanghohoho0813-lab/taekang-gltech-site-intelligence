@@ -15,6 +15,7 @@ import {
   UserRound,
   MapPinCheck,
   CalendarClock,
+  ClipboardCheck,
   type LucideIcon,
 } from "lucide-react";
 
@@ -35,6 +36,7 @@ const MAP: Record<string, LucideIcon> = {
   UserRound,
   MapPinCheck,
   CalendarClock,
+  ClipboardCheck,
 };
 
 export function NavIcon({ name, className, size = 20 }: { name: string; className?: string; size?: number }) {

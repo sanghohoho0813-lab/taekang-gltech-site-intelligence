@@ -345,6 +345,15 @@ export function EasyAttendance({ db, userId, sites, autoQr }: { db: DemoDB; user
   );
 }
 
+/** 출퇴근이 잘못됐을 때 — 근태 수정 요청으로 */
+export function FixLink() {
+  return (
+    <a href="/field/fix" className="press flex min-h-12 w-full items-center justify-center rounded-xl text-[1.02rem] font-bold text-ink-2 underline underline-offset-4" data-testid="att-fix-link">
+      출퇴근이 잘못 찍혔나요? 수정 요청하기
+    </a>
+  );
+}
+
 function DeniedHelp() {
   return (
     <div className="rounded-2xl bg-surface px-4 py-3 text-[1rem] leading-relaxed text-ink">

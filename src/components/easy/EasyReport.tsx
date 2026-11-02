@@ -69,6 +69,8 @@ interface Draft {
   progress: number | null;
   /** 공정 단계별 새 진척 (단계 id → %) — 오늘 작업한 단계만 */
   stages?: Record<string, number>;
+  /** 관련 본사 작업지시 */
+  workOrderId?: string;
   issueYes: boolean | null;
   issueChips: string[];
   issueText: string;
@@ -252,12 +254,15 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
   const nextAfter = (s: StepId): StepId => order[Math.min(order.indexOf(s) + 1, order.length - 1)];
 
   // ───────── 보낼 내용 만들기 ─────────
+  // 내 담당 작업지시 (이 현장, 아직 끝나지 않은 것)
+  const myOrders = site ? (db.workOrders ?? []).filter((w) => w.siteId === site.id && w.assigneeUserId === userId && !["done", "confirmed"].includes(w.status)) : [];
+  const linkedOrder = myOrders.find((w) => w.id === d.workOrderId);
   const workDone =
     mode === "photo"
       ? memo.trim() || "현장 사진 보고"
       : mode === "cost"
         ? "추가 비용 보고"
-        : [...d.work, d.workText.trim()].filter(Boolean).join(", ");
+        : [...(linkedOrder ? [`지시: ${linkedOrder.title}`] : []), ...d.work, d.workText.trim()].filter(Boolean).join(", ");
   const issues = d.issueYes ? [...d.issueChips, d.issueText.trim()].filter(Boolean).join(", ") : "";
   const costLines: CostLineInput[] = d.costs
     .filter((c) => costWon(c) > 0)
@@ -292,6 +297,7 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
         reason: costLines.length ? d.reason || "other" : undefined,
         reasonNote: unknownImpact ? "예산 포함 여부: 현장에서 모름 — 본사 확인 필요" : "",
         source: "FIELD",
+        ...(d.workOrderId && linkedOrder ? { workOrderId: d.workOrderId } : {}),
         geo: geo ?? { noLocation: consented ? "timeout" : "skipped" },
         ...(d.progress !== null && d.progress !== site.progressPct ? { progressPct: d.progress } : {}),
         ...(stageChanges.length ? { stageProgress: stageChanges.map((c) => ({ stageId: c.id, progressPct: c.to })) } : {}),
@@ -523,9 +529,21 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
     case "work": {
       const stageNames = site && site.stages.length ? [...site.stages].sort((a, b) => rank(a.progressPct) - rank(b.progressPct)).slice(0, 6).map((st) => st.name) : DEFAULT_WORK;
       const toggle = (w: string) => set({ work: d.work.includes(w) ? d.work.filter((x) => x !== w) : w === NO_WORK ? [NO_WORK] : [...d.work.filter((x) => x !== NO_WORK), w] });
-      const ok = d.work.length > 0 || !!d.workText.trim();
+      const ok = d.work.length > 0 || !!d.workText.trim() || !!linkedOrder;
       body = (
         <EasyQuestion title="오늘 무슨 작업을 했나요?" help="해당하는 것을 모두 누르세요." testId="easy-work">
+          {myOrders.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-[1.1rem] font-bold">본사 지시와 관련 있으면 누르세요</p>
+              <div className="flex flex-wrap gap-2.5">
+                {myOrders.map((w) => (
+                  <Chip key={w.id} selected={d.workOrderId === w.id} onClick={() => set({ workOrderId: d.workOrderId === w.id ? undefined : w.id })} testId="work-order-chip">
+                    본사 지시: {w.title}
+                  </Chip>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="flex flex-wrap gap-2.5">
             {stageNames.map((name) => (
               <Chip key={name} selected={d.work.includes(name)} onClick={() => toggle(name)} testId="work-chip">
@@ -900,7 +918,7 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
           )}
         </div>
       );
-      const hasWork = mode !== "full" || d.work.length > 0 || !!d.workText.trim();
+      const hasWork = mode !== "full" || d.work.length > 0 || !!d.workText.trim() || !!linkedOrder;
       body = (
         <EasyQuestion title="이렇게 보낼까요?" help="맞으면 맨 아래 ‘본사로 보내기’를 누르세요." testId="easy-confirm">
           <div className="rounded-2xl border-2 border-line bg-surface px-4">

@@ -11,8 +11,9 @@ import type { DemoDB, FieldReport } from "@/lib/domain/types";
 import { todayIso } from "@/lib/domain/format";
 import { PageSkeleton, cx } from "@/components/ui/primitives";
 import { BigTile } from "./ui";
-import { EasyAttendance } from "./EasyAttendance";
+import { EasyAttendance, FixLink } from "./EasyAttendance";
 import { EASY_CATEGORY, easyDate, easyWon } from "./words";
+import { downscalePhoto } from "./photo";
 
 export function EasyHome() {
   const { db, role, userId, user } = useMe();
@@ -20,7 +21,12 @@ export function EasyHome() {
   if (!db) return <PageSkeleton />;
   const today = todayIso();
   const mine = (r: FieldReport) => r.createdBy === userId && r.status !== "voided";
-  const open = db.actions.filter((a) => a.assigneeUserId === userId && !["done", "dismissed"].includes(a.status));
+  // 본사 요청 = 작업지시 + 위험 조치 (긴급 지시가 먼저)
+  const open = [
+    ...(db.workOrders ?? []).filter((w) => w.assigneeUserId === userId && !["done", "confirmed"].includes(w.status)).sort((a, b) => Number(!!b.urgent) - Number(!!a.urgent)),
+    ...db.actions.filter((a) => a.assigneeUserId === userId && !["done", "dismissed"].includes(a.status)),
+  ];
+  const returned = db.reports.filter((r) => r.createdBy === userId && r.status !== "voided" && r.review?.status === "returned");
   const phone = db.settings?.helpPhone;
 
   return (
@@ -32,7 +38,12 @@ export function EasyHome() {
         <p className="text-[1.15rem] font-semibold text-ink-2">{easyDate(today)}</p>
       </header>
 
-      {sites.length > 0 && <EasyAttendance db={db} userId={userId} sites={sites} />}
+      {sites.length > 0 && (
+        <div className="space-y-1">
+          <EasyAttendance db={db} userId={userId} sites={sites} />
+          <FixLink />
+        </div>
+      )}
 
       {sites.length === 0 ? (
         <p className="rounded-2xl border-2 border-line bg-surface px-4 py-4 text-[1.1rem] leading-relaxed" data-testid="easy-no-site">
@@ -71,6 +82,9 @@ export function EasyHome() {
             badge={open.length ? <span className="grid size-10 shrink-0 place-items-center rounded-full bg-err text-[1.15rem] font-extrabold text-white">{open.length}</span> : undefined}
             testId="easy-go-actions"
           />
+          {returned.length > 0 && (
+            <BigTile href="/my" tone="warn" icon={<AlertCircle size={30} />} label={`보완 요청 ${returned.length}건`} sub={returned[0].review?.note ?? "본사가 보고 보완을 요청했어요"} testId="easy-go-returned" />
+          )}
           {phone && <BigTile href={`tel:${phone.replace(/[^\d+]/g, "")}`} icon={<Phone size={30} />} label="본사에 전화하기" sub={`모르는 게 있으면 · ${phone}`} testId="easy-call" />}
         </nav>
       )}
@@ -135,6 +149,8 @@ export function MyRecords({ db, userId, limit }: { db: DemoDB; userId: string; l
                 {voided && <span className="font-bold text-ink-3">· 취소함</span>}
               </p>
               <p className="mt-1 line-clamp-2 text-[1.08rem] leading-relaxed text-ink">{r.workDone}</p>
+              {r.review?.status === "confirmed" && <p className="mt-1 text-[1rem] font-bold text-ok">본사 확인함</p>}
+              {r.review?.status === "returned" && !voided && <Supplement reportId={r.id} note={r.review.note} />}
               {entries.length > 0 && (
                 <ul className="mt-2 space-y-1.5">
                   {entries.map((e) => (
@@ -198,4 +214,61 @@ function addDays(iso: string, n: number) {
   const d = new Date(`${iso}T00:00:00`);
   d.setDate(d.getDate() + n);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** 본사가 보완을 요청한 보고 — 사진·메모를 덧붙여 다시 보내기 */
+function Supplement({ reportId, note }: { reportId: string; note?: string }) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState("");
+  const [photo, setPhoto] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const send = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      await run("supplementReport", { reportId, text, ...(photo ? { photoDataUrls: [photo] } : {}) });
+      setOpen(false);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "보내지 못했어요.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="mt-2 space-y-2 rounded-2xl bg-err-bg p-3" data-testid="record-returned">
+      <p className="text-[1.05rem] font-bold text-err">본사 보완 요청: {note}</p>
+      {!open ? (
+        <button type="button" onClick={() => setOpen(true)} className="press h-[3.3rem] w-full rounded-xl bg-cta text-[1.08rem] font-extrabold text-cta-text" data-testid="record-supplement">
+          보완해서 보내기
+        </button>
+      ) : (
+        <div className="space-y-2">
+          <label className="press flex h-[3.3rem] cursor-pointer items-center justify-center gap-2 rounded-xl border-2 border-line-strong bg-surface text-[1.05rem] font-bold">
+            <Camera size={20} aria-hidden /> {photo ? "사진 다시 찍기" : "사진 찍기"}
+            <input
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="sr-only"
+              data-testid="supplement-photo"
+              onChange={async (e) => {
+                const input = e.currentTarget;
+                const f = input.files?.[0];
+                input.value = "";
+                if (f) setPhoto(await downscalePhoto(f));
+              }}
+            />
+          </label>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          {photo && <img src={photo} alt="보완 사진" className="max-h-40 rounded-xl object-cover" />}
+          <textarea rows={2} value={text} maxLength={400} onChange={(e) => setText(e.target.value)} className="w-full rounded-xl border-2 border-line-strong p-3 text-[1.08rem]" placeholder="보완 내용 (안 적어도 돼요)" aria-label="보완 내용" data-testid="supplement-text" />
+          {err && <p className="text-[1rem] font-semibold text-err">{err}</p>}
+          <button type="button" onClick={send} disabled={busy || (!text.trim() && !photo)} className="press h-[3.3rem] w-full rounded-xl bg-cta text-[1.08rem] font-extrabold text-cta-text disabled:opacity-40" data-testid="supplement-send">
+            본사로 다시 보내기
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }

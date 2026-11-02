@@ -13,6 +13,7 @@ import { fmtEok, fmtMan, fmtPct, fmtPp, fmtRelative } from "@/lib/domain/format"
 import { CATEGORY_LABEL, RULE_LABEL } from "@/lib/domain/labels";
 import { EasyHome } from "@/components/easy/EasyHome";
 import { TodayReports } from "@/components/domain/TodayReports";
+import { PendingBoard } from "@/components/domain/PendingBoard";
 import { IS_LIVE, BASE_LABEL } from "@/lib/mode";
 
 export default function DashboardPage() {
@@ -239,6 +240,7 @@ function CeoDashboard() {
 
       </div>
 
+      <PendingBoard db={db} />
       <TodayReports db={db} />
 
       <div className="grid gap-5 @min-[760px]:grid-cols-2 @min-[1080px]:grid-cols-3">

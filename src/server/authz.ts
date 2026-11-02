@@ -88,6 +88,20 @@ export function authorize(m: Member, name: CommandName, argsIn: unknown, db: Dem
       case "updateProgress":
         if (!sites.has(str(args.siteId))) throw new ForbiddenError("담당 현장의 공정률만 바꿀 수 있습니다.");
         return args;
+      case "requestAttendanceFix":
+        // 본인 근태만 (명령이 로그인 사용자 id로 기록) · 담당 현장만
+        if (!sites.has(str(args.siteId))) throw new ForbiddenError("담당 현장의 근태만 요청할 수 있습니다.");
+        return args;
+      case "workOrderStep": {
+        const w = (db.workOrders ?? []).find((x) => x.id === args.workOrderId);
+        if (!w || w.assigneeUserId !== m.id) throw new ForbiddenError("나에게 온 작업지시만 처리할 수 있습니다.");
+        return args;
+      }
+      case "supplementReport": {
+        const r = db.reports.find((x) => x.id === args.reportId);
+        if (!r || r.createdBy !== m.id) throw new ForbiddenError("본인이 보낸 보고만 보완할 수 있습니다.");
+        return args;
+      }
       case "checkIn":
       case "checkOut":
       case "confirmQr":
@@ -142,6 +156,8 @@ export function viewFor(m: Member, db: DemoDB): DemoDB {
     consents: [],
     kiosks: [],
     crewChecks: [],
+    attendanceRequests: [],
+    workOrders: [],
   } satisfies Partial<DemoDB>;
 
   if (m.role === "field") {
@@ -172,6 +188,8 @@ export function viewFor(m: Member, db: DemoDB): DemoDB {
       consents: (db.consents ?? []).filter((c) => c.userId === m.id),
       // 작업 인원은 담당 현장 것만
       crewChecks: (db.crewChecks ?? []).filter((c) => sites.has(c.siteId)),
+      attendanceRequests: (db.attendanceRequests ?? []).filter((q) => q.userId === m.id),
+      workOrders: (db.workOrders ?? []).filter((w) => w.assigneeUserId === m.id),
     };
   }
 

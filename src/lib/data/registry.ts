@@ -7,6 +7,7 @@ import type { RiskSignal } from "@/lib/domain/types";
 import * as C from "./commands";
 import * as A from "./adminCommands";
 import * as T from "./attendanceCommands";
+import * as O from "./opsCommands";
 
 type Ctx = C.Ctx;
 
@@ -42,6 +43,14 @@ export const COMMANDS = {
   correctAttendance: (db: DemoDB, a: T.CorrectAttendanceInput, ctx: Ctx) => T.correctAttendance(db, a, ctx),
   confirmQr: (db: DemoDB, a: { siteId: string; qrToken: string }, ctx: Ctx) => T.confirmQr(db, a, ctx),
   reportCrew: (db: DemoDB, a: T.CrewInput, ctx: Ctx) => T.reportCrew(db, a, ctx),
+  // 본사–현장 소통
+  requestAttendanceFix: (db: DemoDB, a: O.FixRequestInput, ctx: Ctx) => O.requestAttendanceFix(db, a, ctx),
+  reviewAttendanceFix: (db: DemoDB, a: Parameters<typeof O.reviewAttendanceFix>[1], ctx: Ctx) => O.reviewAttendanceFix(db, a, ctx),
+  createWorkOrder: (db: DemoDB, a: O.WorkOrderInput, ctx: Ctx) => O.createWorkOrder(db, a, ctx),
+  workOrderStep: (db: DemoDB, a: Parameters<typeof O.workOrderStep>[1], ctx: Ctx) => O.workOrderStep(db, a, ctx),
+  reviewWorkOrder: (db: DemoDB, a: Parameters<typeof O.reviewWorkOrder>[1], ctx: Ctx) => O.reviewWorkOrder(db, a, ctx),
+  reviewReport: (db: DemoDB, a: Parameters<typeof O.reviewReport>[1], ctx: Ctx) => O.reviewReport(db, a, ctx),
+  supplementReport: (db: DemoDB, a: Parameters<typeof O.supplementReport>[1], ctx: Ctx) => O.supplementReport(db, a, ctx),
   createKiosk: (db: DemoDB, a: { siteId: string; name?: string }, ctx: Ctx) => T.createKiosk(db, a, ctx),
   revokeKiosk: (db: DemoDB, a: { kioskId: string }, ctx: Ctx) => T.revokeKiosk(db, a, ctx),
   // pairKiosk는 목록에 넣지 않는다 — 로그인하지 않은 태블릿 전용 경로(/api/kiosk/pair)에서만 실행

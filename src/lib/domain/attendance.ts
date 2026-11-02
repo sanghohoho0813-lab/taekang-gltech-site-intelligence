@@ -52,6 +52,8 @@ export function dayFlags(db: DemoDB, date: string, now = new Date()): Attendance
     if (qrMode && r.inQr?.status !== "ok")
       flags.push({ kind: "no_qr", userId: r.userId, siteId: r.siteId, recordId: r.id, workDate: date, text: `${name(r.userId)} — ${r.inQr ? `QR 확인 실패 (${r.inQr.status === "expired" ? "만료된 QR" : r.inQr.status === "wrong_site" ? "다른 현장 QR" : r.inQr.status === "revoked" ? "해제된 단말기" : "QR 오류"})` : "QR 없이 출근"}` });
     const geos = [r.inGeo, r.outGeo].filter(Boolean);
+    // 본사가 예외(GPS 실패·누락 등)를 승인한 기록은 위치 의심 표시를 하지 않는다 (사유는 화면에 표시)
+    if (r.exceptionNote) continue;
     if (geos.some((g) => g!.status === "outside")) flags.push({ kind: "outside", userId: r.userId, siteId: r.siteId, recordId: r.id, workDate: date, text: `${name(r.userId)} — 현장에서 떨어진 곳에서 눌렀습니다` });
     else if (r.inGeo.status === "none") flags.push({ kind: "no_location", userId: r.userId, siteId: r.siteId, recordId: r.id, workDate: date, text: `${name(r.userId)} — 위치 없이 출근했습니다` });
     else if (geos.some((g) => g!.status === "weak")) flags.push({ kind: "weak", userId: r.userId, siteId: r.siteId, recordId: r.id, workDate: date, text: `${name(r.userId)} — 위치 오차가 커서 확인이 필요합니다` });

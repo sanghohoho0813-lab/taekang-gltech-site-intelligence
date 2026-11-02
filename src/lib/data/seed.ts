@@ -494,6 +494,42 @@ function seedAttendance(db: DemoDB, now: Date) {
     at: at(kstDate(-i), "07:50"),
     by: "u-field",
   }));
+  // 근태 수정 요청 (가상) — 정우진 어제 퇴근 누락, 본사 확인 대기
+  db.attendanceRequests = [
+    { id: "afr-seed-1", siteId: "site-c", userId: "u-field2", workDate: kstDate(-1), kind: "missed_out", outTime: "17:30", reason: "휴대폰 배터리가 꺼짐", status: "pending", createdAt: at(kstDate(0), "07:40"), attendanceId: "att-seed-c-1" },
+  ].filter((q) => q.createdAt <= nowIsoStr) as DemoDB["attendanceRequests"];
+  // 본사 작업지시 (가상)
+  db.workOrders = [
+    {
+      id: "wo-seed-1",
+      siteId: "site-a",
+      title: "3층 남측 실링 보수 (원청 지적사항)",
+      detail: "원청 점검에서 지적된 3층 남측 코너 실링 들뜸 보수. 보수 전·후 사진을 남겨 주세요.",
+      assigneeUserId: "u-field",
+      dueDate: kstDate(2),
+      urgent: true,
+      status: "sent" as const,
+      createdAt: dayOffset(now, -0.2),
+      createdBy: "u-manager",
+      history: [{ at: dayOffset(now, -0.2), by: "u-manager", to: "sent" as const }],
+    },
+    {
+      id: "wo-seed-2",
+      siteId: "site-a",
+      title: "변경 구간 유리 반입 수량 확인",
+      detail: "삼중 로이유리 반입 수량을 송장과 대조해 알려 주세요.",
+      assigneeUserId: "u-field",
+      dueDate: kstDate(1),
+      status: "in_progress" as const,
+      createdAt: dayOffset(now, -2),
+      createdBy: "u-manager",
+      history: [
+        { at: dayOffset(now, -2), by: "u-manager", to: "sent" as const },
+        { at: dayOffset(now, -1.8), by: "u-field", to: "received" as const },
+        { at: dayOffset(now, -1.5), by: "u-field", to: "in_progress" as const },
+      ],
+    },
+  ];
   // 현장 QR 태블릿 (가상, 연결 완료) — DEMO 비밀값은 브라우저 안에만 있다
   db.kiosks = db.sites.map((s, i) => ({
     id: `kio_demo${i + 1}`,

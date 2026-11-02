@@ -21,6 +21,7 @@
 - 설계: [`PROJECT_SPEC.md`](PROJECT_SPEC.md) · 진행: [`PROJECT_STATE.md`](PROJECT_STATE.md) · 결정: [`DECISIONS.md`](DECISIONS.md)
 - 품질: [`QA_REPORT.md`](QA_REPORT.md) · 개선 후보: [`RECOMMENDATIONS.md`](RECOMMENDATIONS.md)
 - 실증: [`EVIDENCE_PLAN.md`](EVIDENCE_PLAN.md) · [`AX_COACH_PLAN.md`](AX_COACH_PLAN.md) · [`PROOF_EVENT_SCHEMA.md`](PROOF_EVENT_SCHEMA.md)
+- 계약 검수 대응표: [`docs/CONTRACT_ACCEPTANCE.md`](docs/CONTRACT_ACCEPTANCE.md) (4단계 기성·검수 시나리오 S1~S8)
 - 기준 문서: `docs/(AX+플랫폼전용)미래AI랩_AX_Platform_Unified_Design_Development_System_v4.1_260922.md`, `docs/태강지엘텍_ClaudeCode_AX플랫폼_MVP_통합프롬프트_261023.md`
 
 ---
@@ -151,6 +152,8 @@ DEMO와 LIVE 빌드 결과는 서로 다른 폴더(`.next` / `.next-live`)에 �
 | `/sites`, `/sites/[id]` | 현장 목록 / 현장 손익 엔진·원가·공정·보고·계약·기성·요청·이력 |
 | `/field` | 현장 직원: **쉬운 홈**(오늘 보고하기·사진만·추가 비용·본사 요청·본사 전화, 현장별 오늘 보고 여부) / 대표·관리자: 대리 입력 화면 |
 | `/field/report` | 현장 직원 **쉬운 보고** — 한 화면에 질문 하나, 누르기만으로 끝 (`?mode=photo` 사진만, `?mode=cost` 추가 비용만) |
+| `/orders` | **지시·확인** — 작업지시(지시→접수→진행→완료→확인/보완), 현장 보고 확인·보완 요청, 근태 수정 요청 승인·반려 |
+| `/field/fix` | 현장 직원 **근태 수정 요청** — 날짜·내용·시각·사유를 눌러서 요청 |
 | `/field/crew` | 현장 직원 **오늘 작업 인원 알리기** — 팀 → 인원 → 단체 사진 → 보내기 (본사 출퇴근 현황 ‘작업 인원’ 카드에서 노무 공수와 대조) |
 | `/my` | 내 정보 — 글자 크기(보통·크게·아주 크게)·내가 보낸 보고(본사 확인 중/반영됨/반려 이유)·비밀번호·로그아웃 |
 | `/schedule` | **공정 일정** — 현장별 계획(세로선) vs 실제, 늦은 일수·준공 예상, 기한 지난 공정, 지연 경비 추정(현장경비 기준), 공정 중 출근 공백 |

@@ -115,7 +115,9 @@ function FieldBottomNav() {
     .map((i) => i.href)
     .filter((h) => isActivePath(pathname, h))
     .sort((a, b) => b.length - a.length)[0];
-  const open = db?.actions.filter((a) => a.assigneeUserId === me && !["done", "dismissed"].includes(a.status)).length ?? 0;
+  const open =
+    (db?.actions.filter((a) => a.assigneeUserId === me && !["done", "dismissed"].includes(a.status)).length ?? 0) +
+    ((db?.workOrders ?? []).filter((w) => w.assigneeUserId === me && !["done", "confirmed"].includes(w.status)).length ?? 0);
   return (
     <nav className="no-print fixed inset-x-0 bottom-0 z-40 border-t-2 border-line bg-surface pb-[env(safe-area-inset-bottom)] lg:hidden" aria-label="하단 메뉴" data-testid="bottom-nav">
       <ul className="mx-auto flex max-w-xl">

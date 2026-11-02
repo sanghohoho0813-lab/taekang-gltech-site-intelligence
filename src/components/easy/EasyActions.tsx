@@ -15,6 +15,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Chip, Choice, VoiceHint, easyTextareaCls } from "./ui";
 import { EASY_ACTION_STATUS, dueText, easyDate, easyWon, resultChips } from "./words";
 import { downscalePhoto } from "./photo";
+import { EasyWorkOrderCard } from "./EasyWorkOrder";
 
 export function EasyActions() {
   const { db, userId } = useMe();
@@ -24,17 +25,22 @@ export function EasyActions() {
   const open = mine.filter((a) => !["done", "dismissed"].includes(a.status)).sort((a, b) => (a.dueDate ?? "9").localeCompare(b.dueDate ?? "9"));
   const done = mine.filter((a) => a.status === "done").sort((a, b) => (b.completedAt ?? b.createdAt).localeCompare(a.completedAt ?? a.createdAt));
   const list = tab === "open" ? open : done;
+  // 본사 작업지시 (일반 지시) — 위험 신호 조치와 함께 보여준다
+  const orders = (db.workOrders ?? []).filter((w) => w.assigneeUserId === userId);
+  const ordersOpen = orders.filter((w) => !["done", "confirmed"].includes(w.status)).sort((a, b) => Number(!!b.urgent) - Number(!!a.urgent) || (a.dueDate ?? "9").localeCompare(b.dueDate ?? "9"));
+  const ordersDone = orders.filter((w) => ["done", "confirmed"].includes(w.status));
+  const woList = tab === "open" ? ordersOpen : ordersDone;
   return (
     <div className="mx-auto w-full max-w-xl space-y-5 px-4 pb-8 pt-5" data-testid="easy-actions">
       <header className="space-y-1.5">
         <h1 className="text-[1.7rem] font-extrabold leading-tight">본사 요청</h1>
-        <p className="text-[1.08rem] leading-relaxed text-ink-2">본사에서 확인을 부탁한 일이에요. 시작하면 ‘시작했어요’, 끝나면 ‘다 했어요’를 누르세요.</p>
+        <p className="text-[1.08rem] leading-relaxed text-ink-2">본사에서 지시하거나 확인을 부탁한 일이에요. 받으면 ‘확인했어요’, 끝나면 ‘다 했어요’를 누르세요.</p>
       </header>
       <div className="grid grid-cols-2 gap-2.5" role="tablist" aria-label="요청 보기">
         {(
           [
-            ["open", `해야 할 일 ${open.length}`],
-            ["done", `끝낸 일 ${done.length}`],
+            ["open", `해야 할 일 ${open.length + ordersOpen.length}`],
+            ["done", `끝낸 일 ${done.length + ordersDone.length}`],
           ] as const
         ).map(([v, label]) => (
           <button key={v} type="button" role="tab" aria-selected={tab === v} onClick={() => setTab(v)} className={cx("press h-[3.6rem] rounded-2xl border-2 text-[1.12rem] font-extrabold", tab === v ? "border-active bg-active-soft text-ink" : "border-line-strong bg-surface text-ink-2")}>
@@ -42,7 +48,16 @@ export function EasyActions() {
           </button>
         ))}
       </div>
-      {list.length === 0 ? (
+      {woList.length > 0 && (
+        <ul className="space-y-3.5" data-testid="wo-list">
+          {woList.map((w) => (
+            <li key={w.id}>
+              <EasyWorkOrderCard db={db} wo={w} />
+            </li>
+          ))}
+        </ul>
+      )}
+      {list.length === 0 && woList.length > 0 ? null : list.length === 0 ? (
         <div className="rounded-2xl border-2 border-line bg-surface px-5 py-8 text-center">
           <ClipboardList size={36} className="mx-auto text-ink-3" aria-hidden />
           <p className="mt-2 text-[1.2rem] font-bold">{tab === "open" ? "지금 해야 할 요청이 없어요" : "끝낸 요청이 없어요"}</p>

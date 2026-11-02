@@ -103,6 +103,10 @@ export interface AttendanceRecord {
   outAt?: string;
   outGeo?: GeoStamp;
   outDevice?: string;
+  /** 직원 수정 요청을 본사가 승인해 만든 기록 (GPS 없음) */
+  fromRequestId?: string;
+  /** 본사가 승인한 예외 사유 (GPS 실패 등) — 위치 의심 표시 대신 이 사유를 보여준다 */
+  exceptionNote?: string;
   /** 본사 정정 이력 (사유 필수) */
   corrections?: { at: string; by: string; note: string; before: { inAt: string; outAt?: string } }[];
 }
@@ -239,6 +243,52 @@ export interface FieldReport {
   status: "submitted" | "voided";
   /** 보고를 보낸 곳 (현장 안/밖) */
   geo?: GeoStamp;
+  /** 관련 본사 작업지시 */
+  workOrderId?: string;
+  /** 본사 확인 — confirmed = 확인, returned = 보완 요청 (없으면 확인 전) */
+  review?: { status: "confirmed" | "returned"; at: string; by: string; note?: string };
+  /** 보완 요청 뒤 현장이 덧붙인 내용 */
+  supplements?: { at: string; by: string; text: string; photoIds: string[] }[];
+}
+
+/** 근태 수정 요청 (GPS 실패·출퇴근 누락·잘못 찍힘) — 직원이 사유와 함께 요청, 본사가 승인·반려 */
+export interface AttendanceRequest {
+  id: string;
+  siteId: string;
+  userId: string;
+  workDate: string;
+  kind: "missed_in" | "missed_out" | "gps_issue" | "wrong_time";
+  /** 요청하는 출근·퇴근 시각 (한국 시간 HH:MM) */
+  inTime?: string;
+  outTime?: string;
+  reason: string;
+  status: "pending" | "approved" | "rejected";
+  createdAt: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+  reviewNote?: string;
+  /** 승인으로 고치거나 만든 출퇴근 기록 */
+  attendanceId?: string;
+}
+
+/** 본사 → 현장 작업지시: 지시 → 접수 → 진행 → 완료 → 본사 확인 (또는 보완 요청) */
+export interface WorkOrder {
+  id: string;
+  siteId: string;
+  title: string;
+  detail: string;
+  assigneeUserId: string;
+  dueDate?: string;
+  urgent?: boolean;
+  status: "sent" | "received" | "in_progress" | "done" | "confirmed" | "returned";
+  createdAt: string;
+  createdBy: string;
+  doneNote?: string;
+  /** 작업량 (예: 유닛 10개) */
+  doneQty?: string;
+  donePhotoIds?: string[];
+  returnNote?: string;
+  history: { at: string; by: string; to: WorkOrder["status"]; note?: string }[];
 }
 
 export interface SitePhoto {
@@ -484,6 +534,8 @@ export interface DemoDB {
   consents?: LocationConsent[];
   kiosks?: Kiosk[];
   crewChecks?: CrewCheck[];
+  attendanceRequests?: AttendanceRequest[];
+  workOrders?: WorkOrder[];
   /** LIVE: 현재 로그인 사용자 id (서버가 채움). DEMO에서는 없음 */
   me?: string;
   /** LIVE: 서버가 역할별로 걸러 보낸 데이터인지 */

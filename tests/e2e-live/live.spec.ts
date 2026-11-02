@@ -267,6 +267,43 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     await admin.getByTestId("att-mode-gps").click();
   });
 
+  test("지시·확인: 본사 작업지시 → 현장소장 접수·완료 → 본사 확인 / GPS 문제 수정 요청 → 승인", async ({ browser }) => {
+    const admin = await login(browser, CEO.email, CEO.password);
+    await admin.goto("/orders");
+    await admin.locator("#wo-site").selectOption(siteId);
+    await admin.getByTestId("wo-title").fill("1층 앵커 토크 재점검");
+    await admin.getByTestId("wo-send").click();
+    await expect(admin.getByTestId("wo-row").filter({ hasText: "1층 앵커 토크 재점검" })).toHaveAttribute("data-status", "sent");
+
+    const fp = await login(browser, FIELD.email, FIELD.password, { width: 390, height: 844 });
+    await fp.goto("/my-actions");
+    const card = fp.getByTestId("wo-card").filter({ hasText: "1층 앵커 토크 재점검" });
+    await card.getByTestId("wo-receive").click();
+    await card.getByTestId("wo-complete").click();
+    await fp.getByTestId("wo-qty").fill("24");
+    await fp.getByTestId("wo-finish-send").click();
+    await expect(fp.getByTestId("wo-finish")).toHaveCount(0);
+    // 오늘 GPS 출근 기록에 대해 ‘위치가 잘못 찍혔어요’ 요청
+    await fp.goto("/field/fix");
+    await fp.getByTestId("fix-date-0").click();
+    await fp.getByTestId("fix-kind-gps_issue").click();
+    await fp.getByTestId("fix-reason-chip").filter({ hasText: "GPS" }).click();
+    await fp.getByTestId("easy-next").click();
+    await fp.getByTestId("fix-send").click();
+    await expect(fp.getByTestId("fix-done")).toBeVisible();
+
+    await admin.reload();
+    const row = admin.getByTestId("wo-row").filter({ hasText: "1층 앵커 토크 재점검" });
+    await expect(row).toContainText("24개");
+    await row.getByTestId("wo-confirm").click();
+    await expect(row).toHaveAttribute("data-status", "confirmed");
+    await admin.getByTestId("ord-tab-fixes").click();
+    await admin.getByTestId("fix-row").filter({ hasText: "확인 대기" }).getByTestId("fix-confirm").click();
+    await expect(admin.getByTestId("fix-row").first()).toHaveAttribute("data-status", "approved");
+    await admin.goto("/attendance");
+    await expect(admin.locator(`[data-testid="att-site"][data-site="${siteId}"]`).getByTestId("att-row")).toContainText("현장 요청 승인");
+  });
+
   test("발주처: 첫 로그인 후 공개 현장만, 요청 등록, 내부 정보 없음", async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     const page = await ctx.newPage();

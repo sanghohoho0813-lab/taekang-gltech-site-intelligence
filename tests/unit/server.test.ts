@@ -282,6 +282,22 @@ describe("사진·이력·설정", () => {
     expect(fv.photos.find((p) => p.id === mine.photoId)?.dataUrl).toMatch(/^\/api\/photos\//);
     expect((await svc.getView(partner)).db.crewChecks ?? []).toHaveLength(0);
   });
+  it("지시·확인 권한: 현장은 자기 지시·자기 요청·자기 보고만, 확인·지시는 본사만", async () => {
+    await expect(svc.executeCommand(field, "createWorkOrder", { siteId: "site-a", title: "직접 지시" })).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(svc.executeCommand(field, "reviewReport", { reportId: "x", decision: "confirm" })).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(svc.executeCommand(field, "reviewAttendanceFix", { requestId: "afr-seed-1", decision: "approve" })).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(svc.executeCommand(field, "requestAttendanceFix", { siteId: "site-c", workDate: "2026-11-01", kind: "missed_in", inTime: "07:00", reason: "x" })).rejects.toBeInstanceOf(ForbiddenError);
+    const wo = (await svc.executeCommand(manager, "createWorkOrder", { siteId: "site-c", title: "C현장 지시", assigneeUserId: "u-field2" })).result as { workOrderId: string };
+    await expect(svc.executeCommand(field, "workOrderStep", { workOrderId: wo.workOrderId, action: "receive" })).rejects.toBeInstanceOf(ForbiddenError); // 남의 지시
+    const fv = (await svc.getView(field)).db;
+    expect((fv.workOrders ?? []).every((w) => w.assigneeUserId === field.id)).toBe(true);
+    expect((fv.attendanceRequests ?? []).every((q) => q.userId === field.id)).toBe(true);
+    const pv = (await svc.getView(partner)).db;
+    expect([...(pv.workOrders ?? []), ...(pv.attendanceRequests ?? [])]).toHaveLength(0);
+    const mine = (await svc.executeCommand(manager, "createWorkOrder", { siteId: "site-a", title: "A현장 지시" })).result as { workOrderId: string };
+    await svc.executeCommand(field, "workOrderStep", { workOrderId: mine.workOrderId, action: "receive" });
+    expect((await svc.getView(manager)).db.workOrders!.find((w) => w.id === mine.workOrderId)!.status).toBe("received");
+  });
   it("활동 이력은 지워지지 않는다 (DB에는 계속 쌓임)", async () => {
     const db = await getDb();
     const [{ n }] = await db.query<{ n: string }>(`select count(*) as n from records where collection = 'activityLogs'`);

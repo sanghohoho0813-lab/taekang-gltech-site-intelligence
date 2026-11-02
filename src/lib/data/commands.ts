@@ -124,6 +124,8 @@ export interface FieldReportInput {
   source?: "FIELD" | "PC";
   /** 오늘 기준 공정률 (선택, 0~100) */
   progressPct?: number;
+  /** 관련 본사 작업지시 (선택) */
+  workOrderId?: string;
   /** 오늘 작업한 공정 단계의 진척 (선택) — 현장 공정률에는 단계 기간 가중으로 변화량만 더한다 */
   stageProgress?: { stageId: string; progressPct: number }[];
   /** 보고를 보낸 곳 — 휴대폰 위치 (서버가 현장 안/밖을 다시 판정) */
@@ -164,6 +166,7 @@ export function submitFieldReport(db0: DemoDB, input: FieldReportInput, ctx: Ctx
     else if (!Number.isFinite(c.progressPct) || c.progressPct < 0 || c.progressPct > 100) errors[`stageProgress.${i}`] = "공정률은 0~100 사이";
   });
   if ((input.stageProgress ?? []).length > 20) errors.stageProgress = "공정 단계가 너무 많습니다.";
+  if (input.workOrderId && !(db0.workOrders ?? []).some((w) => w.id === input.workOrderId && w.siteId === input.siteId)) errors.workOrderId = "작업지시를 찾을 수 없습니다.";
   if (costs.length > 0 && !input.reason) errors.reason = "비용 발생 사유를 선택해주세요.";
   if ((input.photos ?? []).length > 3) errors.photos = "사진은 최대 3장";
   if (Object.keys(errors).length) throw new CommandError("입력값을 확인해주세요.", "VALIDATION", errors);
@@ -231,6 +234,13 @@ export function submitFieldReport(db0: DemoDB, input: FieldReportInput, ctx: Ctx
     const consented = (db.consents ?? []).some((c) => c.userId === ctx.userId);
     const site = db.sites.find((s) => s.id === input.siteId);
     report.geo = validSample(input.geo.sample) && consented ? judgeGeo(site, input.geo.sample) : judgeGeo(site, null, consented ? (input.geo.noLocation ?? "unavailable") : "skipped");
+  }
+  if (input.workOrderId) {
+    report.workOrderId = input.workOrderId;
+    // 작업지시가 아직 접수·시작 전이면 보고와 함께 ‘진행 중’으로
+    db.workOrders = (db.workOrders ?? []).map((w) =>
+      w.id === input.workOrderId && (w.status === "sent" || w.status === "received") ? { ...w, status: "in_progress", history: [...w.history, { at, by: ctx.userId, to: "in_progress", note: "현장 보고로 진행 시작" }] } : w,
+    );
   }
   db.reports.unshift(report);
 

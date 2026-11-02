@@ -168,7 +168,7 @@ test("현장 직원 본사 요청: 큰 버튼으로 시작 → 다 했어요(눌
   await page.evaluate(([pk]) => localStorage.setItem(pk, JSON.stringify({ ...JSON.parse(localStorage.getItem(pk)!), role: "field" })), [PREFS] as const);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/field");
-  await expect(page.getByTestId("easy-go-actions")).toContainText("본사 요청 1건");
+  await expect(page.getByTestId("easy-go-actions")).toContainText("본사 요청 3건"); // 위험 조치 1 + 시드 작업지시 2
   await page.getByTestId("fieldnav-my-actions").click();
   const card = page.getByTestId("action-card").first();
   await expect(card).toContainText("아직 시작 안 함");
@@ -404,4 +404,102 @@ test("작업 인원(출력): 팀 고르기 → 인원 → 단체 사진 → 보�
   await expect(card.getByTestId("crew-gap")).toHaveAttribute("data-over", "1");
   await expect(card.getByTestId("crew-flags")).toContainText("보고 공수가 출력 인원보다 많음");
   await expect(card.getByTestId("crew-flags")).toContainText("보낸 사람 출근 기록 없음"); // 최성민 오늘 출근 안 함
+});
+
+test("지시·확인 왕복 (계약 검수 S2·S3): 작업지시 접수·완료 → 보고 연결 → 근태 수정 요청 → 본사 확인·보완 → 현장 보완 → 확인", async ({ page }) => {
+  await asField(page);
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+  // ① 현장: 본사 지시(긴급) 확인 → 다 했어요 (작업량 + 사진)
+  await page.goto("/field");
+  await expect(page.getByTestId("easy-go-actions")).toContainText("본사 요청 2건");
+  await page.getByTestId("fieldnav-my-actions").click();
+  const urgent = page.locator('[data-testid="wo-card"][data-wo="wo-seed-1"]');
+  await urgent.getByTestId("wo-receive").click();
+  await expect(urgent).toHaveAttribute("data-status", "received");
+  await urgent.getByTestId("wo-complete").click();
+  await page.getByTestId("wo-result-chip").first().click();
+  await page.getByTestId("wo-qty").fill("3");
+  await page.getByTestId("wo-photo").setInputFiles({ name: "done.png", mimeType: "image/png", buffer: png });
+  await page.getByTestId("wo-finish-send").click();
+  await expect(urgent).toHaveCount(0); // 해야 할 일에서 빠지고
+  await page.getByRole("tab", { name: /끝낸 일/ }).click();
+  await expect(urgent).toHaveAttribute("data-status", "done"); // 끝낸 일에 ‘본사 확인 기다리는 중’
+  await expect(urgent).toContainText("본사 확인 기다리는 중");
+  // ② 현장 보고를 다른 지시(유리 반입 수량 확인)에 연결
+  await page.goto("/field/report");
+  await page.getByTestId("easy-site-site-a").click();
+  await page.getByTestId("work-order-chip").filter({ hasText: "유리 반입 수량" }).click();
+  await page.getByTestId("easy-next").click();
+  await page.getByTestId("easy-next").click(); // 진행률(현장 전체) 그대로
+  await page.getByTestId("easy-next").click(); // 사진 없이
+  await page.getByTestId("issue-no").click();
+  await page.getByTestId("cost-no").click();
+  await expect(page.getByTestId("confirm-work")).toContainText("지시: 변경 구간 유리 반입 수량 확인");
+  await page.getByTestId("submit-report").click();
+  await expect(page.getByTestId("report-done")).toBeVisible();
+  // ③ 근태 수정 요청: 오늘 출근을 못 누름 → 07:30
+  await page.goto("/field");
+  await page.getByTestId("att-fix-link").click();
+  await page.getByTestId("fix-site-site-a").click();
+  await page.getByTestId("fix-date-0").click();
+  await page.getByTestId("fix-kind-missed_in").click();
+  await page.getByTestId("fix-in").filter({ hasText: "07:30" }).click();
+  await page.getByTestId("easy-next").click();
+  await page.getByTestId("fix-reason-chip").first().click();
+  await page.getByTestId("easy-next").click();
+  await page.getByTestId("fix-send").click();
+  await expect(page.getByTestId("fix-done")).toBeVisible();
+
+  // ④ 본사
+  await page.evaluate(([pk]) => localStorage.setItem(pk, JSON.stringify({ ...JSON.parse(localStorage.getItem(pk)!), role: "manager" })), [PREFS] as const);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/dashboard");
+  await expect(page.getByTestId("pending-fix")).toContainText("2"); // 정우진(시드) + 최성민
+  await expect(page.getByTestId("pending-wo-done")).toContainText("1");
+  await page.goto("/orders");
+  const woRow = page.locator('[data-testid="wo-row"][data-wo="wo-seed-1"]');
+  await expect(woRow).toContainText("3개");
+  await expect(woRow.locator("img")).toBeVisible();
+  await woRow.getByTestId("wo-confirm").click();
+  await expect(woRow).toHaveAttribute("data-status", "confirmed");
+  // 새 지시 보내기
+  await page.getByTestId("wo-title").fill("B현장 단열유리 파손 1장 교체");
+  await page.locator("#wo-site").selectOption("site-b");
+  await page.getByTestId("wo-send").click();
+  await expect(page.getByTestId("wo-row").filter({ hasText: "B현장 단열유리 파손" })).toHaveAttribute("data-status", "sent");
+  // 현장 보고: 지시 연결 보고에 보완 요청
+  await page.getByTestId("ord-tab-reports").click();
+  const rv = page.getByTestId("rv-row").filter({ hasText: "지시: 변경 구간 유리 반입 수량 확인" });
+  await rv.getByTestId("rv-return").click();
+  await rv.getByTestId("rv-note").fill("송장 사진을 추가해 주세요");
+  await rv.getByTestId("rv-return-send").click();
+  await expect(page.getByTestId("rv-returned")).toContainText("송장 사진을 추가해 주세요");
+  // 근태 수정 요청 승인
+  await page.getByTestId("ord-tab-fixes").click();
+  const fix = page.getByTestId("fix-row").filter({ hasText: "최성민" }).filter({ hasText: "확인 대기" });
+  await fix.getByTestId("fix-confirm").click();
+  await expect(page.getByTestId("fix-row").filter({ hasText: "최성민" }).first()).toHaveAttribute("data-status", "approved");
+  await page.goto("/attendance");
+  await expect(page.locator('[data-testid="att-site"][data-site="site-a"]').getByTestId("att-row")).toContainText("현장 요청 승인");
+
+  // ⑤ 현장: 보완 요청 보고에 사진 보완
+  await page.evaluate(([pk]) => localStorage.setItem(pk, JSON.stringify({ ...JSON.parse(localStorage.getItem(pk)!), role: "field" })), [PREFS] as const);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/field");
+  await expect(page.getByTestId("easy-go-returned")).toContainText("보완 요청 1건");
+  await page.getByTestId("easy-go-returned").click();
+  const ret = page.getByTestId("record-returned");
+  await expect(ret).toContainText("송장 사진을 추가해 주세요");
+  await ret.getByTestId("record-supplement").click();
+  await ret.getByTestId("supplement-photo").setInputFiles({ name: "invoice.png", mimeType: "image/png", buffer: png });
+  await ret.getByTestId("supplement-send").click();
+  await expect(page.getByTestId("record-returned")).toHaveCount(0);
+
+  // ⑥ 본사: 보완된 보고 확인
+  await page.evaluate(([pk]) => localStorage.setItem(pk, JSON.stringify({ ...JSON.parse(localStorage.getItem(pk)!), role: "manager" })), [PREFS] as const);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/orders?tab=reports");
+  const rv2 = page.getByTestId("rv-row").filter({ hasText: "보완 1회" });
+  await rv2.getByTestId("rv-confirm").click();
+  await expect(page.getByTestId("rv-row").filter({ hasText: "보완 1회" })).toHaveCount(0);
 });
