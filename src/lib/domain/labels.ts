@@ -4,6 +4,7 @@ import type {
   CostCategory,
   CostReason,
   ForecastImpact,
+  PartnerRequest,
   PartnerRequestStatus,
   RoleId,
   Severity,
@@ -87,6 +88,14 @@ export const CO_STATUS_LABEL: Record<ChangeOrderStatus, string> = {
   submitted: "발주처 청구(승인 대기)",
   approved: "승인(계약 반영)",
   rejected: "반려",
+};
+
+export const PARTNER_TYPE_LABEL: Record<PartnerRequest["type"], string> = {
+  quote: "견적 문의",
+  order: "주문 요청",
+  change_review: "설계변경·변경견적",
+  schedule: "일정 문의",
+  other: "기타",
 };
 
 export const PARTNER_STATUS_LABEL: Record<PartnerRequestStatus, string> = {

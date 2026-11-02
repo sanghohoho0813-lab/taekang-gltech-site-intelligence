@@ -11,8 +11,8 @@ import { useToast } from "@/components/ui/Toast";
 import { AiReadyButton, Freshness, MethodChip, StatCard } from "@/components/domain/Widgets";
 import { ActionCard, AssignModal } from "@/components/domain/Actions";
 import { MyActionsView } from "@/components/domain/MyActionsView";
-import { ACTION_STATUS_LABEL, PARTNER_STATUS_LABEL, RULE_LABEL } from "@/lib/domain/labels";
-import { fmtDateTime, fmtMan, fmtRelative } from "@/lib/domain/format";
+import { ACTION_STATUS_LABEL, PARTNER_STATUS_LABEL, PARTNER_TYPE_LABEL, RULE_LABEL } from "@/lib/domain/labels";
+import { fmtDate, fmtDateTime, fmtMan, fmtRelative } from "@/lib/domain/format";
 import { run } from "@/lib/data/store";
 import type { DemoDB, PartnerRequest, RiskSignal } from "@/lib/domain/types";
 import { ShieldAlert, ListChecks, Inbox } from "lucide-react";
@@ -187,9 +187,15 @@ function PartnerInbox({ db }: { db: DemoDB }) {
               <li key={r.id} className={cx("rounded-xl border p-3.5", r.status === "received" ? "border-warn/35 bg-warn-bg/40" : "border-line bg-surface")} data-testid="partner-request" data-status={r.status}>
                 <div className="flex flex-wrap items-center gap-1.5 text-[0.74rem] text-ink-3">
                   <Badge tone={r.status === "answered" ? "ok" : r.status === "reviewing" ? "theme" : "warn"}>{PARTNER_STATUS_LABEL[r.status]}</Badge>
+                  <Badge tone={r.type === "quote" || r.type === "order" ? "info" : "neutral"}>{PARTNER_TYPE_LABEL[r.type]}</Badge>
                   <b className="text-ink-2">{site?.shortName}</b> · {userLabel(db, r.partnerUserId)} · {fmtRelative(r.createdAt)}
                 </div>
                 <p className="mt-1 text-[0.9rem] font-bold text-ink">{r.title}</p>
+                {(r.item || r.qty || r.desiredDate) && (
+                  <p className="text-[0.8rem] font-semibold text-ink" data-testid="request-goods">
+                    {[r.item, r.qty, r.desiredDate ? `희망 ${fmtDate(r.desiredDate)}` : ""].filter(Boolean).join(" · ")}
+                  </p>
+                )}
                 <p className="text-[0.8rem] text-ink-2">{r.description}</p>
                 {r.reply && <p className="mt-1.5 rounded-lg bg-surface-2 px-2.5 py-1.5 text-[0.78rem] text-ink-2">회신: {r.reply}</p>}
                 {r.status !== "answered" && (
@@ -265,14 +271,29 @@ function ReplyModal({ req, onClose }: { req: PartnerRequest; onClose: () => void
       }
     >
       <div className="space-y-3">
-        <p className="rounded-lg bg-surface-2 px-3 py-2 text-[0.82rem] text-ink-2">{req.description}</p>
+        <p className="rounded-lg bg-surface-2 px-3 py-2 text-[0.82rem] text-ink-2">
+          <b className="mr-1">[{PARTNER_TYPE_LABEL[req.type]}]</b>
+          {req.item ? `${req.item}${req.qty ? ` · ${req.qty}` : ""} — ` : ""}
+          {req.description}
+        </p>
+        {(req.type === "quote" || req.type === "order") && (
+          <p className="text-[0.76rem] text-ink-3">회신 내용은 발주처에 그대로 보입니다. 금액·내부 원가는 적지 말고, 견적서는 별도로 보내세요.</p>
+        )}
         <Field label="회신 내용 (발주처에 표시)" htmlFor="rp-text" required>
           <textarea id="rp-text" rows={3} className={inputCls} value={text} onChange={(e) => setText(e.target.value)} maxLength={400} placeholder="예) 변경 범위 확인했습니다. 단가 검토 후 11월 첫 주 견적 회신 드리겠습니다." />
         </Field>
         {!IS_LIVE && (
         <button
           type="button"
-          onClick={() => setText("서면 작업지시 접수했습니다. 변경 범위를 현장에서 확인했고, 계약 내역단가 기준으로 변경공사 견적을 회신드리겠습니다. (DEMO 회신)")}
+          onClick={() =>
+            setText(
+              req.type === "quote"
+                ? "견적 문의 확인했습니다. 현장 실측 후 사양별 견적서를 별도로 보내드리겠습니다. (DEMO 회신)"
+                : req.type === "order"
+                  ? "주문 요청 확인했습니다. 자재 입고 일정 확인 후 납품·시공일을 확정해 안내드리겠습니다. (DEMO 회신)"
+                  : "서면 작업지시 접수했습니다. 변경 범위를 현장에서 확인했고, 계약 내역단가 기준으로 변경공사 견적을 회신드리겠습니다. (DEMO 회신)",
+            )
+          }
           className="press rounded-lg bg-[#FFF7D6] px-2 py-1 text-[0.75rem] font-bold text-[#7A5200]"
         >
           DEMO 회신 채우기

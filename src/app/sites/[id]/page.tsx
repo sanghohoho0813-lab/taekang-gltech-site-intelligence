@@ -20,7 +20,7 @@ import { CostEntryList } from "@/components/domain/CostEntryList";
 import { simulateApprovedClaims, type SiteFinancials } from "@/lib/domain/calc";
 import { receivableAging } from "@/lib/domain/risk";
 import { fmtDate, fmtDateTime, fmtEok, fmtMan, fmtManNum, fmtPct, fmtPp, fmtRelative } from "@/lib/domain/format";
-import { CATEGORY_LABEL, CO_STATUS_LABEL, PARTNER_STATUS_LABEL, RULE_LABEL } from "@/lib/domain/labels";
+import { CATEGORY_LABEL, CO_STATUS_LABEL, PARTNER_STATUS_LABEL, PARTNER_TYPE_LABEL, RULE_LABEL } from "@/lib/domain/labels";
 import type { DemoDB, Site } from "@/lib/domain/types";
 import { IS_LIVE, BASE_LABEL } from "@/lib/mode";
 
@@ -617,6 +617,7 @@ function RequestsTab({ db, site }: { db: DemoDB; site: Site }) {
           {reqs.map((r) => (
             <li key={r.id} className="py-2.5 text-[0.86rem]" data-testid="site-request">
               <p className="flex flex-wrap items-center gap-1.5">
+                <Badge tone="neutral">{PARTNER_TYPE_LABEL[r.type]}</Badge>
                 <b>{r.title}</b>
                 <Badge tone={r.status === "answered" ? "ok" : r.status === "reviewing" ? "theme" : "warn"}>{PARTNER_STATUS_LABEL[r.status]}</Badge>
               </p>

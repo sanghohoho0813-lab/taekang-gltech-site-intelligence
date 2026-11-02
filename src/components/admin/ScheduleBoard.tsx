@@ -146,7 +146,7 @@ function SiteSchedule({ p, canSeeMoney, today }: { p: SitePlan; canSeeMoney: boo
             공정 단계가 없어 현장 전체 기간으로만 계산했습니다. {IS_LIVE ? "운영 관리 → 현장 → 수정에서 공정 단계(이름·시작·종료)를 등록하면 단계별로 확인할 수 있습니다." : ""}
           </p>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="relative overflow-x-auto">
             <table className="w-full min-w-[40rem] text-[0.84rem]">
               <thead>
                 <tr className="text-left text-[0.74rem] text-ink-3">

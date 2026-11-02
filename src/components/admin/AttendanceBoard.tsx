@@ -1,6 +1,7 @@
 "use client";
 
 /** 본사 — 출퇴근 현황 (GPS) · 의심 표시 · 보고 위치 · 월 합계(CSV) */
+import { downloadCsv } from "@/lib/browser/download";
 import { useState } from "react";
 import { AlertTriangle, Download, LocateFixed, MapPin, MapPinCheck, Pencil, QrCode, TabletSmartphone } from "lucide-react";
 import { useMe } from "@/lib/data/hooks";
@@ -101,12 +102,7 @@ export function AttendanceBoard() {
       .sort((a, b) => a.workDate.localeCompare(b.workDate))
       .map((r) => [r.workDate, name(r.userId), db.sites.find((s) => s.id === r.siteId)?.shortName ?? "", hhmm(r.inAt), GEO_LABEL[r.inGeo.status], r.outAt ? hhmm(r.outAt) : "", r.outGeo ? GEO_LABEL[r.outGeo.status] : "", minutesOf(r) ?? "", (r.corrections ?? []).map((c) => c.note).join(" / ")].join(","));
     const body = ["# 월 합계", head.join(","), ...lines, "", "# 일별 기록", "날짜,이름,현장,출근,출근 위치,퇴근,퇴근 위치,근무(분),정정 사유", ...detail].join("\n");
-    const url = URL.createObjectURL(new Blob(["﻿" + body], { type: "text/csv;charset=utf-8" }));
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `출퇴근_${monthFrom}_${date}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadCsv(`출퇴근_${monthFrom}_${date}.csv`, body);
   };
 
   const grouped = FLAG_ORDER.map((k) => ({ k, items: flags.filter((f) => f.kind === k) })).filter((g) => g.items.length);
@@ -165,7 +161,7 @@ export function AttendanceBoard() {
         )}
       </Card>
 
-      <div className="grid gap-5 @min-[1100px]:grid-cols-2">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 @min-[1100px]:grid-cols-2">
         {sites.map((s) => {
           const crew = siteCrew(db, s, date);
           return (
@@ -193,7 +189,7 @@ export function AttendanceBoard() {
               {crew.length === 0 ? (
                 <p className="px-5 pb-5 text-[0.84rem] text-ink-3">배정된 현장 직원이 없습니다.</p>
               ) : (
-                <div className="overflow-x-auto border-t border-line">
+                <div className="relative overflow-x-auto border-t border-line">
                   <table className="w-full min-w-[34rem] text-[0.84rem]">
                     <thead>
                       <tr className="text-left text-[0.74rem] text-ink-3">
@@ -301,7 +297,7 @@ export function AttendanceBoard() {
         {month.length === 0 ? (
           <EmptyState title="이 달의 출퇴근 기록이 없습니다" />
         ) : (
-          <div className="overflow-x-auto border-t border-line">
+          <div className="relative overflow-x-auto border-t border-line">
             <table className="w-full min-w-[36rem] text-[0.84rem]">
               <thead>
                 <tr className="text-left text-[0.74rem] text-ink-3">
@@ -543,12 +539,7 @@ function CrewCard({ db, date, name }: { db: DemoDB; date: string; name: (id: str
   const csv = () => {
     const sum = crewSummary(db, monthFrom, date);
     const body = ["현장,팀,구분,보고 일수,인원일 합계,사진 없음", ...sum.map((r) => [siteName(r.siteId), `"${r.team.replace(/"/g, "'")}"`, r.kind === "direct" ? "직영" : "외주", r.days, r.personDays, r.noPhoto].join(","))].join("\n");
-    const url = URL.createObjectURL(new Blob(["\uFEFF" + body], { type: "text/csv;charset=utf-8" }));
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `작업인원_${monthFrom}_${date}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadCsv(`작업인원_${monthFrom}_${date}.csv`, body);
   };
   return (
     <Card data-testid="crew-card">
@@ -576,7 +567,7 @@ function CrewCard({ db, date, name }: { db: DemoDB; date: string; name: (id: str
       {rows.length === 0 ? (
         <p className="border-t border-line px-5 py-4 text-[0.84rem] text-ink-3">이 날짜에 보낸 작업 인원이 없습니다.</p>
       ) : (
-        <div className="overflow-x-auto border-t border-line">
+        <div className="relative overflow-x-auto border-t border-line">
           <table className="w-full min-w-[42rem] text-[0.84rem]">
             <thead>
               <tr className="text-left text-[0.74rem] text-ink-3">

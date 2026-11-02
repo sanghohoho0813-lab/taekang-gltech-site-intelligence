@@ -6,7 +6,7 @@ import { Send, CircleCheck, Clock3, Inbox, ChevronRight, Lock, Settings, LayoutD
 import { setPrefs, run } from "@/lib/data/store";
 import { useMe } from "@/lib/data/hooks";
 import { CommandError } from "@/lib/data/commands";
-import { PARTNER_STATUS_LABEL } from "@/lib/domain/labels";
+import { PARTNER_STATUS_LABEL, PARTNER_TYPE_LABEL } from "@/lib/domain/labels";
 import { fmtDate, fmtDateTime, fmtRelative } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
 import type { PartnerRequest, PartnerRequestStatus } from "@/lib/domain/types";
@@ -209,10 +209,14 @@ function PartnerPortal({ db, partner, sites: mySites, preview }: { db: NonNullab
 
 function RequestForm({ siteId, disabled }: { siteId: string; disabled: boolean }) {
   const toast = useToast();
-  const [type, setType] = useState<PartnerRequest["type"]>("change_review");
+  const [type, setType] = useState<PartnerRequest["type"]>("quote");
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
+  const [item, setItem] = useState("");
+  const [qty, setQty] = useState("");
   const [date, setDate] = useState("");
+  const goods = type === "quote" || type === "order";
+  const ph = PLACEHOLDER[type];
   const [key, setKey] = useState(() => uid("idem"));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [sent, setSent] = useState(false);
@@ -230,6 +234,8 @@ function RequestForm({ siteId, disabled }: { siteId: string; disabled: boolean }
               setSent(false);
               setTitle("");
               setDesc("");
+              setItem("");
+              setQty("");
               setDate("");
               setKey(uid("idem"));
             }}
@@ -243,7 +249,7 @@ function RequestForm({ siteId, disabled }: { siteId: string; disabled: boolean }
           onSubmit={async (e) => {
             e.preventDefault();
             try {
-              await run("createPartnerRequest", { idempotencyKey: key, siteId, title, description: desc, desiredDate: date, type });
+              await run("createPartnerRequest", { idempotencyKey: key, siteId, title, description: desc, desiredDate: date, type, ...(goods ? { item, qty } : {}) });
               setSent(true);
               setErrors({});
               toast.push({ tone: "ok", title: "요청을 접수했습니다", desc: "본사 ‘위험 분석·조치 > 요청함’에 표시됩니다." });
@@ -258,19 +264,32 @@ function RequestForm({ siteId, disabled }: { siteId: string; disabled: boolean }
         >
           {disabled && <Notice tone="info">미리보기 모드에서는 요청을 등록할 수 없습니다. 위의 ‘발주처 역할로 전환’을 누르세요.</Notice>}
           <Field label="요청 유형" htmlFor="p-type">
-            <select id="p-type" className={inputCls} value={type} onChange={(e) => setType(e.target.value as PartnerRequest["type"])} disabled={disabled}>
+            <select id="p-type" className={inputCls} value={type} onChange={(e) => setType(e.target.value as PartnerRequest["type"])} disabled={disabled} data-testid="p-type">
+              <option value="quote">견적 문의 (추가 공사·자재)</option>
+              <option value="order">주문 요청 (수량 확정)</option>
               <option value="change_review">설계변경 지시·변경견적 요청</option>
               <option value="schedule">일정 문의</option>
               <option value="other">기타</option>
             </select>
           </Field>
           <Field label="제목" htmlFor="p-title" required error={errors.title}>
-            <input id="p-title" className={inputCls} value={title} onChange={(e) => setTitle(e.target.value)} maxLength={80} disabled={disabled} placeholder="예) 3층 유리 사양 변경 검토 요청" />
+            <input id="p-title" className={inputCls} value={title} onChange={(e) => setTitle(e.target.value)} maxLength={80} disabled={disabled} placeholder={ph.title} />
           </Field>
+          {goods && (
+            <div className="grid gap-3 sm:grid-cols-[1fr_10rem]">
+              <Field label="품목·사양" htmlFor="p-item" required error={errors.item}>
+                <input id="p-item" className={inputCls} value={item} onChange={(e) => setItem(e.target.value)} maxLength={60} disabled={disabled} placeholder="예) 24mm 로이 복층유리" data-testid="p-item" />
+              </Field>
+              <Field label={type === "order" ? "수량" : "수량 (대략)"} htmlFor="p-qty" required={type === "order"} error={errors.qty}>
+                <input id="p-qty" className={inputCls} value={qty} onChange={(e) => setQty(e.target.value)} maxLength={30} disabled={disabled} placeholder="예) 12장, 약 40㎡" data-testid="p-qty" />
+              </Field>
+            </div>
+          )}
           <Field label="내용" htmlFor="p-desc" required error={errors.description} counter={`${desc.length}/800`}>
-            <textarea id="p-desc" rows={4} className={inputCls} value={desc} onChange={(e) => setDesc(e.target.value)} maxLength={800} disabled={disabled} placeholder="변경 범위, 위치, 사유를 적어주세요." />
+            <textarea id="p-desc" rows={4} className={inputCls} value={desc} onChange={(e) => setDesc(e.target.value)} maxLength={800} disabled={disabled} placeholder={ph.desc} />
           </Field>
-          <Field label="희망 회신일 (선택)" htmlFor="p-date">
+          {goods && <p className="-mt-1 text-[0.76rem] text-ink-3">본사가 내용을 확인한 뒤 회신합니다. 금액·납기는 회신과 별도 견적서로 확정되며, 이 요청만으로 계약·주문이 성립하지 않습니다.</p>}
+          <Field label={type === "order" ? "희망 납품·시공일 (선택)" : "희망 회신일 (선택)"} htmlFor="p-date" error={errors.desiredDate}>
             <input id="p-date" type="date" className={inputCls} value={date} onChange={(e) => setDate(e.target.value)} disabled={disabled} />
           </Field>
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -278,6 +297,13 @@ function RequestForm({ siteId, disabled }: { siteId: string; disabled: boolean }
               type="button"
               disabled={disabled}
               onClick={() => {
+                if (type === "quote" || type === "order") {
+                  setTitle(type === "quote" ? "1층 로비 출입문 옆 고정창 추가 — 견적 문의" : "지하 주차장 방화유리 교체 — 주문 요청");
+                  setItem(type === "quote" ? "24mm 로이 복층유리 + 알루미늄 프레임" : "방화유리 (기존 규격 동일)");
+                  setQty(type === "quote" ? "약 18㎡" : "6장");
+                  setDesc(type === "quote" ? "로비 동측 벽체 일부를 고정창으로 바꾸려 합니다. 대략적인 금액과 시공 가능 시기를 알려주세요. (DEMO 요청)" : "파손된 방화유리 6장을 기존 규격으로 교체 요청합니다. 납품·시공 가능일을 회신해주세요. (DEMO 요청)");
+                  return;
+                }
                 setType("change_review");
                 setTitle("3층 남측 커튼월 유리 사양 변경 — 작업지시 및 변경견적 요청");
                 setDesc("건축주 지시로 3층 남측 회의실 구간 유리를 삼중 로이유리로 변경합니다. 서면 작업지시로 남기며, 변경 범위·일정·변경견적을 회신해주세요. (DEMO 요청)");
@@ -299,6 +325,14 @@ function RequestForm({ siteId, disabled }: { siteId: string; disabled: boolean }
 
 const STEPS: PartnerRequestStatus[] = ["received", "reviewing", "answered"];
 
+const PLACEHOLDER: Record<PartnerRequest["type"], { title: string; desc: string }> = {
+  quote: { title: "예) 1층 로비 고정창 추가 견적 문의", desc: "위치, 대략적인 크기·사양, 원하는 시기를 적어주세요." },
+  order: { title: "예) 지하 주차장 방화유리 6장 교체 주문", desc: "위치, 규격, 납품·시공 희망 조건을 적어주세요." },
+  change_review: { title: "예) 3층 유리 사양 변경 검토 요청", desc: "변경 범위, 위치, 사유를 적어주세요." },
+  schedule: { title: "예) 외관 점검 가능 일정 문의", desc: "원하시는 날짜와 확인할 내용을 적어주세요." },
+  other: { title: "제목을 적어주세요", desc: "요청 내용을 적어주세요." },
+};
+
 function MyRequests({ requests }: { requests: PartnerRequest[] }) {
   return (
     <Card id="my-requests" data-testid="partner-requests">
@@ -312,9 +346,19 @@ function MyRequests({ requests }: { requests: PartnerRequest[] }) {
             return (
               <li key={r.id} className="rounded-2xl border border-line bg-surface-2 p-4" data-testid="partner-request-item" data-status={r.status}>
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-[0.92rem] font-bold">{r.title}</p>
+                  <p className="text-[0.92rem] font-bold">
+                    <span className="mr-1.5 text-[0.74rem] font-bold text-theme-ink" data-testid="partner-request-type">{PARTNER_TYPE_LABEL[r.type]}</span>
+                    {r.title}
+                  </p>
                   <Badge tone={r.status === "answered" ? "ok" : r.status === "reviewing" ? "theme" : "warn"}>{PARTNER_STATUS_LABEL[r.status]}</Badge>
                 </div>
+                {(r.item || r.qty) && (
+                  <p className="mt-1 text-[0.8rem] text-ink-2">
+                    {r.item}
+                    {r.qty ? ` · ${r.qty}` : ""}
+                    {r.desiredDate ? ` · 희망 ${fmtDate(r.desiredDate)}` : ""}
+                  </p>
+                )}
                 <ol className="mt-3 grid grid-cols-3 gap-1" aria-label="처리 단계">
                   {STEPS.map((s, i) => {
                     const h = r.history.find((x) => x.status === s);

@@ -344,9 +344,13 @@ export interface PartnerRequest {
   id: string;
   siteId: string;
   partnerUserId: string;
-  type: "change_review" | "schedule" | "other";
+  /** quote 견적 문의 · order 주문 요청 (계약 모듈 06·검수 S7) */
+  type: "quote" | "order" | "change_review" | "schedule" | "other";
   title: string;
   description: string;
+  /** 견적·주문: 품목·사양 / 수량 (자유 입력 — 예: “12장”, “약 40㎡”) */
+  item?: string;
+  qty?: string;
   desiredDate?: string;
   status: PartnerRequestStatus;
   createdAt: string;
@@ -499,6 +503,8 @@ export interface CompanySettings {
   helpPhone?: string;
   /** 출근 방식: gps = GPS만 / qr = 현장 QR + GPS (현장 태블릿 필요) */
   attendanceMode?: "gps" | "qr";
+  /** 작업 인원(출력) 팀별 기준 단가 (1인 1일, 원) — 인건비 추정용 */
+  teamRates?: { team: string; dayRate: number }[];
 }
 
 export const DEFAULT_SETTINGS: CompanySettings = { costApproval: "immediate", laborDayRate: 300_000 };

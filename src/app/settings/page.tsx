@@ -20,18 +20,9 @@ import { useTour } from "@/components/tour/Tour";
 import { ResetDialog } from "@/components/device/DemoBar";
 import { AiReadyButton } from "@/components/domain/Widgets";
 import { IS_LIVE } from "@/lib/mode";
+import { downloadCsv } from "@/lib/browser/download";
 
-function download(name: string, text: string) {
-  const blob = new Blob(["﻿" + text], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = name;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
+const download = downloadCsv;
 
 export default function SettingsPage() {
   const prefs = usePrefs();

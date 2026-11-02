@@ -323,6 +323,23 @@ export function createSeed(now = new Date()): DemoDB {
 
   const partnerRequests: PartnerRequest[] = [
     {
+      id: "pr-seed-a-2",
+      siteId: "site-a",
+      partnerUserId: "u-partner",
+      type: "quote",
+      title: "1층 관리사무실 창 추가 설치 — 견적 문의 (DEMO)",
+      description: "관리사무실 남측 벽에 고정창 2개소 추가를 검토 중입니다. 대략적인 금액과 시공 가능 시기를 알려주세요.",
+      item: "24mm 로이 복층유리 · 기존 프레임 동일",
+      qty: "2개소 (약 6㎡)",
+      status: "reviewing",
+      createdAt: dayOffset(now, -1),
+      updatedAt: dayOffset(now, -1),
+      history: [
+        { at: dayOffset(now, -1), status: "received", by: "u-partner" },
+        { at: dayOffset(now, -1), status: "reviewing", by: "u-manager", note: "현장 실측 일정 확인 중" },
+      ],
+    },
+    {
       id: "pr-seed-a-1",
       siteId: "site-a",
       partnerUserId: "u-partner",

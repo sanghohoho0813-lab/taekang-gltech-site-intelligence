@@ -230,6 +230,14 @@ export function setCompanySettings(db0: DemoDB, input: CompanySettingsInput, ctx
   if (input.laborDayRate !== undefined && (!Number.isInteger(input.laborDayRate) || input.laborDayRate < 10_000 || input.laborDayRate > 5_000_000)) errors.laborDayRate = "일당은 1만~500만 원 사이 정수";
   if (input.companyName !== undefined && (!input.companyName.trim() || input.companyName.length > 60)) errors.companyName = "회사명 (60자 이내)";
   if (input.attendanceMode !== undefined && input.attendanceMode !== "gps" && input.attendanceMode !== "qr") errors.attendanceMode = "출근 방식을 선택해주세요.";
+  if (input.teamRates !== undefined) {
+    if (!Array.isArray(input.teamRates) || input.teamRates.length > 60) errors.teamRates = "팀 단가 목록을 확인해주세요.";
+    else
+      input.teamRates.forEach((t, i) => {
+        if (!t || typeof t.team !== "string" || !t.team.trim() || t.team.length > 30) errors[`teamRates.${i}`] = "팀 이름 (30자 이내)";
+        else if (!Number.isInteger(t.dayRate) || t.dayRate < 10_000 || t.dayRate > 2_000_000) errors[`teamRates.${i}`] = "단가는 1만~200만 원 사이 정수";
+      });
+  }
   const phone = input.helpPhone?.trim();
   if (phone && !/^[0-9+][0-9\- ]{6,18}[0-9]$/.test(phone)) errors.helpPhone = "전화번호 형식 (예: 02-1234-5678)";
   if (Object.keys(errors).length) throw new CommandError("입력값을 확인해주세요.", "VALIDATION", errors);
@@ -240,6 +248,7 @@ export function setCompanySettings(db0: DemoDB, input: CompanySettingsInput, ctx
     laborDayRate: input.laborDayRate ?? prev.laborDayRate,
     ...(prev.sampleData ? { sampleData: true } : {}),
     ...((input.attendanceMode ?? prev.attendanceMode) ? { attendanceMode: input.attendanceMode ?? prev.attendanceMode } : {}),
+    ...((input.teamRates ?? prev.teamRates)?.length ? { teamRates: (input.teamRates ?? prev.teamRates)!.map((t) => ({ team: t.team.trim(), dayRate: t.dayRate })) } : {}),
     ...((input.helpPhone !== undefined ? phone : prev.helpPhone) ? { helpPhone: input.helpPhone !== undefined ? phone : prev.helpPhone } : {}),
   };
   if (input.companyName) db.company = { ...db.company, name: input.companyName.trim() };

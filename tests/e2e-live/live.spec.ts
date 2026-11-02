@@ -185,6 +185,8 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     // 출퇴근 현황(본사 화면)도 못 보고, 서버는 본인 출퇴근 기록만 보낸다
     await page.goto("/attendance");
     await expect(page.getByTestId("access-denied")).toBeVisible();
+    await page.goto("/labor");
+    await expect(page.getByTestId("access-denied")).toBeVisible();
     const mine = await page.evaluate(async () => (await (await fetch("/api/state")).json()).db.attendance as { userId: string }[]);
     expect(mine.length).toBeGreaterThan(0);
     expect(new Set(mine.map((r) => r.userId)).size).toBe(1);
@@ -217,6 +219,22 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     await expect(page.getByTestId("crew-card").getByTestId("crew-row")).toContainText("철근팀");
     await expect(page.getByTestId("crew-card").getByTestId("crew-row")).toContainText("현장 안");
     await expect(page.getByTestId("crew-card").getByTestId("crew-flags")).toContainText("단체 사진 없음");
+    // 투입·인건비(S4): 출력 3명 × 기본 일당 = 90만 원 추정 vs 공무 확정 노무비 350만 원(12공수) → ‘실제 > 추정’
+    await page.goto("/labor");
+    const lab = page.locator(`[data-testid="labor-site"][data-site="${siteId}"]`);
+    await expect(lab.getByTestId("labor-team")).toContainText("철근팀");
+    await expect(lab.getByTestId("labor-estimate")).toContainText("90만 원");
+    await expect(lab.getByTestId("labor-actual")).toContainText("350만 원");
+    await expect(lab.getByTestId("labor-flags")).toContainText("실제 노무비가 추정보다 많음");
+    await lab.getByTestId("labor-rate").first().fill("35");
+    await lab.getByTestId("labor-rate-save").click();
+    await expect(lab.getByTestId("labor-team")).not.toContainText("기본 일당");
+    await expect(lab.getByTestId("labor-estimate")).toContainText("105만 원");
+    await page.reload();
+    await expect(page.locator(`[data-testid="labor-site"][data-site="${siteId}"]`).getByTestId("labor-rate").first()).toHaveValue("35");
+    // 범위 밖 단가는 서버가 거부
+    const bad = await page.request.post("/api/commands", { data: { name: "setCompanySettings", args: { teamRates: [{ team: "철근팀", dayRate: 5 }] } } });
+    expect(bad.status()).toBe(400);
   });
 
   test("현장 QR: 본사 단말기 등록 → 로그인 없는 태블릿 연결 → 현장소장 QR 확인 → 해제", async ({ browser }) => {
@@ -321,10 +339,17 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     await expect(portal).toContainText("물류센터");
     const text = (await portal.innerText()).replace(/\s+/g, " ");
     expect(text).not.toMatch(/\d+(\.\d+)?억|이익률|EAC/);
-    await page.locator("#p-title").fill("3층 유리 사양 변경 작업지시");
-    await page.locator("#p-desc").fill("서면 작업지시로 남깁니다. 변경견적을 회신해주세요.");
+    // 견적 문의(S7): 품목 없이 보내면 거부 → 품목·수량 넣고 접수
+    await page.locator("#p-title").fill("1층 로비 고정창 추가 견적 문의");
+    await page.locator("#p-desc").fill("대략적인 금액과 시공 가능 시기를 알려주세요.");
+    await page.getByTestId("partner-submit").click();
+    await expect(page.getByText("품목·사양을 입력해주세요.")).toBeVisible();
+    await page.getByTestId("p-item").fill("24mm 로이 복층유리");
+    await page.getByTestId("p-qty").fill("약 18㎡");
     await page.getByTestId("partner-submit").click();
     await expect(page.getByTestId("partner-sent")).toBeVisible();
+    await expect(page.getByTestId("partner-request-item").first()).toContainText("견적 문의");
+    await expect(page.getByTestId("partner-request-item").first()).toContainText("24mm 로이 복층유리 · 약 18㎡");
     const st = await page.evaluate(async () => (await (await fetch("/api/state")).json()).db);
     expect(st.scope).toBe("partner");
     expect(st.costEntries).toHaveLength(0);
@@ -332,7 +357,20 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     // 사진 원본·관리 API 차단
     expect((await page.request.get("/api/photos/anything")).status()).toBe(404);
     expect((await page.request.post("/api/commands", { data: { name: "submitFieldReport", args: { siteId } } })).status()).toBe(403);
+    expect((await page.request.post("/api/commands", { data: { name: "setCompanySettings", args: { teamRates: [] } } })).status()).toBe(403);
     await ctx.close();
+    // 본사: 처리 대기 → 요청함에 품목·수량과 함께 도착 → 회신
+    const hq = await login(browser, CEO.email, CEO.password);
+    await hq.goto("/dashboard");
+    await expect(hq.getByTestId("pending-partner").locator("b")).toHaveText("1");
+    await hq.goto("/insights#requests");
+    const req = hq.getByTestId("partner-inbox").getByTestId("partner-request").filter({ hasText: "1층 로비 고정창 추가" });
+    await expect(req).toContainText("견적 문의");
+    await expect(req.getByTestId("request-goods")).toContainText("24mm 로이 복층유리 · 약 18㎡");
+    await req.getByTestId("request-reply").click();
+    await hq.locator("#rp-text").fill("실측 후 사양별 견적서를 보내드리겠습니다.");
+    await hq.getByTestId("reply-confirm").click();
+    await expect(req).toHaveAttribute("data-status", "answered");
   });
 
   test("다른 사이트에서 보낸 쓰기 요청은 차단 (Origin 확인)", async ({ browser }) => {
@@ -354,7 +392,7 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
   test("로그아웃 후 데이터 접근 불가 / 화면 가로 넘침 없음", async ({ browser }) => {
     for (const w of [390, 1440]) {
       const page = await login(browser, CEO.email, CEO.password, { width: w, height: 900 });
-      for (const r of ["/dashboard", `/sites/${siteId}`, "/admin", "/admin?tab=members", "/report", "/settings"]) {
+      for (const r of ["/dashboard", `/sites/${siteId}`, "/admin", "/admin?tab=members", "/report", "/settings", "/labor", "/attendance", "/orders", "/schedule"]) {
         await page.goto(r);
         await page.waitForTimeout(300);
         const over = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);

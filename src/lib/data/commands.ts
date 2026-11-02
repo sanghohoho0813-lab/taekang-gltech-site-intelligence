@@ -26,7 +26,7 @@ import type {
   SitePhoto,
 } from "@/lib/domain/types";
 import { siteFinancials, type SiteFinancials } from "@/lib/domain/calc";
-import { ACTION_STATUS_LABEL, CATEGORY_LABEL, COST_CATEGORIES, PARTNER_STATUS_LABEL, REASON_LABEL } from "@/lib/domain/labels";
+import { ACTION_STATUS_LABEL, CATEGORY_LABEL, COST_CATEGORIES, PARTNER_STATUS_LABEL, PARTNER_TYPE_LABEL, REASON_LABEL } from "@/lib/domain/labels";
 import { fmtEok, fmtMan, fmtPct } from "@/lib/domain/format";
 import { DECISION_METHOD } from "@/lib/domain/risk";
 import { uid } from "@/lib/domain/ids";
@@ -577,10 +577,20 @@ export function confirmProofEvent(db0: DemoDB, proofId: string, ctx: Ctx) {
 
 export function createPartnerRequest(
   db0: DemoDB,
-  input: { idempotencyKey: string; siteId: string; title: string; description: string; desiredDate?: string; type?: PartnerRequest["type"] },
+  input: { idempotencyKey: string; siteId: string; title: string; description: string; desiredDate?: string; type?: PartnerRequest["type"]; item?: string; qty?: string },
   ctx: Ctx,
 ) {
   const errors: Record<string, string> = {};
+  const type = input.type ?? "change_review";
+  if (!(type in PARTNER_TYPE_LABEL)) throw new CommandError("요청 유형을 확인해주세요.", "VALIDATION", { type: "알 수 없는 유형" });
+  const goods = type === "quote" || type === "order";
+  const item = goods ? String(input.item ?? "").trim() : "";
+  const qty = goods ? String(input.qty ?? "").trim() : "";
+  if (goods && !item) errors.item = "품목·사양을 입력해주세요.";
+  if (item.length > 60) errors.item = "품목·사양은 60자 이내";
+  if (type === "order" && !qty) errors.qty = "주문 수량을 입력해주세요.";
+  if (qty.length > 30) errors.qty = "수량은 30자 이내";
+  if (input.desiredDate && !/^\d{4}-\d{2}-\d{2}$/.test(input.desiredDate)) errors.desiredDate = "날짜 형식을 확인해주세요.";
   const user = db0.users.find((u) => u.id === ctx.userId);
   if (user?.role === "partner" && !user.partnerSiteIds?.includes(input.siteId)) throw new CommandError("이 현장에 대한 요청 권한이 없습니다.", "STATE");
   requireSite(db0, input.siteId);
@@ -596,9 +606,11 @@ export function createPartnerRequest(
     id: uid("pr"),
     siteId: input.siteId,
     partnerUserId: ctx.userId,
-    type: input.type ?? "change_review",
+    type,
     title: input.title.trim(),
     description: input.description.trim(),
+    ...(item ? { item } : {}),
+    ...(qty ? { qty } : {}),
     desiredDate: input.desiredDate || undefined,
     status: "received",
     createdAt: at,
@@ -607,7 +619,7 @@ export function createPartnerRequest(
   };
   db.partnerRequests.unshift(req);
   const site = requireSite(db, input.siteId);
-  log(db, ctx, "partner", `발주처 요청 접수: ${site.shortName} · ${req.title}`, input.siteId, "/insights");
+  log(db, ctx, "partner", `발주처 ${PARTNER_TYPE_LABEL[type]} 접수: ${site.shortName} · ${req.title}`, input.siteId, "/insights");
   touch(db, ctx);
   return { db, result: { requestId: req.id } };
 }

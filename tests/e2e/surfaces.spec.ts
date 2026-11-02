@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { test, expect, type Page } from "@playwright/test";
 
 const PREFS = "tk-site-intel:prefs:v1";
@@ -25,6 +26,7 @@ test("파트너 Closed Loop: 요청 등록 → 본사 요청함 → 검토·회�
   // 금액(억·만 원)·이익률·EAC·다른 현장이 전혀 표시되지 않아야 한다
   const text = (await portal.innerText()).replace(/\s+/g, " ");
   expect(text).not.toMatch(/\d+(\.\d+)?억|\d[\d,]*만 원|이익률|EAC|B현장|C현장/);
+  await page.getByTestId("p-type").selectOption("change_review");
   await page.getByTestId("partner-fill").click();
   await page.getByTestId("partner-submit").click();
   await expect(page.getByTestId("partner-sent")).toBeVisible();
@@ -255,7 +257,7 @@ for (const w of [390, 430, 768, 1024, 1280, 1440, 1920]) {
   test(`반응형 ${w}px: 가로 넘침 없음 (주요 화면)`, async ({ page }) => {
     await page.setViewportSize({ width: w, height: 900 });
     await freshStart(page);
-    for (const r of ["/dashboard", "/sites/site-a", "/field", "/insights", "/finance", "/report", "/partner", "/settings", "/why-ax", "/evidence"]) {
+    for (const r of ["/dashboard", "/sites/site-a", "/field", "/insights", "/finance", "/report", "/partner", "/settings", "/why-ax", "/evidence", "/labor", "/orders", "/schedule", "/attendance"]) {
       await page.goto(r);
       await page.waitForTimeout(250);
       const over = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
@@ -263,3 +265,84 @@ for (const w of [390, 430, 768, 1024, 1280, 1440, 1920]) {
     }
   });
 }
+
+test("S4 투입·인건비: 출력 × 단가 추정 vs 실제 노무비, 누락 표시, 팀 단가 저장, 처리 대기 연결", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await freshStart(page, { role: "ceo" });
+  await page.goto("/dashboard");
+  await expect(page.getByTestId("pending-labor").locator("b")).not.toHaveText("0");
+  await page.getByTestId("pending-labor").click();
+  await expect(page).toHaveURL(/\/labor/);
+  const a = page.locator('[data-testid="labor-site"][data-site="site-a"]');
+  await expect(a.getByTestId("labor-estimate")).toContainText("만 원");
+  await expect(a.getByTestId("labor-flags")).toContainText("노무비 입력 없음");
+  await expect(a.getByTestId("labor-flags")).toContainText("팀 단가 미설정");
+  const team = a.getByTestId("labor-team").first();
+  await expect(team).toContainText("기본 일당");
+  const before = await a.getByTestId("labor-estimate").innerText();
+  await team.getByTestId("labor-rate").fill("40");
+  await a.getByTestId("labor-rate-save").click();
+  await expect(team).not.toContainText("기본 일당");
+  await expect(a.getByTestId("labor-estimate")).not.toHaveText(before);
+  // 저장한 단가는 새로고침 후에도 유지 (회사 설정)
+  await page.reload();
+  await expect(page.locator('[data-testid="labor-site"][data-site="site-a"]').getByTestId("labor-team").first().getByTestId("labor-rate")).toHaveValue("40");
+  // 기간 전환·CSV
+  await page.getByTestId("labor-30d").click();
+  const dl = page.waitForEvent("download");
+  await page.getByTestId("labor-csv").click();
+  // (이 테스트 환경의 헤드리스 브라우저는 한글 파일명을 ‘download’로 바꾸므로 내용으로 확인)
+  const csvText = readFileSync((await (await dl).path())!, "utf8");
+  expect(csvText).toContain("현장,기간,팀,구분,출력 일수,인원일,1인 1일 단가,추정 인건비,단가 설정");
+  expect(csvText).toContain("400000");
+  // 현장소장·발주처는 접근 불가
+  await page.getByTestId("demo-role").selectOption("partner");
+  await page.goto("/labor");
+  await expect(page.getByTestId("access-denied")).toBeVisible();
+  await expect(page.getByTestId("labor-site")).toHaveCount(0);
+});
+
+test("S7 고객 기초: 견적 문의·주문 요청(품목·수량) → 본사 요청함 확인·회신 → 포털 반영, 금액 비노출", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await freshStart(page, { role: "partner" });
+  await page.goto("/partner");
+  // 주문 요청은 수량 필수
+  await page.getByTestId("p-type").selectOption("order");
+  await page.locator("#p-title").fill("지하 주차장 방화유리 교체");
+  await page.getByTestId("p-item").fill("방화유리");
+  await page.locator("#p-desc").fill("파손 6장 교체 요청");
+  await page.getByTestId("partner-submit").click();
+  await expect(page.getByText("주문 수량을 입력해주세요.")).toBeVisible();
+  await page.getByTestId("p-qty").fill("6장");
+  await page.getByTestId("partner-submit").click();
+  await expect(page.getByTestId("partner-sent")).toBeVisible();
+  const mine = page.getByTestId("partner-request-item").filter({ hasText: "지하 주차장 방화유리 교체" });
+  await expect(mine).toContainText("주문 요청");
+  await expect(mine).toContainText("방화유리 · 6장");
+  // 시드 견적 문의도 내 요청에 보인다
+  await expect(page.getByTestId("partner-request-item").filter({ hasText: "견적 문의" }).first()).toBeVisible();
+
+  // 본사: 처리 대기 → 요청함
+  await page.getByTestId("demo-role").selectOption("manager");
+  await page.goto("/dashboard");
+  await expect(page.getByTestId("pending-partner")).toContainText("2");
+  await page.goto("/insights#requests");
+  const req = page.getByTestId("partner-inbox").getByTestId("partner-request").filter({ hasText: "지하 주차장 방화유리 교체" });
+  await expect(req).toContainText("주문 요청");
+  await expect(req.getByTestId("request-goods")).toContainText("방화유리 · 6장");
+  await req.getByTestId("request-reply").click();
+  const rm = page.getByTestId("reply-modal");
+  await expect(rm).toContainText("금액·내부 원가는 적지 말고");
+  await rm.getByText("DEMO 회신 채우기").click();
+  await rm.getByTestId("reply-confirm").click();
+  await expect(req).toHaveAttribute("data-status", "answered");
+
+  // 포털: 회신 반영, 내부 금액 없음
+  await page.getByTestId("demo-role").selectOption("partner");
+  await page.goto("/partner");
+  const item = page.getByTestId("partner-request-item").filter({ hasText: "지하 주차장 방화유리 교체" });
+  await expect(item).toHaveAttribute("data-status", "answered");
+  await expect(item).toContainText("납품·시공일을 확정해 안내");
+  const text = (await page.getByTestId("partner-portal").innerText()).replace(/\s+/g, " ");
+  expect(text).not.toMatch(/\d+(\.\d+)?억|\d[\d,]*만 원|이익률|EAC/);
+});
