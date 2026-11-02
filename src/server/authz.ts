@@ -90,6 +90,7 @@ export function authorize(m: Member, name: CommandName, argsIn: unknown, db: Dem
         return args;
       case "checkIn":
       case "checkOut":
+      case "confirmQr":
         // 본인 출퇴근만 (명령이 로그인 사용자 id로 기록) · 담당 현장만
         if (!sites.has(str(args.siteId))) throw new ForbiddenError("담당 현장에만 출퇴근할 수 있습니다.");
         return args;
@@ -109,7 +110,14 @@ const zeroContract = (siteId: string): SiteContract => ({ siteId, contractAmount
 
 /** 역할별로 내려보낼 데이터만 남긴다 */
 export function viewFor(m: Member, db: DemoDB): DemoDB {
-  const base = { ...db, idempotencyKeys: [], me: m.id };
+  // QR 단말기 비밀값·연결 코드는 누구에게도 내려보내지 않는다 (태블릿은 연결할 때 한 번만 받음)
+  const kiosks = (db.kiosks ?? []).map((k) => {
+    const { secret: _s, pairHash: _p, ...rest } = k;
+    void _s;
+    void _p;
+    return rest;
+  });
+  const base = { ...db, idempotencyKeys: [], me: m.id, kiosks };
   if (canSeeMoney(m)) return { ...base, scope: "full" };
 
   const users = db.users.map((u) => ({ id: u.id, role: u.role, name: u.name, title: u.title, ...(u.inactive ? { inactive: true } : {}) }));
@@ -131,6 +139,7 @@ export function viewFor(m: Member, db: DemoDB): DemoDB {
     signalStates: {},
     attendance: [],
     consents: [],
+    kiosks: [],
   } satisfies Partial<DemoDB>;
 
   if (m.role === "field") {

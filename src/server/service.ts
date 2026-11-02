@@ -2,6 +2,8 @@
  * LIVE 서비스 — 명령 실행·데이터 조회·최초 설정·사용자 관리.
  * 모든 쓰기는 회사 단위 잠금(select ... for update) 안에서: 최신 데이터 로드 → 권한 검사 → 순수 명령 실행 → 차이 저장.
  */
+import { pairHash, pairKiosk } from "@/lib/data/attendanceCommands";
+import { hex, randomBytes } from "@/lib/domain/hmac";
 import type { DemoDB, RoleId } from "@/lib/domain/types";
 import { DEFAULT_SETTINGS } from "@/lib/domain/types";
 import { COMMANDS, isCommandName, type CommandName } from "@/lib/data/registry";
@@ -111,7 +113,13 @@ export async function setupCompany(input: SetupInput): Promise<{ token: string; 
     const seed = createSeed();
     const ownerId = input.withDemoData ? "u-ceo" : uid("u");
     const state: DemoDB = input.withDemoData
-      ? { ...seed, company: { ...seed.company, name: input.companyName.trim() }, settings: { ...DEFAULT_SETTINGS, sampleData: true } }
+      ? {
+          ...seed,
+          company: { ...seed.company, name: input.companyName.trim() },
+          settings: { ...DEFAULT_SETTINGS, sampleData: true },
+          // 가상 단말기 비밀값은 소스에 공개된 DEMO 값 → 운영 서버에서는 새로 만든다
+          kiosks: (seed.kiosks ?? []).map((k) => ({ ...k, secret: hex(randomBytes(32)) })),
+        }
       : {
           ...seed,
           company: { ...seed.company, name: input.companyName.trim() },
@@ -135,6 +143,7 @@ export async function setupCompany(input: SetupInput): Promise<{ token: string; 
           idempotencyKeys: [],
           attendance: [],
           consents: [],
+          kiosks: [],
           settings: DEFAULT_SETTINGS,
           rev: 1,
         };
@@ -322,4 +331,30 @@ export async function updateMember(m: Member, id: string, input: MemberInput): P
     await bumpRev(tx, m.companyId);
   });
   return (await listMembers(m)).find((x) => x.id === id)!;
+}
+
+// ───────────── 현장 QR 단말기 (로그인하지 않은 태블릿) ─────────────
+
+/** 연결 코드로 태블릿 연결 → 비밀값 1회 전달 */
+export async function pairKioskByCode(code: unknown): Promise<Record<string, unknown>> {
+  if (typeof code !== "string" || code.length > 40) throw new CommandError("연결 코드를 확인해주세요.");
+  const db = await getDb();
+  const [row] = await db.query<{ company_id: string }>(`select company_id from records where collection = 'kiosks' and data->>'pairHash' = $1 limit 1`, [pairHash(code)]);
+  if (!row) throw new CommandError("연결 코드가 맞지 않거나 만료되었습니다. 본사에서 새 코드를 받아 주세요.", "NOT_FOUND");
+  return db.transaction(async (tx) => {
+    await tx.query(`select rev from companies where id = $1 for update`, [row.company_id]);
+    const state = await loadState(tx, row.company_id);
+    const out = pairKiosk(state, { code }, { userId: "system", now: new Date() });
+    await persistState(tx, row.company_id, state, out.db);
+    return { ...out.result, serverNow: Date.now() };
+  });
+}
+
+/** 태블릿이 주기적으로 확인 — 해제됐는지 + 서버 시각 (태블릿 시계 오차 보정) */
+export async function kioskStatus(id: unknown): Promise<{ active: boolean; now: number }> {
+  const now = Date.now();
+  if (typeof id !== "string" || !/^[A-Za-z0-9_-]{3,64}$/.test(id)) return { active: false, now };
+  const db = await getDb();
+  const [row] = await db.query<{ revoked: string | null; paired: string | null }>(`select data->>'revokedAt' as revoked, data->>'pairedAt' as paired from records where collection = 'kiosks' and id = $1 limit 1`, [id]);
+  return { active: !!row && !row.revoked && !!row.paired, now };
 }

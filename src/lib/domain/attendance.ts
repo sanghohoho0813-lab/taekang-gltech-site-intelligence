@@ -5,7 +5,7 @@
 import type { AttendanceRecord, DemoDB, FieldReport, Site } from "./types";
 import { todayIso } from "./format";
 
-export type AttendanceFlagKind = "outside" | "no_location" | "weak" | "nosite" | "shared_device" | "same_spot" | "no_checkout" | "missing";
+export type AttendanceFlagKind = "outside" | "no_location" | "weak" | "nosite" | "shared_device" | "same_spot" | "no_checkout" | "missing" | "no_qr";
 
 export interface AttendanceFlag {
   kind: AttendanceFlagKind;
@@ -25,10 +25,11 @@ export const FLAG_LABEL: Record<AttendanceFlagKind, string> = {
   same_spot: "위치가 매일 똑같음",
   no_checkout: "퇴근 기록 없음",
   missing: "미출근",
+  no_qr: "현장 QR 없이 출근",
 };
 
 /** 위험도 순 (위가 먼저) */
-export const FLAG_ORDER: AttendanceFlagKind[] = ["shared_device", "same_spot", "outside", "no_location", "missing", "no_checkout", "weak", "nosite"];
+export const FLAG_ORDER: AttendanceFlagKind[] = ["shared_device", "same_spot", "no_qr", "outside", "no_location", "missing", "no_checkout", "weak", "nosite"];
 
 const att = (db: DemoDB) => db.attendance ?? [];
 
@@ -45,7 +46,11 @@ export function dayFlags(db: DemoDB, date: string, now = new Date()): Attendance
   const flags: AttendanceFlag[] = [];
   const records = att(db).filter((r) => r.workDate === date);
   const name = (id: string) => db.users.find((u) => u.id === id)?.name ?? "알 수 없음";
+  const qrMode = db.settings?.attendanceMode === "qr";
   for (const r of records) {
+    // QR 출근 방식인데 현장 태블릿 QR이 확인되지 않은 출근
+    if (qrMode && r.inQr?.status !== "ok")
+      flags.push({ kind: "no_qr", userId: r.userId, siteId: r.siteId, recordId: r.id, workDate: date, text: `${name(r.userId)} — ${r.inQr ? `QR 확인 실패 (${r.inQr.status === "expired" ? "만료된 QR" : r.inQr.status === "wrong_site" ? "다른 현장 QR" : r.inQr.status === "revoked" ? "해제된 단말기" : "QR 오류"})` : "QR 없이 출근"}` });
     const geos = [r.inGeo, r.outGeo].filter(Boolean);
     if (geos.some((g) => g!.status === "outside")) flags.push({ kind: "outside", userId: r.userId, siteId: r.siteId, recordId: r.id, workDate: date, text: `${name(r.userId)} — 현장에서 떨어진 곳에서 눌렀습니다` });
     else if (r.inGeo.status === "none") flags.push({ kind: "no_location", userId: r.userId, siteId: r.siteId, recordId: r.id, workDate: date, text: `${name(r.userId)} — 위치 없이 출근했습니다` });
@@ -120,6 +125,8 @@ export interface MonthRow {
   outside: number;
   noLocation: number;
   corrected: number;
+  /** 현장 QR 확인된 출근 수 */
+  qrOk: number;
 }
 
 /** 기간 합계 (급여·공수 정산 근거) */
@@ -127,7 +134,7 @@ export function periodSummary(db: DemoDB, from: string, to: string): MonthRow[] 
   const rows = new Map<string, MonthRow>();
   for (const r of att(db)) {
     if (r.workDate < from || r.workDate > to) continue;
-    const row = rows.get(r.userId) ?? { userId: r.userId, days: 0, minutes: 0, noCheckout: 0, outside: 0, noLocation: 0, corrected: 0 };
+    const row = rows.get(r.userId) ?? { userId: r.userId, days: 0, minutes: 0, noCheckout: 0, outside: 0, noLocation: 0, corrected: 0, qrOk: 0 };
     row.days += 1;
     const m = minutesOf(r);
     if (m === null) row.noCheckout += 1;
@@ -135,6 +142,7 @@ export function periodSummary(db: DemoDB, from: string, to: string): MonthRow[] 
     if ([r.inGeo, r.outGeo].some((g) => g?.status === "outside")) row.outside += 1;
     if (r.inGeo.status === "none") row.noLocation += 1;
     if (r.corrections?.length) row.corrected += 1;
+    if (r.inQr?.status === "ok") row.qrOk += 1;
     rows.set(r.userId, row);
   }
   return [...rows.values()].sort((a, b) => b.days - a.days);

@@ -258,3 +258,74 @@ test.describe("GPS 출퇴근", () => {
     await expect(page.getByTestId("att-status")).toContainText("위치 없음");
   });
 });
+
+test.describe("현장 QR 출근", () => {
+  test("본사 단말기 등록 → 태블릿 연결·QR 표시 → 휴대폰으로 QR 사진 찍어 출근 → 본사 ‘QR 확인’", async ({ page, context }) => {
+    await asField(page);
+    await page.evaluate(([pk]) => localStorage.setItem(pk, JSON.stringify({ ...JSON.parse(localStorage.getItem(pk)!), role: "manager" })), [PREFS] as const);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/attendance");
+    await page.getByTestId("att-mode-qr").click();
+    const siteA = page.locator('[data-testid="att-site"][data-site="site-a"]');
+    await siteA.getByTestId("kiosk-add").click();
+    const code = (await page.getByTestId("pair-code").innerText()).trim();
+    expect(code).toMatch(/^[2-9A-HJ-NP-Z]{8}$/);
+    await page.getByRole("button", { name: "닫기" }).last().click();
+
+    // 현장 태블릿 (같은 브라우저 저장소 = DEMO) — 연결 코드로 연결
+    const kiosk = await context.newPage();
+    await kiosk.setViewportSize({ width: 800, height: 1100 });
+    await kiosk.goto(`/kiosk?c=${code}`);
+    await expect(kiosk.getByTestId("kiosk-live")).toContainText("A현장 출근 QR");
+    const shot = await kiosk.getByTestId("kiosk-qr").screenshot();
+    await kiosk.close();
+
+    // 현장 직원 휴대폰: QR 사진 → 동의 → 출근
+    await page.evaluate(([pk]) => localStorage.setItem(pk, JSON.stringify({ ...JSON.parse(localStorage.getItem(pk)!), role: "field" })), [PREFS] as const);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await context.grantPermissions(["geolocation"]);
+    await context.setGeolocation({ latitude: 37.2638, longitude: 127.0289, accuracy: 15 });
+    await page.goto("/field");
+    await expect(page.getByTestId("att-in")).toContainText("QR 없이 출근");
+    await page.getByTestId("att-qr-file").setInputFiles({ name: "qr.png", mimeType: "image/png", buffer: shot });
+    await page.getByTestId("att-consent-yes").click();
+    await expect(page.getByTestId("att-result")).toContainText("현장 QR 확인");
+    await expect(page.getByTestId("att-status")).toContainText("현장 QR 확인");
+
+    // 본사: QR 확인 표시, 단말기 마지막 사용
+    await page.evaluate(([pk]) => localStorage.setItem(pk, JSON.stringify({ ...JSON.parse(localStorage.getItem(pk)!), role: "manager" })), [PREFS] as const);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/attendance");
+    await expect(siteA.getByTestId("att-row")).toContainText("QR 확인");
+    await expect(siteA.getByTestId("kiosk-row").filter({ hasText: "연결됨" }).first()).toBeVisible();
+    // QR 방식인데 정우진은 QR 없이 출근 → 확인 필요 항목
+    await expect(page.getByTestId("att-flag-no_qr")).toContainText("정우진");
+  });
+
+  test("QR이 아닌 사진·다른 현장 QR은 출근되지 않는다", async ({ page, context }) => {
+    await asField(page);
+    await page.goto("/field");
+    // 본사 설정: 현장 QR + GPS (DEMO 저장소)
+    await page.evaluate(([dk]) => {
+      const db = JSON.parse(localStorage.getItem(dk)!);
+      db.settings = { ...(db.settings ?? {}), attendanceMode: "qr" };
+      localStorage.setItem(dk, JSON.stringify(db));
+    }, [DB] as const);
+    await page.reload();
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+    await page.getByTestId("att-qr-file").setInputFiles({ name: "x.png", mimeType: "image/png", buffer: png });
+    await expect(page.getByTestId("att-card")).toContainText("QR을 읽지 못했어요");
+    // 다른 현장(C현장, 정우진 담당) 태블릿 QR
+    const kiosk = await context.newPage();
+    await kiosk.goto("/kiosk");
+    await kiosk.evaluate(() =>
+      localStorage.setItem("tk-site-intel:kiosk", JSON.stringify({ kioskId: "kio_demo3", siteId: "site-c", siteName: "C현장", kioskName: "C현장 태블릿", companyName: "DEMO", secret: "demo-kiosk-secret-site-c-not-for-live", offset: 0 })),
+    );
+    await kiosk.reload();
+    const shot = await kiosk.getByTestId("kiosk-qr").screenshot();
+    await kiosk.close();
+    await page.getByTestId("att-qr-file").setInputFiles({ name: "c.png", mimeType: "image/png", buffer: shot });
+    await expect(page.getByTestId("att-card")).toContainText("내 담당 현장의 QR이 아닙니다");
+    await expect(page.getByTestId("att-in")).toBeVisible(); // 출근되지 않음
+  });
+});

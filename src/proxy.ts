@@ -6,6 +6,8 @@ import { NextResponse, type NextRequest } from "next/server";
 
 const LIVE = process.env.NEXT_PUBLIC_DATA_MODE === "live";
 const PUBLIC = ["/login", "/setup"];
+/** 로그인 없이 여는 화면 — 현장 QR 태블릿 (연결 코드·단말기 비밀값으로만 동작) */
+const KIOSK = "/kiosk";
 
 export default function proxy(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
@@ -14,7 +16,7 @@ export default function proxy(req: NextRequest) {
     if (PUBLIC.includes(pathname) || pathname === "/account") return NextResponse.redirect(new URL("/dashboard", req.url));
     return NextResponse.next();
   }
-  if (PUBLIC.includes(pathname)) return NextResponse.next();
+  if (PUBLIC.includes(pathname) || pathname === KIOSK) return NextResponse.next();
   if (!req.cookies.get("tk_session")?.value) {
     const url = new URL("/login", req.url);
     if (pathname !== "/" && pathname !== "/dashboard") url.searchParams.set("next", pathname + search);

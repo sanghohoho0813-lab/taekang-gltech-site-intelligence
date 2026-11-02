@@ -7,7 +7,9 @@
  * - 위치를 기록하려면 본인 동의가 먼저 있어야 한다. 위치 없이 출근하면 본사에 '위치 없음'으로 표시된다.
  * - 본사도 남의 출근을 대신 만들 수 없다. 시각 정정만 가능하며, 사유가 이력으로 남는다.
  */
-import type { AttendanceRecord, DemoDB, GeoStamp } from "@/lib/domain/types";
+import type { AttendanceRecord, DemoDB, GeoStamp, Kiosk, QrStamp } from "@/lib/domain/types";
+import { verifyQrToken } from "@/lib/domain/qr";
+import { hex, randomBytes, sha256, utf8 } from "@/lib/domain/hmac";
 import { judgeGeo, geoText, validSample, type GeoSample } from "@/lib/domain/geo";
 import { todayIso } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
@@ -26,6 +28,8 @@ export interface CheckInput {
   deviceId?: string;
   /** 처음 위치를 기록할 때 동의 */
   consent?: boolean;
+  /** 현장 태블릿 QR에서 읽은 코드 (출근만) */
+  qrToken?: string;
   idempotencyKey?: string;
 }
 
@@ -52,7 +56,7 @@ function recordConsent(db: DemoDB, input: { consent?: boolean; sample?: unknown 
   log(db, ctx, "attendance", `${userName(db, ctx.userId)} 출퇴근 위치 기록 동의`);
 }
 
-export function checkIn(db0: DemoDB, input: CheckInput, ctx: Ctx): { db: DemoDB; result: { attendanceId: string; geo: GeoStamp; at: string } } {
+export function checkIn(db0: DemoDB, input: CheckInput, ctx: Ctx): { db: DemoDB; result: { attendanceId: string; geo: GeoStamp; at: string; qr?: QrStamp } } {
   const site = requireSite(db0, input.siteId);
   if (site.status === "completed") throw new CommandError("준공된 현장에는 출근할 수 없습니다.", "STATE");
   const db = clone(db0);
@@ -67,11 +71,26 @@ export function checkIn(db0: DemoDB, input: CheckInput, ctx: Ctx): { db: DemoDB;
   if (open) throw new CommandError(`${db.sites.find((s) => s.id === open.siteId)?.shortName ?? "다른 현장"}에 출근 중입니다. 먼저 그곳에서 퇴근해 주세요.`, "STATE");
   recordConsent(db, input, ctx);
   const geo = stamp(db, site.id, ctx.userId, input);
-  const rec: AttendanceRecord = { id: uid("att"), siteId: site.id, userId: ctx.userId, workDate, inAt: at, inGeo: geo, ...(cleanDevice(input.deviceId) ? { inDevice: cleanDevice(input.deviceId) } : {}) };
+  // QR은 서버(이 함수)가 단말기 비밀값으로 다시 확인한다
+  let qr: QrStamp | undefined;
+  if (typeof input.qrToken === "string" && input.qrToken) {
+    qr = verifyQrToken(db, input.qrToken.slice(0, 300), site.id, new Date(at).getTime());
+    if (qr.status === "ok") db.kiosks = (db.kiosks ?? []).map((k) => (k.id === qr!.kioskId ? { ...k, lastUsedAt: at } : k));
+  }
+  const rec: AttendanceRecord = {
+    id: uid("att"),
+    siteId: site.id,
+    userId: ctx.userId,
+    workDate,
+    inAt: at,
+    inGeo: geo,
+    ...(qr ? { inQr: qr } : {}),
+    ...(cleanDevice(input.deviceId) ? { inDevice: cleanDevice(input.deviceId) } : {}),
+  };
   db.attendance.push(rec);
-  log(db, ctx, "attendance", `${userName(db, ctx.userId)} 출근 — ${site.shortName} · ${geoText(geo)}`, site.id, "/attendance");
+  log(db, ctx, "attendance", `${userName(db, ctx.userId)} 출근 — ${site.shortName} · ${geoText(geo)}${qr ? ` · ${qr.status === "ok" ? "QR 확인" : "QR 확인 실패"}` : ""}`, site.id, "/attendance");
   touch(db, ctx);
-  return { db, result: { attendanceId: rec.id, geo, at } };
+  return { db, result: { attendanceId: rec.id, geo, at, qr } };
 }
 
 export function checkOut(db0: DemoDB, input: CheckInput, ctx: Ctx): { db: DemoDB; result: { attendanceId: string; geo: GeoStamp; at: string; minutes: number } } {
@@ -163,4 +182,81 @@ export function correctAttendance(db0: DemoDB, input: CorrectAttendanceInput, ct
   log(db, ctx, "attendance", `출퇴근 정정 — ${userName(db, r.userId)} ${r.workDate} · ${note}`, r.siteId, "/attendance");
   touch(db, ctx);
   return { db, result: { attendanceId: r.id } };
+}
+
+/** 출근 뒤에 현장 QR로 확인 (태블릿이 늦게 켜졌거나 처음에 QR 없이 출근한 경우) — 확인될 때만 저장 */
+export function confirmQr(db0: DemoDB, input: { siteId: string; qrToken: string }, ctx: Ctx) {
+  const db = clone(db0);
+  db.attendance = [...(db.attendance ?? [])];
+  const at = nowIso(ctx);
+  const workDate = todayIso(new Date(at));
+  const idx = db.attendance.findIndex((r) => r.userId === ctx.userId && r.siteId === input.siteId && r.workDate === workDate);
+  if (idx < 0) throw new CommandError("오늘 이 현장의 출근 기록이 없습니다.", "STATE");
+  if (db.attendance[idx].inQr?.status === "ok") return { db: db0, result: { qr: db.attendance[idx].inQr! } };
+  const qr = verifyQrToken(db, String(input.qrToken ?? "").slice(0, 300), input.siteId, new Date(at).getTime());
+  if (qr.status !== "ok") {
+    const why = qr.status === "expired" ? "QR이 만료되었습니다. 태블릿 화면을 다시 찍어 주세요." : qr.status === "wrong_site" ? "다른 현장의 QR입니다." : qr.status === "revoked" ? "해제된 단말기의 QR입니다." : "QR을 확인할 수 없습니다. 다시 찍어 주세요.";
+    throw new CommandError(why, "VALIDATION", { qr: qr.status });
+  }
+  db.attendance[idx] = { ...db.attendance[idx], inQr: qr };
+  db.kiosks = (db.kiosks ?? []).map((k) => (k.id === qr.kioskId ? { ...k, lastUsedAt: at } : k));
+  log(db, ctx, "attendance", `${userName(db, ctx.userId)} 현장 QR 확인 (출근 뒤)`, input.siteId, "/attendance");
+  touch(db, ctx);
+  return { db, result: { qr } };
+}
+
+// ───────────────────────── 현장 QR 단말기 ─────────────────────────
+
+const PAIR_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"; // 헷갈리는 0·O·1·I·L 제외
+const PAIR_MINUTES = 30;
+
+export const pairHash = (code: string) => hex(sha256(utf8(code.trim().toUpperCase().replace(/[^0-9A-Z]/g, ""))));
+
+/** 본사 — 현장 태블릿 등록. 연결 코드(8자리)는 이번 한 번만 보여준다 */
+export function createKiosk(db0: DemoDB, input: { siteId: string; name?: string }, ctx: Ctx) {
+  const db = clone(db0);
+  const site = requireSite(db, input.siteId);
+  const bytes = randomBytes(8);
+  const code = Array.from(bytes, (b) => PAIR_ALPHABET[b % PAIR_ALPHABET.length]).join("");
+  const at = nowIso(ctx);
+  const kiosk: Kiosk = {
+    id: uid("kio"),
+    siteId: site.id,
+    name: (input.name ?? "").trim().slice(0, 30) || `${site.shortName} 현장 태블릿`,
+    secret: hex(randomBytes(32)),
+    createdAt: at,
+    createdBy: ctx.userId,
+    pairHash: pairHash(code),
+    pairExpiresAt: new Date(new Date(at).getTime() + PAIR_MINUTES * 60_000).toISOString(),
+  };
+  db.kiosks = [...(db.kiosks ?? []), kiosk];
+  log(db, ctx, "attendance", `${site.shortName} QR 단말기 등록 — ${kiosk.name}`, site.id, "/attendance");
+  touch(db, ctx);
+  return { db, result: { kioskId: kiosk.id, pairCode: code, pairExpiresAt: kiosk.pairExpiresAt! } };
+}
+
+/** 본사 — 단말기 해제 (분실·교체). 해제된 단말기의 QR은 더 이상 인정되지 않는다 */
+export function revokeKiosk(db0: DemoDB, input: { kioskId: string }, ctx: Ctx) {
+  const db = clone(db0);
+  const k = (db.kiosks ?? []).find((x) => x.id === input.kioskId);
+  if (!k) throw new CommandError("단말기를 찾을 수 없습니다.", "NOT_FOUND");
+  if (k.revokedAt) throw new CommandError("이미 해제된 단말기입니다.", "STATE");
+  db.kiosks = (db.kiosks ?? []).map((x) => (x.id === k.id ? { ...x, revokedAt: nowIso(ctx), revokedBy: ctx.userId, pairHash: undefined, pairExpiresAt: undefined } : x));
+  log(db, ctx, "attendance", `QR 단말기 해제 — ${k.name}`, k.siteId, "/attendance");
+  touch(db, ctx);
+  return { db, result: { kioskId: k.id } };
+}
+
+/** 태블릿 — 연결 코드로 한 번 연결. 비밀값은 이때 태블릿에만 전달되고 코드는 지운다 */
+export function pairKiosk(db0: DemoDB, input: { code: string }, ctx: Ctx) {
+  const h = pairHash(input.code ?? "");
+  const at = nowIso(ctx);
+  const k = (db0.kiosks ?? []).find((x) => x.pairHash && x.pairHash === h);
+  if (!k || k.revokedAt || !k.pairExpiresAt || k.pairExpiresAt < at || !k.secret) throw new CommandError("연결 코드가 맞지 않거나 만료되었습니다. 본사에서 새 코드를 받아 주세요.", "NOT_FOUND");
+  const db = clone(db0);
+  db.kiosks = (db.kiosks ?? []).map((x) => (x.id === k.id ? { ...x, pairHash: undefined, pairExpiresAt: undefined, pairedAt: at } : x));
+  const site = db.sites.find((s) => s.id === k.siteId);
+  log(db, ctx, "attendance", `QR 단말기 연결 완료 — ${k.name}`, k.siteId, "/attendance");
+  touch(db, ctx);
+  return { db, result: { kioskId: k.id, siteId: k.siteId, siteName: site?.shortName ?? "", kioskName: k.name, companyName: db.company.name, secret: k.secret } };
 }

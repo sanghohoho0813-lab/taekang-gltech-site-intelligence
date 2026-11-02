@@ -98,11 +98,39 @@ export interface AttendanceRecord {
   inGeo: GeoStamp;
   /** 같은 휴대폰으로 여러 명이 출근하는지 확인용 (기기 무작위 번호) */
   inDevice?: string;
+  /** 현장 QR 확인 결과 (현장 태블릿의 30초마다 바뀌는 QR) */
+  inQr?: QrStamp;
   outAt?: string;
   outGeo?: GeoStamp;
   outDevice?: string;
   /** 본사 정정 이력 (사유 필수) */
   corrections?: { at: string; by: string; note: string; before: { inAt: string; outAt?: string } }[];
+}
+
+/** QR 확인 결과 — ok = 방금 그 현장 단말기에 떠 있던 QR */
+export interface QrStamp {
+  status: "ok" | "expired" | "invalid" | "wrong_site" | "revoked";
+  kioskId?: string;
+}
+
+/**
+ * 현장 QR 단말기 (현장 사무실 태블릿)
+ * secret은 서버와 그 태블릿만 안다 — 화면 데이터로는 절대 내려보내지 않는다.
+ */
+export interface Kiosk {
+  id: string;
+  siteId: string;
+  name: string;
+  secret?: string;
+  createdAt: string;
+  createdBy: string;
+  /** 연결 코드(해시) — 태블릿이 한 번 쓰면 지운다 */
+  pairHash?: string;
+  pairExpiresAt?: string;
+  pairedAt?: string;
+  revokedAt?: string;
+  revokedBy?: string;
+  lastUsedAt?: string;
 }
 
 /** 위치 기록 동의 (개인위치정보 수집 동의) */
@@ -393,6 +421,8 @@ export interface CompanySettings {
   sampleData?: boolean;
   /** 현장 직원 화면의 '본사에 전화하기' 번호 (비우면 버튼 숨김) */
   helpPhone?: string;
+  /** 출근 방식: gps = GPS만 / qr = 현장 QR + GPS (현장 태블릿 필요) */
+  attendanceMode?: "gps" | "qr";
 }
 
 export const DEFAULT_SETTINGS: CompanySettings = { costApproval: "immediate", laborDayRate: 300_000 };
@@ -426,6 +456,7 @@ export interface DemoDB {
   /** 출퇴근 기록 (이전 버전 DEMO 저장분에는 없을 수 있음) */
   attendance?: AttendanceRecord[];
   consents?: LocationConsent[];
+  kiosks?: Kiosk[];
   /** LIVE: 현재 로그인 사용자 id (서버가 채움). DEMO에서는 없음 */
   me?: string;
   /** LIVE: 서버가 역할별로 걸러 보낸 데이터인지 */

@@ -39,6 +39,9 @@ function useIsDesktop() {
 }
 
 export function DeviceStage({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  // 현장 QR 태블릿 화면은 메뉴·시연 화면 없이 단독 (DEMO에서도)
+  if (pathname === "/kiosk") return <>{children}</>;
   // 실제 운영(LIVE): 시연용 화면 모드·데모 바·시연 안내 없이 앱만
   if (IS_LIVE) return <AppShell compactSidebar={false}>{children}</AppShell>;
   return <DemoStage>{children}</DemoStage>;

@@ -483,6 +483,16 @@ function seedAttendance(db: DemoDB, now: Date) {
   }
   db.attendance = rec;
   db.consents = [{ userId: "u-field2", at: dayOffset(now, -20), version: 1 }];
+  // 현장 QR 태블릿 (가상, 연결 완료) — DEMO 비밀값은 브라우저 안에만 있다
+  db.kiosks = db.sites.map((s, i) => ({
+    id: `kio_demo${i + 1}`,
+    siteId: s.id,
+    name: `${s.shortName} 현장 사무실 태블릿 (가상)`,
+    secret: `demo-kiosk-secret-${s.id}-not-for-live`,
+    createdAt: dayOffset(now, -30),
+    createdBy: "u-manager",
+    pairedAt: dayOffset(now, -30),
+  }));
 }
 
 /** 미팅 시나리오 입력값 — '데모 값 채우기' 버튼에서 사용 */

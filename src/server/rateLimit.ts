@@ -21,6 +21,8 @@ export const RULES = {
   password: { name: "password", limit: 10, windowMs: 10 * 60_000 },
   commands: { name: "commands", limit: 120, windowMs: 60_000 },
   members: { name: "members", limit: 60, windowMs: 60_000 },
+  kioskPair: { name: "kioskPair", limit: 20, windowMs: 10 * 60_000 },
+  kioskStatus: { name: "kioskStatus", limit: 120, windowMs: 60_000 },
 } satisfies Record<string, RateRule>;
 
 /** 이번 요청을 세고, 한도를 넘었으면 다시 시도할 수 있을 때까지 남은 초를 돌려준다 */

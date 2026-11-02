@@ -2,11 +2,13 @@
 
 /** 본사 — 출퇴근 현황 (GPS) · 의심 표시 · 보고 위치 · 월 합계(CSV) */
 import { useState } from "react";
-import { AlertTriangle, Download, LocateFixed, MapPin, MapPinCheck, Pencil } from "lucide-react";
+import { AlertTriangle, Download, LocateFixed, MapPin, MapPinCheck, Pencil, QrCode, TabletSmartphone } from "lucide-react";
 import { useMe } from "@/lib/data/hooks";
 import { run } from "@/lib/data/store";
 import { CommandError } from "@/lib/data/commands";
-import type { AttendanceRecord, DemoDB, GeoStamp, Site } from "@/lib/domain/types";
+import type { AttendanceRecord, DemoDB, GeoStamp, Kiosk, QrStamp, Site } from "@/lib/domain/types";
+import { QR_LABEL } from "@/lib/domain/qr";
+import { qrPath } from "@/lib/geo/qrClient";
 import { GEO_LABEL, geoText, mapLink } from "@/lib/domain/geo";
 import { FLAG_LABEL, FLAG_ORDER, backdatedDays, dayFlags, hhmm, minutesOf, periodSummary, recentFlags, shiftDate, siteCrew, type AttendanceFlag } from "@/lib/domain/attendance";
 import { todayIso } from "@/lib/domain/format";
@@ -50,7 +52,35 @@ export function AttendanceBoard() {
   const [picked, setPicked] = useState(today);
   const [geoSite, setGeoSite] = useState<Site | null>(null);
   const [fix, setFix] = useState<AttendanceRecord | null>(null);
+  const [pairing, setPairing] = useState<{ site: Site; code: string; expiresAt: string } | null>(null);
+  const toast = useToast();
   if (!db) return <PageSkeleton />;
+  const qrMode = db.settings?.attendanceMode === "qr";
+  const setAttMode = async (m: "gps" | "qr") => {
+    try {
+      await run("setCompanySettings", { attendanceMode: m });
+      toast.push({ tone: "ok", title: m === "qr" ? "출근 방식: 현장 QR + GPS" : "출근 방식: GPS만" });
+    } catch (e) {
+      toast.push({ tone: "err", title: e instanceof Error ? e.message : "변경 실패" });
+    }
+  };
+  const addKiosk = async (s: Site) => {
+    try {
+      const r = await run("createKiosk", { siteId: s.id });
+      setPairing({ site: s, code: r.pairCode, expiresAt: r.pairExpiresAt });
+    } catch (e) {
+      toast.push({ tone: "err", title: e instanceof Error ? e.message : "등록 실패" });
+    }
+  };
+  const revoke = async (k: Kiosk) => {
+    if (!window.confirm(`‘${k.name}’ 단말기를 해제할까요? 이 태블릿의 QR은 더 이상 인정되지 않습니다.`)) return;
+    try {
+      await run("revokeKiosk", { kioskId: k.id });
+      toast.push({ tone: "ok", title: "단말기를 해제했습니다" });
+    } catch (e) {
+      toast.push({ tone: "err", title: e instanceof Error ? e.message : "해제 실패" });
+    }
+  };
   const date = mode === "today" ? today : mode === "yesterday" ? shiftDate(today, -1) : picked;
   const flags = [...dayFlags(db, date), ...(date === today ? recentFlags(db, today) : [])];
   const records = (db.attendance ?? []).filter((r) => r.workDate === date);
@@ -88,6 +118,15 @@ export function AttendanceBoard() {
         desc="현장 직원이 출근·퇴근 버튼을 누른 시각(서버 시각)과 그때의 위치입니다. 의심 표시는 ‘확인할 대상’이지 부정 확정이 아닙니다."
         right={
           <div className="flex flex-wrap items-center gap-2">
+            <Segmented
+              label="출근 방식"
+              value={qrMode ? "qr" : "gps"}
+              onChange={(v) => void setAttMode(v as "gps" | "qr")}
+              options={[
+                { value: "gps", label: "GPS만", testId: "att-mode-gps" },
+                { value: "qr", label: "현장 QR + GPS", testId: "att-mode-qr" },
+              ]}
+            />
             <Segmented
               label="날짜"
               value={mode}
@@ -185,7 +224,7 @@ export function AttendanceBoard() {
                             {r ? (
                               <>
                                 <td className="py-2.5">
-                                  <span className="num font-semibold">{hhmm(r.inAt)}</span> <GeoChip g={r.inGeo} /> <MapA g={r.inGeo} />
+                                  <span className="num font-semibold">{hhmm(r.inAt)}</span> <GeoChip g={r.inGeo} /> <MapA g={r.inGeo} /> <QrChip q={r.inQr} required={qrMode} />
                                 </td>
                                 <td className="py-2.5">
                                   {r.outAt ? (
@@ -215,6 +254,7 @@ export function AttendanceBoard() {
                   </table>
                 </div>
               )}
+              <KioskList kiosks={(db.kiosks ?? []).filter((k) => k.siteId === s.id && !k.revokedAt)} onAdd={() => addKiosk(s)} onRevoke={revoke} qrMode={qrMode} />
             </Card>
           );
         })}
@@ -262,7 +302,7 @@ export function AttendanceBoard() {
             <table className="w-full min-w-[36rem] text-[0.84rem]">
               <thead>
                 <tr className="text-left text-[0.74rem] text-ink-3">
-                  {["이름", "출근일수", "총 근무", "퇴근 누락", "현장 밖", "위치 없음", "본사 정정"].map((h) => (
+                  {["이름", "출근일수", "총 근무", "퇴근 누락", "현장 밖", "위치 없음", "QR 확인", "본사 정정"].map((h) => (
                     <th key={h} className="px-3 py-2 font-semibold first:pl-5">
                       {h}
                     </th>
@@ -278,6 +318,7 @@ export function AttendanceBoard() {
                     <td className={cx("num px-3 py-2", m.noCheckout > 0 && "font-bold text-warn")}>{m.noCheckout}</td>
                     <td className={cx("num px-3 py-2", m.outside > 0 && "font-bold text-err")}>{m.outside}</td>
                     <td className={cx("num px-3 py-2", m.noLocation > 0 && "font-bold text-warn")}>{m.noLocation}</td>
+                    <td className="num px-3 py-2">{m.qrOk}</td>
                     <td className="num px-3 py-2">{m.corrected}</td>
                   </tr>
                 ))}
@@ -293,6 +334,7 @@ export function AttendanceBoard() {
 
       {geoSite && <GeoModal site={geoSite} onClose={() => setGeoSite(null)} />}
       {fix && <FixModal db={db} record={fix} onClose={() => setFix(null)} />}
+      {pairing && <PairModal {...pairing} onClose={() => setPairing(null)} />}
     </PageBody>
   );
 }
@@ -416,6 +458,72 @@ function FixModal({ db, record, onClose }: { db: DemoDB; record: AttendanceRecor
         <Field label="정정 사유" htmlFor="fx-note" required error={errors.note}>
           <input id="fx-note" className={inputCls} value={note} maxLength={120} onChange={(e) => setNote(e.target.value)} placeholder="예) 퇴근 버튼 누락 — 현장 반장 확인" data-testid="att-fix-note" />
         </Field>
+      </div>
+    </Modal>
+  );
+}
+
+function QrChip({ q, required }: { q?: QrStamp; required: boolean }) {
+  if (!q) return required ? <span className="inline-flex rounded-md bg-surface-3 px-1.5 py-0.5 text-[0.74rem] font-bold text-ink-2">QR 없음</span> : null;
+  return <span className={cx("inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[0.74rem] font-bold", q.status === "ok" ? "bg-ok-bg text-ok" : "bg-err-bg text-err")} data-testid="att-qr-chip">{QR_LABEL[q.status]}</span>;
+}
+
+/** 현장 QR 단말기 목록 (현장 카드 아래) */
+function KioskList({ kiosks, onAdd, onRevoke, qrMode }: { kiosks: Kiosk[]; onAdd: () => void; onRevoke: (k: Kiosk) => void; qrMode: boolean }) {
+  const now = new Date().toISOString();
+  return (
+    <div className="border-t border-line px-5 py-3" data-testid="kiosk-list">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="flex items-center gap-1.5 text-[0.82rem] font-bold text-ink-2">
+          <TabletSmartphone size={15} aria-hidden /> 현장 QR 단말기 {kiosks.length}대
+          {qrMode && kiosks.filter((k) => k.pairedAt).length === 0 && <span className="text-warn"> · QR 출근 방식인데 연결된 단말기가 없습니다</span>}
+        </p>
+        <Button size="sm" variant="soft" icon={<QrCode size={15} />} onClick={onAdd} data-testid="kiosk-add">
+          단말기 추가
+        </Button>
+      </div>
+      {kiosks.length > 0 && (
+        <ul className="mt-2 space-y-1 text-[0.8rem]">
+          {kiosks.map((k) => (
+            <li key={k.id} className="flex flex-wrap items-center gap-x-2 gap-y-1" data-testid="kiosk-row">
+              <span className="font-semibold">{k.name}</span>
+              {k.pairedAt ? (
+                <Badge tone="ok">연결됨</Badge>
+              ) : k.pairExpiresAt && k.pairExpiresAt > now ? (
+                <Badge tone="warn">연결 대기 · {hhmm(k.pairExpiresAt)}까지</Badge>
+              ) : (
+                <Badge>코드 만료 — 해제 후 다시 추가</Badge>
+              )}
+              {k.lastUsedAt && <span className="text-ink-3">마지막 출근 확인 {hhmm(k.lastUsedAt)}</span>}
+              <button type="button" onClick={() => onRevoke(k)} className="press rounded-md px-1.5 py-0.5 text-[0.76rem] font-semibold text-err hover:bg-err-bg">
+                해제
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/** 단말기 연결 코드 — 이번 한 번만 보여준다 */
+function PairModal({ site, code, expiresAt, onClose }: { site: Site; code: string; expiresAt: string; onClose: () => void }) {
+  const url = `${typeof window === "undefined" ? "" : window.location.origin}/kiosk?c=${code}`;
+  const qr = qrPath(url);
+  return (
+    <Modal open onClose={onClose} title={`현장 QR 단말기 연결 · ${site.shortName}`} description="현장 사무실 태블릿에서 아래 QR을 카메라로 찍거나, 태블릿 브라우저에서 /kiosk 를 열고 코드를 넣으세요." size="sm" testId="pair-modal" footer={<Button onClick={onClose}>닫기</Button>}>
+      <div className="space-y-3 text-center">
+        <p className="num text-[2rem] font-extrabold tracking-[0.3em]" data-testid="pair-code">
+          {code}
+        </p>
+        <p className="text-[0.84rem] text-ink-2">{hhmm(expiresAt)}까지 (30분) · 한 번만 사용 · 이 창을 닫으면 다시 볼 수 없습니다</p>
+        <svg viewBox={`-2 -2 ${qr.size + 4} ${qr.size + 4}`} className="mx-auto block size-52" role="img" aria-label="단말기 연결 QR" shapeRendering="crispEdges">
+          <rect x={-2} y={-2} width={qr.size + 4} height={qr.size + 4} fill="#fff" />
+          <path d={qr.d} fill="#000" />
+        </svg>
+        <a href={url} target="_blank" rel="noreferrer noopener" className="inline-block text-[0.84rem] font-semibold text-theme-ink underline underline-offset-2" data-testid="pair-open">
+          이 컴퓨터에서 단말기 화면 열기
+        </a>
       </div>
     </Modal>
   );

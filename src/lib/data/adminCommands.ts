@@ -229,6 +229,7 @@ export function setCompanySettings(db0: DemoDB, input: CompanySettingsInput, ctx
   if (input.costApproval !== undefined && input.costApproval !== "immediate" && input.costApproval !== "review") errors.costApproval = "반영 방식을 선택해주세요.";
   if (input.laborDayRate !== undefined && (!Number.isInteger(input.laborDayRate) || input.laborDayRate < 10_000 || input.laborDayRate > 5_000_000)) errors.laborDayRate = "일당은 1만~500만 원 사이 정수";
   if (input.companyName !== undefined && (!input.companyName.trim() || input.companyName.length > 60)) errors.companyName = "회사명 (60자 이내)";
+  if (input.attendanceMode !== undefined && input.attendanceMode !== "gps" && input.attendanceMode !== "qr") errors.attendanceMode = "출근 방식을 선택해주세요.";
   const phone = input.helpPhone?.trim();
   if (phone && !/^[0-9+][0-9\- ]{6,18}[0-9]$/.test(phone)) errors.helpPhone = "전화번호 형식 (예: 02-1234-5678)";
   if (Object.keys(errors).length) throw new CommandError("입력값을 확인해주세요.", "VALIDATION", errors);
@@ -238,10 +239,11 @@ export function setCompanySettings(db0: DemoDB, input: CompanySettingsInput, ctx
     costApproval: input.costApproval ?? prev.costApproval,
     laborDayRate: input.laborDayRate ?? prev.laborDayRate,
     ...(prev.sampleData ? { sampleData: true } : {}),
+    ...((input.attendanceMode ?? prev.attendanceMode) ? { attendanceMode: input.attendanceMode ?? prev.attendanceMode } : {}),
     ...((input.helpPhone !== undefined ? phone : prev.helpPhone) ? { helpPhone: input.helpPhone !== undefined ? phone : prev.helpPhone } : {}),
   };
   if (input.companyName) db.company = { ...db.company, name: input.companyName.trim() };
-  log(db, ctx, "settings", `운영 설정 변경 — 원가 반영: ${db.settings.costApproval === "review" ? "본사 공무 확인 후" : "저장 즉시"} · 기본 일당 ${fmtMan(db.settings.laborDayRate)}`);
+  log(db, ctx, "settings", `운영 설정 변경 — 원가 반영: ${db.settings.costApproval === "review" ? "본사 공무 확인 후" : "저장 즉시"} · 기본 일당 ${fmtMan(db.settings.laborDayRate)} · 출근 ${db.settings.attendanceMode === "qr" ? "현장 QR+GPS" : "GPS"}`);
   touch(db, ctx);
   return { db, result: { settings: db.settings } };
 }

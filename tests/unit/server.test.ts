@@ -251,6 +251,26 @@ describe("사진·이력·설정", () => {
     await svc.executeCommand(field, "checkOut", { siteId: "site-a", sample: near, deviceId: "dev-test01" });
     expect((await svc.getView(ceo)).db.attendance!.find((x) => x.id === r.attendanceId)?.outAt).toBeTruthy();
   });
+  it("현장 QR 단말기: 비밀값은 누구에게도 안 내려가고, 연결 코드로 한 번만 받는다", async () => {
+    await expect(svc.executeCommand(field, "createKiosk", { siteId: "site-a" })).rejects.toBeInstanceOf(ForbiddenError);
+    const r = (await svc.executeCommand(manager, "createKiosk", { siteId: "site-a" })).result as { kioskId: string; pairCode: string };
+    for (const who of [ceo, manager, field, partner]) {
+      const v = JSON.stringify((await svc.getView(who)).db.kiosks ?? []);
+      expect(v).not.toContain("secret");
+      expect(v).not.toContain("pairHash");
+    }
+    expect((await svc.kioskStatus(r.kioskId)).active).toBe(false); // 아직 연결 전
+    // 가상 데이터로 시작한 운영 회사의 단말기 비밀값은 소스의 DEMO 값이 아니다
+    const db = await getDb();
+    const [demo] = await db.query<{ s: string }>(`select data->>'secret' as s from records where collection = 'kiosks' and id = 'kio_demo1'`);
+    expect(demo.s).toMatch(/^[0-9a-f]{64}$/);
+    const paired = await svc.pairKioskByCode(r.pairCode);
+    expect(paired.secret).toMatch(/^[0-9a-f]{64}$/);
+    await expect(svc.pairKioskByCode(r.pairCode)).rejects.toBeInstanceOf(CommandError); // 두 번째 거부
+    expect((await svc.kioskStatus(r.kioskId)).active).toBe(true);
+    await svc.executeCommand(manager, "revokeKiosk", { kioskId: r.kioskId });
+    expect((await svc.kioskStatus(r.kioskId)).active).toBe(false);
+  });
   it("활동 이력은 지워지지 않는다 (DB에는 계속 쌓임)", async () => {
     const db = await getDb();
     const [{ n }] = await db.query<{ n: string }>(`select count(*) as n from records where collection = 'activityLogs'`);

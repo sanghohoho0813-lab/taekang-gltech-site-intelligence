@@ -4,8 +4,8 @@
  * 출근·퇴근 (현장 직원 첫 화면 맨 위)
  * 누를 때 1번만 위치를 잡아 서버로 보낸다. 시각·현장 안/밖 판정은 서버가 한다.
  */
-import { useState } from "react";
-import { AlertTriangle, CircleCheck, Loader2, LogIn, LogOut, MapPin, MapPinOff, ShieldCheck } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { AlertTriangle, CircleCheck, Loader2, LogIn, LogOut, MapPin, MapPinOff, QrCode, ShieldCheck } from "lucide-react";
 import { run } from "@/lib/data/store";
 import { IS_LIVE } from "@/lib/mode";
 import { CommandError } from "@/lib/data/commands";
@@ -14,12 +14,14 @@ import { distanceM, geoText, type GeoSample } from "@/lib/domain/geo";
 import { hhmm, minutesOf } from "@/lib/domain/attendance";
 import { todayIso } from "@/lib/domain/format";
 import { deviceId, locateOnce } from "@/lib/geo/client";
+import { decodeQrFromFile } from "@/lib/geo/qrClient";
+import { makeQrToken, parseQrText, qrWindow, QR_LABEL } from "@/lib/domain/qr";
 import { cx } from "@/components/ui/primitives";
 import { Choice } from "./ui";
 
 type Phase =
   | { k: "idle" }
-  | { k: "consent"; mode: "in" | "out" }
+  | { k: "consent"; mode: "in" | "out"; qr?: string }
   | { k: "locating"; mode: "in" | "out" }
   | { k: "pick"; mode: "in"; sample: GeoSample | null; reason?: GeoStamp["reason"]; consent?: boolean }
   | { k: "warn"; mode: "in" | "out"; site: Site; sample: GeoSample | null; reason?: GeoStamp["reason"]; distance?: number; consent?: boolean }
@@ -27,8 +29,9 @@ type Phase =
 
 const bigBtn = "press flex min-h-[4.6rem] w-full items-center justify-center gap-2.5 rounded-3xl text-[1.35rem] font-extrabold shadow-card disabled:opacity-50";
 
-export function EasyAttendance({ db, userId, sites }: { db: DemoDB; userId: string; sites: Site[] }) {
+export function EasyAttendance({ db, userId, sites, autoQr }: { db: DemoDB; userId: string; sites: Site[]; autoQr?: string }) {
   const [phase, setPhase] = useState<Phase>({ k: "idle" });
+  const autoDone = useRef(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const today = todayIso();
@@ -37,18 +40,32 @@ export function EasyAttendance({ db, userId, sites }: { db: DemoDB; userId: stri
   const closed = mine.filter((r) => r.outAt);
   const consented = (db.consents ?? []).some((c) => c.userId === userId);
   const openSite = open ? db.sites.find((s) => s.id === open.siteId) : undefined;
+  // 출근 방식: 현장 QR + GPS
+  const qrMode = db.settings?.attendanceMode === "qr";
+  const todayRec = open ?? closed[0];
+  const qrPending = qrMode && !!todayRec && todayRec.inQr?.status !== "ok";
+
+  // QR 주소(/q/…)로 들어온 경우 바로 진행
+  useEffect(() => {
+    if (!autoQr || autoDone.current || sites.length === 0) return;
+    autoDone.current = true;
+    void startQr(autoQr);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoQr, sites.length]);
 
   if (sites.length === 0) return null;
 
-  const commit = async (mode: "in" | "out", site: Site, sample: GeoSample | null, reason?: GeoStamp["reason"], consent?: boolean) => {
+  const commit = async (mode: "in" | "out", site: Site, sample: GeoSample | null, reason?: GeoStamp["reason"], consent?: boolean, qrToken?: string) => {
     setBusy(true);
     setErr(null);
     try {
-      const args = { siteId: site.id, sample, noLocation: sample ? undefined : (reason ?? "unavailable"), deviceId: deviceId() || undefined, consent };
-      const r = mode === "in" ? await run("checkIn", args) : await run("checkOut", args);
-      const ok = r.geo.status === "inside";
+      const args = { siteId: site.id, sample, noLocation: sample ? undefined : (reason ?? "unavailable"), deviceId: deviceId() || undefined, consent, ...(qrToken ? { qrToken } : {}) };
+      const r = mode === "in" ? await run("checkIn", { ...args }) : await run("checkOut", args);
+      const qr = "qr" in r ? r.qr : undefined;
+      const ok = r.geo.status === "inside" && (!qrToken || qr?.status === "ok");
       const word = mode === "in" ? "출근" : "퇴근";
-      setPhase({ k: "done", mode, tone: ok ? "ok" : "warn", text: ok ? `${word} 기록 완료` : `${word} 기록 완료 — 본사에 ‘${geoText(r.geo)}’로 표시됩니다` });
+      const qrText = qrToken ? (qr?.status === "ok" ? " · 현장 QR 확인" : ` — ${QR_LABEL[qr?.status ?? "invalid"]}: ‘QR 다시 찍기’를 눌러 주세요`) : "";
+      setPhase({ k: "done", mode, tone: ok ? "ok" : "warn", text: ok ? `${word} 기록 완료${qrText}` : `${word} 기록 완료${qrText}${r.geo.status !== "inside" ? ` — 본사에 ‘${geoText(r.geo)}’로 표시됩니다` : ""}` });
     } catch (e) {
       setErr(e instanceof CommandError || e instanceof Error ? e.message : "기록하지 못했습니다. 다시 눌러 주세요.");
       setPhase({ k: "idle" });
@@ -92,6 +109,66 @@ export function EasyAttendance({ db, userId, sites }: { db: DemoDB; userId: stri
 
   const tap = (mode: "in" | "out") => (consented ? start(mode) : setPhase({ k: "consent", mode }));
 
+  /** 현장 태블릿 QR로 출근 (이미 출근했으면 QR 확인만) */
+  const startQr = async (text: string, consent?: boolean) => {
+    setErr(null);
+    const p = parseQrText(text);
+    if (!p) return setErr("TAEKANG 출근 QR이 아닙니다. 현장 태블릿의 QR을 찍어 주세요.");
+    const site = sites.find((s) => s.id === p.siteId);
+    if (!site) return setErr("내 담당 현장의 QR이 아닙니다.");
+    // 오래된 사진(5분 넘음)은 바로 다시 찍게 한다 — 최종 판정은 서버
+    if (qrWindow(Date.now()) - p.w > 10) return setErr("오래된 QR 사진이에요. 지금 태블릿 화면을 다시 찍어 주세요.");
+    const rec = mine.find((r) => r.siteId === site.id);
+    if (rec) {
+      if (rec.inQr?.status === "ok") return setPhase({ k: "done", mode: "in", tone: "ok", text: "이미 현장 QR로 출근 확인되었습니다" });
+      setBusy(true);
+      try {
+        await run("confirmQr", { siteId: site.id, qrToken: p.token });
+        setPhase({ k: "done", mode: "in", tone: "ok", text: "현장 QR 확인 완료" });
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : "QR을 확인하지 못했습니다.");
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+    if (!consented && !consent) return setPhase({ k: "consent", mode: "in", qr: p.token });
+    setPhase({ k: "locating", mode: "in" });
+    const loc = await locateOnce();
+    // QR이 현장에 있었다는 증거 → 위치가 밖이어도 묻지 않고 기록 (본사에는 둘 다 표시)
+    await commit("in", site, "sample" in loc ? loc.sample : null, "error" in loc ? loc.error : undefined, consent, p.token);
+  };
+
+  const onQrPhoto = async (input: HTMLInputElement) => {
+    const f = input.files?.[0];
+    input.value = "";
+    if (!f) return;
+    setBusy(true);
+    const text = await decodeQrFromFile(f);
+    setBusy(false);
+    if (!text) return setErr("QR을 읽지 못했어요. 태블릿 가까이에서 QR 전체가 보이게 다시 찍어 주세요.");
+    await startQr(text);
+  };
+
+  /** QR 사진 찍기 버튼 (휴대폰 카메라가 바로 열림) */
+  const qrButton = (label: string, testId: string, primary = true) => (
+    <label className={cx(bigBtn, "cursor-pointer", primary ? "bg-ok text-white" : "border-2 border-line-strong bg-surface text-ink !text-[1.15rem] !min-h-[3.8rem] shadow-none", busy && "pointer-events-none opacity-50")}>
+      <QrCode size={28} aria-hidden /> {label}
+      <input type="file" accept="image/*" capture="environment" className="sr-only" onChange={(e) => void onQrPhoto(e.currentTarget)} data-testid={testId} />
+    </label>
+  );
+
+  /** DEMO: 시연 장소에 태블릿이 없으므로, 가상 단말기의 지금 QR을 찍은 것으로 */
+  const demoQr = () => {
+    const k = (db.kiosks ?? []).find((x) => !x.revokedAt && x.secret && sites.some((s) => s.id === x.siteId) && (!todayRec || x.siteId === todayRec.siteId));
+    if (k?.secret) void startQr(makeQrToken({ id: k.id, siteId: k.siteId, secret: k.secret }, Date.now()));
+  };
+  const demoQrBtn = !IS_LIVE && qrMode && (
+    <button type="button" onClick={demoQr} className="press w-full rounded-xl bg-[#FFF7D6] px-3 py-3 text-[0.98rem] font-bold text-[#7A5200]" data-testid="att-demo-qr">
+      DEMO · 현장 태블릿 QR을 찍은 것으로
+    </button>
+  );
+
   /** DEMO: 시연 장소가 현장이 아니므로 현장 위치에 있다고 가정 */
   const demoHere = (mode: "in" | "out", site?: Site) => {
     const s = site ?? (mode === "out" ? openSite : sites.find((x) => x.geo));
@@ -126,11 +203,22 @@ export function EasyAttendance({ db, userId, sites }: { db: DemoDB; userId: stri
           <li>현장에 있었는지 확인하는 데만 씁니다. 기록은 회사 본사(대표·관리자)만 봅니다.</li>
           <li>동의하지 않아도 출근은 됩니다. 이때는 본사에 ‘위치 없음’으로 표시됩니다.</li>
         </ul>
-        <button type="button" onClick={() => start(phase.mode, true)} className={cx(bigBtn, "bg-cta text-cta-text")} data-testid="att-consent-yes">
+        <button type="button" onClick={() => (phase.qr ? void startQr(phase.qr, true) : void start(phase.mode, true))} className={cx(bigBtn, "bg-cta text-cta-text")} data-testid="att-consent-yes">
           동의하고 {phase.mode === "in" ? "출근" : "퇴근"}하기
         </button>
         <div className="grid grid-cols-2 gap-2.5">
-          <button type="button" onClick={() => decide("in", null, "skipped")} className="press min-h-[3.6rem] rounded-2xl border-2 border-line-strong bg-surface text-[1.02rem] font-bold" data-testid="att-consent-no" hidden={phase.mode === "out"}>
+          <button
+            type="button"
+            onClick={() => {
+              const p = phase.qr ? parseQrText(phase.qr) : null;
+              const s = p ? sites.find((x) => x.id === p.siteId) : undefined;
+              if (p && s) void commit("in", s, null, "skipped", undefined, p.token);
+              else decide("in", null, "skipped");
+            }}
+            className="press min-h-[3.6rem] rounded-2xl border-2 border-line-strong bg-surface text-[1.02rem] font-bold"
+            data-testid="att-consent-no"
+            hidden={phase.mode === "out"}
+          >
             위치 없이 출근
           </button>
           {phase.mode === "out" && openSite && (
@@ -216,7 +304,17 @@ export function EasyAttendance({ db, userId, sites }: { db: DemoDB; userId: stri
         <>
           <p className="text-[1.15rem] font-bold" data-testid="att-status">
             {openSite?.shortName} 출근 {hhmm(open.inAt)} · <span className={open.inGeo.status === "inside" ? "text-ok" : "text-warn"}>{geoText(open.inGeo)}</span>
+            {open.inQr?.status === "ok" && <span className="text-ok"> · 현장 QR 확인</span>}
           </p>
+          {qrPending && (
+            <>
+              <p className="text-[1.02rem] font-bold text-warn" data-testid="att-qr-pending">
+                현장 QR 확인이 아직 안 됐어요. 태블릿 QR을 찍어 주세요.
+              </p>
+              {qrButton("QR 다시 찍기", "att-qr-confirm-file", false)}
+              {demoQrBtn}
+            </>
+          )}
           <button type="button" onClick={() => tap("out")} disabled={busy} className={cx(bigBtn, "bg-primary text-white")} data-testid="att-out">
             <LogOut size={28} aria-hidden /> 퇴근하기
           </button>
@@ -225,6 +323,15 @@ export function EasyAttendance({ db, userId, sites }: { db: DemoDB; userId: stri
         <p className="text-[1.15rem] font-bold" data-testid="att-status">
           오늘 근무 끝 · {closed.map((r) => `${hhmm(r.inAt)}~${hhmm(r.outAt!)} (${Math.floor((minutesOf(r) ?? 0) / 60)}시간 ${(minutesOf(r) ?? 0) % 60}분)`).join(", ")}
         </p>
+      ) : qrMode ? (
+        <>
+          {qrButton("QR 찍고 출근", "att-qr-file")}
+          <p className="text-center text-[1rem] text-ink-2">현장 사무실 태블릿의 QR을 찍으세요. 사진을 찍으면 바로 출근됩니다.</p>
+          {demoQrBtn}
+          <button type="button" onClick={() => tap("in")} disabled={busy} className="press min-h-12 w-full rounded-xl text-[1.02rem] font-bold text-ink-2 underline underline-offset-4" data-testid="att-in">
+            QR 없이 출근 (본사에 ‘QR 없음’으로 표시)
+          </button>
+        </>
       ) : (
         <>
           <button type="button" onClick={() => tap("in")} disabled={busy} className={cx(bigBtn, "bg-ok text-white")} data-testid="att-in">

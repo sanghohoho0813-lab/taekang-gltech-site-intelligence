@@ -179,7 +179,7 @@ function start() {
 
 // ───────────────────────── LIVE (서버 DB) ─────────────────────────
 
-export const STANDALONE_PATHS = ["/login", "/setup", "/account"];
+export const STANDALONE_PATHS = ["/login", "/setup", "/account", "/kiosk"];
 
 let liveDb: DemoDB | null = null;
 let liveRev = -1;

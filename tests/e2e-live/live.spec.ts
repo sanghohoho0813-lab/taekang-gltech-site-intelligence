@@ -198,6 +198,54 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     await expect(page.getByTestId("att-report-row").first()).toContainText("현장 안");
   });
 
+  test("현장 QR: 본사 단말기 등록 → 로그인 없는 태블릿 연결 → 현장소장 QR 확인 → 해제", async ({ browser }) => {
+    const admin = await login(browser, CEO.email, CEO.password);
+    await admin.goto("/attendance");
+    await admin.getByTestId("att-mode-qr").click();
+    await expect(admin.getByTestId("att-mode-qr")).toHaveAttribute("aria-checked", "true");
+    await admin.locator(`[data-testid="att-site"][data-site="${siteId}"]`).getByTestId("kiosk-add").click();
+    const code = (await admin.getByTestId("pair-code").innerText()).trim();
+    // 본사 화면 데이터에도 단말기 비밀값은 없다
+    const st = await admin.evaluate(async () => (await (await fetch("/api/state")).json()).db);
+    expect(JSON.stringify(st.kiosks)).not.toMatch(/secret|pairHash/);
+    // 빈 회사로 시작했으므로 단말기는 방금 만든 1대뿐
+    expect(st.kiosks).toHaveLength(1);
+    const kioskId = (st.kiosks as { id: string; siteId: string }[]).find((k) => k.siteId === siteId)!.id;
+
+    // 현장 태블릿: 로그인 없이 /kiosk → 코드로 연결
+    const tab = await browser.newContext({ viewport: { width: 800, height: 1100 } });
+    const kp = await tab.newPage();
+    await kp.goto(`/kiosk?c=${code}`);
+    await expect(kp.getByTestId("kiosk-live")).toBeVisible();
+    // 같은 코드로 두 번째 연결은 거부
+    expect((await kp.request.post("/api/kiosk/pair", { data: { code } })).status()).toBe(404);
+    const shot = await kp.getByTestId("kiosk-qr").screenshot();
+
+    // 현장소장: 이미 GPS로 출근 → QR 확인 대기 → QR 사진으로 확인
+    const fc = await browser.newContext({ viewport: { width: 390, height: 844 }, permissions: ["geolocation"], geolocation: { latitude: 37.5014, longitude: 127.0398, accuracy: 20 } });
+    const fp = await fc.newPage();
+    await fp.goto("/login");
+    await fp.locator("#l-email").fill(FIELD.email);
+    await fp.locator("#l-pw").fill(FIELD.password);
+    await fp.getByTestId("login-submit").click();
+    await expect(fp).toHaveURL(/\/field/);
+    await expect(fp.getByTestId("att-qr-pending")).toBeVisible();
+    await fp.getByTestId("att-qr-confirm-file").setInputFiles({ name: "qr.png", mimeType: "image/png", buffer: shot });
+    await expect(fp.getByTestId("att-result")).toContainText("현장 QR 확인 완료");
+    await fc.close();
+
+    await admin.reload();
+    await expect(admin.locator(`[data-testid="att-site"][data-site="${siteId}"]`).getByTestId("att-row")).toContainText("QR 확인");
+    // 해제하면 태블릿 상태 확인에서 '해제됨'
+    admin.once("dialog", (d) => void d.accept());
+    await admin.locator(`[data-testid="att-site"][data-site="${siteId}"]`).getByTestId("kiosk-row").getByRole("button", { name: "해제" }).click();
+    await expect(admin.getByText("단말기를 해제했습니다")).toBeVisible();
+    expect((await (await kp.request.get(`/api/kiosk/status?id=${kioskId}`)).json()).active).toBe(false);
+    await tab.close();
+    // 다음 테스트를 위해 GPS만으로 되돌림
+    await admin.getByTestId("att-mode-gps").click();
+  });
+
   test("발주처: 첫 로그인 후 공개 현장만, 요청 등록, 내부 정보 없음", async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     const page = await ctx.newPage();
