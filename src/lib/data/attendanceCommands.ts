@@ -260,3 +260,66 @@ export function pairKiosk(db0: DemoDB, input: { code: string }, ctx: Ctx) {
   touch(db, ctx);
   return { db, result: { kioskId: k.id, siteId: k.siteId, siteName: site?.shortName ?? "", kioskName: k.name, companyName: db.company.name, secret: k.secret } };
 }
+
+// ───────────────────────── 작업 인원 확인 (출력) ─────────────────────────
+
+export interface CrewInput {
+  siteId: string;
+  team: string;
+  kind?: "direct" | "subcontract";
+  headcount: number;
+  /** 단체 사진 (휴대폰에서 줄인 JPEG) */
+  photoDataUrl?: string;
+  geo?: { sample?: GeoSample | null; noLocation?: GeoStamp["reason"] };
+  idempotencyKey?: string;
+}
+
+export const normTeam = (t: string) => t.trim().replace(/\s+/g, " ").slice(0, 30);
+
+export function reportCrew(db0: DemoDB, input: CrewInput, ctx: Ctx) {
+  const site = requireSite(db0, input.siteId);
+  const errors: Record<string, string> = {};
+  const team = normTeam(input.team ?? "");
+  if (!team) errors.team = "팀 이름을 넣어 주세요.";
+  if (!Number.isInteger(input.headcount) || input.headcount < 1 || input.headcount > 300) errors.headcount = "인원은 1~300명";
+  if (input.photoDataUrl !== undefined && (typeof input.photoDataUrl !== "string" || !/^data:image\/(jpeg|png|webp);base64,/.test(input.photoDataUrl))) errors.photo = "사진 형식을 확인해 주세요.";
+  if (Object.keys(errors).length) throw new CommandError("입력값을 확인해주세요.", "VALIDATION", errors);
+  const db = clone(db0);
+  claimKey(db, input.idempotencyKey);
+  db.crewChecks = [...(db.crewChecks ?? [])];
+  const at = nowIso(ctx);
+  const workDate = todayIso(new Date(at));
+  let photoId: string | undefined;
+  let photoHash: string | undefined;
+  if (input.photoDataUrl) {
+    photoHash = hex(sha256(utf8(input.photoDataUrl)));
+    photoId = uid("ph");
+    db.photos.push({ id: photoId, siteId: site.id, dataUrl: input.photoDataUrl, caption: `작업 인원 · ${team}`, createdAt: at, createdBy: ctx.userId });
+  }
+  const consented = hasConsent(db, ctx.userId);
+  const geo = input.geo ? (validSample(input.geo.sample) && consented ? judgeGeo(site, input.geo.sample) : judgeGeo(site, null, consented ? (input.geo.noLocation ?? "unavailable") : "skipped")) : undefined;
+  const idx = db.crewChecks.findIndex((c) => c.siteId === site.id && c.workDate === workDate && c.team.toLowerCase() === team.toLowerCase());
+  let id: string;
+  if (idx >= 0) {
+    const prev = db.crewChecks[idx];
+    id = prev.id;
+    if (photoId) db.photos = db.photos.map((p) => (p.id === photoId ? { ...p, crewId: id } : p));
+    db.crewChecks[idx] = {
+      ...prev,
+      headcount: input.headcount,
+      kind: input.kind ?? prev.kind,
+      at,
+      by: ctx.userId,
+      ...(photoId ? { photoId, photoHash } : {}),
+      ...(geo ? { geo } : {}),
+      history: [...(prev.history ?? []), { at: prev.at, by: prev.by, headcount: prev.headcount }],
+    };
+  } else {
+    id = uid("crew");
+    if (photoId) db.photos = db.photos.map((p) => (p.id === photoId ? { ...p, crewId: id } : p));
+    db.crewChecks.push({ id, siteId: site.id, workDate, team, kind: input.kind === "direct" ? "direct" : "subcontract", headcount: input.headcount, ...(photoId ? { photoId, photoHash } : {}), ...(geo ? { geo } : {}), at, by: ctx.userId });
+  }
+  log(db, ctx, "crew", `${site.shortName} 작업 인원 — ${team} ${input.headcount}명${photoId ? " · 단체 사진" : " · 사진 없음"}${idx >= 0 ? " (수정)" : ""}`, site.id, "/attendance");
+  touch(db, ctx);
+  return { db, result: { crewId: id, updated: idx >= 0, geo } };
+}

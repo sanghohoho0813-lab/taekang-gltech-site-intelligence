@@ -483,6 +483,17 @@ function seedAttendance(db: DemoDB, now: Date) {
   }
   db.attendance = rec;
   db.consents = [{ userId: "u-field2", at: dayOffset(now, -20), version: 1 }];
+  // 작업 인원(출력) — A현장 유리 설치팀 지난 5일 매일 4명 (사진은 실제 사진을 쓰지 않으므로 없음)
+  db.crewChecks = [1, 2, 3, 4, 5].map((i) => ({
+    id: `crew-seed-a-${i}`,
+    siteId: "site-a",
+    workDate: kstDate(-i),
+    team: "유리 설치팀 (가상 협력업체)",
+    kind: "subcontract" as const,
+    headcount: 4,
+    at: at(kstDate(-i), "07:50"),
+    by: "u-field",
+  }));
   // 현장 QR 태블릿 (가상, 연결 완료) — DEMO 비밀값은 브라우저 안에만 있다
   db.kiosks = db.sites.map((s, i) => ({
     id: `kio_demo${i + 1}`,

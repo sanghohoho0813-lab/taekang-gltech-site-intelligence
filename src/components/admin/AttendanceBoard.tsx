@@ -8,6 +8,7 @@ import { run } from "@/lib/data/store";
 import { CommandError } from "@/lib/data/commands";
 import type { AttendanceRecord, DemoDB, GeoStamp, Kiosk, QrStamp, Site } from "@/lib/domain/types";
 import { QR_LABEL } from "@/lib/domain/qr";
+import { CREW_FLAG_LABEL, crewFlags, crewSummary, mandayGap, mandayOver } from "@/lib/domain/crew";
 import { qrPath } from "@/lib/geo/qrClient";
 import { GEO_LABEL, geoText, mapLink } from "@/lib/domain/geo";
 import { FLAG_LABEL, FLAG_ORDER, backdatedDays, dayFlags, hhmm, minutesOf, periodSummary, recentFlags, shiftDate, siteCrew, type AttendanceFlag } from "@/lib/domain/attendance";
@@ -259,6 +260,8 @@ export function AttendanceBoard() {
           );
         })}
       </div>
+
+      <CrewCard db={db} date={date} name={name} />
 
       <Card data-testid="att-reports">
         <CardHeader title="현장 보고를 보낸 곳" sub="보고를 보낼 때 휴대폰 위치 (위치 기록에 동의한 사람만) · 지난 날짜로 쓴 보고 표시" />
@@ -526,5 +529,119 @@ function PairModal({ site, code, expiresAt, onClose }: { site: Site; code: strin
         </a>
       </div>
     </Modal>
+  );
+}
+
+/** 작업 인원 (출력) — 팀별 인원·단체 사진·위치, 노무 공수 보고와 대조 */
+function CrewCard({ db, date, name }: { db: DemoDB; date: string; name: (id: string) => string }) {
+  const since = shiftDate(date, -29);
+  const monthFrom = `${date.slice(0, 8)}01`;
+  const rows = (db.crewChecks ?? []).filter((c) => c.workDate === date).sort((a, b) => a.siteId.localeCompare(b.siteId) || a.at.localeCompare(b.at));
+  const flags = crewFlags(db, date, since);
+  const using = db.sites.filter((s) => (db.crewChecks ?? []).some((c) => c.siteId === s.id));
+  const siteName = (id: string) => db.sites.find((s) => s.id === id)?.shortName ?? "";
+  const csv = () => {
+    const sum = crewSummary(db, monthFrom, date);
+    const body = ["현장,팀,구분,보고 일수,인원일 합계,사진 없음", ...sum.map((r) => [siteName(r.siteId), `"${r.team.replace(/"/g, "'")}"`, r.kind === "direct" ? "직영" : "외주", r.days, r.personDays, r.noPhoto].join(","))].join("\n");
+    const url = URL.createObjectURL(new Blob(["\uFEFF" + body], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `작업인원_${monthFrom}_${date}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+  return (
+    <Card data-testid="crew-card">
+      <CardHeader
+        title="작업 인원 (출력)"
+        sub="현장소장·반장이 팀별로 보낸 오늘 인원·단체 사진·위치 — 직영은 급여, 외주는 팀 기성 확인 근거"
+        right={
+          <Button size="sm" icon={<Download size={15} />} onClick={csv} disabled={(db.crewChecks ?? []).length === 0} data-testid="crew-csv">
+            팀별 CSV
+          </Button>
+        }
+      />
+      {flags.length > 0 && (
+        <ul className="space-y-1 border-t border-line px-5 py-3 text-[0.82rem]" data-testid="crew-flags">
+          {flags.map((f, i) => (
+            <li key={i} className="flex items-start gap-1.5" data-kind={f.kind}>
+              <AlertTriangle size={14} className={cx("mt-0.5 shrink-0", f.kind === "photo_reused" || f.kind === "manday_over" ? "text-err" : "text-warn")} aria-hidden />
+              <span>
+                <b>{CREW_FLAG_LABEL[f.kind]}</b> · {f.text}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {rows.length === 0 ? (
+        <p className="border-t border-line px-5 py-4 text-[0.84rem] text-ink-3">이 날짜에 보낸 작업 인원이 없습니다.</p>
+      ) : (
+        <div className="overflow-x-auto border-t border-line">
+          <table className="w-full min-w-[42rem] text-[0.84rem]">
+            <thead>
+              <tr className="text-left text-[0.74rem] text-ink-3">
+                {["현장", "팀", "인원", "단체 사진", "보낸 사람", "위치"].map((h) => (
+                  <th key={h} className="px-3 py-2 font-semibold first:pl-5">
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((c) => {
+                const ph = c.photoId ? db.photos.find((p) => p.id === c.photoId) : undefined;
+                const mine = flags.filter((f) => f.crewId === c.id);
+                return (
+                  <tr key={c.id} className="border-t border-line align-middle" data-testid="crew-row">
+                    <td className="py-2 pl-5 pr-3 font-semibold">{siteName(c.siteId)}</td>
+                    <td className="px-3 py-2">
+                      {c.team} <span className="text-[0.74rem] text-ink-3">{c.kind === "direct" ? "직영" : "외주"}</span>
+                      {mine.map((f, i) => (
+                        <Badge key={i} tone={f.kind === "photo_reused" ? "err" : "warn"} className="ml-1">
+                          {CREW_FLAG_LABEL[f.kind]}
+                        </Badge>
+                      ))}
+                      {c.history?.length ? <span className="block text-[0.72rem] text-ink-3">수정 {c.history.length}회 (처음 {c.history[0].headcount}명)</span> : null}
+                    </td>
+                    <td className="num px-3 py-2 font-bold">{c.headcount}명</td>
+                    <td className="px-3 py-2">
+                      {ph ? (
+                        <a href={ph.dataUrl} target="_blank" rel="noreferrer noopener">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={ph.dataUrl} alt={`${c.team} 단체 사진`} className="size-12 rounded-md object-cover" />
+                        </a>
+                      ) : (
+                        <span className="text-[0.78rem] font-semibold text-warn">없음</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-ink-2">
+                      {name(c.by)} · {hhmm(c.at)}
+                    </td>
+                    <td className="px-3 py-2">
+                      <GeoChip g={c.geo} label="위치 기록 없음" />
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {using.length > 0 && (
+        <ul className="border-t border-line px-5 py-3 text-[0.82rem]" aria-label="최근 30일 노무 공수 대조">
+          {using.map((s) => {
+            const g = mandayGap(db, s.id, since, date);
+            const over = mandayOver(g);
+            return (
+              <li key={s.id} className="flex flex-wrap items-center gap-x-2" data-testid="crew-gap" data-over={over ? "1" : "0"}>
+                <b>{s.shortName}</b>
+                <span className="text-ink-2">최근 30일 노무 공수 보고 {g.reported} · 출력 인원 {g.crewDays}명·일</span>
+                {over ? <Badge tone="err">공수가 더 많음 — 확인 필요</Badge> : <Badge tone="ok">맞음</Badge>}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Card>
   );
 }

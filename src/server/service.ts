@@ -144,6 +144,7 @@ export async function setupCompany(input: SetupInput): Promise<{ token: string; 
           attendance: [],
           consents: [],
           kiosks: [],
+          crewChecks: [],
           settings: DEFAULT_SETTINGS,
           rev: 1,
         };

@@ -158,6 +158,19 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     await expect(page.getByTestId("report-impact")).toContainText("360만 원");
     await page.getByTestId("report-home").click();
     await expect(page.getByTestId("easy-site-status")).toContainText("오늘 보고 보냄");
+    // 작업 인원(출력) — 새 팀 이름 입력 → 3명 → 사진 없이 → 보내기
+    await page.getByTestId("easy-go-crew").click();
+    await page.getByTestId("crew-new-team").click();
+    await page.getByTestId("crew-team-name").fill("철근팀");
+    await page.getByTestId("crew-kind-direct").click();
+    await page.getByTestId("easy-next").click();
+    await page.getByTestId("crew-count-stepper-plus").click();
+    await page.getByTestId("crew-count-stepper-plus").click();
+    await page.getByTestId("easy-next").click();
+    await page.getByTestId("easy-next").click(); // 사진 없이
+    await page.getByTestId("crew-send").click();
+    await expect(page.getByTestId("crew-done")).toContainText("철근팀 3명");
+    await page.goto("/field");
     await expect(page.getByTestId("my-records")).toContainText("본사 확인 중");
     // 현장소장에게는 금액·예산 데이터가 오지 않는다
     const st = await page.evaluate(async () => (await (await fetch("/api/state")).json()).db);
@@ -200,6 +213,10 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     await page.goto("/attendance");
     await expect(page.locator(`[data-testid="att-site"][data-site="${siteId}"]`).getByTestId("att-row")).toContainText("현장 안");
     await expect(page.getByTestId("att-report-row").first()).toContainText("현장 안");
+    // 작업 인원: 사진 없이 보낸 철근팀 3명 (서버 판정 위치 = 현장 안)
+    await expect(page.getByTestId("crew-card").getByTestId("crew-row")).toContainText("철근팀");
+    await expect(page.getByTestId("crew-card").getByTestId("crew-row")).toContainText("현장 안");
+    await expect(page.getByTestId("crew-card").getByTestId("crew-flags")).toContainText("단체 사진 없음");
   });
 
   test("현장 QR: 본사 단말기 등록 → 로그인 없는 태블릿 연결 → 현장소장 QR 확인 → 해제", async ({ browser }) => {

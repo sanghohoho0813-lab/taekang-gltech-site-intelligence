@@ -3,7 +3,7 @@
 /** 현장 직원 첫 화면 — 큰 버튼 몇 개로 끝나도록 */
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { Camera, CircleCheck, ClipboardPen, ListChecks, Phone, Receipt, Undo2, AlertCircle, Clock3 } from "lucide-react";
+import { Camera, CircleCheck, ClipboardPen, ListChecks, Phone, Receipt, Undo2, AlertCircle, Clock3, Users } from "lucide-react";
 import { useMe } from "@/lib/data/hooks";
 import { run } from "@/lib/data/store";
 import { IS_LIVE } from "@/lib/mode";
@@ -59,6 +59,7 @@ export function EasyHome() {
       {sites.length > 0 && (
         <nav className="space-y-3" aria-label="할 일">
           <BigTile href="/field/report" tone="cta" icon={<ClipboardPen size={30} />} label="오늘 보고하기" sub="작업 · 사진 · 비용을 차례대로 물어봐요" testId="easy-go-report" />
+          <BigTile href="/field/crew" icon={<Users size={30} />} label="오늘 작업 인원 알리기" sub="팀별 인원과 단체 사진" testId="easy-go-crew" />
           <BigTile href="/field/report?mode=photo" icon={<Camera size={30} />} label="사진만 보내기" sub="찍어서 바로 보내요" testId="easy-go-photo" />
           <BigTile href="/field/report?mode=cost" icon={<Receipt size={30} />} label="추가 비용 알리기" sub="돈이 더 든 일이 생겼을 때" testId="easy-go-cost" />
           <BigTile

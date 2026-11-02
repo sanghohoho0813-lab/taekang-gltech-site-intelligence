@@ -271,6 +271,17 @@ describe("사진·이력·설정", () => {
     await svc.executeCommand(manager, "revokeKiosk", { kioskId: r.kioskId });
     expect((await svc.kioskStatus(r.kioskId)).active).toBe(false);
   });
+  it("작업 인원: 담당 현장만 보내고 담당 현장 것만 보이며, 단체 사진은 별도 저장", async () => {
+    const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    await expect(svc.executeCommand(field, "reportCrew", { siteId: "site-c", team: "x", headcount: 2 })).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(svc.executeCommand(partner, "reportCrew", { siteId: "site-a", team: "x", headcount: 2 })).rejects.toBeInstanceOf(ForbiddenError);
+    await svc.executeCommand(field, "reportCrew", { siteId: "site-a", team: "서버 테스트팀", headcount: 3, photoDataUrl: png });
+    const fv = (await svc.getView(field)).db;
+    expect((fv.crewChecks ?? []).every((c) => ["site-a", "site-b"].includes(c.siteId))).toBe(true);
+    const mine = fv.crewChecks!.find((c) => c.team === "서버 테스트팀")!;
+    expect(fv.photos.find((p) => p.id === mine.photoId)?.dataUrl).toMatch(/^\/api\/photos\//);
+    expect((await svc.getView(partner)).db.crewChecks ?? []).toHaveLength(0);
+  });
   it("활동 이력은 지워지지 않는다 (DB에는 계속 쌓임)", async () => {
     const db = await getDb();
     const [{ n }] = await db.query<{ n: string }>(`select count(*) as n from records where collection = 'activityLogs'`);

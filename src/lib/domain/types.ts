@@ -133,6 +133,30 @@ export interface Kiosk {
   lastUsedAt?: string;
 }
 
+/**
+ * 작업 인원 확인 (출력) — 현장소장·반장이 팀별 오늘 인원을 단체 사진·위치와 함께 보고
+ * 직영이면 급여, 외주면 팀 기성 확인의 근거. 인건비 공수 보고와 자동 대조한다.
+ */
+export interface CrewCheck {
+  id: string;
+  siteId: string;
+  /** 근무일 (서버 기준, 한국 시간) */
+  workDate: string;
+  /** 팀·업체 이름 (예: 유리 설치팀 / ○○산업) */
+  team: string;
+  kind: "direct" | "subcontract";
+  headcount: number;
+  photoId?: string;
+  /** 같은 사진을 다른 날 다시 쓰는지 확인용 (사진 내용의 SHA-256) */
+  photoHash?: string;
+  geo?: GeoStamp;
+  /** 보낸 시각 (서버) */
+  at: string;
+  by: string;
+  /** 같은 날 같은 팀을 다시 보내면 인원이 바뀐 이력 */
+  history?: { at: string; by: string; headcount: number }[];
+}
+
 /** 위치 기록 동의 (개인위치정보 수집 동의) */
 export interface LocationConsent {
   userId: string;
@@ -222,6 +246,8 @@ export interface SitePhoto {
   siteId: string;
   reportId?: string;
   actionId?: string;
+  /** 작업 인원(출력) 단체 사진 */
+  crewId?: string;
   dataUrl: string;
   caption: string;
   createdAt: string;
@@ -457,6 +483,7 @@ export interface DemoDB {
   attendance?: AttendanceRecord[];
   consents?: LocationConsent[];
   kiosks?: Kiosk[];
+  crewChecks?: CrewCheck[];
   /** LIVE: 현재 로그인 사용자 id (서버가 채움). DEMO에서는 없음 */
   me?: string;
   /** LIVE: 서버가 역할별로 걸러 보낸 데이터인지 */

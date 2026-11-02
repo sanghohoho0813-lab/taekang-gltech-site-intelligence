@@ -362,3 +362,46 @@ test("공정 일정: 현장 보고에서 오늘 한 공정 진척(누르기) →
   await page.getByRole("tab", { name: /공정/ }).click();
   await expect(page.getByText(/계획 \d+%/).first()).toBeVisible();
 });
+
+test("작업 인원(출력): 팀 고르기 → 인원 → 단체 사진 → 보내기, 공수를 더 많이 보고하면 본사에 대조 표시", async ({ page }) => {
+  await asField(page);
+  await page.goto("/field");
+  await page.getByTestId("easy-go-crew").click();
+  await page.getByTestId("crew-site-site-a").click();
+  // 지난번 보낸 팀이 바로 나온다 (지난번 4명)
+  await page.getByTestId("crew-team-chip").first().click();
+  await expect(page.getByTestId("crew-count")).toContainText("4");
+  await page.getByTestId("crew-count-stepper-plus").click(); // 5명
+  await page.getByTestId("easy-next").click();
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+  await page.getByTestId("crew-photo-file").setInputFiles({ name: "crew.png", mimeType: "image/png", buffer: png });
+  await page.getByTestId("easy-next").click();
+  await expect(page.getByTestId("crew-confirm-text")).toContainText("5명");
+  await page.getByTestId("crew-send").click();
+  await expect(page.getByTestId("crew-done")).toContainText("5명");
+
+  // 같은 날 노무 공수 10명 × 3일 = 30 보고 (최근 30일 출력 4명×5일 + 5 = 25명·일)
+  await page.goto("/field/report?mode=cost");
+  await page.getByTestId("easy-site-site-a").click();
+  await page.getByTestId("cost-cat-labor").click();
+  for (let i = 0; i < 9; i++) await page.getByTestId("labor-people-plus").click();
+  for (let i = 0; i < 4; i++) await page.getByTestId("labor-days-plus").click();
+  await expect(page.getByTestId("cost-readback")).toContainText("900만 원");
+  await page.getByTestId("easy-next").click();
+  await page.getByTestId("impact-additional").click();
+  await page.getByTestId("easy-next").click();
+  await page.getByTestId("reason-quantity_increase").click();
+  await page.getByTestId("submit-report").click();
+  await expect(page.getByTestId("report-done")).toBeVisible();
+
+  // 본사
+  await page.evaluate(([pk]) => localStorage.setItem(pk, JSON.stringify({ ...JSON.parse(localStorage.getItem(pk)!), role: "manager" })), [PREFS] as const);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/attendance");
+  const card = page.getByTestId("crew-card");
+  await expect(card.getByTestId("crew-row")).toContainText("5명");
+  await expect(card.getByTestId("crew-row").locator("img")).toBeVisible();
+  await expect(card.getByTestId("crew-gap")).toHaveAttribute("data-over", "1");
+  await expect(card.getByTestId("crew-flags")).toContainText("보고 공수가 출력 인원보다 많음");
+  await expect(card.getByTestId("crew-flags")).toContainText("보낸 사람 출근 기록 없음"); // 최성민 오늘 출근 안 함
+});

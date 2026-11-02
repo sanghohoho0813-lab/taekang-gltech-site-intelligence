@@ -91,6 +91,7 @@ export function authorize(m: Member, name: CommandName, argsIn: unknown, db: Dem
       case "checkIn":
       case "checkOut":
       case "confirmQr":
+      case "reportCrew":
         // 본인 출퇴근만 (명령이 로그인 사용자 id로 기록) · 담당 현장만
         if (!sites.has(str(args.siteId))) throw new ForbiddenError("담당 현장에만 출퇴근할 수 있습니다.");
         return args;
@@ -140,6 +141,7 @@ export function viewFor(m: Member, db: DemoDB): DemoDB {
     attendance: [],
     consents: [],
     kiosks: [],
+    crewChecks: [],
   } satisfies Partial<DemoDB>;
 
   if (m.role === "field") {
@@ -168,6 +170,8 @@ export function viewFor(m: Member, db: DemoDB): DemoDB {
       // 출퇴근은 본인 기록만
       attendance: (db.attendance ?? []).filter((r) => r.userId === m.id),
       consents: (db.consents ?? []).filter((c) => c.userId === m.id),
+      // 작업 인원은 담당 현장 것만
+      crewChecks: (db.crewChecks ?? []).filter((c) => sites.has(c.siteId)),
     };
   }
 

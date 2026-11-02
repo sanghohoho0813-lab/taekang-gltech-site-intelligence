@@ -41,6 +41,7 @@ export const COMMANDS = {
   setSiteGeo: (db: DemoDB, a: T.SiteGeoInput, ctx: Ctx) => T.setSiteGeo(db, a, ctx),
   correctAttendance: (db: DemoDB, a: T.CorrectAttendanceInput, ctx: Ctx) => T.correctAttendance(db, a, ctx),
   confirmQr: (db: DemoDB, a: { siteId: string; qrToken: string }, ctx: Ctx) => T.confirmQr(db, a, ctx),
+  reportCrew: (db: DemoDB, a: T.CrewInput, ctx: Ctx) => T.reportCrew(db, a, ctx),
   createKiosk: (db: DemoDB, a: { siteId: string; name?: string }, ctx: Ctx) => T.createKiosk(db, a, ctx),
   revokeKiosk: (db: DemoDB, a: { kioskId: string }, ctx: Ctx) => T.revokeKiosk(db, a, ctx),
   // pairKiosk는 목록에 넣지 않는다 — 로그인하지 않은 태블릿 전용 경로(/api/kiosk/pair)에서만 실행

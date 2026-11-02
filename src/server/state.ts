@@ -34,6 +34,7 @@ export const COLLECTIONS = {
   attendance: byId,
   consents: (x: Item) => String(x.userId),
   kiosks: byId,
+  crewChecks: byId,
 } satisfies Record<string, KeyFn>;
 export type CollectionName = keyof typeof COLLECTIONS;
 const NAMES = Object.keys(COLLECTIONS) as CollectionName[];
