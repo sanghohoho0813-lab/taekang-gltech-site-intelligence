@@ -67,6 +67,8 @@ interface Draft {
   work: string[];
   workText: string;
   progress: number | null;
+  /** 공정 단계별 새 진척 (단계 id → %) — 오늘 작업한 단계만 */
+  stages?: Record<string, number>;
   issueYes: boolean | null;
   issueChips: string[];
   issueText: string;
@@ -113,6 +115,7 @@ const emptyDraft = (siteId: string): Draft => ({
   work: [],
   workText: "",
   progress: null,
+  stages: {},
   issueYes: null,
   issueChips: [],
   issueText: "",
@@ -266,6 +269,11 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
       ...(c.category === "labor" && c.byPeople ? { qty: { manDays: Math.round(c.people * c.days * 100) / 100, dayRate: c.dayRate } } : {}),
     }));
   const costSum = costLines.reduce((s, c) => s + c.amount, 0);
+  // 오늘 작업한 공정 단계 (작업 고르기에서 누른 이름과 같은 단계)
+  const workedStages = site ? site.stages.filter((st) => d.work.includes(st.name) && st.progressPct < 100) : [];
+  const stageChanges = workedStages
+    .map((st) => ({ id: st.id, name: st.name, from: st.progressPct, to: (d.stages ?? {})[st.id] ?? st.progressPct }))
+    .filter((c) => c.to !== c.from);
   const unknownImpact = d.costs.some((c) => c.impact === "unknown");
 
   const send = async () => {
@@ -286,6 +294,7 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
         source: "FIELD",
         geo: geo ?? { noLocation: consented ? "timeout" : "skipped" },
         ...(d.progress !== null && d.progress !== site.progressPct ? { progressPct: d.progress } : {}),
+        ...(stageChanges.length ? { stageProgress: stageChanges.map((c) => ({ stageId: c.id, progressPct: c.to })) } : {}),
       });
       clearDraft();
       setNetFail(false);
@@ -543,6 +552,18 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
     case "progress": {
       const cur = site?.progressPct ?? 0;
       const val = d.progress ?? cur;
+      if (workedStages.length > 0) {
+        body = (
+          <EasyQuestion title="오늘 한 공정이 얼마나 됐나요?" help="공정마다 지금 몇 %인지 + − 로 맞춰 주세요. 바뀌지 않았으면 ‘그대로예요’." testId="easy-progress">
+            <Choice icon={<ThumbsUp size={24} />} label="그대로예요" sub="진행률을 바꾸지 않습니다" tone="good" selected={stageChanges.length === 0} onClick={() => { set({ stages: {} }); proceed(nextAfter("progress")); }} testId="progress-same" />
+            {workedStages.map((st, i) => (
+              <Stepper key={st.id} label={`${st.name} (지금 ${st.progressPct}%)`} value={(d.stages ?? {})[st.id] ?? st.progressPct} min={0} max={100} step={5} unit="%" onChange={(v) => set({ stages: { ...(d.stages ?? {}), [st.id]: v } })} testId={`stage-stepper-${i}`} />
+            ))}
+          </EasyQuestion>
+        );
+        footer = bar({ onBack: back, onNext: () => proceed(nextAfter("progress")) });
+        break;
+      }
       body = (
         <EasyQuestion title="현장 진행률이 바뀌었나요?" help={`지금 본사에 ${cur}%로 되어 있어요.`} testId="easy-progress">
           <Choice icon={<ThumbsUp size={24} />} label="그대로예요" sub={`${cur}% 그대로 둡니다`} tone="good" selected={d.progress === null} onClick={() => { set({ progress: null }); proceed(nextAfter("progress")); }} testId="progress-same" />
@@ -898,7 +919,24 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
               null,
             )}
             {mode === "full" && row("오늘 한 작업", workDone || <span className="text-err">작업을 넣어 주세요</span>, "work", "confirm-work")}
-            {mode === "full" && row("진행률", d.progress === null || d.progress === site?.progressPct ? `그대로 (${site?.progressPct ?? 0}%)` : `${site?.progressPct ?? 0}% → ${d.progress}%`, "progress")}
+            {mode === "full" &&
+              row(
+                "진행률",
+                stageChanges.length ? (
+                  <span className="block" data-testid="confirm-stages">
+                    {stageChanges.map((c) => (
+                      <span key={c.id} className="block">
+                        {c.name} {c.from}% → <b>{c.to}%</b>
+                      </span>
+                    ))}
+                  </span>
+                ) : d.progress === null || d.progress === site?.progressPct ? (
+                  `그대로 (${site?.progressPct ?? 0}%)`
+                ) : (
+                  `${site?.progressPct ?? 0}% → ${d.progress}%`
+                ),
+                "progress",
+              )}
             {mode !== "cost" &&
               row(
                 "사진",

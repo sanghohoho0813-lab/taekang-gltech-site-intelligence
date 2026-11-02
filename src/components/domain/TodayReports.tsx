@@ -44,6 +44,9 @@ export function TodayReports({ db }: { db: DemoDB }) {
             <Link href="/attendance" className="press inline-flex items-center gap-0.5 rounded-lg px-2 py-1 text-[0.8rem] font-bold text-theme-ink hover:bg-active-soft" data-testid="today-att-link">
               출퇴근 현황 <ChevronRight size={15} />
             </Link>
+            <Link href="/schedule" className="press inline-flex items-center gap-0.5 rounded-lg px-2 py-1 text-[0.8rem] font-bold text-theme-ink hover:bg-active-soft" data-testid="today-sched-link">
+              공정 일정 <ChevronRight size={15} />
+            </Link>
           </span>
         }
       />

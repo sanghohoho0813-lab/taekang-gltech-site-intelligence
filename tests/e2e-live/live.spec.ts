@@ -192,6 +192,10 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     await expect(page.getByTestId("m-eac")).toContainText("6.83억 원");
     await page.goto("/report");
     await expect(page.getByTestId("report-summary")).toBeVisible();
+    // 공정 일정: 공정 단계가 없는 현장은 전체 기간으로 계산하고 단계 등록을 안내
+    await page.goto("/schedule");
+    await expect(page.locator(`[data-testid="sched-site"][data-site="${siteId}"]`)).toContainText("물류센터");
+    await expect(page.locator(`[data-testid="sched-site"][data-site="${siteId}"]`).getByTestId("sched-no-stages")).toContainText("공정 단계");
     // 본사 출퇴근 현황: 박현장 현장 안 출근 + 보고도 현장 안에서 보냄 (서버 판정)
     await page.goto("/attendance");
     await expect(page.locator(`[data-testid="att-site"][data-site="${siteId}"]`).getByTestId("att-row")).toContainText("현장 안");

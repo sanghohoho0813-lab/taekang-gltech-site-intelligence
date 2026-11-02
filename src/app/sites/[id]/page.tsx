@@ -13,6 +13,8 @@ import { Donut, ProfitStack } from "@/components/domain/Charts";
 import { Delta, HealthPill, MethodChip } from "@/components/domain/Widgets";
 import { FieldReportForm } from "@/components/domain/FieldReportForm";
 import { EasyReport } from "@/components/easy/EasyReport";
+import { stagePlan } from "@/lib/domain/schedule";
+import { todayIso } from "@/lib/domain/format";
 import { useFrameCommand } from "@/components/device/frameCommands";
 import { CostEntryList } from "@/components/domain/CostEntryList";
 import { simulateApprovedClaims, type SiteFinancials } from "@/lib/domain/calc";
@@ -456,6 +458,14 @@ function ProgressTab({ site, f, canSeeMoney }: { site: Site; f: SiteFinancials; 
             <div className="flex items-center gap-2">
               <ProgressBar value={st.progressPct} label={`${st.name} 진행률`} tone={st.progressPct === 100 ? "ok" : "theme"} />
               <b className="w-10 text-right text-[0.82rem] num">{st.progressPct}%</b>
+              {canSeeMoney && (() => {
+                const sp = stagePlan(st, todayIso());
+                return (
+                  <span className={cx("w-20 shrink-0 text-right text-[0.72rem] font-semibold num", sp.status === "overdue" || sp.status === "not_started_late" ? "text-err" : sp.status === "behind" ? "text-warn" : "text-ink-3")} title="오늘 기준 계획 진척">
+                    계획 {Math.round(sp.plannedPct)}%
+                  </span>
+                );
+              })()}
             </div>
           </li>
         ))}

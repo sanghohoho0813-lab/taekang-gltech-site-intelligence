@@ -329,3 +329,36 @@ test.describe("현장 QR 출근", () => {
     await expect(page.getByTestId("att-in")).toBeVisible(); // 출근되지 않음
   });
 });
+
+test("공정 일정: 현장 보고에서 오늘 한 공정 진척(누르기) → 본사 공정 일정에 반영, 기한 지난 공정 표시", async ({ page }) => {
+  await asField(page);
+  await page.goto("/field/report");
+  await page.getByTestId("easy-site-site-a").click();
+  await page.getByTestId("work-chip").filter({ hasText: "커튼월 유닛 설치" }).click();
+  await page.getByTestId("easy-next").click();
+  // 오늘 고른 공정만 + − 로
+  await expect(page.getByTestId("easy-progress")).toContainText("커튼월 유닛 설치 (지금 45%)");
+  await page.getByTestId("stage-stepper-0-plus").click();
+  await page.getByTestId("stage-stepper-0-plus").click();
+  await page.getByTestId("easy-next").click();
+  await page.getByTestId("easy-next").click(); // 사진 없이
+  await page.getByTestId("issue-no").click();
+  await page.getByTestId("cost-no").click();
+  await expect(page.getByTestId("confirm-stages")).toContainText("커튼월 유닛 설치 45% → 55%");
+  await page.getByTestId("submit-report").click();
+  await expect(page.getByTestId("report-done")).toBeVisible();
+
+  // 본사
+  await page.evaluate(([pk]) => localStorage.setItem(pk, JSON.stringify({ ...JSON.parse(localStorage.getItem(pk)!), role: "manager" })), [PREFS] as const);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/schedule");
+  const a = page.locator('[data-testid="sched-site"][data-site="site-a"]');
+  await expect(a.getByTestId("sched-stage").filter({ hasText: "커튼월 유닛 설치" })).toContainText("55%");
+  await expect(a.getByTestId("sched-stage").filter({ hasText: "커튼월 유닛 제작" })).toHaveAttribute("data-status", "overdue");
+  await expect(page.getByTestId("sched-summary")).toContainText("기한 지났거나 시작 못 한 공정");
+  await expect(a.getByTestId("sched-head-late")).toContainText("기한 지난 공정 1개");
+  // 현장 상세 공정 탭에도 계획 진척 표시
+  await page.goto("/sites/site-a");
+  await page.getByRole("tab", { name: /공정/ }).click();
+  await expect(page.getByText(/계획 \d+%/).first()).toBeVisible();
+});

@@ -4,6 +4,7 @@
  * 저장소(Repository)는 결과 db를 영속화만 한다.
  */
 import { judgeGeo, validSample, type GeoSample } from "@/lib/domain/geo";
+import { siteProgressDelta } from "@/lib/domain/schedule";
 import type {
   ActionItem,
   ActionKpiSnapshot,
@@ -123,6 +124,8 @@ export interface FieldReportInput {
   source?: "FIELD" | "PC";
   /** 오늘 기준 공정률 (선택, 0~100) */
   progressPct?: number;
+  /** 오늘 작업한 공정 단계의 진척 (선택) — 현장 공정률에는 단계 기간 가중으로 변화량만 더한다 */
+  stageProgress?: { stageId: string; progressPct: number }[];
   /** 보고를 보낸 곳 — 휴대폰 위치 (서버가 현장 안/밖을 다시 판정) */
   geo?: { sample?: GeoSample | null; noLocation?: GeoStamp["reason"] };
 }
@@ -155,6 +158,12 @@ export function submitFieldReport(db0: DemoDB, input: FieldReportInput, ctx: Ctx
     }
   });
   if (input.progressPct !== undefined && (!Number.isFinite(input.progressPct) || input.progressPct < 0 || input.progressPct > 100)) errors.progressPct = "공정률은 0~100 사이";
+  const siteForStages = db0.sites.find((s) => s.id === input.siteId);
+  (input.stageProgress ?? []).forEach((c, i) => {
+    if (!siteForStages?.stages.some((st) => st.id === c?.stageId)) errors[`stageProgress.${i}`] = "공정 단계를 찾을 수 없습니다.";
+    else if (!Number.isFinite(c.progressPct) || c.progressPct < 0 || c.progressPct > 100) errors[`stageProgress.${i}`] = "공정률은 0~100 사이";
+  });
+  if ((input.stageProgress ?? []).length > 20) errors.stageProgress = "공정 단계가 너무 많습니다.";
   if (costs.length > 0 && !input.reason) errors.reason = "비용 발생 사유를 선택해주세요.";
   if ((input.photos ?? []).length > 3) errors.photos = "사진은 최대 3장";
   if (Object.keys(errors).length) throw new CommandError("입력값을 확인해주세요.", "VALIDATION", errors);
@@ -226,6 +235,21 @@ export function submitFieldReport(db0: DemoDB, input: FieldReportInput, ctx: Ctx
   db.reports.unshift(report);
 
   const site = requireSite(db, input.siteId);
+  const stageChanges = (input.stageProgress ?? []).map((c) => ({ stageId: c.stageId, progressPct: Math.round(c.progressPct) })).filter((c) => site.stages.find((st) => st.id === c.stageId)?.progressPct !== c.progressPct);
+  if (stageChanges.length) {
+    // 현장 공정률이 갑자기 튀지 않도록 단계 변화량만 기간 가중으로 더한다 (현장 공정률을 직접 고친 경우는 그 값 우선)
+    const delta = siteProgressDelta(site, stageChanges);
+    const names = stageChanges.map((c) => {
+      const st = site.stages.find((x) => x.id === c.stageId)!;
+      return `${st.name} ${st.progressPct}% → ${c.progressPct}%`;
+    });
+    site.stages = site.stages.map((st) => {
+      const c = stageChanges.find((x) => x.stageId === st.id);
+      return c ? { ...st, progressPct: c.progressPct } : st;
+    });
+    if (input.progressPct === undefined) site.progressPct = Math.max(0, Math.min(100, Math.round(site.progressPct + delta)));
+    log(db, ctx, "progress", `${site.shortName} 공정 진척 — ${names.join(", ")} (현장보고)`, input.siteId, `/sites/${input.siteId}`);
+  }
   if (input.progressPct !== undefined && Math.round(input.progressPct) !== site.progressPct) {
     log(db, ctx, "progress", `${site.shortName} 공정률 ${site.progressPct}% → ${Math.round(input.progressPct)}% (현장보고)`, input.siteId, `/sites/${input.siteId}`);
     site.progressPct = Math.round(input.progressPct);
