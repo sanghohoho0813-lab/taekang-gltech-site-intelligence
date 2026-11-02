@@ -257,7 +257,7 @@ for (const w of [390, 430, 768, 1024, 1280, 1440, 1920]) {
   test(`반응형 ${w}px: 가로 넘침 없음 (주요 화면)`, async ({ page }) => {
     await page.setViewportSize({ width: w, height: 900 });
     await freshStart(page);
-    for (const r of ["/dashboard", "/sites/site-a", "/field", "/insights", "/finance", "/report", "/partner", "/settings", "/why-ax", "/evidence", "/labor", "/orders", "/schedule", "/attendance"]) {
+    for (const r of ["/dashboard", "/sites/site-a", "/field", "/insights", "/finance", "/report", "/partner", "/settings", "/why-ax", "/evidence", "/labor", "/orders", "/schedule", "/attendance", "/data"]) {
       await page.goto(r);
       await page.waitForTimeout(250);
       const over = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
@@ -345,4 +345,65 @@ test("S7 고객 기초: 견적 문의·주문 요청(품목·수량) → 본사 
   await expect(item).toContainText("납품·시공일을 확정해 안내");
   const text = (await page.getByTestId("partner-portal").innerText()).replace(/\s+/g, " ");
   expect(text).not.toMatch(/\d+(\.\d+)?억|\d[\d,]*만 원|이익률|EAC/);
+});
+
+test("자료 이관·점검: 준비 점검 → 기성·입금 붙여넣기(오류→수정) → 넣기 → 중복 건너뜀 → 한글 엑셀(CP949) 팀 단가 → 취소", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await freshStart(page, { role: "manager" });
+  await page.goto("/data");
+  // 준비 점검: B현장은 작업 인원 보고 없음 → ‘가져오기’ 누르면 작업 인원 양식으로
+  const b = page.locator('[data-testid="ready-site"][data-site="site-b"]');
+  await expect(b.locator('[data-key="crew"]')).toHaveAttribute("data-status", "warn");
+  await b.locator('[data-key="crew"]').getByTestId("ready-import").click();
+  await expect(page.getByTestId("import-kind-crew")).toHaveAttribute("aria-checked", "true");
+
+  // 양식 내려받기 (내용 확인)
+  await page.getByTestId("import-kind-billing").click();
+  const dl = page.waitForEvent("download");
+  await page.getByTestId("import-template").click();
+  expect(readFileSync((await (await dl).path())!, "utf8")).toContain("현장,구분,날짜,금액,메모");
+
+  // 오류가 있으면 넣기 버튼이 없다
+  const bad = "현장,구분,날짜,금액\nB현장,기성,2026-03-31,120000000\nB현장,선금,2026-04-30,1000";
+  await page.getByTestId("import-text").fill(bad);
+  await expect(page.getByTestId("import-errors")).toContainText("3행");
+  await expect(page.getByTestId("import-apply")).toHaveCount(0);
+  const good = "현장,구분,날짜,금액\nB현장,기성,2026-03-31,120000000\nB현장,입금,2026-04-30,120000000";
+  await page.getByTestId("import-text").fill(good);
+  await expect(page.getByTestId("import-summary")).toContainText("B현장 — 기성 1건 · 입금 1건");
+  await expect(page.getByTestId("import-rebaseline")).toBeChecked();
+  await page.getByTestId("import-apply").click();
+  await expect(page.getByTestId("import-done")).toBeVisible();
+  // 같은 내용을 다시 붙여넣으면 모두 중복
+  await page.getByTestId("import-text").fill(good);
+  await expect(page.getByTestId("import-dups")).toContainText("이미 있음");
+  await expect(page.getByTestId("import-apply")).toHaveCount(0);
+  // 기성·수금 화면: 날짜가 가장 이른 기성이라 B현장 1차가 되고, 기존 기성은 2차부터로 밀린다
+  await page.goto("/finance");
+  await expect(page.locator("main")).toContainText(/B현장 1차\s*2026\.03\.31/);
+
+  // 한글 엑셀 ‘CSV(쉼표로 분리)’ = CP949 파일
+  await page.goto("/data");
+  await page.getByTestId("import-kind-rates").click();
+  await page.getByTestId("import-file").setInputFiles("tests/e2e/fixtures/rates_cp949.csv");
+  await expect(page.getByTestId("import-summary")).toContainText("실링팀 (엑셀): 새로 28만 원");
+  await expect(page.getByTestId("import-summary")).toContainText("유리 설치팀 (가상 협력업체): 새로 32만 원");
+  await page.getByTestId("import-apply").click();
+  await expect(page.getByTestId("import-done")).toBeVisible();
+  await page.goto("/labor");
+  await expect(page.locator('[data-testid="labor-site"][data-site="site-a"]').getByTestId("labor-rate").first()).toHaveValue("32");
+
+  // 가져오기 취소 → 단가 원래대로
+  await page.goto("/data");
+  const batch = page.getByTestId("import-batch").filter({ hasText: "팀 단가" });
+  await batch.getByTestId("import-undo").click();
+  await batch.getByTestId("import-undo-confirm").click();
+  await expect(batch).toHaveAttribute("data-undone", "1");
+  await page.goto("/labor");
+  await expect(page.locator('[data-testid="labor-site"][data-site="site-a"]').getByTestId("labor-team").first()).toContainText("기본 일당");
+
+  // 현장직원·발주처는 접근 불가
+  await page.getByTestId("demo-role").selectOption("field");
+  await page.goto("/data");
+  await expect(page.getByTestId("access-denied")).toBeVisible();
 });

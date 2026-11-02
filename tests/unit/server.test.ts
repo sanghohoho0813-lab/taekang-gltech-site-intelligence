@@ -298,6 +298,28 @@ describe("사진·이력·설정", () => {
     await svc.executeCommand(field, "workOrderStep", { workOrderId: mine.workOrderId, action: "receive" });
     expect((await svc.getView(manager)).db.workOrders!.find((w) => w.id === mine.workOrderId)!.status).toBe("received");
   });
+  it("자료 가져오기: 본사만 실행, 서버가 원문 재검증, DB 저장·취소, 팀 단가·가져오기 기록은 현장에 안 내려감", async () => {
+    const text = "현장,구분,날짜,금액\nA현장,기성,2026-03-01,40000000\nA현장,입금,2026-03-31,40000000";
+    await expect(svc.executeCommand(field, "importData", { kind: "billing", text, idempotencyKey: "imp-f" })).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(svc.executeCommand(partner, "importData", { kind: "billing", text, idempotencyKey: "imp-p" })).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(svc.executeCommand(manager, "importData", { kind: "billing", text: "현장,구분,날짜,금액\nZ현장,기성,2026-03-01,1", idempotencyKey: "imp-bad" })).rejects.toBeInstanceOf(CommandError);
+    const out = await svc.executeCommand(manager, "importData", { kind: "billing", text, idempotencyKey: "imp-1" });
+    const batchId = (out.result as { batchId: string }).batchId;
+    const db = await getDb();
+    const reloaded = await db.transaction((tx) => loadState(tx, ceo.companyId));
+    expect(reloaded.billings.find((b) => b.billedDate === "2026-03-01")).toMatchObject({ round: 1, importBatchId: batchId });
+    expect(reloaded.importBatches?.[0]).toMatchObject({ id: batchId, kind: "billing", count: 2 });
+    await svc.executeCommand(manager, "importData", { kind: "rates", text: "팀,단가\n유리 설치팀 (가상 협력업체),320000", idempotencyKey: "imp-r" });
+    const fv = (await svc.getView(field)).db;
+    expect(fv.settings?.teamRates).toBeUndefined();
+    expect(fv.settings?.laborDayRate).toBeGreaterThan(0);
+    expect(fv.importBatches).toEqual([]);
+    expect((await svc.getView(partner)).db.importBatches).toEqual([]);
+    await svc.executeCommand(manager, "undoImport", { batchId });
+    const after = await db.transaction((tx) => loadState(tx, ceo.companyId));
+    expect(after.billings.some((b) => b.importBatchId === batchId)).toBe(false);
+    expect(after.importBatches?.find((b) => b.id === batchId)?.undoneAt).toBeTruthy();
+  });
   it("활동 이력은 지워지지 않는다 (DB에는 계속 쌓임)", async () => {
     const db = await getDb();
     const [{ n }] = await db.query<{ n: string }>(`select count(*) as n from records where collection = 'activityLogs'`);

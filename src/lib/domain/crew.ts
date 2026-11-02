@@ -43,7 +43,8 @@ export function crewFlags(db: DemoDB, date: string, since: string): CrewFlag[] {
   const flags: CrewFlag[] = [];
   const site = (id: string) => db.sites.find((s) => s.id === id)?.shortName ?? "";
   const name = (id: string) => db.users.find((u) => u.id === id)?.name ?? "알 수 없음";
-  const today = crew(db).filter((c) => c.workDate === date);
+  // 가져온 과거 기록은 사진·위치·출근 확인 대상이 아니다
+  const today = crew(db).filter((c) => c.workDate === date && !c.imported);
   for (const c of today) {
     if (!c.photoId) flags.push({ kind: "no_photo", siteId: c.siteId, crewId: c.id, text: `${site(c.siteId)} ${c.team} ${c.headcount}명 — 단체 사진 없이 보냄` });
     if (c.geo?.status === "outside") flags.push({ kind: "outside", siteId: c.siteId, crewId: c.id, text: `${site(c.siteId)} ${c.team} — 현장에서 떨어진 곳에서 보냄` });

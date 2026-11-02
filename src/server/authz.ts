@@ -158,6 +158,7 @@ export function viewFor(m: Member, db: DemoDB): DemoDB {
     crewChecks: [],
     attendanceRequests: [],
     workOrders: [],
+    importBatches: [],
   } satisfies Partial<DemoDB>;
 
   if (m.role === "field") {
@@ -190,6 +191,8 @@ export function viewFor(m: Member, db: DemoDB): DemoDB {
       crewChecks: (db.crewChecks ?? []).filter((c) => sites.has(c.siteId)),
       attendanceRequests: (db.attendanceRequests ?? []).filter((q) => q.userId === m.id),
       workOrders: (db.workOrders ?? []).filter((w) => w.assigneeUserId === m.id),
+      // 팀별 단가(협력업체 단가)는 현장에 보내지 않는다 — 노무비 입력에 쓰는 기본 일당만
+      settings: db.settings ? { ...db.settings, teamRates: undefined } : db.settings,
     };
   }
 

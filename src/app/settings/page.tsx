@@ -21,6 +21,7 @@ import { ResetDialog } from "@/components/device/DemoBar";
 import { AiReadyButton } from "@/components/domain/Widgets";
 import { IS_LIVE } from "@/lib/mode";
 import { downloadCsv } from "@/lib/browser/download";
+import { readCsvFile } from "@/lib/browser/readCsv";
 
 const download = downloadCsv;
 
@@ -257,7 +258,7 @@ function DataSection() {
               className="sr-only"
               onChange={async (e) => {
                 const f = e.target.files?.[0];
-                if (f) validate(await f.text());
+                if (f) validate(await readCsvFile(f).catch((err: Error) => err.message));
                 e.target.value = "";
               }}
             />

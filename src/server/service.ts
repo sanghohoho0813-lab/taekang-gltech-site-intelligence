@@ -147,6 +147,7 @@ export async function setupCompany(input: SetupInput): Promise<{ token: string; 
           crewChecks: [],
           attendanceRequests: [],
           workOrders: [],
+          importBatches: [],
           settings: DEFAULT_SETTINGS,
           rev: 1,
         };

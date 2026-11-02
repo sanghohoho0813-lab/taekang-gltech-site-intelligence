@@ -7,6 +7,7 @@ import type { DemoDB } from "@/lib/domain/types";
 import { todayIso } from "@/lib/domain/format";
 import { laborAttentionCount } from "@/lib/domain/labor";
 import { shiftDate } from "@/lib/domain/attendance";
+import { readinessAll } from "@/lib/domain/readiness";
 import { IS_LIVE } from "@/lib/mode";
 import { Card, CardHeader, cx } from "@/components/ui/primitives";
 
@@ -20,6 +21,7 @@ export function PendingBoard({ db }: { db: DemoDB }) {
     { key: "wo-late", label: "기한 지난·미접수 작업지시", n: wos.filter((w) => !["done", "confirmed"].includes(w.status) && ((w.dueDate && w.dueDate < today) || w.status === "sent")).length, href: "/orders" },
     { key: "partner", label: "회신 안 한 고객 요청 (견적·주문 등)", n: db.partnerRequests.filter((r) => r.status !== "answered").length, href: "/insights#requests" },
     { key: "labor", label: "인건비 확인 필요 현장", n: laborAttentionCount(db, shiftDate(today, -29), today), href: "/labor" },
+    { key: "ready", label: "빠진 운영 자료 (현장 위치·담당·기성 이력 등)", n: readinessAll(db, today).missing, href: "/data" },
     ...(IS_LIVE ? [{ key: "cost", label: "공무 확인 대기 원가", n: db.costEntries.filter((e) => e.status === "pending").length, href: "/admin?tab=review" }] : []),
   ];
   const total = items.reduce((a, b) => a + b.n, 0);

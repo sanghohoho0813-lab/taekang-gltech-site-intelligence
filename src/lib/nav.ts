@@ -50,6 +50,7 @@ export const NAV: NavItem[] = [
   { href: "/insights", label: "위험 분석·조치", icon: "ShieldAlert", group: "ax", roles: INTERNAL, alsoAccess: ["field"], desc: "규칙 기반 진단 → 조치 → 결과" },
   { href: "/evidence", label: "실증 Evidence", icon: "BadgeCheck", group: "ax", roles: INTERNAL, desc: "Proof Event·KPI·12주 계획" },
   { href: "/why-ax", label: "기획의도", icon: "Lightbulb", group: "ax", roles: ALL_INTERNAL, desc: "왜 이 AX인가", only: "demo" },
+  { href: "/data", label: "자료 이관·점검", icon: "FileUp", group: "admin", roles: INTERNAL, desc: "지난 기성·변경공사·출력·원가 엑셀 가져오기 · 현장별 자료 준비 점검" },
   { href: "/admin", label: "운영 관리", icon: "Building2", group: "admin", roles: INTERNAL, desc: "현장 등록·사용자·운영 설정·공무 확인", only: "live" },
   { href: "/settings", label: "설정", icon: "Settings", group: "admin", roles: ["ceo", "manager", "field", "partner"], desc: IS_LIVE ? "화면·위험 기준·데이터 가져오기" : "테마·글자·역할·데모·데이터" },
   { href: "/presentation", label: "시연 모드", icon: "Presentation", group: "admin", roles: INTERNAL, desc: "실제 화면 Guided Demo", only: "demo" },

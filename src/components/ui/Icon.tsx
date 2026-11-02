@@ -17,6 +17,7 @@ import {
   CalendarClock,
   ClipboardCheck,
   HardHat,
+  FileUp,
   type LucideIcon,
 } from "lucide-react";
 
@@ -39,6 +40,7 @@ const MAP: Record<string, LucideIcon> = {
   CalendarClock,
   ClipboardCheck,
   HardHat,
+  FileUp,
 };
 
 export function NavIcon({ name, className, size = 20 }: { name: string; className?: string; size?: number }) {

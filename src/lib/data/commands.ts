@@ -746,7 +746,21 @@ export interface CsvCostRow {
 }
 
 export function importCostRows(db0: DemoDB, rows: CsvCostRow[], idempotencyKey: string, ctx: Ctx) {
-  if (!rows.length) throw new CommandError("가져올 행이 없습니다.");
+  if (!Array.isArray(rows) || !rows.length) throw new CommandError("가져올 행이 없습니다.");
+  if (rows.length > 500) throw new CommandError("한 번에 최대 500행까지 가져올 수 있습니다.");
+  // 서버는 브라우저 검증을 믿지 않고 행마다 다시 확인한다
+  const IMPACTS = ["additional", "within_forecast"];
+  const REASONS = ["design_change", "price_increase", "quantity_increase", "rework", "schedule", "planned", "other"];
+  rows.forEach((r, i) => {
+    const at = `${r?.line ?? i + 2}행`;
+    if (!r || typeof r !== "object") throw new CommandError(`${at}: 형식 오류`, "VALIDATION");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(r.date))) throw new CommandError(`${at}: 날짜 형식 YYYY-MM-DD`, "VALIDATION");
+    if (!COST_CATEGORIES.includes(r.category)) throw new CommandError(`${at}: 알 수 없는 원가 항목`, "VALIDATION");
+    if (!Number.isInteger(r.amount) || r.amount <= 0 || r.amount > MAX_AMOUNT) throw new CommandError(`${at}: 금액 확인`, "VALIDATION");
+    if (!IMPACTS.includes(r.forecast_impact)) throw new CommandError(`${at}: 성격(additional·within_forecast) 확인`, "VALIDATION");
+    if (!REASONS.includes(r.reason)) throw new CommandError(`${at}: 사유 확인`, "VALIDATION");
+    if (typeof r.note !== "string" || r.note.length > 200) throw new CommandError(`${at}: 메모 200자 이내`, "VALIDATION");
+  });
   const db = clone(db0);
   claimKey(db, idempotencyKey);
   const at = nowIso(ctx);

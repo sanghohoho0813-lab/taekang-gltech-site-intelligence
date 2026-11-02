@@ -1,0 +1,395 @@
+/**
+ * 실제 자료 이관 (계약 3단계 ‘실제 자료 연결’) — 엑셀에서 저장한 CSV를 검증·미리보기·반영하는 순수 함수.
+ * 브라우저(미리보기)와 서버(반영 직전 재검증)가 같은 함수를 쓴다. 서버는 브라우저가 보낸 행을 믿지 않고 원문을 다시 검사한다.
+ *
+ * 종류: 기성·입금 / 변경공사 / 작업 인원(출력) 이력 / 팀 단가 / 원가
+ * - 열 이름은 한글·영문 모두 받는다 (예: 현장 = site = site_code)
+ * - 현장은 현장코드·약칭·현장명 중 하나로 찾는다
+ * - DB에 이미 같은 기록이 있으면 ‘중복’으로 건너뛴다 (같은 파일을 두 번 올려도 두 번 들어가지 않게)
+ */
+import type { ChangeOrderStatus, CostCategory, CostReason, CrewCheck, DemoDB, ForecastImpact, ImportKind, Site } from "./types";
+import { COST_CATEGORIES } from "./labels";
+import { parseCsvText } from "./csv";
+
+export type { ImportKind };
+
+export interface ImportIssue {
+  line: number;
+  field: string;
+  message: string;
+}
+
+export interface BillingRow { line: number; siteId: string; kind: "billing" | "payment"; date: string; amount: number; note: string }
+export interface ChangeRow { line: number; siteId: string; title: string; amount: number; status: ChangeOrderStatus; requestedDate: string; approvedAmount?: number; decidedDate?: string; note: string }
+export interface CrewRow { line: number; siteId: string; date: string; team: string; kind: CrewCheck["kind"]; headcount: number }
+export interface RateRow { line: number; team: string; dayRate: number; before?: number }
+export interface CostRow { line: number; siteId: string; date: string; category: CostCategory; amount: number; impact: Exclude<ForecastImpact, "baseline">; reason: CostReason; note: string }
+
+export type ImportRow = BillingRow | ChangeRow | CrewRow | RateRow | CostRow;
+
+export interface ImportPlan {
+  kind: ImportKind;
+  rows: ImportRow[];
+  errors: ImportIssue[];
+  /** DB에 이미 같은 기록이 있어 건너뛸 행 */
+  duplicates: { line: number; text: string }[];
+  /** 현장별 요약 (미리보기용) */
+  summary: { siteId?: string; label: string; count: number; amount?: number; amount2?: number }[];
+}
+
+export const MAX_IMPORT_ROWS = 500;
+const MAX_AMOUNT = 5_000_000_000; // 1건 50억 원 (현장 보고·기성 입력과 같은 상한)
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+interface ColumnSpec {
+  key: string;
+  label: string;
+  aliases: string[];
+  required: boolean;
+  desc: string;
+  example: string;
+}
+
+const SITE_COL: ColumnSpec = { key: "site", label: "현장", aliases: ["현장", "현장코드", "현장명", "site", "site_code"], required: true, desc: "현장코드·약칭·현장명 중 하나 (예: A현장)", example: "A현장" };
+
+export const IMPORT_SPECS: Record<ImportKind, { title: string; desc: string; columns: ColumnSpec[]; sample: string[][] }> = {
+  billing: {
+    title: "기성·입금 이력",
+    desc: "진행 중 현장의 지난 기성청구(확정)와 입금. 차수는 날짜 순서로 자동으로 매깁니다.",
+    columns: [
+      SITE_COL,
+      { key: "kind", label: "구분", aliases: ["구분", "종류", "kind", "type"], required: true, desc: "기성 또는 입금", example: "기성" },
+      { key: "date", label: "날짜", aliases: ["날짜", "일자", "청구일", "입금일", "date"], required: true, desc: "YYYY-MM-DD (청구일·입금일)", example: "2026-08-31" },
+      { key: "amount", label: "금액", aliases: ["금액", "금액(원)", "amount"], required: true, desc: "원 단위, 공급가액(부가세 별도), 쉼표 허용", example: "150000000" },
+      { key: "note", label: "메모", aliases: ["메모", "비고", "note"], required: false, desc: "200자 이내", example: "1차 기성" },
+    ],
+    sample: [
+      ["현장", "구분", "날짜", "금액", "메모"],
+      ["A현장", "기성", "2026-08-31", "150000000", "1차 기성 (예시)"],
+      ["A현장", "입금", "2026-09-30", "150000000", "1차 입금 (예시)"],
+    ],
+  },
+  change: {
+    title: "변경공사",
+    desc: "설계변경·추가공사 이력. ‘승인’만 계약금액에 더해지고, 나머지는 검토·청구 중으로 표시됩니다.",
+    columns: [
+      SITE_COL,
+      { key: "title", label: "제목", aliases: ["제목", "공사명", "내용", "title"], required: true, desc: "80자 이내", example: "3층 유리 사양 변경" },
+      { key: "amount", label: "금액", aliases: ["금액", "청구금액", "요청금액", "amount"], required: true, desc: "청구(요청) 금액, 원 단위", example: "25000000" },
+      { key: "status", label: "상태", aliases: ["상태", "status"], required: true, desc: "검토 · 청구 · 승인 · 반려", example: "승인" },
+      { key: "requested", label: "요청일", aliases: ["요청일", "청구일", "날짜", "requested_date", "date"], required: true, desc: "YYYY-MM-DD", example: "2026-07-15" },
+      { key: "approved", label: "승인금액", aliases: ["승인금액", "approved_amount"], required: false, desc: "승인일 때만. 비우면 청구 금액과 같게", example: "23000000" },
+      { key: "decided", label: "결정일", aliases: ["결정일", "승인일", "decided_date"], required: false, desc: "승인·반려일 (비우면 요청일)", example: "2026-08-01" },
+      { key: "note", label: "메모", aliases: ["메모", "비고", "note"], required: false, desc: "200자 이내", example: "" },
+    ],
+    sample: [
+      ["현장", "제목", "금액", "상태", "요청일", "승인금액", "결정일", "메모"],
+      ["A현장", "3층 남측 유리 사양 변경 (예시)", "25000000", "승인", "2026-07-15", "23000000", "2026-08-01", ""],
+      ["A현장", "로비 고정창 추가 (예시)", "8000000", "청구", "2026-10-10", "", "", "발주처 검토 중"],
+    ],
+  },
+  crew: {
+    title: "작업 인원(출력) 이력",
+    desc: "출력일보의 날짜·팀·인원. 인건비 추정(투입·인건비 화면)의 근거가 됩니다. 사진·위치 확인 표시는 붙지 않습니다.",
+    columns: [
+      SITE_COL,
+      { key: "date", label: "날짜", aliases: ["날짜", "일자", "작업일", "date"], required: true, desc: "YYYY-MM-DD (오늘 이전)", example: "2026-10-20" },
+      { key: "team", label: "팀", aliases: ["팀", "팀명", "업체", "team"], required: true, desc: "팀·업체 이름 30자 이내", example: "유리 설치팀" },
+      { key: "kind", label: "구분", aliases: ["구분", "직영외주", "kind"], required: false, desc: "직영 또는 외주 (비우면 외주)", example: "외주" },
+      { key: "headcount", label: "인원", aliases: ["인원", "인원수", "명", "headcount"], required: true, desc: "1~300명", example: "4" },
+    ],
+    sample: [
+      ["현장", "날짜", "팀", "구분", "인원"],
+      ["A현장", "2026-10-20", "유리 설치팀 (예시)", "외주", "4"],
+      ["A현장", "2026-10-20", "실링팀 (예시)", "직영", "2"],
+    ],
+  },
+  rates: {
+    title: "팀 단가",
+    desc: "팀별 1인 1일 기준 단가. 투입·인건비 추정에 쓰입니다. 같은 팀이 있으면 새 단가로 바뀝니다.",
+    columns: [
+      { key: "team", label: "팀", aliases: ["팀", "팀명", "업체", "team"], required: true, desc: "팀·업체 이름 30자 이내", example: "유리 설치팀" },
+      { key: "rate", label: "단가", aliases: ["단가", "1일 단가", "일당", "단가(원)", "day_rate"], required: true, desc: "원 단위 1만~200만 (예: 300000)", example: "300000" },
+    ],
+    sample: [
+      ["팀", "단가"],
+      ["유리 설치팀 (예시)", "320000"],
+      ["실링팀 (예시)", "280000"],
+    ],
+  },
+  cost: {
+    title: "원가",
+    desc: "자재·노무·외주·장비·경비 집행 내역. 손익이 바로 다시 계산됩니다.",
+    columns: [
+      SITE_COL,
+      { key: "date", label: "날짜", aliases: ["날짜", "발생일", "date"], required: true, desc: "YYYY-MM-DD", example: "2026-10-20" },
+      { key: "category", label: "항목", aliases: ["항목", "원가항목", "category"], required: true, desc: "자재 · 노무 · 외주 · 장비 · 경비", example: "자재" },
+      { key: "amount", label: "금액", aliases: ["금액", "amount"], required: true, desc: "원 단위, 공급가액", example: "12000000" },
+      { key: "impact", label: "성격", aliases: ["성격", "forecast_impact"], required: false, desc: "계획 내(기본) 또는 추가 — 추가는 예상 총원가가 늘어남", example: "계획 내" },
+      { key: "reason", label: "사유", aliases: ["사유", "reason"], required: false, desc: "계획 · 설계변경 · 단가인상 · 물량증가 · 재시공 · 공기 · 기타 (기본 계획)", example: "계획" },
+      { key: "note", label: "메모", aliases: ["메모", "비고", "note"], required: false, desc: "200자 이내", example: "알루미늄 프레임 입고" },
+    ],
+    sample: [
+      ["현장", "날짜", "항목", "금액", "성격", "사유", "메모"],
+      ["A현장", "2026-10-20", "자재", "12000000", "계획 내", "계획", "알루미늄 프레임 2차 입고 (예시)"],
+      ["A현장", "2026-10-21", "노무", "3500000", "계획 내", "계획", "유리 시공 인력 (예시)"],
+    ],
+  },
+};
+
+const norm = (s: string) => s.replace(/^﻿/, "").trim().toLowerCase().replace(/\s+/g, "");
+
+/** 원 단위 금액: 쉼표·공백·‘원’ 허용 */
+export function parseWonCell(v: string): number {
+  const raw = v.replace(/[,\s원₩]/g, "");
+  return /^\d+$/.test(raw) ? Number(raw) : NaN;
+}
+
+function validDate(s: string): boolean {
+  if (!DATE_RE.test(s)) return false;
+  const d = new Date(`${s}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
+}
+
+/** 엑셀에서 2026.10.20 / 2026/10/20 / 2026-10-20 으로 저장된 날짜를 받아준다 */
+export function normDate(v: string): string {
+  const m = v.trim().match(/^(\d{4})[-./](\d{1,2})[-./](\d{1,2})\.?$/);
+  return m ? `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}` : v.trim();
+}
+
+export function findSite(db: DemoDB, ref: string): Site | undefined {
+  const r = norm(ref);
+  if (!r) return undefined;
+  return db.sites.find((s) => norm(s.code) === r) ?? db.sites.find((s) => norm(s.shortName) === r) ?? db.sites.find((s) => norm(s.name) === r);
+}
+
+const CHANGE_STATUS: Record<string, ChangeOrderStatus> = { 검토: "review", 검토중: "review", review: "review", 청구: "submitted", 청구중: "submitted", 승인대기: "submitted", submitted: "submitted", 승인: "approved", approved: "approved", 반려: "rejected", rejected: "rejected" };
+const CATEGORY_IN: Record<string, CostCategory> = { 자재: "material", 자재비: "material", material: "material", 노무: "labor", 노무비: "labor", 인건비: "labor", labor: "labor", 외주: "subcontract", 외주비: "subcontract", subcontract: "subcontract", 장비: "equipment", 장비비: "equipment", equipment: "equipment", 경비: "overhead", 현장경비: "overhead", overhead: "overhead" };
+const REASON_IN: Record<string, CostReason> = { 계획: "planned", planned: "planned", 설계변경: "design_change", design_change: "design_change", 단가인상: "price_increase", price_increase: "price_increase", 물량증가: "quantity_increase", quantity_increase: "quantity_increase", 재시공: "rework", rework: "rework", 공기: "schedule", 공기지연: "schedule", schedule: "schedule", 기타: "other", other: "other" };
+
+export const CSV_ENCODING_HINT = "엑셀에서 ‘CSV UTF-8’ 또는 ‘CSV(쉼표로 분리)’로 저장한 파일 모두 읽습니다.";
+
+/** CSV 원문 → 검증·중복 확인·요약. today는 서버 기준 날짜 (작업 인원 미래 날짜 거부) */
+export function planImport(db: DemoDB, kind: ImportKind, text: string, today: string): ImportPlan {
+  const spec = IMPORT_SPECS[kind];
+  const plan: ImportPlan = { kind, rows: [], errors: [], duplicates: [], summary: [] };
+  if (!spec) {
+    plan.errors.push({ line: 1, field: "kind", message: "알 수 없는 자료 종류" });
+    return plan;
+  }
+  if (typeof text !== "string" || text.length > 1_000_000) {
+    plan.errors.push({ line: 1, field: "file", message: "파일이 너무 큽니다 (1MB 이하)." });
+    return plan;
+  }
+  const table = parseCsvText(text);
+  if (!table.length) {
+    plan.errors.push({ line: 1, field: "file", message: "빈 파일입니다." });
+    return plan;
+  }
+  const header = table[0].map(norm);
+  const col: Record<string, number> = {};
+  for (const c of spec.columns) col[c.key] = header.findIndex((h) => c.aliases.some((a) => norm(a) === h));
+  const missing = spec.columns.filter((c) => c.required && col[c.key] < 0).map((c) => c.label);
+  if (missing.length) {
+    plan.errors.push({ line: 1, field: "header", message: `첫 줄에 필요한 열이 없습니다: ${missing.join(", ")} (양식을 내려받아 첫 줄을 그대로 쓰세요)` });
+    return plan;
+  }
+  const body = table.slice(1);
+  if (!body.length) {
+    plan.errors.push({ line: 2, field: "file", message: "데이터 행이 없습니다." });
+    return plan;
+  }
+  if (body.length > MAX_IMPORT_ROWS) plan.errors.push({ line: 1, field: "file", message: `한 번에 최대 ${MAX_IMPORT_ROWS}행까지 가져올 수 있습니다 (${body.length}행).` });
+
+  body.slice(0, MAX_IMPORT_ROWS).forEach((cells, i) => {
+    const line = i + 2;
+    const get = (k: string) => (col[k] >= 0 ? String(cells[col[k]] ?? "").trim() : "");
+    const err = (field: string, message: string) => plan.errors.push({ line, field, message });
+    const before = plan.errors.length;
+    const siteOf = (): Site | undefined => {
+      const ref = get("site");
+      const s = findSite(db, ref);
+      if (!s) err("현장", ref ? `‘${ref}’ 현장을 찾을 수 없습니다 (현장코드·약칭·현장명)` : "현장을 적어주세요");
+      return s;
+    };
+    const amountOf = (k: string, label: string, required = true): number | undefined => {
+      const v = get(k);
+      if (!v && !required) return undefined;
+      const n = parseWonCell(v);
+      if (!Number.isInteger(n) || n <= 0) err(label, `${label}은 0보다 큰 원 단위 숫자`);
+      else if (n > MAX_AMOUNT) err(label, `${label}이 너무 큽니다 (1건 50억 원 이하)`);
+      return n;
+    };
+    const dateOf = (k: string, label: string, required = true): string | undefined => {
+      const v = normDate(get(k));
+      if (!v && !required) return undefined;
+      if (!validDate(v)) err(label, `${label} 형식 YYYY-MM-DD (예: 2026-10-20)`);
+      return v;
+    };
+    const noteOf = () => {
+      const n = get("note");
+      if (n.length > 200) err("메모", "메모는 200자 이내");
+      return n.slice(0, 200);
+    };
+
+    if (kind === "billing") {
+      const site = siteOf();
+      const k = norm(get("kind"));
+      const bk = k === "기성" || k === "기성청구" || k === "billing" ? "billing" : k === "입금" || k === "수금" || k === "payment" ? "payment" : null;
+      if (!bk) err("구분", "구분은 ‘기성’ 또는 ‘입금’");
+      const date = dateOf("date", "날짜");
+      const amount = amountOf("amount", "금액");
+      const note = noteOf();
+      if (plan.errors.length === before && site && bk && date && amount) plan.rows.push({ line, siteId: site.id, kind: bk, date, amount, note });
+    } else if (kind === "change") {
+      const site = siteOf();
+      const title = get("title");
+      if (!title) err("제목", "제목을 적어주세요");
+      else if (title.length > 80) err("제목", "제목은 80자 이내");
+      const amount = amountOf("amount", "금액");
+      const status = CHANGE_STATUS[norm(get("status"))];
+      if (!status) err("상태", "상태는 검토 · 청구 · 승인 · 반려 중 하나");
+      const requestedDate = dateOf("requested", "요청일");
+      const approvedAmount = amountOf("approved", "승인금액", false);
+      if (approvedAmount !== undefined && status && status !== "approved") err("승인금액", "승인금액은 ‘승인’일 때만 적습니다");
+      const decidedDate = dateOf("decided", "결정일", false);
+      if (decidedDate && requestedDate && decidedDate < requestedDate) err("결정일", "결정일이 요청일보다 빠릅니다");
+      const note = noteOf();
+      if (plan.errors.length === before && site && status && requestedDate && amount)
+        plan.rows.push({ line, siteId: site.id, title, amount, status, requestedDate, ...(status === "approved" ? { approvedAmount: approvedAmount ?? amount } : {}), ...(decidedDate ? { decidedDate } : {}), note });
+    } else if (kind === "crew") {
+      const site = siteOf();
+      const date = dateOf("date", "날짜");
+      if (date && validDate(date) && date > today) err("날짜", "오늘 이후 날짜는 넣을 수 없습니다");
+      const team = get("team").replace(/\s+/g, " ");
+      if (!team) err("팀", "팀 이름을 적어주세요");
+      else if (team.length > 30) err("팀", "팀 이름은 30자 이내");
+      const kRaw = norm(get("kind"));
+      const ck = !kRaw || kRaw === "외주" || kRaw === "subcontract" ? "subcontract" : kRaw === "직영" || kRaw === "direct" ? "direct" : null;
+      if (!ck) err("구분", "구분은 ‘직영’ 또는 ‘외주’");
+      const hc = Number(get("headcount").replace(/[명\s,]/g, ""));
+      if (!Number.isInteger(hc) || hc < 1 || hc > 300) err("인원", "인원은 1~300 사이 정수");
+      if (plan.errors.length === before && site && date && ck) plan.rows.push({ line, siteId: site.id, date, team, kind: ck, headcount: hc });
+    } else if (kind === "rates") {
+      const team = get("team").replace(/\s+/g, " ");
+      if (!team) err("팀", "팀 이름을 적어주세요");
+      else if (team.length > 30) err("팀", "팀 이름은 30자 이내");
+      const rate = parseWonCell(get("rate"));
+      if (!Number.isInteger(rate) || rate < 10_000 || rate > 2_000_000) err("단가", "단가는 원 단위 1만~200만 (예: 300000)");
+      if (plan.errors.length === before) {
+        const prev = (db.settings?.teamRates ?? []).find((t) => t.team.toLowerCase() === team.toLowerCase());
+        plan.rows.push({ line, team, dayRate: rate, ...(prev ? { before: prev.dayRate } : {}) });
+      }
+    } else if (kind === "cost") {
+      const site = siteOf();
+      const date = dateOf("date", "날짜");
+      const category = CATEGORY_IN[norm(get("category"))];
+      if (!category || !COST_CATEGORIES.includes(category)) err("항목", "항목은 자재 · 노무 · 외주 · 장비 · 경비 중 하나");
+      const amount = amountOf("amount", "금액");
+      const iRaw = norm(get("impact"));
+      const impact = !iRaw || iRaw === "계획내" || iRaw === "within_forecast" ? "within_forecast" : iRaw === "추가" || iRaw === "additional" ? "additional" : null;
+      if (!impact) err("성격", "성격은 ‘계획 내’ 또는 ‘추가’");
+      const rRaw = norm(get("reason"));
+      const reason = rRaw ? REASON_IN[rRaw] : "planned";
+      if (!reason) err("사유", "사유는 계획 · 설계변경 · 단가인상 · 물량증가 · 재시공 · 공기 · 기타 중 하나");
+      const note = noteOf();
+      if (plan.errors.length === before && site && date && category && amount && impact && reason) plan.rows.push({ line, siteId: site.id, date, category, amount, impact, reason, note });
+    }
+  });
+
+  // 같은 파일 안 팀 단가 중복
+  if (kind === "rates") {
+    const seen = new Map<string, number>();
+    for (const r of plan.rows as RateRow[]) {
+      const k = r.team.toLowerCase();
+      if (seen.has(k)) plan.errors.push({ line: r.line, field: "팀", message: `${seen.get(k)}행과 같은 팀이 두 번 있습니다` });
+      seen.set(k, r.line);
+    }
+    const total = new Set([...(db.settings?.teamRates ?? []).map((t) => t.team.toLowerCase()), ...seen.keys()]).size;
+    if (total > 60) plan.errors.push({ line: 1, field: "file", message: `팀 단가는 최대 60팀까지 (합치면 ${total}팀)` });
+  }
+
+  // DB에 이미 있는 기록 → 중복으로 건너뜀
+  const keep: ImportRow[] = [];
+  for (const r of plan.rows) {
+    const dup = duplicateOf(db, kind, r);
+    if (dup) plan.duplicates.push({ line: r.line, text: dup });
+    else keep.push(r);
+  }
+  plan.rows = keep;
+
+  // 기성·입금: 현장별 입금 합계가 기성 합계를 넘으면 미수금이 음수가 된다
+  if (kind === "billing") {
+    for (const s of db.sites) {
+      const rows = (plan.rows as BillingRow[]).filter((r) => r.siteId === s.id);
+      if (!rows.length) continue;
+      const billed = db.billings.filter((b) => b.siteId === s.id && b.status === "confirmed").reduce((a, b) => a + b.amount, 0) + rows.filter((r) => r.kind === "billing").reduce((a, r) => a + r.amount, 0);
+      const paid = db.payments.filter((p) => p.siteId === s.id).reduce((a, p) => a + p.amount, 0) + rows.filter((r) => r.kind === "payment").reduce((a, r) => a + r.amount, 0);
+      if (paid > billed) {
+        const last = rows.filter((r) => r.kind === "payment").at(-1);
+        plan.errors.push({ line: last?.line ?? 1, field: "금액", message: `${s.shortName}: 입금 합계(${won(paid)})가 기성 합계(${won(billed)})보다 많습니다 — 선급금은 기성으로 먼저 넣어주세요` });
+      }
+    }
+  }
+
+  plan.errors.sort((a, b) => a.line - b.line);
+  plan.summary = summarize(db, kind, plan.rows);
+  return plan;
+}
+
+const won = (n: number) => `${Math.round(n / 10_000).toLocaleString("ko-KR")}만 원`;
+
+function duplicateOf(db: DemoDB, kind: ImportKind, r: ImportRow): string | null {
+  if (kind === "billing") {
+    const b = r as BillingRow;
+    if (b.kind === "billing" && db.billings.some((x) => x.siteId === b.siteId && x.billedDate === b.date && x.amount === b.amount)) return `${b.date} 기성 ${won(b.amount)} — 이미 있음`;
+    if (b.kind === "payment" && db.payments.some((x) => x.siteId === b.siteId && x.receivedDate === b.date && x.amount === b.amount)) return `${b.date} 입금 ${won(b.amount)} — 이미 있음`;
+  }
+  if (kind === "change") {
+    const c = r as ChangeRow;
+    if (db.changeOrders.some((x) => x.siteId === c.siteId && x.title.trim() === c.title && x.amount === c.amount)) return `‘${c.title}’ ${won(c.amount)} — 이미 있음`;
+  }
+  if (kind === "crew") {
+    const c = r as CrewRow;
+    if ((db.crewChecks ?? []).some((x) => x.siteId === c.siteId && x.workDate === c.date && x.team.toLowerCase() === c.team.toLowerCase())) return `${c.date} ${c.team} — 이미 있음 (현장에서 보낸 기록 유지)`;
+  }
+  if (kind === "cost") {
+    const c = r as CostRow;
+    if (db.costEntries.some((x) => x.siteId === c.siteId && x.date === c.date && x.category === c.category && x.amount === c.amount && x.status !== "voided" && (x.note ?? "") === (c.note || "자료 가져오기"))) return `${c.date} ${won(c.amount)} — 이미 있음`;
+  }
+  return null;
+}
+
+function summarize(db: DemoDB, kind: ImportKind, rows: ImportRow[]): ImportPlan["summary"] {
+  if (kind === "rates") return (rows as RateRow[]).map((r) => ({ label: `${r.team}: ${r.before ? `${won(r.before)} → ` : "새로 "}${won(r.dayRate)}`, count: 1 }));
+  const bySite = new Map<string, ImportRow[]>();
+  for (const r of rows) {
+    const id = (r as { siteId: string }).siteId;
+    bySite.set(id, [...(bySite.get(id) ?? []), r]);
+  }
+  return [...bySite.entries()].map(([siteId, list]) => {
+    const name = db.sites.find((s) => s.id === siteId)?.shortName ?? siteId;
+    if (kind === "billing") {
+      const b = list as BillingRow[];
+      const bill = b.filter((x) => x.kind === "billing");
+      const pay = b.filter((x) => x.kind === "payment");
+      return { siteId, label: `${name} — 기성 ${bill.length}건 · 입금 ${pay.length}건`, count: b.length, amount: bill.reduce((a, x) => a + x.amount, 0), amount2: pay.reduce((a, x) => a + x.amount, 0) };
+    }
+    if (kind === "change") {
+      const c = list as ChangeRow[];
+      const ap = c.filter((x) => x.status === "approved");
+      return { siteId, label: `${name} — 변경공사 ${c.length}건 (승인 ${ap.length}건)`, count: c.length, amount: c.reduce((a, x) => a + x.amount, 0), amount2: ap.reduce((a, x) => a + (x.approvedAmount ?? 0), 0) };
+    }
+    if (kind === "crew") {
+      const c = list as CrewRow[];
+      return { siteId, label: `${name} — ${new Set(c.map((x) => x.date)).size}일 · ${new Set(c.map((x) => x.team.toLowerCase())).size}팀`, count: c.length, amount: c.reduce((a, x) => a + x.headcount, 0) };
+    }
+    const c = list as CostRow[];
+    return { siteId, label: `${name} — 원가 ${c.length}건`, count: c.length, amount: c.reduce((a, x) => a + x.amount, 0) };
+  });
+}
+
+/** 양식(CSV 원문) */
+export function importTemplate(kind: ImportKind): string {
+  return IMPORT_SPECS[kind].sample.map((r) => r.map((c) => (/[",\n]/.test(c) ? `"${c.replace(/"/g, '""')}"` : c)).join(",")).join("\n");
+}

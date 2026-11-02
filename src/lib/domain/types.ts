@@ -159,6 +159,27 @@ export interface CrewCheck {
   by: string;
   /** 같은 날 같은 팀을 다시 보내면 인원이 바뀐 이력 */
   history?: { at: string; by: string; headcount: number }[];
+  /** 본사가 출력일보에서 가져온 과거 기록 (사진·위치 확인 대상 아님) */
+  imported?: boolean;
+  importBatchId?: string;
+}
+
+export type ImportKind = "billing" | "change" | "crew" | "rates" | "cost";
+
+/** 자료 가져오기 1회 — 7일 안에는 통째로 취소할 수 있도록 이전 값을 함께 남긴다 */
+export interface ImportBatch {
+  id: string;
+  kind: ImportKind;
+  at: string;
+  by: string;
+  count: number;
+  skipped: number;
+  siteIds: string[];
+  /** 기준선을 다시 잡기 전 값 (취소 시 되돌림) */
+  prevBaseline?: Record<string, FinancialSnapshot | null>;
+  prevTeamRates?: { team: string; dayRate: number }[];
+  undoneAt?: string;
+  undoneBy?: string;
 }
 
 /** 위치 기록 동의 (개인위치정보 수집 동의) */
@@ -227,6 +248,8 @@ export interface CostEntry {
   voidReason?: string;
   editedAt?: string;
   editHistory?: { at: string; by: string; before: { amount: number; category: CostCategory; note: string } }[];
+  /** 자료 가져오기 묶음 (가져오기 취소용) */
+  importBatchId?: string;
 }
 
 export interface FieldReport {
@@ -319,6 +342,8 @@ export interface ChangeOrder {
   sourceActionId?: string;
   sourcePartnerRequestId?: string;
   note: string;
+  /** 자료 가져오기 묶음 (가져오기 취소용) */
+  importBatchId?: string;
 }
 
 export interface ProgressBilling {
@@ -328,6 +353,8 @@ export interface ProgressBilling {
   amount: number;
   billedDate: string;
   status: "confirmed" | "draft";
+  /** 자료 가져오기 묶음 (가져오기 취소용) */
+  importBatchId?: string;
 }
 
 export interface PaymentReceived {
@@ -336,6 +363,8 @@ export interface PaymentReceived {
   billingId?: string;
   amount: number;
   receivedDate: string;
+  /** 자료 가져오기 묶음 (가져오기 취소용) */
+  importBatchId?: string;
 }
 
 export type PartnerRequestStatus = "received" | "reviewing" | "answered";
@@ -542,6 +571,7 @@ export interface DemoDB {
   crewChecks?: CrewCheck[];
   attendanceRequests?: AttendanceRequest[];
   workOrders?: WorkOrder[];
+  importBatches?: ImportBatch[];
   /** LIVE: 현재 로그인 사용자 id (서버가 채움). DEMO에서는 없음 */
   me?: string;
   /** LIVE: 서버가 역할별로 걸러 보낸 데이터인지 */

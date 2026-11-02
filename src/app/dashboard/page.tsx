@@ -360,7 +360,7 @@ function CeoDashboard() {
 function GettingStarted({ userCount }: { userCount: number }) {
   const steps = [
     { n: 1, t: "직원·발주처 계정 추가", d: "현장소장·공무 담당 계정을 만들면 임시 비밀번호가 나옵니다.", href: "/admin?tab=members", done: userCount > 1, cta: "사용자 추가" },
-    { n: 2, t: "첫 현장 등록", d: "원 계약금액·실행예산(5개 항목)·현장 담당을 넣으면 계획 이익률이 계산됩니다.", href: "/admin?tab=sites", done: false, cta: "현장 등록" },
+    { n: 2, t: "첫 현장 등록", d: "원 계약금액·실행예산(5개 항목)·현장 담당을 넣으면 계획 이익률이 계산됩니다. 진행 중인 현장이면 등록 뒤 ‘자료 이관·점검’에서 지난 기성·변경공사·출력을 한 번에 넣으세요.", href: "/admin?tab=sites", done: false, cta: "현장 등록" },
     { n: 3, t: "현장소장 첫 보고", d: "현장소장이 휴대폰으로 로그인해 작업·추가 비용을 보고하면 이 화면이 바뀝니다.", href: "/admin?tab=settings", done: false, cta: "반영 방식 확인" },
   ];
   return (

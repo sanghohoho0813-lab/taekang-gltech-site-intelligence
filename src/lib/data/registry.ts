@@ -8,6 +8,7 @@ import * as C from "./commands";
 import * as A from "./adminCommands";
 import * as T from "./attendanceCommands";
 import * as O from "./opsCommands";
+import * as I from "./importCommands";
 
 type Ctx = C.Ctx;
 
@@ -30,6 +31,8 @@ export const COMMANDS = {
   addPayment: (db: DemoDB, a: Parameters<typeof C.addPayment>[1], ctx: Ctx) => C.addPayment(db, a, ctx),
   setThresholds: (db: DemoDB, a: RiskThresholds, ctx: Ctx) => C.setThresholds(db, a, ctx),
   importCostRows: (db: DemoDB, a: { rows: C.CsvCostRow[]; idempotencyKey: string }, ctx: Ctx) => C.importCostRows(db, a.rows, a.idempotencyKey, ctx),
+  importData: (db: DemoDB, a: I.ImportDataInput, ctx: Ctx) => I.importData(db, a, ctx),
+  undoImport: (db: DemoDB, a: { batchId: string }, ctx: Ctx) => I.undoImport(db, a, ctx),
   // 운영 관리 (현장·실행예산·설정·공무 확인)
   saveSite: (db: DemoDB, a: A.SaveSiteInput, ctx: Ctx) => A.saveSite(db, a, ctx),
   updateForecast: (db: DemoDB, a: A.UpdateForecastInput, ctx: Ctx) => A.updateForecast(db, a, ctx),

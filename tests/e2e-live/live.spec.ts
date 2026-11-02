@@ -237,6 +237,52 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     expect(bad.status()).toBe(400);
   });
 
+  test("자료 이관: 준비 점검 → 지난 변경공사·기성 가져오기(서버 재검증) → 계약·미수 반영 → 중복 건너뜀 → 취소", async ({ browser }) => {
+    const page = await login(browser, CEO.email, CEO.password);
+    await page.goto("/data");
+    const site = page.locator(`[data-testid="ready-site"][data-site="${siteId}"]`);
+    await expect(site).toContainText("물류센터");
+    await expect(site.locator('[data-key="stages"]')).toHaveAttribute("data-status", "warn"); // 공정 단계 미등록
+    await expect(site.locator('[data-key="geo"]')).toHaveAttribute("data-status", "ok");
+    // 변경공사(승인 2,000만 원) → 계약금액 8억 → 8.2억
+    await page.getByTestId("import-kind-change").click();
+    await page.getByTestId("import-text").fill("현장,제목,금액,상태,요청일,승인금액,결정일\n물류센터,1층 출입구 자동문 추가,20000000,승인,2026-11-01,,2026-11-01");
+    await expect(page.getByTestId("import-summary")).toContainText("승인 2,000만 원");
+    await page.getByTestId("import-apply").click();
+    await expect(page.getByTestId("import-done")).toBeVisible();
+    await page.goto(`/sites/${siteId}`);
+    await expect(page.getByTestId("m-contract")).toContainText("8.2억 원");
+    // 기성·입금 (서버 저장 후 다시 읽어도 유지)
+    await page.goto("/data");
+    await page.getByTestId("import-kind-billing").click();
+    const bill = "현장,구분,날짜,금액\n물류센터,기성,2026-11-01,100000000\n물류센터,입금,2026-11-02,60000000";
+    await page.getByTestId("import-text").fill(bill);
+    await page.getByTestId("import-apply").click();
+    await expect(page.getByTestId("import-done")).toBeVisible();
+    await page.reload();
+    await page.getByTestId("import-kind-billing").click();
+    await page.getByTestId("import-text").fill(bill);
+    await expect(page.getByTestId("import-dups")).toContainText("이미 있음");
+    // 서버는 브라우저를 거치지 않은 잘못된 원문도 다시 검사한다
+    const bad = await page.request.post("/api/commands", { data: { name: "importData", args: { kind: "billing", text: "현장,구분,날짜,금액\n물류센터,입금,2026-11-03,999000000", idempotencyKey: "live-bad" } } });
+    expect(bad.status()).toBe(400);
+    expect((await bad.json()).error).toContain("입금 합계");
+    await page.goto("/finance");
+    await expect(page.locator("main")).toContainText(/물류센터 1차\s*2026\.11\.01/);
+    // 기성 가져오기 취소 → 기성 기록이 사라짐
+    await page.goto("/data");
+    const batch = page.getByTestId("import-batch").filter({ hasText: "기성·입금 이력" });
+    await batch.getByTestId("import-undo").click();
+    await batch.getByTestId("import-undo-confirm").click();
+    await expect(batch).toHaveAttribute("data-undone", "1");
+    await page.goto("/finance");
+    await expect(page.locator("main")).not.toContainText(/물류센터 1차/);
+    // 현장소장은 가져오기 불가
+    const field = await login(browser, FIELD.email, FIELD.password, { width: 390, height: 844 });
+    expect((await field.request.post("/api/commands", { data: { name: "importData", args: { kind: "billing", text: bill, idempotencyKey: "live-f" } } })).status()).toBe(403);
+    expect((await field.request.post("/api/commands", { data: { name: "undoImport", args: { batchId: "x" } } })).status()).toBe(403);
+  });
+
   test("현장 QR: 본사 단말기 등록 → 로그인 없는 태블릿 연결 → 현장소장 QR 확인 → 해제", async ({ browser }) => {
     const admin = await login(browser, CEO.email, CEO.password);
     await admin.goto("/attendance");
@@ -392,7 +438,7 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
   test("로그아웃 후 데이터 접근 불가 / 화면 가로 넘침 없음", async ({ browser }) => {
     for (const w of [390, 1440]) {
       const page = await login(browser, CEO.email, CEO.password, { width: w, height: 900 });
-      for (const r of ["/dashboard", `/sites/${siteId}`, "/admin", "/admin?tab=members", "/report", "/settings", "/labor", "/attendance", "/orders", "/schedule"]) {
+      for (const r of ["/dashboard", `/sites/${siteId}`, "/admin", "/admin?tab=members", "/report", "/settings", "/labor", "/attendance", "/orders", "/schedule", "/data"]) {
         await page.goto(r);
         await page.waitForTimeout(300);
         const over = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
