@@ -233,6 +233,24 @@ describe("사진·이력·설정", () => {
     await svc.executeCommand(ceo, "setCompanySettings", { helpPhone: "" });
     expect((await svc.getView(field)).db.settings?.helpPhone).toBeUndefined();
   });
+  it("출퇴근: 담당 현장만·본인 기록만 보이고, 정정·현장 위치는 본사만, DB에 저장", async () => {
+    const near = { lat: 37.2638, lng: 127.0289, accuracy: 15 };
+    await expect(svc.executeCommand(field, "checkIn", { siteId: "site-c", sample: near, consent: true })).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(svc.executeCommand(partner, "checkIn", { siteId: "site-a" })).rejects.toBeInstanceOf(ForbiddenError);
+    const r = (await svc.executeCommand(field, "checkIn", { siteId: "site-a", sample: near, consent: true, deviceId: "dev-test01" })).result as { attendanceId: string; geo: { status: string } };
+    expect(r.geo.status).toBe("inside");
+    await expect(svc.executeCommand(field, "correctAttendance", { attendanceId: r.attendanceId, outAt: new Date().toISOString(), note: "본인 수정" })).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(svc.executeCommand(field, "setSiteGeo", { siteId: "site-a", lat: 37, lng: 127, radiusM: 3000 })).rejects.toBeInstanceOf(ForbiddenError);
+    const fv = (await svc.getView(field)).db;
+    expect((fv.attendance ?? []).every((x) => x.userId === field.id)).toBe(true);
+    expect((fv.attendance ?? []).some((x) => x.id === r.attendanceId)).toBe(true);
+    expect((await svc.getView(partner)).db.attendance ?? []).toHaveLength(0);
+    const cv = (await svc.getView(ceo)).db;
+    expect(cv.attendance!.some((x) => x.userId === "u-field2")).toBe(true); // 본사는 전체
+    expect(cv.consents!.some((c) => c.userId === field.id)).toBe(true);
+    await svc.executeCommand(field, "checkOut", { siteId: "site-a", sample: near, deviceId: "dev-test01" });
+    expect((await svc.getView(ceo)).db.attendance!.find((x) => x.id === r.attendanceId)?.outAt).toBeTruthy();
+  });
   it("활동 이력은 지워지지 않는다 (DB에는 계속 쌓임)", async () => {
     const db = await getDb();
     const [{ n }] = await db.query<{ n: string }>(`select count(*) as n from records where collection = 'activityLogs'`);

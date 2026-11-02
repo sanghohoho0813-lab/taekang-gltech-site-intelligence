@@ -3,6 +3,7 @@
  * 모든 쓰기 경로는 여기를 거친다 (검증·중복저장 방지·활동로그·Proof Event).
  * 저장소(Repository)는 결과 db를 영속화만 한다.
  */
+import { judgeGeo, validSample, type GeoSample } from "@/lib/domain/geo";
 import type {
   ActionItem,
   ActionKpiSnapshot,
@@ -15,6 +16,7 @@ import type {
   DemoDB,
   FieldReport,
   ForecastImpact,
+  GeoStamp,
   PartnerRequest,
   PartnerRequestStatus,
   ProofEvent,
@@ -121,6 +123,8 @@ export interface FieldReportInput {
   source?: "FIELD" | "PC";
   /** 오늘 기준 공정률 (선택, 0~100) */
   progressPct?: number;
+  /** 보고를 보낸 곳 — 휴대폰 위치 (서버가 현장 안/밖을 다시 판정) */
+  geo?: { sample?: GeoSample | null; noLocation?: GeoStamp["reason"] };
 }
 
 export interface FieldReportResult {
@@ -213,6 +217,12 @@ export function submitFieldReport(db0: DemoDB, input: FieldReportInput, ctx: Ctx
     createdAt: at,
     status: "submitted",
   };
+  if (input.geo) {
+    // 위치 기록 동의가 있을 때만 좌표를 남긴다. 판정은 서버(이 함수)가 다시 한다.
+    const consented = (db.consents ?? []).some((c) => c.userId === ctx.userId);
+    const site = db.sites.find((s) => s.id === input.siteId);
+    report.geo = validSample(input.geo.sample) && consented ? judgeGeo(site, input.geo.sample) : judgeGeo(site, null, consented ? (input.geo.noLocation ?? "unavailable") : "skipped");
+  }
   db.reports.unshift(report);
 
   const site = requireSite(db, input.siteId);

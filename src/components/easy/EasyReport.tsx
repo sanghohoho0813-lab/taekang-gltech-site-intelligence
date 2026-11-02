@@ -25,6 +25,7 @@ import {
   Wand2,
   WifiOff,
   Handshake,
+  MapPin,
   Plus,
   X,
 } from "lucide-react";
@@ -33,7 +34,9 @@ import { useMe } from "@/lib/data/hooks";
 import { IS_LIVE } from "@/lib/mode";
 import { CommandError, type CostLineInput } from "@/lib/data/commands";
 import { DEMO_SCENARIO } from "@/lib/data/seed";
-import type { CostCategory, CostReason, Site } from "@/lib/domain/types";
+import type { CostCategory, CostReason, GeoStamp, Site } from "@/lib/domain/types";
+import { geoText, judgeGeo, type GeoSample } from "@/lib/domain/geo";
+import { locateOnce } from "@/lib/geo/client";
 import { todayIso } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
 import { cx } from "@/components/ui/primitives";
@@ -143,6 +146,9 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
   const [undone, setUndone] = useState(false);
   const [dateEdit, setDateEdit] = useState(false);
   const [rateOpen, setRateOpen] = useState(false);
+  // 보내는 곳 (위치 기록에 동의한 사람만, 확인 화면에서 1번)
+  const consented = !!db && (db.consents ?? []).some((c) => c.userId === userId);
+  const [geo, setGeo] = useState<{ sample?: GeoSample; noLocation?: GeoStamp["reason"] } | null>(null);
   const topRef = useRef<HTMLDivElement>(null);
   const rawStep = stack[stack.length - 1];
 
@@ -187,6 +193,15 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
     window.addEventListener("online", on);
     return () => window.removeEventListener("online", on);
   }, [netFail]);
+
+  useEffect(() => {
+    if (rawStep !== "confirm" || geo || !consented) return;
+    let alive = true;
+    void locateOnce(10_000).then((r) => alive && setGeo("sample" in r ? { sample: r.sample } : { noLocation: r.error }));
+    return () => {
+      alive = false;
+    };
+  }, [rawStep, geo, consented]);
 
   // 단계가 바뀌면 맨 위로
   useEffect(() => {
@@ -269,6 +284,7 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
         reason: costLines.length ? d.reason || "other" : undefined,
         reasonNote: unknownImpact ? "예산 포함 여부: 현장에서 모름 — 본사 확인 필요" : "",
         source: "FIELD",
+        geo: geo ?? { noLocation: consented ? "timeout" : "skipped" },
         ...(d.progress !== null && d.progress !== site.progressPct ? { progressPct: d.progress } : {}),
       });
       clearDraft();
@@ -305,6 +321,7 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
     setMemo("");
     setStack([firstStep(mode, !fixedSiteId && sites.length > 1)]);
     setIdemKey(uid("idem"));
+    setGeo(null);
     setDone(null);
     setUndone(false);
     setUndoAsk(false);
@@ -920,6 +937,11 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
                 mode === "cost" ? "cost-list" : "cost",
               )}
           </div>
+          {consented && (
+            <p className="flex items-center gap-2 text-[1.02rem] text-ink-2" data-testid="confirm-geo">
+              <MapPin size={18} aria-hidden /> 보내는 곳: {geo ? geoText(judgeGeo(site, geo.sample ?? null, geo.noLocation)) : "위치 확인 중…"}
+            </p>
+          )}
           {costLines.length > 0 && <p className="rounded-2xl bg-surface-2 px-4 py-3 text-[1.02rem] text-ink-2">{review ? "추가 비용은 본사 공무가 확인한 뒤 회사 손익에 반영됩니다." : "보내면 추가 비용이 회사 손익 계산에 바로 들어갑니다."}</p>}
           {netFail && (
             <div className="rounded-2xl border-2 border-warn/50 bg-warn-bg p-4" role="alert" data-testid="net-fail">

@@ -13,6 +13,7 @@ import {
   Presentation,
   Home,
   UserRound,
+  MapPinCheck,
   type LucideIcon,
 } from "lucide-react";
 
@@ -31,6 +32,7 @@ const MAP: Record<string, LucideIcon> = {
   Presentation,
   Home,
   UserRound,
+  MapPinCheck,
 };
 
 export function NavIcon({ name, className, size = 20 }: { name: string; className?: string; size?: number }) {

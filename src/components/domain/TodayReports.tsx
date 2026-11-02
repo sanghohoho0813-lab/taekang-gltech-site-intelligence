@@ -24,24 +24,31 @@ export function TodayReports({ db }: { db: DemoDB }) {
     const last = reports.map((r) => r.reportDate).sort().at(-1);
     const photos = todays.reduce((n, r) => n + r.photoIds.length, 0);
     const costs = todays.reduce((n, r) => n + r.costEntryIds.length, 0);
-    return { s, todays, last, photos, costs };
+    const att = (db.attendance ?? []).filter((a) => a.siteId === s.id && a.workDate === today);
+    const attIssue = att.some((a) => a.inGeo.status !== "inside");
+    return { s, todays, last, photos, costs, att, attIssue };
   });
   const missing = rows.filter((r) => r.todays.length === 0).length;
   return (
     <Card data-testid="today-reports">
       <CardHeader
-        title="오늘 현장 보고"
+        title="오늘 현장 출근·보고"
         sub={missing ? `${rows.length}곳 중 ${missing}곳 아직 보고 없음` : `${rows.length}곳 모두 보고함`}
         right={
-          IS_LIVE && pending > 0 ? (
-            <Link href="/admin?tab=review" className="press inline-flex items-center gap-0.5 rounded-lg px-2 py-1 text-[0.8rem] font-bold text-theme-ink hover:bg-active-soft" data-testid="today-pending">
-              공무 확인 대기 {pending}건 <ChevronRight size={15} />
+          <span className="flex flex-wrap items-center gap-1">
+            {IS_LIVE && pending > 0 && (
+              <Link href="/admin?tab=review" className="press inline-flex items-center gap-0.5 rounded-lg px-2 py-1 text-[0.8rem] font-bold text-theme-ink hover:bg-active-soft" data-testid="today-pending">
+                공무 확인 대기 {pending}건 <ChevronRight size={15} />
+              </Link>
+            )}
+            <Link href="/attendance" className="press inline-flex items-center gap-0.5 rounded-lg px-2 py-1 text-[0.8rem] font-bold text-theme-ink hover:bg-active-soft" data-testid="today-att-link">
+              출퇴근 현황 <ChevronRight size={15} />
             </Link>
-          ) : undefined
+          </span>
         }
       />
       <ul className="divide-y divide-line border-t border-line">
-        {rows.map(({ s, todays, last, photos, costs }) => {
+        {rows.map(({ s, todays, last, photos, costs, att, attIssue }) => {
           const ok = todays.length > 0;
           const gap = last ? daysBetween(last, today) : null;
           return (
@@ -50,7 +57,12 @@ export function TodayReports({ db }: { db: DemoDB }) {
                 {ok ? <CircleCheck size={20} className="shrink-0 text-ok" aria-hidden /> : <Clock3 size={20} className="shrink-0 text-warn" aria-hidden />}
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[0.92rem] font-bold">{s.shortName}</span>
-                  <span className="block truncate text-[0.78rem] text-ink-3">현장 담당 {userLabel(db, s.fieldUserId)}</span>
+                  <span className="block truncate text-[0.78rem] text-ink-3">
+                    현장 담당 {userLabel(db, s.fieldUserId)} ·{" "}
+                    <span className={cx("font-semibold", att.length === 0 ? "text-warn" : attIssue ? "text-err" : "text-ok")} data-testid="today-att">
+                      {att.length === 0 ? "출근 기록 없음" : attIssue ? `출근 ${att.length}명 · 위치 확인 필요` : `출근 ${att.length}명 · 현장 안`}
+                    </span>
+                  </span>
                 </span>
                 <span className={cx("shrink-0 text-right text-[0.8rem] font-semibold", ok ? "text-ok" : "text-warn")}>
                   {ok ? `보고 ${todays.length}건${photos ? ` · 사진 ${photos}` : ""}${costs ? ` · 비용 ${costs}` : ""}` : gap === null ? "보고 기록 없음" : gap === 1 ? "어제가 마지막" : `${gap}일째 없음`}

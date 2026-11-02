@@ -21,6 +21,7 @@ import type {
   SiteContract,
   ChangeOrder,
   ActivityLog,
+  AttendanceRecord,
 } from "@/lib/domain/types";
 import { siteFinancials, snapshotOf } from "@/lib/domain/calc";
 
@@ -421,7 +422,67 @@ export function createSeed(now = new Date()): DemoDB {
   base.activityLogs = logs;
 
   for (const s of sites) base.baseline[s.id] = snapshotOf(siteFinancials(base, s.id));
+  seedAttendance(base, now);
   return base;
+}
+
+/**
+ * 가상 현장 위치 + 출퇴근 기록 (DEMO) — 좌표는 실제 현장이 아닌 가상 값.
+ * 본사 ‘출퇴근 현황’에서 의심 표시(현장 밖 출근·퇴근 누락·위치가 매일 똑같음)를 보여주기 위한 예시.
+ * 손익 숫자에는 영향 없음.
+ */
+function seedAttendance(db: DemoDB, now: Date) {
+  const GEO: Record<string, [number, number]> = { "site-a": [37.2636, 127.0286], "site-b": [37.5642, 126.9751], "site-c": [36.3504, 127.3845] };
+  for (const s of db.sites) {
+    const g = GEO[s.id];
+    if (g) s.geo = { lat: g[0], lng: g[1], radiusM: 300, setAt: dayOffset(now, -30), setBy: "u-manager" };
+  }
+  const kstDate = (days: number) => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul" }).format(new Date(now.getTime() + days * 86_400_000));
+  const at = (date: string, hm: string) => new Date(`${date}T${hm}:00+09:00`).toISOString();
+  const jitter = (base: number, i: number, k: number) => Math.round((base + (((i * 37 + k * 11) % 9) - 4) * 0.00011) * 1e6) / 1e6;
+  const rec: AttendanceRecord[] = [];
+  const nowIsoStr = now.toISOString();
+  // 최성민 (A현장) — 지난 6일 정상 출퇴근 (오늘은 시연에서 직접 출근)
+  for (let i = 1; i <= 6; i++) {
+    const d = kstDate(-i);
+    const [la, ln] = GEO["site-a"];
+    const inLat = jitter(la, i, 1);
+    const inLng = jitter(ln, i, 2);
+    rec.push({
+      id: `att-seed-a-${i}`,
+      siteId: "site-a",
+      userId: "u-field",
+      workDate: d,
+      inAt: at(d, `07:${String(30 + ((i * 7) % 25)).padStart(2, "0")}`),
+      inGeo: { status: "inside", lat: inLat, lng: inLng, accuracyM: 12 + i, distanceM: 20 + i * 9 },
+      inDevice: "dev-demo-choi",
+      outAt: at(d, `17:${String(10 + ((i * 5) % 40)).padStart(2, "0")}`),
+      outGeo: { status: "inside", lat: jitter(la, i, 3), lng: jitter(ln, i, 4), accuracyM: 15, distanceM: 30 + i * 7 },
+      outDevice: "dev-demo-choi",
+    });
+  }
+  // 정우진 (C현장) — 지난 3일 출근 위치가 소수점까지 똑같음 + 어제 퇴근 누락 + 오늘 현장에서 3.3km 떨어진 곳에서 출근
+  const spot = { lat: 36.3712, lng: 127.3611 };
+  for (let i = 1; i <= 3; i++) {
+    const d = kstDate(-i);
+    rec.push({
+      id: `att-seed-c-${i}`,
+      siteId: "site-c",
+      userId: "u-field2",
+      workDate: d,
+      inAt: at(d, "07:58"),
+      inGeo: { status: "outside", lat: spot.lat, lng: spot.lng, accuracyM: 5, distanceM: 3121 },
+      inDevice: "dev-demo-jung",
+      ...(i === 1 ? {} : { outAt: at(d, "17:02"), outGeo: { status: "outside" as const, lat: spot.lat, lng: spot.lng, accuracyM: 5, distanceM: 3121 }, outDevice: "dev-demo-jung" }),
+    });
+  }
+  const today = kstDate(0);
+  const inToday = at(today, "07:55");
+  if (inToday <= nowIsoStr) {
+    rec.push({ id: "att-seed-c-0", siteId: "site-c", userId: "u-field2", workDate: today, inAt: inToday, inGeo: { status: "outside", lat: 36.3721, lng: 127.4093, accuracyM: 18, distanceM: 3279 }, inDevice: "dev-demo-jung" });
+  }
+  db.attendance = rec;
+  db.consents = [{ userId: "u-field2", at: dayOffset(now, -20), version: 1 }];
 }
 
 /** 미팅 시나리오 입력값 — '데모 값 채우기' 버튼에서 사용 */

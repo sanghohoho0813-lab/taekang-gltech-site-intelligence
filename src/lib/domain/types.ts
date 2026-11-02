@@ -55,6 +55,62 @@ export interface Site {
   fieldUserId: string;
   stages: SiteStage[];
   illustration: "logistics" | "office" | "civic";
+  /** 출퇴근 확인용 현장 위치 (본사가 등록) */
+  geo?: SiteGeo;
+}
+
+/** 현장 위치 + 인정 반경 */
+export interface SiteGeo {
+  lat: number;
+  lng: number;
+  /** 이 거리 안이면 '현장 안' (m) */
+  radiusM: number;
+  setAt: string;
+  setBy: string;
+}
+
+/**
+ * 위치 판정 (서버가 계산 — 화면이 보낸 판정은 믿지 않는다)
+ * inside = 현장 안 · outside = 현장 밖 · weak = 위치 정확도가 낮아 판단 어려움 · none = 위치 없음(거부·실패) · nosite = 현장 위치 미등록
+ */
+export type GeoStatus = "inside" | "outside" | "weak" | "none" | "nosite";
+
+export interface GeoStamp {
+  status: GeoStatus;
+  lat?: number;
+  lng?: number;
+  accuracyM?: number;
+  /** 현장 중심까지 거리 (m) */
+  distanceM?: number;
+  /** 위치가 없을 때 이유 */
+  reason?: "denied" | "unavailable" | "timeout" | "unsupported" | "skipped";
+}
+
+/** 출퇴근 기록 — 본인 휴대폰에서 출근·퇴근 버튼을 누를 때 1번씩 위치를 남긴다 (계속 추적하지 않음) */
+export interface AttendanceRecord {
+  id: string;
+  siteId: string;
+  userId: string;
+  /** 근무일 (서버 기준, 한국 시간) */
+  workDate: string;
+  /** 출근 시각 (서버 시각) */
+  inAt: string;
+  inGeo: GeoStamp;
+  /** 같은 휴대폰으로 여러 명이 출근하는지 확인용 (기기 무작위 번호) */
+  inDevice?: string;
+  outAt?: string;
+  outGeo?: GeoStamp;
+  outDevice?: string;
+  /** 본사 정정 이력 (사유 필수) */
+  corrections?: { at: string; by: string; note: string; before: { inAt: string; outAt?: string } }[];
+}
+
+/** 위치 기록 동의 (개인위치정보 수집 동의) */
+export interface LocationConsent {
+  userId: string;
+  at: string;
+  /** 동의 문구 판 */
+  version: number;
 }
 
 export interface SiteStage {
@@ -129,6 +185,8 @@ export interface FieldReport {
   createdBy: string;
   createdAt: string;
   status: "submitted" | "voided";
+  /** 보고를 보낸 곳 (현장 안/밖) */
+  geo?: GeoStamp;
 }
 
 export interface SitePhoto {
@@ -365,6 +423,9 @@ export interface DemoDB {
   thresholds: RiskThresholds;
   idempotencyKeys: string[];
   settings?: CompanySettings;
+  /** 출퇴근 기록 (이전 버전 DEMO 저장분에는 없을 수 있음) */
+  attendance?: AttendanceRecord[];
+  consents?: LocationConsent[];
   /** LIVE: 현재 로그인 사용자 id (서버가 채움). DEMO에서는 없음 */
   me?: string;
   /** LIVE: 서버가 역할별로 걸러 보낸 데이터인지 */

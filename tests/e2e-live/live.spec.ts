@@ -95,15 +95,25 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     await page.getByTestId("member-form").getByText("물류센터").click();
     await page.getByTestId("member-save").click();
     await expect(page.getByTestId("member-row").filter({ hasText: "원청 공무" })).toContainText("물류센터");
+    // 출퇴근 GPS 기준이 되는 현장 위치 등록
+    await page.goto("/attendance");
+    await page.getByTestId(`att-geo-${siteId}`).click();
+    await page.locator("#g-lat").fill("37.5012");
+    await page.locator("#g-lng").fill("127.0396");
+    await page.locator("#g-rad").fill("300");
+    await page.getByTestId("geo-save").click();
+    await expect(page.locator(`[data-testid="att-site"][data-site="${siteId}"]`)).toContainText("반경 300m");
     // 공무 확인 후 반영으로
+    await page.goto("/admin");
     await page.getByTestId("admin-tab-settings").click();
     await pick(page, "approval-review");
     await page.getByTestId("settings-save").click();
     await expect(page.getByText("운영 설정을 저장했습니다")).toBeVisible();
   });
 
-  test("현장소장 첫 로그인 → 비밀번호 변경 강제 → 휴대폰 보고(공수) → 공무 확인 대기", async ({ browser }) => {
-    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  test("현장소장 첫 로그인 → 비밀번호 변경 강제 → GPS 출근 → 휴대폰 보고(공수) → 공무 확인 대기", async ({ browser }) => {
+    // 현장 중심에서 약 25m 떨어진 곳에 있는 휴대폰
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, permissions: ["geolocation"], geolocation: { latitude: 37.5014, longitude: 127.0398, accuracy: 20 } });
     const page = await ctx.newPage();
     await page.goto("/login");
     await page.locator("#l-email").fill(FIELD.email);
@@ -117,6 +127,11 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     await page.locator("#a-new2").fill(FIELD.password);
     await page.getByTestId("password-submit").click();
     await expect(page).toHaveURL(/\/field/);
+    // GPS 출근 — 처음에는 위치 기록 동의 → 서버가 현장 안/밖 판정
+    await page.getByTestId("att-in").click();
+    await page.getByTestId("att-consent-yes").click();
+    await expect(page.getByTestId("att-result")).toContainText("출근 기록 완료");
+    await expect(page.getByTestId("att-status")).toContainText("현장 안");
     // 쉬운 화면 — 글자 입력 없이 누르기만으로 보고 (현장 1곳이면 현장 선택 생략)
     await expect(page.getByTestId("easy-site-status")).toContainText("아직 안 보냄");
     await page.getByTestId("easy-go-report").click();
@@ -137,6 +152,7 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     await page.getByTestId("reason-quantity_increase").click();
     await expect(page.getByTestId("easy-confirm")).toContainText("360만 원");
     await expect(page.getByTestId("easy-confirm")).toContainText("0% → 5%");
+    await expect(page.getByTestId("confirm-geo")).toContainText("현장 안");
     await page.getByTestId("submit-report").click();
     await expect(page.getByTestId("report-impact")).toHaveAttribute("data-pending", "1");
     await expect(page.getByTestId("report-impact")).toContainText("360만 원");
@@ -153,6 +169,12 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     expect((await page.request.get("/api/admin/members")).status()).toBe(403);
     await page.goto("/finance");
     await expect(page.getByTestId("access-denied")).toBeVisible();
+    // 출퇴근 현황(본사 화면)도 못 보고, 서버는 본인 출퇴근 기록만 보낸다
+    await page.goto("/attendance");
+    await expect(page.getByTestId("access-denied")).toBeVisible();
+    const mine = await page.evaluate(async () => (await (await fetch("/api/state")).json()).db.attendance as { userId: string }[]);
+    expect(mine.length).toBeGreaterThan(0);
+    expect(new Set(mine.map((r) => r.userId)).size).toBe(1);
     await ctx.close();
   });
 
@@ -170,6 +192,10 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     await expect(page.getByTestId("m-eac")).toContainText("6.83억 원");
     await page.goto("/report");
     await expect(page.getByTestId("report-summary")).toBeVisible();
+    // 본사 출퇴근 현황: 박현장 현장 안 출근 + 보고도 현장 안에서 보냄 (서버 판정)
+    await page.goto("/attendance");
+    await expect(page.locator(`[data-testid="att-site"][data-site="${siteId}"]`).getByTestId("att-row")).toContainText("현장 안");
+    await expect(page.getByTestId("att-report-row").first()).toContainText("현장 안");
   });
 
   test("발주처: 첫 로그인 후 공개 현장만, 요청 등록, 내부 정보 없음", async ({ browser }) => {

@@ -6,6 +6,7 @@ import type { ActionStatus, ChangeOrderStatus, DemoDB, PartnerRequest, RiskThres
 import type { RiskSignal } from "@/lib/domain/types";
 import * as C from "./commands";
 import * as A from "./adminCommands";
+import * as T from "./attendanceCommands";
 
 type Ctx = C.Ctx;
 
@@ -34,6 +35,11 @@ export const COMMANDS = {
   updateProgress: (db: DemoDB, a: A.UpdateProgressInput, ctx: Ctx) => A.updateProgress(db, a, ctx),
   setCompanySettings: (db: DemoDB, a: A.CompanySettingsInput, ctx: Ctx) => A.setCompanySettings(db, a, ctx),
   reviewCostEntry: (db: DemoDB, a: A.ReviewCostEntryInput, ctx: Ctx) => A.reviewCostEntry(db, a, ctx),
+  // 출퇴근 (GPS)
+  checkIn: (db: DemoDB, a: T.CheckInput, ctx: Ctx) => T.checkIn(db, a, ctx),
+  checkOut: (db: DemoDB, a: T.CheckInput, ctx: Ctx) => T.checkOut(db, a, ctx),
+  setSiteGeo: (db: DemoDB, a: T.SiteGeoInput, ctx: Ctx) => T.setSiteGeo(db, a, ctx),
+  correctAttendance: (db: DemoDB, a: T.CorrectAttendanceInput, ctx: Ctx) => T.correctAttendance(db, a, ctx),
 } as const;
 
 export type CommandName = keyof typeof COMMANDS;

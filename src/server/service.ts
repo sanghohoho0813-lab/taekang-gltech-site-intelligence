@@ -133,6 +133,8 @@ export async function setupCompany(input: SetupInput): Promise<{ token: string; 
           activityLogs: [],
           baseline: {},
           idempotencyKeys: [],
+          attendance: [],
+          consents: [],
           settings: DEFAULT_SETTINGS,
           rev: 1,
         };

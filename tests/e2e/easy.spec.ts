@@ -183,3 +183,78 @@ test("현장 직원 본사 요청: 큰 버튼으로 시작 → 다 했어요(눌
   await page.getByRole("tab", { name: /끝낸 일/ }).click();
   await expect(page.getByTestId("action-card").first()).toContainText("본사 확인 기다리는 중");
 });
+
+test.describe("GPS 출퇴근", () => {
+  const A = { latitude: 37.2638, longitude: 127.0289 }; // 가상 A현장 중심에서 약 35m
+
+  test("현장 안 출근(동의) → 본사 출퇴근 현황 → 의심 표시·정정 → 퇴근", async ({ page }) => {
+    await asField(page);
+    await page.context().grantPermissions(["geolocation"]);
+    await page.context().setGeolocation({ ...A, accuracy: 15 });
+    await page.goto("/field");
+    await page.getByTestId("att-in").click();
+    // 처음에는 위치 기록 동의를 먼저 묻는다
+    await expect(page.getByTestId("att-card")).toContainText("출근·퇴근 버튼을 누를 때만");
+    await page.getByTestId("att-consent-yes").click();
+    // 담당 현장이 2곳이어도 위치로 A현장을 자동 선택
+    await expect(page.getByTestId("att-result")).toContainText("출근 기록 완료");
+    await expect(page.getByTestId("att-status")).toContainText("A현장 출근");
+    await expect(page.getByTestId("att-status")).toContainText("현장 안");
+
+    // 본사 화면
+    await page.evaluate(([pk]) => localStorage.setItem(pk, JSON.stringify({ ...JSON.parse(localStorage.getItem(pk)!), role: "manager" })), [PREFS] as const);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/attendance");
+    await expect(page.locator('[data-testid="att-site"][data-site="site-a"]').getByTestId("att-row")).toContainText("현장 안");
+    await expect(page.locator('[data-testid="att-site"][data-site="site-b"]').getByTestId("att-row")).toContainText("A현장에 출근");
+    await expect(page.getByTestId("att-flags")).not.toContainText("최성민 — B현장 출근 기록이 아직 없습니다");
+    // DEMO 예시: 정우진 — 현장 밖 출근, 위치가 매일 똑같음, 어제 퇴근 누락
+    await expect(page.getByTestId("att-flag-outside")).toContainText("정우진");
+    await expect(page.getByTestId("att-flag-same_spot")).toContainText("정우진");
+    await expect(page.getByTestId("att-flag-no_checkout")).toContainText("정우진");
+    // 어제 퇴근 누락 정정 (사유 필수)
+    await page.getByTestId("att-yesterday").click();
+    const row = page.locator('[data-testid="att-site"][data-site="site-c"]').getByTestId("att-row");
+    await expect(row).toContainText("퇴근 기록 없음");
+    await row.getByTestId("att-fix").click();
+    await page.getByTestId("att-fix-save").click();
+    await expect(page.getByTestId("att-fix-modal")).toBeVisible(); // 사유 없으면 저장 안 됨
+    await page.getByTestId("att-fix-note").fill("퇴근 버튼 누락 — 반장 확인");
+    await page.getByTestId("att-fix-save").click();
+    await expect(row).toContainText("본사 정정: 퇴근 버튼 누락");
+    // 대시보드 카드
+    await page.goto("/dashboard");
+    await expect(page.getByTestId("today-reports").getByTestId("today-report-row").filter({ hasText: "A현장" })).toContainText("현장 안");
+
+    // 현장 직원 퇴근
+    await page.evaluate(([pk]) => localStorage.setItem(pk, JSON.stringify({ ...JSON.parse(localStorage.getItem(pk)!), role: "field" })), [PREFS] as const);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/field");
+    await page.getByTestId("att-out").click();
+    await expect(page.getByTestId("att-result")).toContainText("퇴근");
+    await expect(page.getByTestId("att-status")).toContainText("오늘 근무 끝");
+  });
+
+  test("현장 밖에서 누르면 한 번 더 묻고, 그대로 기록하면 본사에 ‘현장 밖’", async ({ page }) => {
+    await asField(page);
+    await page.context().grantPermissions(["geolocation"]);
+    await page.context().setGeolocation({ latitude: 37.3, longitude: 127.1, accuracy: 10 }); // 약 7.6km
+    await page.goto("/field");
+    await page.getByTestId("att-in").click();
+    await page.getByTestId("att-consent-yes").click();
+    // 담당 2곳 중 반경 안 현장이 없으면 현장을 고른다
+    await page.getByTestId("att-site-site-a").click();
+    await expect(page.getByTestId("att-card")).toContainText("떨어진 곳이에요");
+    await page.getByTestId("att-anyway").click();
+    await expect(page.getByTestId("att-status")).toContainText("현장 밖");
+  });
+
+  test("위치 기록에 동의하지 않아도 출근은 되고, 본사에 ‘위치 없음’", async ({ page }) => {
+    await asField(page);
+    await page.goto("/field");
+    await page.getByTestId("att-in").click();
+    await page.getByTestId("att-consent-no").click();
+    await page.getByTestId("att-site-site-b").click();
+    await expect(page.getByTestId("att-status")).toContainText("위치 없음");
+  });
+});

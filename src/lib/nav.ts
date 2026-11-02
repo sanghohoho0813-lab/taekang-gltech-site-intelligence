@@ -38,6 +38,7 @@ export const NAV: NavItem[] = [
   { href: "/dashboard", label: "대시보드", icon: "LayoutDashboard", group: "ops", roles: INTERNAL, alsoAccess: ["field"], desc: "전체 현장 손익·위험 한눈에" },
   { href: "/sites", label: "현장 관리", fieldLabel: "내 현장", icon: "Building2", group: "ops", roles: ALL_INTERNAL, desc: "현장별 손익·원가·공정" },
   { href: "/field", label: "현장 보고", fieldLabel: "홈", icon: "ClipboardPen", group: "ops", roles: ALL_INTERNAL, desc: "모바일 일보·추가 비용 입력" },
+  { href: "/attendance", label: "출퇴근 현황", icon: "MapPinCheck", group: "ops", roles: INTERNAL, desc: "GPS 출퇴근·보고 위치·의심 표시" },
   { href: "/my-actions", label: "내 조치", fieldLabel: "본사 요청", icon: "ListChecks", group: "ops", roles: ALL_INTERNAL, desc: "배정된 위험 조치 처리" },
   { href: "/my", label: "내 정보", icon: "UserRound", group: "ops", roles: ["field"], alsoAccess: ["ceo", "manager"], desc: "글자 크기·내가 보낸 보고·비밀번호" },
   { href: "/finance", label: "기성·수금", icon: "Wallet", group: "growth", roles: INTERNAL, desc: "계약·변경공사·기성·입금·미수" },

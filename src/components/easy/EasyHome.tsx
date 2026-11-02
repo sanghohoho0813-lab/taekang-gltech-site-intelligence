@@ -11,6 +11,7 @@ import type { DemoDB, FieldReport } from "@/lib/domain/types";
 import { todayIso } from "@/lib/domain/format";
 import { PageSkeleton, cx } from "@/components/ui/primitives";
 import { BigTile } from "./ui";
+import { EasyAttendance } from "./EasyAttendance";
 import { EASY_CATEGORY, easyDate, easyWon } from "./words";
 
 export function EasyHome() {
@@ -30,6 +31,8 @@ export function EasyHome() {
         </h1>
         <p className="text-[1.15rem] font-semibold text-ink-2">{easyDate(today)}</p>
       </header>
+
+      {sites.length > 0 && <EasyAttendance db={db} userId={userId} sites={sites} />}
 
       {sites.length === 0 ? (
         <p className="rounded-2xl border-2 border-line bg-surface px-4 py-4 text-[1.1rem] leading-relaxed" data-testid="easy-no-site">
