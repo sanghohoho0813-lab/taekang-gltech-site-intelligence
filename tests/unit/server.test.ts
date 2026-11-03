@@ -320,6 +320,21 @@ describe("사진·이력·설정", () => {
     expect(after.billings.some((b) => b.importBatchId === batchId)).toBe(false);
     expect(after.importBatches?.find((b) => b.id === batchId)?.undoneAt).toBeTruthy();
   });
+  it("전체 자료 백업: 대표만, 비밀번호 해시·세션·QR 비밀값·중복 방지 키 없음, 모든 컬렉션 포함", async () => {
+    await expect(svc.exportCompany(manager)).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(svc.exportCompany(field)).rejects.toBeInstanceOf(ForbiddenError);
+    const { filename, body } = await svc.exportCompany(ceo);
+    expect(filename).toMatch(/^taekang_backup_\d{8}\.json$/);
+    expect(body).not.toMatch(/password_hash|passwordHash|token_hash|"secret"|pairHash|scrypt|\$argon/);
+    const j = JSON.parse(body);
+    expect(j.format).toBe("taekang-site-intelligence-backup");
+    expect(j.members.length).toBeGreaterThanOrEqual(5);
+    expect(Object.keys(j.members[0]).sort()).toEqual(["active", "email", "id", "name", "partnerSiteIds", "role", "siteIds", "title"]);
+    expect(j.data.idempotencyKeys).toEqual([]);
+    for (const k of ["sites", "contracts", "budgets", "costEntries", "billings", "payments", "changeOrders", "reports", "attendance", "crewChecks", "workOrders", "partnerRequests", "activityLogs"]) expect(Array.isArray(j.data[k]), k).toBe(true);
+    expect(j.counts.sites).toBe(j.data.sites.length);
+    expect(j.data.kiosks.every((k: Record<string, unknown>) => !("secret" in k) && !("pairHash" in k))).toBe(true);
+  });
   it("활동 이력은 지워지지 않는다 (DB에는 계속 쌓임)", async () => {
     const db = await getDb();
     const [{ n }] = await db.query<{ n: string }>(`select count(*) as n from records where collection = 'activityLogs'`);

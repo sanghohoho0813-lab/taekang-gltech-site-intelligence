@@ -21,6 +21,45 @@ export async function getView(m: Member): Promise<{ rev: number; db: DemoDB }> {
   return { rev: state.rev, db: viewFor(m, state) };
 }
 
+/**
+ * 전체 자료 백업 (대표 전용, 계약 4단계 인수인계) — 회사 데이터를 고객이 직접 보관할 수 있게 JSON으로 내려준다.
+ * 비밀번호 해시·세션·QR 단말기 비밀값·중복 방지 키는 넣지 않는다. 사진 원본은 크기 때문에 제외(주소만) — DB 백업으로 보관.
+ */
+export async function exportCompany(m: Member): Promise<{ filename: string; body: string }> {
+  if (m.role !== "ceo") throw new ForbiddenError("전체 자료 백업은 대표만 내려받을 수 있습니다.");
+  const db = await getDb();
+  const state = await db.transaction((tx) => loadState(tx, m.companyId));
+  const members = await db.query<Parameters<typeof toMember>[0]>(`select ${MEMBER_COLS} from members where company_id = $1 order by role, name`, [m.companyId]);
+  const kiosks = (state.kiosks ?? []).map((k) => {
+    const { secret: _s, pairHash: _p, ...rest } = k;
+    void _s;
+    void _p;
+    return rest;
+  });
+  const exportedAt = new Date().toISOString();
+  const data = { ...state, kiosks, idempotencyKeys: [], me: undefined, scope: undefined };
+  const body = JSON.stringify(
+    {
+      format: "taekang-site-intelligence-backup",
+      version: 1,
+      exportedAt,
+      companyId: m.companyId,
+      exportedBy: m.id,
+      note: "사진 원본은 포함되지 않습니다(사진 주소만). 사진까지 보관하려면 DB 전체 백업을 함께 보관하세요. 비밀번호·로그인 정보는 포함되지 않습니다.",
+      members: members.map((r) => {
+        const x = toMember(r);
+        return { id: x.id, email: x.email, name: x.name, title: x.title, role: x.role, siteIds: x.siteIds, partnerSiteIds: x.partnerSiteIds, active: x.active };
+      }),
+      counts: Object.fromEntries(Object.entries(data).filter(([, v]) => Array.isArray(v)).map(([k, v]) => [k, (v as unknown[]).length])),
+      data,
+    },
+    null,
+    1,
+  );
+  const stamp = exportedAt.slice(0, 10).replace(/-/g, "");
+  return { filename: `taekang_backup_${stamp}.json`, body };
+}
+
 export async function currentRev(companyId: string): Promise<number> {
   const db = await getDb();
   const [row] = await db.query<{ rev: string | number }>(`select rev from companies where id = $1`, [companyId]);

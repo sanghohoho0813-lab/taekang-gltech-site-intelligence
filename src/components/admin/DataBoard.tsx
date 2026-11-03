@@ -93,6 +93,7 @@ export function DataBoard() {
         <ImportCard kind={kind} setKind={setKind} />
       </div>
       <BatchList />
+      <BackupCard />
     </PageBody>
   );
 }
@@ -398,6 +399,42 @@ function BatchList() {
           );
         })}
       </ul>
+    </Card>
+  );
+}
+
+/** 전체 자료 백업 (대표 전용) — 고객이 자기 데이터를 직접 보관 (계약 4단계 인수인계) */
+function BackupCard() {
+  const { db, role } = useMe();
+  if (!db || role !== "ceo") return null;
+  const demoDownload = () => {
+    const blob = new Blob([JSON.stringify({ format: "taekang-site-intelligence-backup", version: 1, exportedAt: new Date().toISOString(), note: "DEMO 브라우저 자료 (가상 데이터)", data: db }, null, 1)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `taekang_backup_demo_${todayIso().replace(/-/g, "")}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  return (
+    <Card data-testid="backup-card">
+      <CardHeader title="전체 자료 백업" sub="회사 자료는 태강지엘텍 소유입니다 — 월 1회 내려받아 회사 PC·클라우드에 보관하세요 (대표만)" />
+      <div className="flex flex-wrap items-center gap-3 px-5 pb-5">
+        {IS_LIVE ? (
+          <a href="/api/export" download className="press inline-flex h-10 items-center gap-2 rounded-xl bg-solid px-4 text-[0.9rem] font-bold text-white" data-testid="backup-download">
+            <Download size={16} aria-hidden /> 전체 자료 내려받기 (JSON)
+          </a>
+        ) : (
+          <Button icon={<Download size={16} />} onClick={demoDownload} data-testid="backup-download">
+            전체 자료 내려받기 (JSON)
+          </Button>
+        )}
+        <p className="min-w-0 flex-1 text-[0.8rem] text-ink-3">
+          현장·원가·기성·변경공사·출퇴근·보고·작업 인원·지시·요청·이력이 모두 들어갑니다. 비밀번호·로그인 정보·QR 단말기 비밀값은 넣지 않고, 사진 원본은 크기 때문에 빠집니다(사진은 DB 전체 백업으로 보관).
+        </p>
+      </div>
     </Card>
   );
 }

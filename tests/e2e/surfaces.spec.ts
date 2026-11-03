@@ -257,7 +257,7 @@ for (const w of [390, 430, 768, 1024, 1280, 1440, 1920]) {
   test(`반응형 ${w}px: 가로 넘침 없음 (주요 화면)`, async ({ page }) => {
     await page.setViewportSize({ width: w, height: 900 });
     await freshStart(page);
-    for (const r of ["/dashboard", "/sites/site-a", "/field", "/insights", "/finance", "/report", "/partner", "/settings", "/why-ax", "/evidence", "/labor", "/orders", "/schedule", "/attendance", "/data"]) {
+    for (const r of ["/dashboard", "/sites/site-a", "/field", "/insights", "/finance", "/report", "/partner", "/settings", "/why-ax", "/evidence", "/labor", "/orders", "/schedule", "/attendance", "/data", "/usage", "/help"]) {
       await page.goto(r);
       await page.waitForTimeout(250);
       const over = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
@@ -406,4 +406,58 @@ test("자료 이관·점검: 준비 점검 → 기성·입금 붙여넣기(오�
   await page.getByTestId("demo-role").selectOption("field");
   await page.goto("/data");
   await expect(page.getByTestId("access-denied")).toBeVisible();
+});
+
+test("4단계 준비: 사용 현황 · 역할별 사용 안내(인쇄) · 대표 전체 자료 백업", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await freshStart(page, { role: "ceo" });
+  // 사용 현황 — 현장 직원별 정착도 + 본사 응답 시간 4종
+  await page.goto("/usage");
+  await expect(page.getByTestId("usage-user")).toHaveCount(2);
+  for (const st of await page.getByTestId("usage-user").evaluateAll((els) => els.map((e) => e.getAttribute("data-status")))) expect(["settled", "partial", "none"]).toContain(st);
+  await expect(page.getByTestId("usage-resp")).toHaveCount(4);
+  const dl = page.waitForEvent("download");
+  await page.getByTestId("usage-csv").click();
+  expect(readFileSync((await (await dl).path())!, "utf8")).toContain("이름,직함,상태,집계 시작");
+  await page.getByTestId("usage-30").click();
+  await expect(page.getByTestId("usage-field")).toContainText("첫 기록일부터");
+
+  // 사용 안내 — 대표는 대표 매뉴얼부터, 다른 역할 매뉴얼도 볼 수 있음
+  await page.goto("/help");
+  await expect(page.getByTestId("help-manual")).toHaveAttribute("data-manual", "ceo");
+  await page.getByTestId("help-tab-field").click();
+  await expect(page.getByTestId("help-manual")).toContainText("‘오늘 보고하기’");
+  await expect(page.getByTestId("help-print")).toBeVisible();
+
+  // 전체 자료 백업 (대표만)
+  await page.goto("/data");
+  const bk = page.waitForEvent("download");
+  await page.getByTestId("backup-download").click();
+  const json = JSON.parse(readFileSync((await (await bk).path())!, "utf8"));
+  expect(json.format).toBe("taekang-site-intelligence-backup");
+  expect(json.data.sites.length).toBe(3);
+  await page.getByTestId("demo-role").selectOption("manager");
+  await page.goto("/data");
+  await expect(page.getByTestId("import-card")).toBeVisible();
+  await expect(page.getByTestId("backup-card")).toHaveCount(0);
+
+  // 현장 직원: 내 정보 → 사용 안내 (현장용·문제 해결만, 큰 글씨)
+  await page.getByTestId("demo-role").selectOption("field");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/my");
+  await page.getByTestId("my-help").click();
+  await expect(page).toHaveURL(/\/help/);
+  await expect(page.getByTestId("help-manual")).toHaveAttribute("data-manual", "field");
+  await expect(page.getByTestId("help-tab-hq")).toHaveCount(0);
+  await expect(page.getByTestId("help-tab-faq")).toBeVisible();
+  const over = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(over).toBeLessThanOrEqual(1);
+
+  // 발주처: 포털 → 사용 안내 (포털 매뉴얼만)
+  await page.evaluate(([pk]) => localStorage.setItem(pk, JSON.stringify({ ...JSON.parse(localStorage.getItem(pk)!), role: "partner" })), [PREFS] as const);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/partner");
+  await page.getByTestId("partner-help").click();
+  await expect(page.getByTestId("help-manual")).toHaveAttribute("data-manual", "partner");
+  await expect(page.getByTestId("help-manual")).not.toContainText("원가");
 });

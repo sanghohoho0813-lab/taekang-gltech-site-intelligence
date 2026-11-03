@@ -277,8 +277,21 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     await expect(batch).toHaveAttribute("data-undone", "1");
     await page.goto("/finance");
     await expect(page.locator("main")).not.toContainText(/물류센터 1차/);
-    // 현장소장은 가져오기 불가
+    // 전체 자료 백업: 대표만, 비밀번호·QR 비밀값 없음
+    const exp = await page.request.get("/api/export");
+    expect(exp.status()).toBe(200);
+    expect(exp.headers()["content-disposition"]).toMatch(/attachment; filename="taekang_backup_\d{8}\.json"/);
+    const backupText = await exp.text();
+    expect(backupText).not.toMatch(/password_hash|token_hash|"secret"|pairHash|scrypt\$/);
+    const backup = JSON.parse(backupText);
+    expect(backup.data.sites.map((x: { shortName: string }) => x.shortName)).toContain("물류센터");
+    expect(backup.data.importBatches.length).toBeGreaterThanOrEqual(2);
+    // 사용 현황: 박현장의 실제 출근·보고가 집계된다
+    await page.goto("/usage");
+    await expect(page.getByTestId("usage-user").filter({ hasText: "박현장" })).toContainText("출근 기록");
+    // 현장소장은 가져오기·백업 불가
     const field = await login(browser, FIELD.email, FIELD.password, { width: 390, height: 844 });
+    expect((await field.request.get("/api/export")).status()).toBe(403);
     expect((await field.request.post("/api/commands", { data: { name: "importData", args: { kind: "billing", text: bill, idempotencyKey: "live-f" } } })).status()).toBe(403);
     expect((await field.request.post("/api/commands", { data: { name: "undoImport", args: { batchId: "x" } } })).status()).toBe(403);
   });
@@ -438,7 +451,7 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
   test("로그아웃 후 데이터 접근 불가 / 화면 가로 넘침 없음", async ({ browser }) => {
     for (const w of [390, 1440]) {
       const page = await login(browser, CEO.email, CEO.password, { width: w, height: 900 });
-      for (const r of ["/dashboard", `/sites/${siteId}`, "/admin", "/admin?tab=members", "/report", "/settings", "/labor", "/attendance", "/orders", "/schedule", "/data"]) {
+      for (const r of ["/dashboard", `/sites/${siteId}`, "/admin", "/admin?tab=members", "/report", "/settings", "/labor", "/attendance", "/orders", "/schedule", "/data", "/usage", "/help"]) {
         await page.goto(r);
         await page.waitForTimeout(300);
         const over = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);

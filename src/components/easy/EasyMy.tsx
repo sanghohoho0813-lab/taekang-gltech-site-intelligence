@@ -3,7 +3,7 @@
 /** 내 정보 — 글자 크기 · 본사 전화 · 내가 보낸 보고 · 비밀번호 · 로그아웃 */
 import Link from "next/link";
 import { useState } from "react";
-import { KeyRound, LogOut, Phone, Type } from "lucide-react";
+import { KeyRound, LogOut, Phone, Type, BookOpen } from "lucide-react";
 import { useMe } from "@/lib/data/hooks";
 import { logout, setPrefs, usePrefs, type FontScale } from "@/lib/data/store";
 import { IS_LIVE } from "@/lib/mode";
@@ -47,6 +47,11 @@ export function EasyMy() {
           <Phone size={26} className="text-ok" aria-hidden /> 본사에 전화하기 <span className="ml-auto text-[1.05rem] font-semibold text-ink-2">{phone}</span>
         </a>
       )}
+
+      <Link href="/help" className="press flex min-h-[4rem] items-center gap-3 rounded-2xl border-2 border-line bg-surface px-4 text-[1.15rem] font-bold" data-testid="my-help">
+        <BookOpen size={24} aria-hidden /> 사용 안내 보기
+        <span className="ml-auto text-[0.98rem] font-semibold text-ink-3">버튼 이름 그대로</span>
+      </Link>
 
       <section className="space-y-3" aria-labelledby="records-title">
         <h2 id="records-title" className="text-[1.3rem] font-extrabold">

@@ -48,10 +48,12 @@ export const NAV: NavItem[] = [
   { href: "/report", label: "대표 보고서", icon: "FileBarChart", group: "growth", roles: INTERNAL, desc: "실시간 손익 변화 보고" },
   { href: "/partner", label: "발주처 포털", icon: "Handshake", group: "growth", roles: ["ceo", "manager", "partner"], desc: "발주처·협력사 상태 공유" },
   { href: "/insights", label: "위험 분석·조치", icon: "ShieldAlert", group: "ax", roles: INTERNAL, alsoAccess: ["field"], desc: "규칙 기반 진단 → 조치 → 결과" },
+  { href: "/usage", label: "사용 현황", icon: "Activity", group: "ax", roles: INTERNAL, desc: "현장 직원 정착도·본사 응답 시간 (실사용 검증)" },
   { href: "/evidence", label: "실증 Evidence", icon: "BadgeCheck", group: "ax", roles: INTERNAL, desc: "Proof Event·KPI·12주 계획" },
   { href: "/why-ax", label: "기획의도", icon: "Lightbulb", group: "ax", roles: ALL_INTERNAL, desc: "왜 이 AX인가", only: "demo" },
   { href: "/data", label: "자료 이관·점검", icon: "FileUp", group: "admin", roles: INTERNAL, desc: "지난 기성·변경공사·출력·원가 엑셀 가져오기 · 현장별 자료 준비 점검" },
   { href: "/admin", label: "운영 관리", icon: "Building2", group: "admin", roles: INTERNAL, desc: "현장 등록·사용자·운영 설정·공무 확인", only: "live" },
+  { href: "/help", label: "사용 안내", icon: "BookOpen", group: "admin", roles: ["ceo", "manager", "partner"], alsoAccess: ["field"], desc: "역할별 운영 매뉴얼 (인쇄용)" },
   { href: "/settings", label: "설정", icon: "Settings", group: "admin", roles: ["ceo", "manager", "field", "partner"], desc: IS_LIVE ? "화면·위험 기준·데이터 가져오기" : "테마·글자·역할·데모·데이터" },
   { href: "/presentation", label: "시연 모드", icon: "Presentation", group: "admin", roles: INTERNAL, desc: "실제 화면 Guided Demo", only: "demo" },
 ];
@@ -89,6 +91,7 @@ export function bottomNavFor(role: RoleId): { href: string; label: string; icon:
   if (role === "partner")
     return [
       { href: "/partner", label: "현장현황", icon: "Handshake" },
+      { href: "/help", label: "사용 안내", icon: "BookOpen" },
       { href: "/settings", label: "설정", icon: "Settings" },
     ];
   return [

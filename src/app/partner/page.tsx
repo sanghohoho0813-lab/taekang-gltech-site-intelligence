@@ -86,13 +86,16 @@ function PartnerPortal({ db, partner, sites: mySites, preview }: { db: NonNullab
             <p className="truncate text-[0.95rem] font-extrabold tracking-[0.04em]">TAEKANG GLTECH</p>
             <p className="text-[0.7rem] font-semibold text-ink-3">발주처·협력사 포털</p>
           </div>
-          <nav className="ml-4 hidden items-center gap-1 md:flex" aria-label="포털 메뉴">
+          <nav className="ml-4 hidden items-center gap-1 lg:flex" aria-label="포털 메뉴">
             <a href="#status" className="press rounded-lg px-3 py-2 text-[0.85rem] font-bold text-ink hover:bg-surface-3">현장 현황</a>
             <a href="#request" className="press rounded-lg px-3 py-2 text-[0.85rem] font-bold text-ink hover:bg-surface-3">요청하기</a>
             <a href="#my-requests" className="press rounded-lg px-3 py-2 text-[0.85rem] font-bold text-ink hover:bg-surface-3">내 요청</a>
             <a href="#next" className="press rounded-lg px-3 py-2 text-[0.85rem] font-semibold text-ink-3 hover:bg-surface-3">
               확장 예정 <Badge tone="neutral">NEXT</Badge>
             </a>
+            <Link href="/help" className="press hidden rounded-lg px-3 py-2 text-[0.85rem] font-bold text-ink hover:bg-surface-3 lg:inline-flex" data-testid="partner-help">
+              사용 안내
+            </Link>
           </nav>
           <div className="ml-auto flex items-center gap-2">
             <DemoBadge compact />
@@ -114,12 +117,13 @@ function PartnerPortal({ db, partner, sites: mySites, preview }: { db: NonNullab
             )}
           </div>
         </div>
-        <nav className="no-scrollbar flex gap-1 overflow-x-auto border-t border-line px-3 py-1.5 md:hidden" aria-label="포털 메뉴 (모바일)">
+        <nav className="no-scrollbar flex gap-1 overflow-x-auto border-t border-line px-3 py-1.5 lg:hidden" aria-label="포털 메뉴 (모바일)">
           {[
             ["#status", "현장 현황"],
             ["#request", "요청하기"],
             ["#my-requests", "내 요청"],
             ["#next", "확장 예정"],
+            ["/help", "사용 안내"],
           ].map(([h, l]) => (
             <a key={h} href={h} className="press shrink-0 rounded-full bg-surface-3 px-3 py-1.5 text-[0.8rem] font-bold text-ink-2">
               {l}

@@ -18,6 +18,8 @@ import {
   ClipboardCheck,
   HardHat,
   FileUp,
+  Activity,
+  BookOpen,
   type LucideIcon,
 } from "lucide-react";
 
@@ -41,6 +43,8 @@ const MAP: Record<string, LucideIcon> = {
   ClipboardCheck,
   HardHat,
   FileUp,
+  Activity,
+  BookOpen,
 };
 
 export function NavIcon({ name, className, size = 20 }: { name: string; className?: string; size?: number }) {
