@@ -504,3 +504,35 @@ test("공사일보 자동 작성: 현장 보고 → 일보(작업·공정 진척
   await page.goto("/daily");
   await expect(page.getByTestId("access-denied")).toBeVisible();
 });
+
+test("운영 배포 준비: 보안 헤더(CSP·위치/카메라 권한·검색 차단) · 홈 화면 앱(manifest·아이콘) · 상태 확인 · CSP 위반 없음", async ({ page }) => {
+  const res = await page.request.get("/dashboard");
+  const h = res.headers();
+  expect(h["content-security-policy"]).toContain("default-src 'self'");
+  expect(h["content-security-policy"]).toContain("object-src 'none'");
+  expect(h["permissions-policy"]).toContain("geolocation=(self)");
+  expect(h["x-robots-tag"]).toContain("noindex");
+  expect(h["x-frame-options"]).toBe("SAMEORIGIN");
+  const mf = await (await page.request.get("/manifest.webmanifest")).json();
+  expect(mf).toMatchObject({ display: "standalone", start_url: "/" });
+  expect(mf.icons.map((i: { sizes: string }) => i.sizes)).toEqual(["192x192", "512x512", "512x512"]);
+  for (const icon of ["/icon-192.png", "/icon-512.png", "/icon-maskable-512.png", "/apple-touch-icon.png"]) expect((await page.request.get(icon)).status(), icon).toBe(200);
+  expect(await (await page.request.get("/api/health")).json()).toMatchObject({ ok: true, mode: "demo" });
+
+  // 화면을 돌아다니며 CSP 위반(차단된 스크립트·스타일·이미지)이 없는지
+  const violations: string[] = [];
+  page.on("console", (m) => {
+    if (/Content Security Policy|Refused to (load|execute|apply|connect|frame)/i.test(m.text())) violations.push(m.text());
+  });
+  await freshStart(page, { role: "ceo", deviceView: "dual" });
+  for (const r of ["/dashboard", "/sites/site-a", "/daily", "/attendance", "/labor", "/data", "/usage", "/help", "/report", "/partner"]) {
+    await page.goto(r);
+    await page.waitForTimeout(250);
+  }
+  // PC+Mobile 미리보기(같은 주소 iframe)가 CSP에 막히지 않는다
+  await page.goto("/dashboard");
+  await expect(page.locator("iframe").first()).toBeVisible();
+  const frame = page.frameLocator("iframe").first();
+  await expect(frame.locator("body")).not.toBeEmpty();
+  expect(violations).toEqual([]);
+});

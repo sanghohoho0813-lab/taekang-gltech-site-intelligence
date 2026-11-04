@@ -27,5 +27,5 @@ export default function proxy(req: NextRequest) {
 
 export const config = {
   // API·정적 파일·아이콘은 제외 (API는 자체적으로 세션을 확인)
-  matcher: ["/((?!api|_next/static|_next/image|icon.svg|favicon.ico|.*\\.(?:png|jpg|svg|webp|ico|css|js|woff2?)$).*)"],
+  matcher: ["/((?!api|_next/static|_next/image|icon.svg|favicon.ico|manifest.webmanifest|.*\\.(?:png|jpg|svg|webp|ico|css|js|woff2?|webmanifest)$).*)"],
 };

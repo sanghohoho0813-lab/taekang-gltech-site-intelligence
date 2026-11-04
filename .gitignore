@@ -15,3 +15,8 @@ next-env.d.ts
 # LIVE 모드 로컬 DB (PGlite)
 .data/
 .next-live/
+
+# 배포 전 점검용으로 내려받은 환경변수 (비밀값 포함)
+.env.preflight
+.env.*
+!.env.example
