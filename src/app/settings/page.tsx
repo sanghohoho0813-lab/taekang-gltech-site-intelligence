@@ -20,6 +20,7 @@ import { useTour } from "@/components/tour/Tour";
 import { ResetDialog } from "@/components/device/DemoBar";
 import { AiReadyButton } from "@/components/domain/Widgets";
 import { IS_LIVE } from "@/lib/mode";
+import { PushCard } from "@/components/PushCard";
 import { downloadCsv } from "@/lib/browser/download";
 import { readCsvFile } from "@/lib/browser/readCsv";
 
@@ -103,6 +104,9 @@ export default function SettingsPage() {
                 운영 관리 (현장·사용자·설정)
               </Button>
             )}
+          </div>
+          <div className="px-5 pb-5">
+            <PushCard size="compact" audience={isManager ? "hq" : role === "partner" ? "partner" : "field"} />
           </div>
         </Card>
       )}

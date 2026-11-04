@@ -562,3 +562,14 @@ test("활동 이력: 설정 변경이 이력에 남고 종류·검색으로 찾�
   await page.goto("/audit");
   await expect(page.getByTestId("access-denied")).toBeVisible();
 });
+
+test("휴대폰 알림 카드: 시연에서는 ‘실제 운영에서 켬’ 안내, 현장 첫 화면 권유는 시연에서 숨김", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await freshStart(page, { role: "field" });
+  await page.goto("/my");
+  await expect(page.getByTestId("push-card")).toHaveAttribute("data-state", "demo");
+  await expect(page.getByTestId("push-card")).toContainText("실제 운영에서");
+  await page.goto("/field");
+  await expect(page.getByTestId("easy-go-report")).toBeVisible();
+  await expect(page.getByTestId("push-nudge")).toHaveCount(0);
+});

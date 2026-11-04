@@ -10,6 +10,7 @@ import { IS_LIVE } from "@/lib/mode";
 import { ROLE_LABEL } from "@/lib/domain/labels";
 import { PageSkeleton } from "@/components/ui/primitives";
 import { Choice } from "./ui";
+import { PushCard } from "@/components/PushCard";
 import { MyRecords } from "./EasyHome";
 
 export function EasyMy() {
@@ -52,6 +53,8 @@ export function EasyMy() {
         <BookOpen size={24} aria-hidden /> 사용 안내 보기
         <span className="ml-auto text-[0.98rem] font-semibold text-ink-3">버튼 이름 그대로</span>
       </Link>
+
+      <PushCard audience={role === "field" ? "field" : "hq"} />
 
       <section className="space-y-3" aria-labelledby="records-title">
         <h2 id="records-title" className="text-[1.3rem] font-extrabold">

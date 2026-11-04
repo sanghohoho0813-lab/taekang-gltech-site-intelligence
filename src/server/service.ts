@@ -12,6 +12,8 @@ import { CommandError } from "@/lib/data/commands";
 import { createSeed } from "@/lib/data/seed";
 import { uid } from "@/lib/domain/ids";
 import { getDb, type Tx } from "./sql";
+import { deliver } from "./push";
+import { noticesFor } from "@/lib/domain/notify";
 import { loadState, persistState } from "./state";
 import { authorize, fieldSiteIds, ForbiddenError, sanitizeResult, viewFor } from "./authz";
 import { createSession, hashPassword, MEMBER_COLS, normalizeEmail, passwordProblem, toMember, type Member } from "./auth";
@@ -96,7 +98,7 @@ export async function currentRev(companyId: string): Promise<number> {
 export async function executeCommand(m: Member, name: unknown, args: unknown): Promise<{ result: unknown; rev: number; db: DemoDB }> {
   if (!isCommandName(name)) throw new CommandError("알 수 없는 요청입니다.");
   const db = await getDb();
-  return db.transaction(async (tx) => {
+  const { response, notices } = await db.transaction(async (tx) => {
     await tx.query(`select rev from companies where id = $1 for update`, [m.companyId]);
     const state = await loadState(tx, m.companyId);
     const now = new Date();
@@ -111,9 +113,14 @@ export async function executeCommand(m: Member, name: unknown, args: unknown): P
       console.error("[command]", name, e);
       throw new CommandError("요청 형식이 올바르지 않습니다.");
     }
+    // 알림 대상은 저장 전에 계산 (실행 전·후 비교)
+    const notices = noticesFor(state, out.db, m.id);
     await persistState(tx, m.companyId, state, out.db);
-    return { result: sanitizeResult(m, out.result), rev: out.db.rev, db: viewFor(m, out.db) };
+    return { response: { result: sanitizeResult(m, out.result), rev: out.db.rev, db: viewFor(m, out.db) }, notices };
   });
+  // 저장이 끝난 뒤에 알림 — 실패해도 명령 결과에는 영향 없음
+  if (notices.length) await deliver(m.companyId, notices).catch((e) => console.error("[push]", e));
+  return response;
 }
 
 // ───────────── 사진 ─────────────
@@ -397,6 +404,10 @@ export async function updateMember(m: Member, id: string, input: MemberInput): P
     // 비활성화·비밀번호 초기화·역할 변경 시 기존 로그인 세션을 끊는다
     if (input.active === false || input.password !== undefined || input.role !== undefined) {
       await tx.query(`delete from sessions where member_id = $1`, [id]);
+    }
+    // 비활성화·역할 변경 시 휴대폰 알림 구독도 지운다 (퇴사자 휴대폰에 회사 알림이 가지 않게)
+    if (input.active === false || input.role !== undefined) {
+      await tx.query(`delete from records where company_id = $1 and collection = 'pushSubscriptions' and data->>'userId' = $2`, [m.companyId, id]);
     }
     await bumpRev(tx, m.companyId);
   });

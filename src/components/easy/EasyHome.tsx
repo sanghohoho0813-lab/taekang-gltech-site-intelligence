@@ -11,6 +11,7 @@ import type { DemoDB, FieldReport } from "@/lib/domain/types";
 import { todayIso } from "@/lib/domain/format";
 import { PageSkeleton, cx } from "@/components/ui/primitives";
 import { BigTile } from "./ui";
+import { PushNudge } from "@/components/PushCard";
 import { EasyAttendance, FixLink } from "./EasyAttendance";
 import { EASY_CATEGORY, easyDate, easyWon } from "./words";
 import { downscalePhoto } from "./photo";
@@ -86,6 +87,7 @@ export function EasyHome() {
             <BigTile href="/my" tone="warn" icon={<AlertCircle size={30} />} label={`보완 요청 ${returned.length}건`} sub={returned[0].review?.note ?? "본사가 보고 보완을 요청했어요"} testId="easy-go-returned" />
           )}
           {phone && <BigTile href={`tel:${phone.replace(/[^\d+]/g, "")}`} icon={<Phone size={30} />} label="본사에 전화하기" sub={`모르는 게 있으면 · ${phone}`} testId="easy-call" />}
+          <PushNudge />
         </nav>
       )}
 

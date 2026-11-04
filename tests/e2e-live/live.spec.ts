@@ -451,6 +451,44 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     await expect(req).toHaveAttribute("data-status", "answered");
   });
 
+  test("휴대폰 알림: 내 정보의 알림 카드 · 공식 푸시 서버만 등록 · 켜기/끄기 · 다른 사이트 요청 차단", async ({ browser }) => {
+    const page = await login(browser, FIELD.email, FIELD.password, { width: 390, height: 844 });
+    const st = await (await page.request.get("/api/push")).json();
+    expect(st).toMatchObject({ enabled: true, subscribed: 0 });
+    expect(st.publicKey).toMatch(/^[A-Za-z0-9_-]{80,}$/);
+    await page.goto("/my");
+    const card = page.getByTestId("push-card");
+    await expect(card).toBeVisible();
+    await expect(card).not.toHaveAttribute("data-state", "loading");
+    expect(["off", "unsupported", "denied"]).toContain(await card.getAttribute("data-state"));
+    // 서버 API: 임의 주소는 거부, 공식 푸시 서버 주소만 저장
+    const keys = await page.evaluate(async () => {
+      const k = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"]);
+      const raw = new Uint8Array(await crypto.subtle.exportKey("raw", k.publicKey));
+      const b64u = (u: Uint8Array) => btoa(String.fromCharCode(...u)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+      return { p256dh: b64u(raw), auth: b64u(crypto.getRandomValues(new Uint8Array(16))) };
+    });
+    const bad = await page.request.post("/api/push", { data: { subscription: { endpoint: "https://evil.example.com/x", keys } } });
+    expect(bad.status()).toBe(400);
+    const ok = await page.request.post("/api/push", { data: { subscription: { endpoint: "https://fcm.googleapis.com/fcm/send/e2e-test-token", keys } } });
+    expect(ok.status()).toBe(200);
+    expect((await ok.json()).count).toBe(1);
+    expect((await (await page.request.get("/api/push")).json()).subscribed).toBe(1);
+    // 다른 사이트에서 보낸 등록 요청은 차단
+    expect((await page.request.post("/api/push", { headers: { Origin: "https://evil.example" }, data: { subscription: { endpoint: "https://fcm.googleapis.com/fcm/send/x", keys } } })).status()).toBe(403);
+    // 본사가 지시를 보내도(발송은 시험 주소라 실패) 명령은 정상 처리
+    const hq = await login(browser, CEO.email, CEO.password);
+    const wo = await hq.request.post("/api/commands", { data: { name: "createWorkOrder", args: { siteId, title: "알림 시험 지시", detail: "", assigneeUserId: (await (await page.request.get("/api/auth/me")).json()).me.id } } });
+    expect(wo.status()).toBe(200);
+    // 끄기 → 0
+    const off = await page.request.delete("/api/push", { data: { endpoint: "https://fcm.googleapis.com/fcm/send/e2e-test-token" } });
+    expect((await off.json()).count).toBe(0);
+    // 로그인 안 한 요청은 거부
+    const anon = await browser.newContext();
+    expect((await anon.request.get(new URL("/api/push", page.url()).toString())).status()).toBe(401);
+    await anon.close();
+  });
+
   test("다른 사이트에서 보낸 쓰기 요청은 차단 (Origin 확인)", async ({ browser }) => {
     const page = await login(browser, CEO.email, CEO.password);
     const r = await page.request.post("/api/commands", { headers: { Origin: "https://evil.example" }, data: { name: "setThresholds", args: {} } });

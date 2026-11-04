@@ -18,6 +18,7 @@ import { Donut } from "@/components/domain/Charts";
 import { LogoMark } from "@/components/shell/Logo";
 import { Clock } from "@/components/shell/Clock";
 import { IS_LIVE } from "@/lib/mode";
+import { PushCard } from "@/components/PushCard";
 import { SampleDataBanner } from "@/components/shell/AppShell";
 
 const FUTURE = [
@@ -191,7 +192,10 @@ function PartnerPortal({ db, partner, sites: mySites, preview }: { db: NonNullab
 
         <div className="grid gap-5 lg:grid-cols-2">
           <RequestForm siteId={site.id} disabled={preview} />
-          <MyRequests requests={requests} />
+          <div className="space-y-5">
+            <MyRequests requests={requests} />
+            {IS_LIVE && !preview && <PushCard size="compact" audience="partner" />}
+          </div>
         </div>
 
         <section id="next" aria-labelledby="next-title">

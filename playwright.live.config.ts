@@ -1,4 +1,8 @@
 import { defineConfig } from "@playwright/test";
+import webpush from "web-push";
+
+// 휴대폰 알림 시험용 키 — 실행할 때마다 새로 만든다 (저장소에 키를 두지 않음)
+const VAPID = webpush.generateVAPIDKeys();
 
 /**
  * LIVE 모드 E2E — 빈 PGlite DB로 서버를 새로 띄워 실제 운영 시작 흐름과 보안 경계를 검증한다.
@@ -21,7 +25,7 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   webServer: {
-    command: `rm -rf ${DB_DIR} && NEXT_PUBLIC_DATA_MODE=live NEXT_DIST_DIR=.next-live DATABASE_URL=pglite:./${DB_DIR} npx next start -p ${PORT} -H 127.0.0.1`,
+    command: `rm -rf ${DB_DIR} && NEXT_PUBLIC_DATA_MODE=live NEXT_DIST_DIR=.next-live DATABASE_URL=pglite:./${DB_DIR} VAPID_PUBLIC_KEY=${VAPID.publicKey} VAPID_PRIVATE_KEY=${VAPID.privateKey} VAPID_SUBJECT=mailto:qa@taekang.test npx next start -p ${PORT} -H 127.0.0.1`,
     url: `http://127.0.0.1:${PORT}/login`,
     reuseExistingServer: false,
     timeout: 120_000,

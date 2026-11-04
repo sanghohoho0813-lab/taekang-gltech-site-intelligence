@@ -29,6 +29,16 @@ describe("배포 전 자동 점검", () => {
     expect(level(checkEnv({ NEXT_PUBLIC_DATA_MODE: "live", SETUP_CODE: "abc" }), "setup-code")).toEqual(["warn"]);
   });
 
+  it("휴대폰 알림 키: 없으면 경고(알림만 꺼짐), 형식이 틀리거나 개인 키가 공개 변수면 오류", async () => {
+    const webpush = (await import("web-push")).default;
+    const k = webpush.generateVAPIDKeys();
+    const base = { NEXT_PUBLIC_DATA_MODE: "live" };
+    expect(level(checkEnv(base), "push")).toEqual(["warn"]);
+    expect(level(checkEnv({ ...base, VAPID_PUBLIC_KEY: k.publicKey, VAPID_PRIVATE_KEY: k.privateKey, VAPID_SUBJECT: "mailto:ops@taekang.test" }), "push")).toEqual(["ok"]);
+    expect(level(checkEnv({ ...base, VAPID_PUBLIC_KEY: "abc", VAPID_PRIVATE_KEY: k.privateKey }), "push")).toEqual(["error"]);
+    expect(level(checkEnv({ ...base, VAPID_PUBLIC_KEY: k.publicKey, VAPID_PRIVATE_KEY: k.privateKey, NEXT_PUBLIC_PUSH: k.privateKey }), "push")).toEqual(["error"]);
+  });
+
   it("DB 점검: 스키마·필요한 표·행 보안(RLS)·최초 설정 여부, RLS가 꺼지면 오류", async () => {
     const db = await open("pglite:memory");
     const q = (sql: string) => db.query<Record<string, unknown>>(sql);

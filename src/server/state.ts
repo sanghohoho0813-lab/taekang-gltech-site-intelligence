@@ -99,10 +99,11 @@ export async function loadState(tx: Tx, companyId: string): Promise<DemoDB> {
   const rows = await tx.query<{ collection: CollectionName; data: Item }>(
     `select collection, data from (
        select collection, data, seq, row_number() over (partition by collection order by seq desc) as rn
-       from records where company_id = $1
+       from records where company_id = $1 and collection = any($2::text[])
      ) r where collection <> 'activityLogs' or rn <= ${LOG_LIMIT}
      order by collection, seq`,
-    [companyId],
+    // 화면·명령이 쓰는 컬렉션만 (알림 구독 등 서버 전용 기록은 읽지 않음)
+    [companyId, NAMES],
   );
   const db = {
     version: 1,

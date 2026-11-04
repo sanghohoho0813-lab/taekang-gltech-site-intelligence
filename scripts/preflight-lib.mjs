@@ -55,6 +55,18 @@ export function checkEnv(env) {
   else if (code.length < 8) add("warn", "setup-code", "SETUP_CODE가 짧습니다 — 8자 이상 권장");
   else add("ok", "setup-code", "SETUP_CODE 설정됨");
 
+  // 휴대폰 알림 (웹 푸시) — 없으면 알림만 꺼지고 나머지는 동작
+  const vpub = (env.VAPID_PUBLIC_KEY ?? "").trim();
+  const vpriv = (env.VAPID_PRIVATE_KEY ?? "").trim();
+  const b64len = (s) => (/^[A-Za-z0-9_-]+$/.test(s) ? Buffer.from(s.replace(/-/g, "+").replace(/_/g, "/"), "base64").length : -1);
+  if (!vpub && !vpriv) add("warn", "push", "VAPID 키가 없습니다 — 휴대폰 알림이 꺼진 채로 배포됩니다 (npm run vapid 로 만들기)");
+  else if (b64len(vpub) !== 65 || b64len(vpriv) !== 32) add("error", "push", "VAPID 키 형식이 올바르지 않습니다 — npm run vapid 로 다시 만드세요");
+  else if (Object.keys(env).some((k) => k.startsWith("NEXT_PUBLIC_") && env[k] === vpriv)) add("error", "push", "VAPID 개인 키가 NEXT_PUBLIC_ 변수에 들어 있습니다");
+  else {
+    const subj = (env.VAPID_SUBJECT ?? "").trim();
+    add(subj.startsWith("mailto:") || subj.startsWith("https://") ? "ok" : "warn", "push", subj ? "휴대폰 알림 설정됨" : "휴대폰 알림 설정됨 — VAPID_SUBJECT(mailto:담당 이메일)를 넣는 것을 권장합니다");
+  }
+
   if (env.DB_POOL_MAX !== undefined && env.DB_POOL_MAX !== "") {
     const n = Number(env.DB_POOL_MAX);
     if (!Number.isInteger(n) || n < 1 || n > 20) add("warn", "pool-max", "DB_POOL_MAX는 1~20 사이 정수 (기본 5)");
