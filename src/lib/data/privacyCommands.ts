@@ -44,10 +44,9 @@ export function purgeLocationsNow(db0: DemoDB, _input: Record<string, never>, ct
   void _input;
   const policy = locationPolicy(db0);
   const today = kstToday(ctx.now ?? new Date());
-  const cutoff = retentionCutoff(policy, today);
-  if (!cutoff) throw new CommandError("보관 기간을 먼저 정해주세요.", "STATE");
+  if (!retentionCutoff(policy, today)) throw new CommandError("보관 기간을 먼저 정해주세요.", "STATE");
   const db = clone(db0);
-  const count = eraseCoordinates(db, { before: cutoff });
+  const count = eraseCoordinates(db, { expired: { today, policyDays: policy.retentionDays } });
   db.settings = { ...db.settings!, location: { ...policy, purgedOn: today } };
   log(db, ctx, "privacy", `보관 기간(${retentionText(policy.retentionDays)})이 지난 위치 좌표 ${count}건 삭제 (직접 실행)`);
   touch(db, ctx);
@@ -86,11 +85,16 @@ export function withdrawLocationConsent(db0: DemoDB, _input: Record<string, neve
 export function applyLocationRetention(db: DemoDB, now: Date): DemoDB {
   const policy = locationPolicy(db);
   const today = kstToday(now);
-  const cutoff = retentionCutoff(policy, today);
-  if (!cutoff || policy.purgedOn === today) return db;
-  const next = clone(db);
-  const count = eraseCoordinates(next, { before: cutoff });
-  next.settings = { ...next.settings!, location: { ...policy, purgedOn: today } };
-  if (count > 0) log(next, { ...SYSTEM, now }, "privacy", `보관 기간(${retentionText(policy.retentionDays)})이 지난 위치 좌표 ${count}건 자동 삭제`);
+  if (policy.purgedOn === today) return db;
+  // 지금 규칙의 기간 또는 수집할 때 알린 기간(더 짧은 쪽)이 지난 좌표가 있을 때만 바꾼다.
+  // eraseCoordinates는 바뀐 기록만 새 객체로 바꾸므로 얕은 복사로 충분하다 (명령마다 전체 복사하지 않게)
+  const next: DemoDB = { ...db, activityLogs: [...db.activityLogs] };
+  const count = eraseCoordinates(next, { expired: { today, policyDays: policy.retentionDays } });
+  if (count === 0) return db;
+  next.settings = { ...(next.settings ?? { costApproval: "immediate", laborDayRate: 300_000 }), location: { ...policy, purgedOn: today } };
+  log(next, { ...SYSTEM, now }, "privacy", `보관 기간이 지난 위치 좌표 ${count}건 자동 삭제${policy.retentionDays != null ? ` (현재 ${retentionText(policy.retentionDays)})` : ""}`);
+  // 화면이 새 데이터를 받도록 (명령이 아무것도 바꾸지 않아도)
+  next.rev += 1;
+  next.updatedAt = now.toISOString();
   return next;
 }

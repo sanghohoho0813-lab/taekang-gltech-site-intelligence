@@ -11,7 +11,7 @@ import type { AttendanceRecord, DemoDB, GeoStamp, Kiosk, QrStamp } from "@/lib/d
 import { verifyQrToken } from "@/lib/domain/qr";
 import { hex, randomBytes, sha256, utf8 } from "@/lib/domain/hmac";
 import { judgeGeo, geoText, validSample, type GeoSample } from "@/lib/domain/geo";
-import { consentRecord, hasConsent, retentionText, viewersText } from "@/lib/domain/privacy";
+import { consentRecord, currentTerms, hasConsent, retentionText, sameTerms, stampTerms, viewersText, type ConsentTerms } from "@/lib/domain/privacy";
 import { todayIso } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
 import { CommandError, claimKey, clone, log, nowIso, requireSite, touch, userName, validPhoto, type Ctx } from "./commands";
@@ -29,6 +29,8 @@ export interface CheckInput {
   deviceId?: string;
   /** 처음 위치를 기록할 때 동의 */
   consent?: boolean;
+  /** 동의 화면에 보여준 조건 — 서버의 지금 규칙과 같아야 동의로 기록 (D-49) */
+  consentTerms?: ConsentTerms;
   /** 현장 태블릿 QR에서 읽은 코드 (출근만) */
   qrToken?: string;
   idempotencyKey?: string;
@@ -43,12 +45,14 @@ function stamp(db: DemoDB, siteId: string, userId: string, input: Pick<CheckInpu
   const reason = REASONS.includes(input.noLocation) ? input.noLocation : undefined;
   if (!validSample(input.sample)) return judgeGeo(site, null, reason ?? "unavailable");
   if (!hasConsent(db, userId)) return judgeGeo(site, null, "skipped");
-  return judgeGeo(site, input.sample);
+  return stampTerms(db, judgeGeo(site, input.sample));
 }
 
-function recordConsent(db: DemoDB, input: { consent?: boolean; sample?: unknown }, ctx: Ctx) {
+function recordConsent(db: DemoDB, input: { consent?: boolean; consentTerms?: unknown; sample?: unknown }, ctx: Ctx) {
   if (!validSample(input.sample) || hasConsent(db, ctx.userId)) return;
   if (!input.consent) throw new CommandError("위치를 기록하려면 먼저 동의가 필요합니다.", "VALIDATION", { consent: "동의 필요" });
+  // 직원이 본 조건과 지금 규칙이 다르면(그 사이 대표가 바꿈) 동의로 기록하지 않고 다시 보여준다
+  if (!sameTerms(input.consentTerms, currentTerms(db))) throw new CommandError("회사의 위치 기록 조건이 방금 바뀌었어요. 바뀐 내용을 읽고 다시 눌러 주세요.", "STATE", { consent: "조건 변경" });
   const rec = consentRecord(db, ctx.userId, nowIso(ctx));
   db.consents = [...(db.consents ?? []).filter((c) => c.userId !== ctx.userId), rec];
   log(db, ctx, "privacy", `${userName(db, ctx.userId)} 출퇴근 위치 기록 동의 (문구 ${rec.version}판 · 보관 ${retentionText(rec.retentionDays)} · 열람 ${viewersText(rec.viewers ?? "hq")})`);
@@ -295,11 +299,13 @@ export function reportCrew(db0: DemoDB, input: CrewInput, ctx: Ctx) {
     db.photos.push({ id: photoId, siteId: site.id, dataUrl: input.photoDataUrl, caption: `작업 인원 · ${team}`, createdAt: at, createdBy: ctx.userId });
   }
   const consented = hasConsent(db, ctx.userId);
-  const geo = input.geo ? (validSample(input.geo.sample) && consented ? judgeGeo(site, input.geo.sample) : judgeGeo(site, null, consented ? (input.geo.noLocation ?? "unavailable") : "skipped")) : undefined;
+  const geo = input.geo ? (validSample(input.geo.sample) && consented ? stampTerms(db, judgeGeo(site, input.geo.sample)) : judgeGeo(site, null, consented ? (input.geo.noLocation ?? "unavailable") : "skipped")) : undefined;
   const idx = db.crewChecks.findIndex((c) => c.siteId === site.id && c.workDate === workDate && c.team.toLowerCase() === team.toLowerCase());
   let id: string;
   if (idx >= 0) {
-    const prev = db.crewChecks[idx];
+    // 위치는 보낸 사람 것 — 다른 사람(또는 위치 없이) 다시 보내면 이전 사람의 좌표를 넘겨받지 않는다 (리뷰 반영 D-49)
+    const { geo: _prevGeo, ...prev } = db.crewChecks[idx];
+    void _prevGeo;
     id = prev.id;
     if (photoId) db.photos = db.photos.map((p) => (p.id === photoId ? { ...p, crewId: id } : p));
     db.crewChecks[idx] = {

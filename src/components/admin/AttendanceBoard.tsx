@@ -19,7 +19,7 @@ import { PageBody, PageHeader } from "@/components/shell/AppShell";
 import { Badge, Button, Card, CardHeader, DemoBadge, EmptyState, Field, Notice, PageSkeleton, Segmented, cx, inputCls } from "@/components/ui/primitives";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
-import { canSeeCoordinates, locationPolicy } from "@/lib/domain/privacy";
+import { canSeeStamp, locationPolicy } from "@/lib/domain/privacy";
 
 const TONE: Record<GeoStamp["status"], string> = {
   inside: "bg-ok-bg text-ok",
@@ -42,7 +42,7 @@ function GeoChip({ g, label }: { g?: GeoStamp; label?: string }) {
 function MapA({ g }: { g?: GeoStamp }) {
   const { db, role } = useMe();
   // 대표가 ‘좌표는 대표만’으로 정한 회사의 관리자에게는 지도 링크를 숨긴다 (LIVE는 서버가 좌표를 아예 보내지 않음 · D-43)
-  if (!db || !canSeeCoordinates(role, locationPolicy(db))) return null;
+  if (!db || !canSeeStamp(role, locationPolicy(db), g)) return null;
   if (g?.purged) return <span className="text-[0.72rem] text-ink-3">좌표 지움</span>;
   if (g?.lat === undefined || g.lng === undefined) return null;
   return (

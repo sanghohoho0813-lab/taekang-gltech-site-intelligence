@@ -194,10 +194,12 @@ export function planImport(db: DemoDB, kind: ImportKind, text: string, today: st
     plan.errors.push({ line: 1, field: "file", message: "빈 파일입니다." });
     return plan;
   }
+  // 열 이름 미리 정리 · 한 행에서 앞쪽 100칸까지만 본다 (아주 넓은 행으로 서버가 오래 붙잡히지 않게 · D-49)
+  const aliasSets = spec.columns.map((c) => new Set(c.aliases.map(norm)));
   const colsOf = (cells: string[]) => {
-    const header = cells.map(norm);
+    const header = cells.slice(0, 100).map(norm);
     const col: Record<string, number> = {};
-    for (const c of spec.columns) col[c.key] = header.findIndex((h) => c.aliases.some((a) => norm(a) === h));
+    spec.columns.forEach((c, i) => (col[c.key] = header.findIndex((h) => aliasSets[i].has(h))));
     return col;
   };
   // 머리글: 처음 몇 행 안에서 필요한 열 이름이 모두 있는 첫 행 (엑셀 위쪽 제목·빈 줄 허용)

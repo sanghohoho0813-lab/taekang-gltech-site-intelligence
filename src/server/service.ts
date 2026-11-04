@@ -23,8 +23,10 @@ import { createSession, hashPassword, MEMBER_COLS, normalizeEmail, passwordProbl
 
 export async function getView(m: Member): Promise<{ rev: number; db: DemoDB }> {
   const db = await getDb();
-  const state = await db.transaction((tx) => loadState(tx, m.companyId));
-  return { rev: state.rev, db: viewFor(m, state) };
+  const loaded = await db.transaction((tx) => loadState(tx, m.companyId));
+  // 명령이 없는 날(주말 등)에도 보관 기간이 지난 좌표는 보내지 않는다 — 저장은 다음 명령 때 (rev는 DB 값 그대로 · D-49)
+  const state = applyLocationRetention(loaded, new Date());
+  return { rev: loaded.rev, db: viewFor(m, state) };
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -65,7 +67,8 @@ export async function listActivity(m: Member, f: AuditFilter): Promise<{ logs: A
 export async function exportCompany(m: Member): Promise<{ filename: string; body: string }> {
   if (m.role !== "ceo") throw new ForbiddenError("전체 자료 백업은 대표만 내려받을 수 있습니다.");
   const db = await getDb();
-  const state = await db.transaction((tx) => loadState(tx, m.companyId));
+  // 백업에도 보관 기간이 지난 좌표는 넣지 않는다 (D-49)
+  const state = applyLocationRetention(await db.transaction((tx) => loadState(tx, m.companyId)), new Date());
   const members = await db.query<Parameters<typeof toMember>[0]>(`select ${MEMBER_COLS} from members where company_id = $1 order by role, name`, [m.companyId]);
   const kiosks = (state.kiosks ?? []).map((k) => {
     const { secret: _s, pairHash: _p, ...rest } = k;

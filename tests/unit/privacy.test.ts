@@ -7,7 +7,7 @@ import { checkIn, checkOut } from "@/lib/data/attendanceCommands";
 import { CommandError, submitFieldReport } from "@/lib/data/commands";
 import { setCompanySettings } from "@/lib/data/adminCommands";
 import { applyLocationRetention, purgeLocationsNow, purgeMemberLocations, setLocationPolicy, withdrawLocationConsent } from "@/lib/data/privacyCommands";
-import { CONSENT_VERSION, coordinateStats, hasConsent, hasCoords, locationPolicy } from "@/lib/domain/privacy";
+import { CONSENT_VERSION, coordinateStats, currentTerms, hasConsent, hasCoords, locationPolicy } from "@/lib/domain/privacy";
 import type { AttendanceRecord, DemoDB } from "@/lib/domain/types";
 import { viewFor } from "@/server/authz";
 import type { Member } from "@/server/auth";
@@ -91,7 +91,7 @@ describe("보관 기간 자동 삭제", () => {
 describe("동의 조건 · 다시 동의", () => {
   it("동의할 때 알린 조건을 남기고, 직원에게 불리하게 바뀌면 다시 동의받는다", () => {
     let db = policy(createSeed(NOW), 90, "ceo");
-    db = checkIn(db, { siteId: "site-a", sample, consent: true }, FIELD_CTX).db;
+    db = checkIn(db, { siteId: "site-a", sample, consent: true, consentTerms: currentTerms(db) }, FIELD_CTX).db;
     const c = db.consents!.find((x) => x.userId === "u-field")!;
     expect(c).toMatchObject({ version: CONSENT_VERSION, retentionDays: 90, viewers: "ceo" });
     expect(hasConsent(db, "u-field")).toBe(true);
@@ -118,7 +118,7 @@ describe("동의 조건 · 다시 동의", () => {
 describe("본인 동의 철회 · 직원별 삭제", () => {
   it("철회하면 동의 기록과 본인 좌표(출퇴근·보고·작업 인원)를 바로 지우고, 다른 사람 것은 그대로", () => {
     let db = createSeed(NOW);
-    db = checkIn(db, { siteId: "site-a", sample, consent: true }, FIELD_CTX).db;
+    db = checkIn(db, { siteId: "site-a", sample, consent: true, consentTerms: currentTerms(db) }, FIELD_CTX).db;
     db = submitFieldReport(db, { siteId: "site-a", reportDate: "2026-11-04", workDone: "실링", issues: "", tomorrowPlan: "", costs: [], geo: { sample }, idempotencyKey: "pv-1" }, FIELD_CTX).db;
     const otherBefore = coordinateStats({ ...db, attendance: db.attendance!.filter((r) => r.userId === "u-field2"), reports: [], crewChecks: [] }).count;
     const r = withdrawLocationConsent(db, {}, FIELD_CTX);
@@ -180,7 +180,7 @@ describe("오래 남는 활동 기록에는 거리·오차를 쓰지 않는다",
   it("출근·퇴근 기록 문구에 m·km 거리가 없다 (좌표를 지워도 기록 문구로 위치가 남지 않게)", () => {
     let db = createSeed(NOW);
     const far = { lat: 37.29, lng: 127.06, accuracy: 30 };
-    db = checkIn(db, { siteId: "site-a", sample: far, consent: true }, FIELD_CTX).db;
+    db = checkIn(db, { siteId: "site-a", sample: far, consent: true, consentTerms: currentTerms(db) }, FIELD_CTX).db;
     db = checkOut(db, { siteId: "site-a", sample: far }, { ...FIELD_CTX, now: new Date("2026-11-04T08:00:00Z") }).db;
     const texts = db.activityLogs.slice(0, 3).map((l) => l.summary);
     expect(texts.some((t) => t.includes("출근"))).toBe(true);

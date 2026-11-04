@@ -23,6 +23,8 @@ const { siteFinancials } = await import("@/lib/domain/calc");
 type Member = Awaited<ReturnType<typeof auth.memberFromToken>> & object;
 
 const PW = "Taekang2026!";
+/** 동의 화면에 보여준 조건 (회사 기본 규칙 · D-49) */
+const TERMS = { version: 2, retentionDays: null, viewers: "hq" as const };
 let ceo: Member;
 let field: Member;
 let partner: Member;
@@ -255,9 +257,9 @@ describe("사진·이력·설정", () => {
   });
   it("출퇴근: 담당 현장만·본인 기록만 보이고, 정정·현장 위치는 본사만, DB에 저장", async () => {
     const near = { lat: 37.2638, lng: 127.0289, accuracy: 15 };
-    await expect(svc.executeCommand(field, "checkIn", { siteId: "site-c", sample: near, consent: true })).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(svc.executeCommand(field, "checkIn", { siteId: "site-c", sample: near, consent: true, consentTerms: TERMS })).rejects.toBeInstanceOf(ForbiddenError);
     await expect(svc.executeCommand(partner, "checkIn", { siteId: "site-a" })).rejects.toBeInstanceOf(ForbiddenError);
-    const r = (await svc.executeCommand(field, "checkIn", { siteId: "site-a", sample: near, consent: true, deviceId: "dev-test01" })).result as { attendanceId: string; geo: { status: string } };
+    const r = (await svc.executeCommand(field, "checkIn", { siteId: "site-a", sample: near, consent: true, consentTerms: TERMS, deviceId: "dev-test01" })).result as { attendanceId: string; geo: { status: string } };
     expect(r.geo.status).toBe("inside");
     await expect(svc.executeCommand(field, "correctAttendance", { attendanceId: r.attendanceId, outAt: new Date().toISOString(), note: "본인 수정" })).rejects.toBeInstanceOf(ForbiddenError);
     await expect(svc.executeCommand(field, "setSiteGeo", { siteId: "site-a", lat: 37, lng: 127, radiusM: 3000 })).rejects.toBeInstanceOf(ForbiddenError);
@@ -473,6 +475,13 @@ describe("개인위치정보 규칙 (LIVE · D-43)", () => {
     await db.query(`update records set data = jsonb_set(data, '{inAt}', to_jsonb('2026-01-05T00:00:00.000Z'::text)) where collection = 'attendance' and id = $1`, [row.id]);
 
     await svc.executeCommand(ceo, "setLocationPolicy", { retentionDays: 90, viewers: "ceo" });
+    // 명령이 없어도(주말 등) 화면 데이터·백업에는 보관 기간이 지난 좌표가 나가지 않는다 (DB 삭제는 다음 명령 때 · D-49)
+    const ceoView = await svc.getView(ceo);
+    expect(ceoView.db.attendance!.find((r) => r.id === row.id)!.inGeo.lat).toBeUndefined();
+    const backup = JSON.parse((await svc.exportCompany(ceo)).body) as { data?: { attendance?: { id: string; inGeo: { lat?: number } }[] }; attendance?: { id: string; inGeo: { lat?: number } }[] };
+    const backupRows = backup.data?.attendance ?? backup.attendance ?? [];
+    expect(backupRows.find((r) => r.id === row.id)?.inGeo.lat).toBeUndefined();
+    expect(backupRows.length).toBeGreaterThan(0);
     // 관리자: 좌표·거리 없이 판정만 / 대표: 그대로
     const mv = await svc.getView(manager);
     expect(mv.db.attendance!.length).toBeGreaterThan(0);

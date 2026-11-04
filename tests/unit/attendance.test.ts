@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createSeed } from "@/lib/data/seed";
+import { currentTerms } from "@/lib/domain/privacy";
 import { CONSENT_VERSION, checkIn, checkOut, correctAttendance, setSiteGeo } from "@/lib/data/attendanceCommands";
 import { submitFieldReport, CommandError } from "@/lib/data/commands";
 import { judgeGeo, distanceM } from "@/lib/domain/geo";
@@ -29,7 +30,7 @@ describe("출퇴근", () => {
   it("위치를 남기려면 동의가 먼저 — 동의하면 기록, 시각은 서버 시각", () => {
     const db0 = createSeed(NOW);
     expect(() => checkIn(db0, { siteId: "site-a", sample: near }, ctx("u-field"))).toThrow(CommandError);
-    const { db, result } = checkIn(db0, { siteId: "site-a", sample: near, consent: true, deviceId: "dev-abc123" }, ctx("u-field"));
+    const { db, result } = checkIn(db0, { siteId: "site-a", sample: near, consent: true, consentTerms: currentTerms(db0), deviceId: "dev-abc123" }, ctx("u-field"));
     expect(result.geo.status).toBe("inside");
     expect(result.at).toBe(NOW.toISOString());
     const rec = db.attendance!.find((r) => r.id === result.attendanceId)!;

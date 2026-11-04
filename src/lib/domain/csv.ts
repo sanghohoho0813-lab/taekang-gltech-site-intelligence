@@ -66,8 +66,10 @@ export function parseCsvRecords(text: string, delimiter = ","): { line: number; 
 /** 엑셀에서 복사한 표(탭 구분) → CSV. 셀 안의 쉼표(예: 10,000,000)가 열을 나누지 않게 따옴표로 감싼다 */
 export function tsvToCsv(text: string): string {
   if (!text.includes("\t")) return text;
-  return parseCsvRecords(text, "\t")
-    .map((r) => r.cells.map((c) => (/[",\r\n]/.test(c) ? `"${c.replace(/"/g, '""')}"` : c)).join(","))
+  // 탭이 있는 줄만 바꾼다 — 직접 쓴 CSV 줄 뒤에 엑셀 표를 붙여넣어도 앞 줄이 망가지지 않게 (리뷰 반영 D-49)
+  return text
+    .split(/\r?\n/)
+    .map((line) => (line.includes("\t") ? line.split("\t").map((c) => (/[",]/.test(c) ? `"${c.replace(/^"(.*)"$/, "$1").replace(/"/g, '""')}"` : c)).join(",") : line))
     .join("\n");
 }
 

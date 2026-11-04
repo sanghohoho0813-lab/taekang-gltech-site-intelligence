@@ -39,12 +39,40 @@ export function canSeeCoordinates(role: RoleId, policy: LocationPolicy): boolean
   return role === "ceo" || (role === "manager" && policy.viewers === "hq");
 }
 
+/** 이 좌표를 볼 수 있는가 — 지금 규칙 + 수집할 때 약속(대표만) 중 더 엄격한 쪽 (D-49) */
+export function canSeeStamp(role: RoleId, policy: LocationPolicy, g?: GeoStamp): boolean {
+  return canSeeCoordinates(role, policy) && !(role !== "ceo" && g?.ceoOnly);
+}
+
+/** 수집할 때의 규칙을 좌표에 붙인다 — 나중에 회사가 규칙을 넓혀도 그때 약속(대표만·보관 기간)을 지킨다 (D-49) */
+export function stampTerms(db: Pick<DemoDB, "settings">, g: GeoStamp): GeoStamp {
+  if (!hasCoords(g)) return g;
+  const p = locationPolicy(db);
+  return { ...g, ...(p.viewers === "ceo" ? { ceoOnly: true as const } : {}), ...(p.retentionDays != null ? { keepDays: p.retentionDays } : {}) };
+}
+
 /** 동의 당시 조건이 지금 조건보다 직원에게 불리하지 않은가 (보관 기간이 같거나 짧고, 볼 수 있는 사람이 같거나 적음) */
 function termsCover(c: LocationConsent, p: LocationPolicy): boolean {
   const agreed = c.retentionDays === undefined ? null : c.retentionDays; // 예전 동의(조건 기록 없음) = 기간 미정
-  const longer = p.retentionDays === null ? agreed !== null : agreed !== null && p.retentionDays > agreed;
+  // 기간 미정으로 동의했으면 기간이 정해질 때 한 번 다시 알린다 (동의 문구의 ‘정해지면 다시 알려드립니다’ 약속 · D-49)
+  const retentionOk = agreed === null ? p.retentionDays === null : p.retentionDays !== null && p.retentionDays <= agreed;
   const wider = p.viewers === "hq" && c.viewers === "ceo";
-  return !longer && !wider;
+  return retentionOk && !wider;
+}
+
+/** 화면에 보여준 동의 조건 (서버가 지금 규칙과 같은지 확인) */
+export interface ConsentTerms {
+  version: number;
+  retentionDays: number | null;
+  viewers: LocationPolicy["viewers"];
+}
+export function currentTerms(db: Pick<DemoDB, "settings">): ConsentTerms {
+  const p = locationPolicy(db);
+  return { version: CONSENT_VERSION, retentionDays: p.retentionDays, viewers: p.viewers };
+}
+export function sameTerms(a: unknown, b: ConsentTerms): boolean {
+  const x = a as Partial<ConsentTerms> | undefined;
+  return !!x && x.version === b.version && (x.retentionDays ?? null) === b.retentionDays && x.viewers === b.viewers;
 }
 
 /** 지금 조건으로 유효한 동의가 있는가 */
@@ -67,34 +95,42 @@ export function stripGeo(g: GeoStamp, mark?: "purged"): GeoStamp {
   return { status: g.status, ...(g.reason ? { reason: g.reason } : {}), ...(mark || g.purged ? { purged: true as const } : {}) };
 }
 
+/** 보관 기간이 지난 좌표인가 — 지금 규칙과 수집할 때 알린 기간 중 짧은 쪽 (D-49) */
+export function expiredStamp(g: GeoStamp, collectedOn: string, today: string, policyDays: number | null): boolean {
+  const days = Math.min(policyDays ?? Infinity, g.keepDays ?? Infinity);
+  return Number.isFinite(days) && collectedOn < shiftIso(today, -days);
+}
+
 const kst = (iso: string) => new Date(new Date(iso).getTime() + 9 * 3_600_000).toISOString().slice(0, 10);
 export const shiftIso = (date: string, days: number) => new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
 
-type Filter = { userId?: string; before?: string };
+type Filter = { userId?: string; before?: string; expired?: { today: string; policyDays: number | null } };
 
 /** 조건에 맞는 기록의 좌표를 지운다 — 바뀐 건수를 돌려준다 (db를 직접 바꾼다: 복사본에만 쓸 것) */
 export function eraseCoordinates(db: DemoDB, f: Filter): number {
   let n = 0;
-  const old = (date: string) => !f.before || date < f.before;
-  const fix = (g: GeoStamp | undefined, ok: boolean): GeoStamp | undefined => {
-    if (!ok || !hasCoords(g)) return g;
+  const fix = (g: GeoStamp | undefined, iso: string | undefined): GeoStamp | undefined => {
+    if (!hasCoords(g) || !iso) return g;
+    const d = kst(iso);
+    if (f.before && !(d < f.before)) return g;
+    if (f.expired && !expiredStamp(g, d, f.expired.today, f.expired.policyDays)) return g;
     n += 1;
     return stripGeo(g, "purged");
   };
   db.attendance = (db.attendance ?? []).map((r) => {
     if (f.userId && r.userId !== f.userId) return r;
-    const inGeo = fix(r.inGeo, old(kst(r.inAt)))!;
-    const outGeo = r.outAt ? fix(r.outGeo, old(kst(r.outAt))) : r.outGeo;
+    const inGeo = fix(r.inGeo, r.inAt)!;
+    const outGeo = r.outAt ? fix(r.outGeo, r.outAt) : r.outGeo;
     return inGeo === r.inGeo && outGeo === r.outGeo ? r : { ...r, inGeo, ...(outGeo ? { outGeo } : {}) };
   });
   db.crewChecks = (db.crewChecks ?? []).map((c) => {
     if (f.userId && c.by !== f.userId) return c;
-    const geo = fix(c.geo, old(kst(c.at)));
+    const geo = fix(c.geo, c.at);
     return geo === c.geo ? c : { ...c, geo };
   });
   db.reports = db.reports.map((r) => {
     if (f.userId && r.createdBy !== f.userId) return r;
-    const geo = fix(r.geo, old(kst(r.createdAt)));
+    const geo = fix(r.geo, r.createdAt);
     return geo === r.geo ? r : { ...r, geo };
   });
   return n;

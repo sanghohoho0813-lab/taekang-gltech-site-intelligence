@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { currentTerms } from "@/lib/domain/privacy";
 import { createHash, createHmac } from "node:crypto";
 import { sha256, hmacSha256, hex, utf8, b64url } from "@/lib/domain/hmac";
 import { makeQrToken, parseQrText, verifyQrToken, QR_STEP_MS } from "@/lib/domain/qr";
@@ -71,7 +72,7 @@ describe("QR 출근", () => {
     db0.settings = { ...db0.settings!, attendanceMode: "qr" };
     const k = db0.kiosks!.find((x) => x.siteId === "site-a")!;
     const tok = makeQrToken({ id: k.id, siteId: k.siteId, secret: k.secret! }, NOW.getTime() - 20_000);
-    const r = checkIn(db0, { siteId: "site-a", sample: near, consent: true, qrToken: tok }, ctx("u-field"));
+    const r = checkIn(db0, { siteId: "site-a", sample: near, consent: true, consentTerms: currentTerms(db0), qrToken: tok }, ctx("u-field"));
     expect(r.result.qr?.status).toBe("ok");
     expect(r.db.kiosks!.find((x) => x.id === k.id)!.lastUsedAt).toBe(NOW.toISOString());
     expect(dayFlags(r.db, "2026-11-02", NOW).some((f) => f.kind === "no_qr" && f.userId === "u-field")).toBe(false);

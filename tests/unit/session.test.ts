@@ -68,12 +68,26 @@ describe("로그인 유지", () => {
     expect(n).toBe(0);
   });
 
+  it("만료 연장은 쿠키를 다시 쓰는 요청에서만, 마지막 사용과 상관없이 (다른 요청이 먼저 와도 연장이 막히지 않게 · D-49)", async () => {
+    await setSession(fieldToken, `last_seen_at = now() - interval '11 minutes', expires_at = now() + interval '10 days'`);
+    await auth.memberFromToken(fieldToken); // 명령 등 다른 요청: 마지막 사용만
+    expect(Math.abs((await expiresOf(fieldToken)) - (Date.now() + 10 * DAY))).toBeLessThan(5 * 60_000);
+    let renewed: Date | null = null;
+    await auth.memberFromToken(fieldToken, (d) => (renewed = d)); // 마지막 사용이 방금이어도
+    expect(renewed).not.toBeNull();
+    expect(Math.abs((await expiresOf(fieldToken)) - (Date.now() + 30 * DAY))).toBeLessThan(5 * 60_000);
+  });
+
   it("처음 로그인 후 180일이 상한 — 그 뒤에는 다시 로그인", async () => {
     await setSession(fieldToken, `created_at = now() - interval '175 days', last_seen_at = now() - interval '1 hour', expires_at = now() + interval '2 days'`);
     let renewed: Date | null = null;
     await auth.memberFromToken(fieldToken, (d) => (renewed = d));
     expect(renewed).not.toBeNull();
     expect(Math.abs((await expiresOf(fieldToken)) - (Date.now() + 5 * DAY))).toBeLessThan(5 * 60_000);
+    // 상한에 닿으면 더 쓰지 않는다
+    let again = 0;
+    await auth.memberFromToken(fieldToken, () => (again += 1));
+    expect(again).toBe(0);
     await setSession(fieldToken, `expires_at = now() - interval '1 minute'`);
     expect(await auth.memberFromToken(fieldToken)).toBeNull();
   });

@@ -50,7 +50,9 @@ export interface ErrorEntry {
 
 /** 오류 문구에서 개인정보·값을 지운다 (이메일·전화·금액 같은 긴 숫자·토큰·데이터·주소 뒤 검색어) */
 export function scrubText(s: unknown, max: number): string {
+  // 긴 입력에서 정규식이 오래 걸리지 않도록 먼저 넉넉히 자른다 (리뷰 반영 D-49)
   return String(s ?? "")
+    .slice(0, max * 4)
     .replace(/data:[\w/+.-]+;base64,[A-Za-z0-9+/=]+/g, "[데이터]")
     .replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, "[이메일]")
     .replace(/(https?:\/\/[^\s?#"']+)[?#][^\s"']*/g, "$1")

@@ -84,13 +84,16 @@ export async function smokeCheck(baseUrl, fetchFn = fetch) {
     ["/api/state", {}],
     ["/api/export", {}],
     ["/api/activity?from=2026-01-01&to=2026-12-31", {}],
+    ["/api/errors", {}],
+    ["/api/admin/members", {}],
+    ["/api/client-error", { method: "POST", headers: { "Content-Type": "application/json", Origin: base.origin }, body: JSON.stringify({ message: "smoke" }) }],
     ["/api/commands", { method: "POST", headers: { "Content-Type": "application/json", Origin: base.origin }, body: JSON.stringify({ name: "setThresholds", args: {} }) }],
   ]) {
     const r = await get(p, init);
     if (r.status !== 401 && r.status !== 403) blocked.push(`${p.split("?")[0]} → HTTP ${r.status}`);
   }
   if (blocked.length) add("error", "auth", `로그인 없이 열리는 데이터 주소가 있습니다: ${blocked.join(", ")}`);
-  else add("ok", "auth", "로그인 없이는 회사 데이터·백업·활동 이력·쓰기 요청이 모두 거부됩니다");
+  else add("ok", "auth", "로그인 없이는 회사 데이터·백업·활동 이력·오류 기록·사용자 목록·쓰기 요청이 모두 거부됩니다");
   const foreign = await get("/api/commands", { method: "POST", headers: { "Content-Type": "application/json", Origin: "https://evil.example" }, body: "{}" });
   if (foreign.status === 403) add("ok", "origin", "다른 사이트에서 보낸 쓰기 요청 차단");
   else add("error", "origin", `다른 사이트에서 보낸 쓰기 요청이 차단되지 않습니다 (HTTP ${foreign.status})`);

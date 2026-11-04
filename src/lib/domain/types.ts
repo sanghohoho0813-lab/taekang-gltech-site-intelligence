@@ -88,6 +88,10 @@ export interface GeoStamp {
   reason?: "denied" | "unavailable" | "timeout" | "unsupported" | "skipped";
   /** 보관 기간이 지났거나 본인이 동의를 철회해 좌표를 지움 (판정만 남음 · D-43) */
   purged?: true;
+  /** 수집할 때 규칙이 ‘좌표는 대표만’ — 나중에 규칙을 넓혀도 이 좌표는 대표만 본다 (리뷰 반영 D-49) */
+  ceoOnly?: true;
+  /** 수집할 때 알린 보관 기간 (일) — 나중에 기간을 늘려도 이 좌표는 이 기간이 지나면 지운다 */
+  keepDays?: number;
 }
 
 /** 출퇴근 기록 — 본인 휴대폰에서 출근·퇴근 버튼을 누를 때 1번씩 위치를 남긴다 (계속 추적하지 않음) */

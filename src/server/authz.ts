@@ -5,7 +5,7 @@
  * 3) sanitizeResult: 명령 결과에서도 금액 정보 제거
  */
 import type { ActionItem, DemoDB, GeoStamp, SiteContract } from "@/lib/domain/types";
-import { canSeeCoordinates, hasCoords, locationPolicy, stripGeo } from "@/lib/domain/privacy";
+import { canSeeStamp, hasCoords, locationPolicy, stripGeo } from "@/lib/domain/privacy";
 import { computeSignals } from "@/lib/domain/risk";
 import { CommandError } from "@/lib/data/commands";
 import type { CommandName } from "@/lib/data/registry";
@@ -141,9 +141,12 @@ const hideMarginTargets = (t: DemoDB["thresholds"]): DemoDB["thresholds"] => ({ 
 export const FIELD_WINDOW_DAYS = 60;
 const kstDate = (iso: string) => new Date(new Date(iso).getTime() + 9 * 3_600_000).toISOString().slice(0, 10);
 
-const strip = (g: GeoStamp | undefined) => (hasCoords(g) ? stripGeo(g) : g);
-/** 다른 사람의 출퇴근·작업 인원·보고 위치에서 좌표를 뺀다 (판정만 남김) */
-function withoutOthersCoords(db: DemoDB, me: string): Pick<DemoDB, "attendance" | "crewChecks" | "reports"> {
+/**
+ * 다른 사람의 출퇴근·작업 인원·보고 위치에서 좌표를 뺀다 (판정만 남김).
+ * keep: 볼 수 있는 좌표인가 (현장 직원은 없음, 관리자는 지금 규칙·수집할 때 약속(대표만)을 함께 봄 · D-49)
+ */
+function withoutOthersCoords(db: DemoDB, me: string, keep: (g: GeoStamp) => boolean = () => false): Pick<DemoDB, "attendance" | "crewChecks" | "reports"> {
+  const strip = (g: GeoStamp | undefined) => (hasCoords(g) && !keep(g) ? stripGeo(g) : g);
   return {
     attendance: (db.attendance ?? []).map((r) => (r.userId === me ? r : { ...r, inGeo: strip(r.inGeo)!, ...(r.outGeo ? { outGeo: strip(r.outGeo) } : {}) })),
     crewChecks: (db.crewChecks ?? []).map((c) => (c.by === me || !hasCoords(c.geo) ? c : { ...c, geo: strip(c.geo) })),
@@ -162,9 +165,10 @@ export function viewFor(m: Member, db: DemoDB, now = new Date()): DemoDB {
   });
   const base = { ...db, idempotencyKeys: [], me: m.id, kiosks };
   if (canSeeMoney(m)) {
-    if (canSeeCoordinates(m.role, locationPolicy(db))) return { ...base, scope: "full" };
-    // 대표가 ‘좌표는 대표만’으로 정한 회사의 관리자: 판정(현장 안/밖)만 보내고 좌표·거리·오차는 뺀다 (본인 기록은 그대로 · D-43)
-    return { ...base, scope: "full", ...withoutOthersCoords(db, m.id) };
+    if (m.role === "ceo") return { ...base, scope: "full" };
+    // 관리자: 대표가 ‘좌표는 대표만’으로 정했거나, 그렇게 정했을 때 모은 좌표는 판정만 (본인 기록은 그대로 · D-43·D-49)
+    const policy = locationPolicy(db);
+    return { ...base, scope: "full", ...withoutOthersCoords(db, m.id, (g) => canSeeStamp(m.role, policy, g)) };
   }
 
   const users = db.users.map((u) => ({ id: u.id, role: u.role, name: u.name, title: u.title, ...(u.inactive ? { inactive: true } : {}) }));

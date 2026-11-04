@@ -279,7 +279,11 @@ function sheetRows(xml: string, shared: string[], xfDate: ("date" | "time" | "da
     const r = ra.r ? Number(ra.r) : nextRow;
     nextRow = r + 1;
     if (!Number.isInteger(r) || r < 1) continue;
-    if (r > MAX_ROWS) throw new XlsxError(`시트가 너무 깁니다 (${MAX_ROWS.toLocaleString()}행 이하). 나눠서 올려주세요.`);
+    // 테두리·서식만 있는 빈 행(양식을 아래까지 꾸민 경우)은 건너뛴다 — 값이 있는 행만 제한에 센다 (리뷰 반영 D-49)
+    if (r > MAX_ROWS) {
+      if (/<v\b[^>]*>[^<]|<t\b[^>]*>[^<]/.test(rm[2] ?? "")) throw new XlsxError(`시트가 너무 깁니다 (${MAX_ROWS.toLocaleString()}행 이하). 나눠서 올려주세요.`);
+      continue;
+    }
     const cells: string[] = [];
     let nextCol = 0;
     for (const cm of (rm[2] ?? "").matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {

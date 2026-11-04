@@ -13,7 +13,7 @@ import type { DemoDB, GeoStamp, Site } from "@/lib/domain/types";
 import { distanceM, geoText, type GeoSample } from "@/lib/domain/geo";
 import { hhmm, minutesOf } from "@/lib/domain/attendance";
 import { todayIso } from "@/lib/domain/format";
-import { consentNotice, hasConsent, locationPolicy } from "@/lib/domain/privacy";
+import { consentNotice, currentTerms, hasConsent, locationPolicy } from "@/lib/domain/privacy";
 import { deviceId, locateOnce } from "@/lib/geo/client";
 import { decodeQrFromFile } from "@/lib/geo/qrClient";
 import { makeQrToken, parseQrText, qrWindow, QR_LABEL } from "@/lib/domain/qr";
@@ -62,7 +62,8 @@ export function EasyAttendance({ db, userId, sites, autoQr }: { db: DemoDB; user
     setBusy(true);
     setErr(null);
     try {
-      const args = { siteId: site.id, sample, noLocation: sample ? undefined : (reason ?? "unavailable"), deviceId: deviceId() || undefined, consent, ...(qrToken ? { qrToken } : {}) };
+      // 동의할 때는 화면에 보여준 조건을 함께 보낸다 — 그 사이 회사 규칙이 바뀌었으면 서버가 다시 보여달라고 한다 (D-49)
+      const args = { siteId: site.id, sample, noLocation: sample ? undefined : (reason ?? "unavailable"), deviceId: deviceId() || undefined, consent, ...(consent ? { consentTerms: currentTerms(db) } : {}), ...(qrToken ? { qrToken } : {}) };
       const r = mode === "in" ? await run("checkIn", { ...args }) : await run("checkOut", args);
       const qr = "qr" in r ? r.qr : undefined;
       const ok = r.geo.status === "inside" && (!qrToken || qr?.status === "ok");

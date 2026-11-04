@@ -532,15 +532,15 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     await ceo.getByTestId("privacy-save").click();
     await expect(ceo.getByTestId("privacy-notice")).toContainText("1년이 지나면 좌표를 자동으로 지웁니다");
     const park = ceo.locator('[data-testid="privacy-person"]').filter({ hasText: "박현장" }).first();
-    await expect(park).toContainText("동의");
+    await expect(park).toContainText("다시 동의 필요");
     // 대표는 서버에서 좌표를 받는다
     const before = await (await ceo.request.get("/api/state")).json();
     expect(JSON.stringify(before.db.attendance)).toMatch(/"lat"/);
 
-    // 현장소장: 조건이 더 짧고 좁아졌으므로 다시 묻지 않음 → 그만두기
+    // 현장소장: ‘기간 미정’으로 동의했으므로 기간이 정해지면 다음 출근 때 한 번 다시 묻는다(D-49) → 그만두기
     const field = await login(browser, FIELD.email, FIELD.password, { width: 390, height: 844 });
     await field.goto("/my");
-    await expect(field.getByTestId("my-location-state")).toHaveAttribute("data-state", "agreed");
+    await expect(field.getByTestId("my-location-state")).toHaveAttribute("data-state", "outdated");
     await expect(field.getByTestId("my-location")).toContainText("1년 지나면 좌표 자동 삭제");
     await expect(field.getByTestId("my-location-row").first()).toBeVisible();
     await field.getByTestId("my-location-withdraw").click();
@@ -638,7 +638,7 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
   test("로그아웃 후 데이터 접근 불가 / 화면 가로 넘침 없음", async ({ browser }) => {
     for (const w of [390, 1440]) {
       const page = await login(browser, CEO.email, CEO.password, { width: w, height: 900 });
-      for (const r of ["/dashboard", `/sites/${siteId}`, "/admin", "/admin?tab=members", "/report", "/settings", "/labor", "/attendance", "/orders", "/schedule", "/data", "/usage", "/help", "/audit", "/daily"]) {
+      for (const r of ["/dashboard", `/sites/${siteId}`, "/admin", "/admin?tab=members", "/report", "/settings", "/labor", "/attendance", "/orders", "/schedule", "/data", "/usage", "/help", "/audit", "/daily", "/quality", "/admin?tab=privacy", "/field/check", "/my"]) {
         await page.goto(r);
         await page.waitForTimeout(300);
         const over = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
