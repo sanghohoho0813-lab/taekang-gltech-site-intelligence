@@ -126,8 +126,12 @@ const zeroContract = (siteId: string): SiteContract => ({ siteId, contractAmount
 /** 회사 목표 이익률·하락 기준은 내부 경영 정보 — 현장·발주처에는 작동하지 않는 값으로 바꿔 보낸다 */
 const hideMarginTargets = (t: DemoDB["thresholds"]): DemoDB["thresholds"] => ({ ...t, targetMarginPct: 0, marginDropPp: 100 });
 
+/** 현장 휴대폰에 보내는 기록 기간 (일) — 그보다 오래된 기록은 서버에 남아 있고 본사 화면에서 봅니다 */
+export const FIELD_WINDOW_DAYS = 60;
+const kstDate = (iso: string) => new Date(new Date(iso).getTime() + 9 * 3_600_000).toISOString().slice(0, 10);
+
 /** 역할별로 내려보낼 데이터만 남긴다 */
-export function viewFor(m: Member, db: DemoDB): DemoDB {
+export function viewFor(m: Member, db: DemoDB, now = new Date()): DemoDB {
   // QR 단말기 비밀값·연결 코드는 누구에게도 내려보내지 않는다 (태블릿은 연결할 때 한 번만 받음)
   const kiosks = (db.kiosks ?? []).map((k) => {
     const { secret: _s, pairHash: _p, ...rest } = k;
@@ -166,10 +170,20 @@ export function viewFor(m: Member, db: DemoDB): DemoDB {
 
   if (m.role === "field") {
     const sites = fieldSiteIds(m, db);
+    // 휴대폰에는 최근 60일 + 아직 끝나지 않은 것만 (데이터 사용량·개인정보 최소화, D-34)
+    const since = kstDate(new Date(now.getTime() - FIELD_WINDOW_DAYS * 86_400_000).toISOString());
     const actions = db.actions
       .filter((a) => a.assigneeUserId === m.id)
       .map((a) => ({ ...a, kpiBefore: { ...a.kpiBefore, eac: 0, expectedProfit: 0, marginPct: 0, adjustedContract: 0, pendingClaimAmount: 0 } }));
     const actionIds = new Set(actions.map((a) => a.id));
+    const reports = db.reports.filter((r) => sites.has(r.siteId) && (r.reportDate >= since || (r.createdBy === m.id && r.review?.status === "returned")));
+    const crewChecks = (db.crewChecks ?? []).filter((c) => sites.has(c.siteId) && c.workDate >= since);
+    const workOrders = (db.workOrders ?? []).filter((w) => w.assigneeUserId === m.id && (w.status !== "confirmed" || kstDate(w.createdAt) >= since));
+    const photoRefs = new Set([
+      ...reports.flatMap((r) => [...r.photoIds, ...(r.supplements ?? []).flatMap((s) => s.photoIds)]),
+      ...crewChecks.flatMap((c) => (c.photoId ? [c.photoId] : [])),
+      ...workOrders.flatMap((w) => w.donePhotoIds ?? []),
+    ]);
     return {
       ...base,
       ...empty,
@@ -178,9 +192,9 @@ export function viewFor(m: Member, db: DemoDB): DemoDB {
       sites: db.sites.filter((s) => sites.has(s.id)),
       // 계산 엔진이 깨지지 않도록 금액 0의 빈 계약만 둔다 (현장 화면은 금액을 표시하지 않음)
       contracts: [...sites].map(zeroContract),
-      costEntries: db.costEntries.filter((e) => e.createdBy === m.id && sites.has(e.siteId)),
-      reports: db.reports.filter((r) => sites.has(r.siteId)),
-      photos: db.photos.filter((p) => sites.has(p.siteId)),
+      costEntries: db.costEntries.filter((e) => e.createdBy === m.id && sites.has(e.siteId) && (e.date >= since || e.status === "pending")),
+      reports,
+      photos: db.photos.filter((p) => sites.has(p.siteId) && (photoRefs.has(p.id) || (!!p.actionId && actionIds.has(p.actionId)) || kstDate(p.createdAt) >= since)),
       partnerRequests: db.partnerRequests.filter((r) => sites.has(r.siteId)),
       actions,
       proofEvents: db.proofEvents
@@ -188,12 +202,12 @@ export function viewFor(m: Member, db: DemoDB): DemoDB {
         .map((p) => ({ ...p, kpi_before: {}, kpi_after: {} })),
       activityLogs: db.activityLogs.filter((l) => l.by === m.id),
       // 출퇴근은 본인 기록만
-      attendance: (db.attendance ?? []).filter((r) => r.userId === m.id),
+      attendance: (db.attendance ?? []).filter((r) => r.userId === m.id && r.workDate >= since),
       consents: (db.consents ?? []).filter((c) => c.userId === m.id),
       // 작업 인원은 담당 현장 것만
-      crewChecks: (db.crewChecks ?? []).filter((c) => sites.has(c.siteId)),
-      attendanceRequests: (db.attendanceRequests ?? []).filter((q) => q.userId === m.id),
-      workOrders: (db.workOrders ?? []).filter((w) => w.assigneeUserId === m.id),
+      crewChecks,
+      attendanceRequests: (db.attendanceRequests ?? []).filter((q) => q.userId === m.id && (q.workDate >= since || q.status === "pending")),
+      workOrders,
       // 팀별 단가(협력업체 단가)는 현장에 보내지 않는다 — 노무비 입력에 쓰는 기본 일당만
       settings: db.settings ? { ...db.settings, teamRates: undefined } : db.settings,
       thresholds: hideMarginTargets(db.thresholds),

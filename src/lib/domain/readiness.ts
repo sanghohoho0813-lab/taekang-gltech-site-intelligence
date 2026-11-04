@@ -80,6 +80,10 @@ export function siteReadiness(db: DemoDB, site: Site, today: string): SiteReadin
   return { site, items, ok: items.filter((i) => i.status === "ok").length, total: items.length };
 }
 
+/** 화면·명령이 매번 읽는 주요 기록 (활동 이력은 최근 300건만 읽으므로 제외) */
+const DATA_COLLECTIONS = ["attendance", "reports", "photos", "crewChecks", "costEntries", "workOrders", "attendanceRequests", "partnerRequests", "billings", "payments", "changeOrders"] as const;
+export const DATA_VOLUME_WARN = 45_000;
+
 export function companyReadiness(db: DemoDB): ReadyItem[] {
   const s = db.settings;
   const items: ReadyItem[] = [];
@@ -92,6 +96,14 @@ export function companyReadiness(db: DemoDB): ReadyItem[] {
     status: qr && sitesNoKiosk.length ? "warn" : "ok",
     text: qr ? (sitesNoKiosk.length ? `현장 QR — ${sitesNoKiosk.map((x) => x.shortName).join(", ")} 태블릿 미연결` : "현장 QR + GPS") : "GPS (가짜 GPS 대응이 필요하면 현장 QR)",
     fix: "geo",
+  });
+  // 데이터 규모 — 1년치(약 2만 건)는 여유, 약 2년치(4.5만 건)부터 오래된 기록 보관 정리 시점 (D-34 성능 측정)
+  const volume = DATA_COLLECTIONS.reduce((a, k) => a + ((db[k] as unknown[] | undefined)?.length ?? 0), 0);
+  items.push({
+    key: "data-volume",
+    label: "데이터 규모",
+    status: volume >= DATA_VOLUME_WARN ? "warn" : "ok",
+    text: volume >= DATA_VOLUME_WARN ? `${volume.toLocaleString("ko-KR")}건 — 오래된 기록 보관 정리(아카이브)를 준비할 시점입니다 (처리 속도 유지)` : `${volume.toLocaleString("ko-KR")}건 (여유 — 약 ${DATA_VOLUME_WARN.toLocaleString("ko-KR")}건부터 정리 권장)`,
   });
   const field = db.users.filter((u) => u.role === "field" && !u.inactive);
   items.push({ key: "field-users", label: "현장 직원 계정", status: field.length ? "ok" : "missing", text: field.length ? `${field.length}명` : "현장 직원 계정이 없습니다", fix: "site" });

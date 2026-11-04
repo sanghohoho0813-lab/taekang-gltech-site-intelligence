@@ -16,7 +16,8 @@
     "start:live": "NEXT_PUBLIC_DATA_MODE=live NEXT_DIST_DIR=.next-live next start -p 3000",
     "dev:live": "NEXT_PUBLIC_DATA_MODE=live NEXT_DIST_DIR=.next-live next dev",
     "e2e:live": "playwright test -c playwright.live.config.ts",
-    "preflight": "node scripts/preflight.mjs"
+    "preflight": "node scripts/preflight.mjs",
+    "perf": "vitest run --config vitest.perf.config.ts"
   },
   "engines": {
     "node": ">=20"

@@ -120,6 +120,33 @@ describe("역할별로 내려보내는 데이터 — 금액 전수 검사", () =
     expect(v.budgets).toEqual([]);
   });
 
+  it("현장 휴대폰에는 최근 60일 + 아직 끝나지 않은 것만 (보완 요청 보고·대기 비용·진행 중 지시는 오래돼도 보냄)", () => {
+    const db = createSeed(NOW);
+    const old = "2026-07-01"; // 120일 전
+    db.attendance = [...(db.attendance ?? []), { id: "att-old", siteId: "site-a", userId: "u-field", workDate: old, inAt: `${old}T07:30:00+09:00`, inGeo: { status: "inside" } as never }];
+    db.reports = [
+      ...db.reports,
+      { id: "rep-old", siteId: "site-a", reportDate: old, workDone: "옛 보고", issues: "", tomorrowPlan: "", photoIds: ["ph-old"], costEntryIds: [], createdBy: "u-field", createdAt: `${old}T17:00:00+09:00`, status: "submitted" },
+      { id: "rep-old-returned", siteId: "site-a", reportDate: old, workDone: "보완 요청 받은 옛 보고", issues: "", tomorrowPlan: "", photoIds: ["ph-ret"], costEntryIds: [], createdBy: "u-field", createdAt: `${old}T17:00:00+09:00`, status: "submitted", review: { status: "returned", at: `${old}T18:00:00+09:00`, by: "u-manager", note: "사진 보완" } },
+    ];
+    db.photos = [...db.photos, { id: "ph-old", siteId: "site-a", dataUrl: "/api/photos/ph-old", caption: "", createdAt: `${old}T16:00:00+09:00`, createdBy: "u-field" }, { id: "ph-ret", siteId: "site-a", dataUrl: "/api/photos/ph-ret", caption: "", createdAt: `${old}T16:00:00+09:00`, createdBy: "u-field" }];
+    db.costEntries = [...db.costEntries, { ...db.costEntries[0], id: "ce-old-pending", siteId: "site-a", date: old, createdBy: "u-field", status: "pending" }, { ...db.costEntries[0], id: "ce-old-done", siteId: "site-a", date: old, createdBy: "u-field", status: "active" }];
+    db.workOrders = [...(db.workOrders ?? []), { id: "wo-old-open", siteId: "site-a", title: "옛 지시", detail: "", assigneeUserId: "u-field", status: "received", createdAt: `${old}T08:00:00+09:00`, createdBy: "u-manager", history: [] }, { id: "wo-old-done", siteId: "site-a", title: "끝난 옛 지시", detail: "", assigneeUserId: "u-field", status: "confirmed", createdAt: `${old}T08:00:00+09:00`, createdBy: "u-manager", history: [] }];
+    const v = viewFor(FIELD, db, NOW);
+    const ids = (xs: { id: string }[]) => xs.map((x) => x.id);
+    expect(ids(v.attendance ?? [])).not.toContain("att-old");
+    expect(ids(v.reports)).not.toContain("rep-old");
+    expect(ids(v.reports)).toContain("rep-old-returned");
+    expect(ids(v.photos)).toContain("ph-ret");
+    expect(ids(v.photos)).not.toContain("ph-old");
+    expect(ids(v.costEntries)).toContain("ce-old-pending");
+    expect(ids(v.costEntries)).not.toContain("ce-old-done");
+    expect(ids(v.workOrders ?? [])).toContain("wo-old-open");
+    expect(ids(v.workOrders ?? [])).not.toContain("wo-old-done");
+    // 본사(대표·관리자)는 전체 기간을 받는다
+    expect(ids(viewFor(MANAGER, db, NOW).attendance ?? [])).toContain("att-old");
+  });
+
   it("모든 역할: QR 단말기 비밀값·연결 코드와 중복 방지 키는 내려가지 않는다", () => {
     const db = createSeed(NOW);
     for (const m of [CEO, MANAGER, FIELD, PARTNER]) {
