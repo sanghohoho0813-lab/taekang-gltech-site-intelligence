@@ -1,7 +1,7 @@
 /**
  * 휴대폰 점검 (D-46) — 현장: 내 정보 → 점검 → 사진 한 장 → 결과·고치는 방법 → 본사로 보내기 / 본사: 사용 현황에 표시
  */
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page } from "./demoTest";
 
 const PREFS = "tk-site-intel:prefs:v1";
 const DB = "tk-site-intel:db:v1";

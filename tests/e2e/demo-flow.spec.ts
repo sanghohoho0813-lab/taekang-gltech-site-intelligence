@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page } from "./demoTest";
 
 const PREFS = "tk-site-intel:prefs:v1";
 const DB = "tk-site-intel:db:v1";

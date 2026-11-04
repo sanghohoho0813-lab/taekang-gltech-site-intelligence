@@ -2,7 +2,7 @@
  * 접근성 자동 점검 (WCAG 2.1 A·AA, axe-core) — 현장 직원(60~70대) 화면과 본사·발주처 주요 화면 (D-40)
  * 글자 대비·버튼 이름·입력 이름표·제목 순서 등. 위반이 하나라도 있으면 실패한다.
  */
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page } from "./demoTest";
 import AxeBuilder from "@axe-core/playwright";
 
 const PREFS = "tk-site-intel:prefs:v1";

@@ -2,7 +2,7 @@
  * 개인위치정보 (D-43) — 대표가 규칙을 정함 → 관리자 화면에는 좌표(지도) 없음 → 직원 동의 화면에 같은 조건 →
  * 직원이 ‘내 위치 기록’에서 보고 그만두기 → 본사 동의 현황 반영
  */
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page } from "./demoTest";
 
 const PREFS = "tk-site-intel:prefs:v1";
 const DB = "tk-site-intel:db:v1";

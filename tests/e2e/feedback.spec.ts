@@ -2,7 +2,7 @@
  * 앱 의견 (D-47) — 현장: 누르기만으로 보내기 → 본사 처리 대기·오류·의견 → 보류(이유 필수)·반영 → 현장 ‘내 정보’에 결과·답변, CSV
  */
 import { readFileSync } from "node:fs";
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page } from "./demoTest";
 
 const PREFS = "tk-site-intel:prefs:v1";
 const DB = "tk-site-intel:db:v1";

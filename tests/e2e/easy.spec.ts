@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page } from "./demoTest";
 
 /** 현장 직원(60~70대 포함) 쉬운 화면 — 글자 입력 없이 누르기만으로 보고, 큰 글씨·큰 버튼 */
 const PREFS = "tk-site-intel:prefs:v1";
