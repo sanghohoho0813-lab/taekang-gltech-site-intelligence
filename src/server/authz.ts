@@ -123,6 +123,9 @@ export function authorize(m: Member, name: CommandName, argsIn: unknown, db: Dem
 
 const zeroContract = (siteId: string): SiteContract => ({ siteId, contractAmount: 0, signedDate: "", plannedCostTotal: 0 });
 
+/** 회사 목표 이익률·하락 기준은 내부 경영 정보 — 현장·발주처에는 작동하지 않는 값으로 바꿔 보낸다 */
+const hideMarginTargets = (t: DemoDB["thresholds"]): DemoDB["thresholds"] => ({ ...t, targetMarginPct: 0, marginDropPp: 100 });
+
 /** 역할별로 내려보낼 데이터만 남긴다 */
 export function viewFor(m: Member, db: DemoDB): DemoDB {
   // QR 단말기 비밀값·연결 코드는 누구에게도 내려보내지 않는다 (태블릿은 연결할 때 한 번만 받음)
@@ -193,6 +196,7 @@ export function viewFor(m: Member, db: DemoDB): DemoDB {
       workOrders: (db.workOrders ?? []).filter((w) => w.assigneeUserId === m.id),
       // 팀별 단가(협력업체 단가)는 현장에 보내지 않는다 — 노무비 입력에 쓰는 기본 일당만
       settings: db.settings ? { ...db.settings, teamRates: undefined } : db.settings,
+      thresholds: hideMarginTargets(db.thresholds),
     };
   }
 
@@ -208,7 +212,7 @@ export function viewFor(m: Member, db: DemoDB): DemoDB {
     partnerRequests: db.partnerRequests.filter((r) => sites.has(r.siteId) && r.partnerUserId === m.id),
     // 내부 운영 설정(일당 등)은 숨기고, 가상 데이터 회사라는 표시만 전달
     settings: db.settings?.sampleData ? { costApproval: "immediate", laborDayRate: 0, sampleData: true } : undefined,
-    thresholds: db.thresholds,
+    thresholds: hideMarginTargets(db.thresholds),
   };
 }
 

@@ -257,7 +257,7 @@ for (const w of [390, 430, 768, 1024, 1280, 1440, 1920]) {
   test(`반응형 ${w}px: 가로 넘침 없음 (주요 화면)`, async ({ page }) => {
     await page.setViewportSize({ width: w, height: 900 });
     await freshStart(page);
-    for (const r of ["/dashboard", "/sites/site-a", "/field", "/insights", "/finance", "/report", "/partner", "/settings", "/why-ax", "/evidence", "/labor", "/orders", "/schedule", "/attendance", "/data", "/usage", "/help", "/daily"]) {
+    for (const r of ["/dashboard", "/sites/site-a", "/field", "/insights", "/finance", "/report", "/partner", "/settings", "/why-ax", "/evidence", "/labor", "/orders", "/schedule", "/attendance", "/data", "/usage", "/help", "/daily", "/audit"]) {
       await page.goto(r);
       await page.waitForTimeout(250);
       const over = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
@@ -535,4 +535,30 @@ test("운영 배포 준비: 보안 헤더(CSP·위치/카메라 권한·검색 �
   const frame = page.frameLocator("iframe").first();
   await expect(frame.locator("body")).not.toBeEmpty();
   expect(violations).toEqual([]);
+});
+
+test("활동 이력: 설정 변경이 이력에 남고 종류·검색으로 찾기 · CSV · 현장직원 접근 차단", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await freshStart(page, { role: "manager" });
+  await page.goto("/labor");
+  const team = page.locator('[data-testid="labor-site"][data-site="site-a"]').getByTestId("labor-team").first();
+  await team.getByTestId("labor-rate").fill("33");
+  await page.locator('[data-testid="labor-site"][data-site="site-a"]').getByTestId("labor-rate-save").click();
+  await expect(team).not.toContainText("기본 일당");
+  await page.goto("/audit");
+  await expect(page.getByTestId("audit-row").first()).toBeVisible();
+  await page.getByTestId("audit-type").selectOption("settings");
+  const rows = page.getByTestId("audit-row");
+  await expect(rows.first()).toContainText("운영 설정 변경");
+  for (const t of await rows.evaluateAll((els) => els.map((e) => e.getAttribute("data-type")))) expect(t).toBe("settings");
+  await page.getByTestId("audit-type").selectOption("");
+  await page.getByTestId("audit-q").fill("운영 설정");
+  await page.getByTestId("audit-search").click();
+  await expect(rows.first()).toContainText("운영 설정");
+  const dl = page.waitForEvent("download");
+  await page.getByTestId("audit-csv").click();
+  expect(readFileSync((await (await dl).path())!, "utf8")).toContain("시각,사람,현장,종류,내용");
+  await page.getByTestId("demo-role").selectOption("field");
+  await page.goto("/audit");
+  await expect(page.getByTestId("access-denied")).toBeVisible();
 });

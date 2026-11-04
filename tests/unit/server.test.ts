@@ -335,6 +335,32 @@ describe("사진·이력·설정", () => {
     expect(j.counts.sites).toBe(j.data.sites.length);
     expect(j.data.kiosks.every((k: Record<string, unknown>) => !("secret" in k) && !("pairHash" in k))).toBe(true);
   });
+  it("활동 이력 조회: 화면에 실리는 최근 300건 밖의 오래된 이력도 서버에서 조건으로 찾고, 대표·관리자만", async () => {
+    const db = await getDb();
+    // 석 달 전 이력 320건을 직접 넣는다 (화면 데이터에는 최근 300건만 실림)
+    for (let i = 0; i < 320; i++) {
+      const at = new Date(Date.UTC(2026, 7, 1, 1, 0, i)).toISOString();
+      const log = { id: `log-old-${i}`, at, by: i % 2 ? "u-field" : "u-manager", type: i % 3 ? "attendance" : "report", siteId: i % 2 ? "site-a" : "site-b", summary: `과거 이력 ${i}${i === 7 ? " 크레인 점검" : ""}` };
+      await db.query(`insert into records (company_id, collection, id, site_id, data) values ($1, 'activityLogs', $2, $3, $4)`, [ceo.companyId, log.id, log.siteId, JSON.stringify(log)]);
+    }
+    const view = (await svc.getView(ceo)).db;
+    // 화면 데이터는 300건으로 잘리지만 DB에는 전부 남아 있다
+    expect(view.activityLogs.length).toBe(300);
+    const all = await svc.listActivity(manager, { from: "2026-08-01", to: "2026-08-01" });
+    expect(all.logs).toHaveLength(320);
+    expect(all.logs[0].at >= all.logs[319].at).toBe(true); // 최신순
+    expect((await svc.listActivity(ceo, { from: "2026-08-01", to: "2026-08-01", userId: "u-field", siteId: "site-a" })).logs).toHaveLength(160);
+    expect((await svc.listActivity(ceo, { from: "2026-08-01", to: "2026-08-01", type: "report" })).logs.every((l) => l.type === "report")).toBe(true);
+    expect((await svc.listActivity(ceo, { from: "2026-08-01", to: "2026-08-01", q: "크레인" })).logs.map((l) => l.id)).toEqual(["log-old-7"]);
+    // 검색어에 SQL을 넣어도 문자열로만 취급
+    expect((await svc.listActivity(ceo, { from: "2026-08-01", to: "2026-08-01", q: "' or 1=1 --" })).logs).toEqual([]);
+    expect((await svc.listActivity(ceo, { from: "2026-07-01", to: "2026-07-31" })).logs).toEqual([]);
+    await expect(svc.listActivity(field, { from: "2026-08-01", to: "2026-08-01" })).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(svc.listActivity(partner, { from: "2026-08-01", to: "2026-08-01" })).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(svc.listActivity(ceo, { from: "2026-08-02", to: "2026-08-01" })).rejects.toBeInstanceOf(CommandError);
+    await expect(svc.listActivity(ceo, { from: "bad", to: "2026-08-01" })).rejects.toBeInstanceOf(CommandError);
+  });
+
   it("활동 이력은 지워지지 않는다 (DB에는 계속 쌓임)", async () => {
     const db = await getDb();
     const [{ n }] = await db.query<{ n: string }>(`select count(*) as n from records where collection = 'activityLogs'`);

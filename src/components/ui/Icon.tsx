@@ -21,6 +21,7 @@ import {
   Activity,
   BookOpen,
   NotebookText,
+  History,
   type LucideIcon,
 } from "lucide-react";
 
@@ -47,6 +48,7 @@ const MAP: Record<string, LucideIcon> = {
   Activity,
   BookOpen,
   NotebookText,
+  History,
 };
 
 export function NavIcon({ name, className, size = 20 }: { name: string; className?: string; size?: number }) {

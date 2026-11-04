@@ -4,8 +4,9 @@
  */
 import { pairHash, pairKiosk } from "@/lib/data/attendanceCommands";
 import { hex, randomBytes } from "@/lib/domain/hmac";
-import type { DemoDB, RoleId } from "@/lib/domain/types";
+import type { ActivityLog, DemoDB, RoleId } from "@/lib/domain/types";
 import { DEFAULT_SETTINGS } from "@/lib/domain/types";
+import { AUDIT_LIMIT, auditRange, type AuditFilter } from "@/lib/domain/audit";
 import { COMMANDS, isCommandName, type CommandName } from "@/lib/data/registry";
 import { CommandError } from "@/lib/data/commands";
 import { createSeed } from "@/lib/data/seed";
@@ -19,6 +20,32 @@ export async function getView(m: Member): Promise<{ rev: number; db: DemoDB }> {
   const db = await getDb();
   const state = await db.transaction((tx) => loadState(tx, m.companyId));
   return { rev: state.rev, db: viewFor(m, state) };
+}
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * 활동 이력 조회 (대표·관리자) — 화면 데이터에는 최근 300건만 실리므로, 오래된 이력은 DB에서 조건으로 찾는다.
+ * 이력은 지워지지 않는다 (추가만).
+ */
+export async function listActivity(m: Member, f: AuditFilter): Promise<{ logs: ActivityLog[]; truncated: boolean }> {
+  requireAdmin(m);
+  if (!DATE_RE.test(String(f.from)) || !DATE_RE.test(String(f.to)) || f.from > f.to) throw new CommandError("기간을 확인해주세요.", "VALIDATION");
+  const { fromIso, toIso } = auditRange(f);
+  const params: unknown[] = [m.companyId, fromIso, toIso];
+  const where = ["company_id = $1", "collection = 'activityLogs'", "data->>'at' >= $2", "data->>'at' <= $3"];
+  const add = (expr: (n: string) => string, v: unknown) => {
+    params.push(v);
+    where.push(expr("$" + params.length));
+  };
+  if (f.siteId) add((n) => `data->>'siteId' = ${n}`, String(f.siteId).slice(0, 80));
+  if (f.userId) add((n) => `data->>'by' = ${n}`, String(f.userId).slice(0, 80));
+  if (f.type) add((n) => `data->>'type' = ${n}`, String(f.type).slice(0, 40));
+  if (f.q?.trim()) add((n) => `position(lower(${n}) in lower(data->>'summary')) > 0`, f.q.trim().slice(0, 60));
+  const db = await getDb();
+  const rows = await db.query<{ data: ActivityLog | string }>(`select data from records where ${where.join(" and ")} order by data->>'at' desc limit ${AUDIT_LIMIT + 1}`, params);
+  const logs = rows.map((r) => (typeof r.data === "string" ? (JSON.parse(r.data) as ActivityLog) : r.data));
+  return { logs: logs.slice(0, AUDIT_LIMIT), truncated: logs.length > AUDIT_LIMIT };
 }
 
 /**

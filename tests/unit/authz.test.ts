@@ -1,0 +1,131 @@
+/**
+ * 권한 매트릭스 (계약 검수 S6) — 모든 명령 × 4개 역할을 자동으로 확인한다.
+ * 새 명령을 추가하면 첫 테스트가 실패한다 → 아래 표에 역할별 허용 여부를 정하고 나서 통과시킨다 (권한 구멍 방지).
+ */
+import { describe, expect, it } from "vitest";
+import { authorize, ForbiddenError, viewFor } from "@/server/authz";
+import type { Member } from "@/server/auth";
+import { COMMANDS, type CommandName } from "@/lib/data/registry";
+import { createSeed } from "@/lib/data/seed";
+import { computeSignals } from "@/lib/domain/risk";
+import type { DemoDB } from "@/lib/domain/types";
+
+const NOW = new Date("2026-11-04T03:00:00Z");
+const ALL = Object.keys(COMMANDS).sort() as CommandName[];
+
+/** 현장 직원이 실행할 수 있는 명령 (그 안에서도 담당 현장·본인 것만) */
+const FIELD_ALLOWED = new Set<CommandName>(["submitFieldReport", "voidReport", "voidCostEntry", "editCostEntry", "setActionStatus", "addActionNote", "completeAction", "updateProgress", "requestAttendanceFix", "workOrderStep", "supplementReport", "checkIn", "checkOut", "confirmQr", "reportCrew"]);
+/** 발주처가 실행할 수 있는 명령 */
+const PARTNER_ALLOWED = new Set<CommandName>(["createPartnerRequest"]);
+
+const member = (id: string, role: Member["role"], extra: Partial<Member> = {}): Member => ({ id, companyId: "c1", email: `${id}@t.test`, name: id, title: "", role, siteIds: [], partnerSiteIds: [], active: true, mustChangePassword: false, ...extra });
+const CEO = member("u-ceo", "ceo");
+const MANAGER = member("u-manager", "manager");
+const FIELD = member("u-field", "field");
+const PARTNER = member("u-partner", "partner", { partnerSiteIds: ["site-a"] });
+
+function sample(db: DemoDB, name: CommandName): Record<string, unknown> {
+  const sig = computeSignals(db, NOW)[0];
+  return { siteId: "site-a", signal: name === "createAction" ? sig : undefined, reportId: db.reports[0]?.id, entryId: db.costEntries[0]?.id, actionId: db.actions[0]?.id, workOrderId: db.workOrders?.[0]?.id, to: "in_progress", input: {} };
+}
+
+describe("권한 매트릭스 — 모든 명령 × 역할", () => {
+  it("명령 목록이 바뀌면 이 표를 먼저 갱신한다 (39개)", () => {
+    expect(ALL).toEqual(
+      [
+        "addActionNote", "addBilling", "addPayment", "assignAction", "checkIn", "checkOut", "completeAction", "confirmProofEvent", "confirmQr", "correctAttendance", "createAction", "createKiosk", "createPartnerRequest", "createWorkOrder", "editCostEntry", "importCostRows", "importData", "reportCrew", "requestAttendanceFix", "reviewAttendanceFix", "reviewCostEntry", "reviewReport", "reviewWorkOrder", "revokeKiosk", "saveSite", "setActionStatus", "setChangeOrderStatus", "setCompanySettings", "setSiteGeo", "setThresholds", "submitFieldReport", "supplementReport", "undoImport", "updateForecast", "updatePartnerRequest", "updateProgress", "voidCostEntry", "voidReport", "workOrderStep",
+      ].sort(),
+    );
+    // QR 태블릿 연결은 로그인 없는 전용 API로만 (명령 목록에 없어야 함)
+    expect(ALL).not.toContain("pairKiosk");
+  });
+
+  it("대표·관리자는 모든 명령을 실행할 수 있다 (금액·승인 포함)", () => {
+    const db = createSeed(NOW);
+    for (const m of [CEO, MANAGER]) for (const name of ALL) expect(() => authorize(m, name, sample(db, name), db, NOW), `${m.role}:${name}`).not.toThrow();
+  });
+
+  it("현장 직원: 허용 목록 밖의 명령은 모두 거부 (승인·금액·설정·지시·가져오기·단말기)", () => {
+    const db = createSeed(NOW);
+    const denied = ALL.filter((n) => !FIELD_ALLOWED.has(n));
+    expect(denied.length).toBe(ALL.length - FIELD_ALLOWED.size);
+    for (const name of denied) expect(() => authorize(FIELD, name, sample(db, name), db, NOW), name).toThrow(ForbiddenError);
+  });
+
+  it("현장 직원: 허용된 명령도 담당 현장·본인 것만", () => {
+    const db = createSeed(NOW);
+    const other = "site-c"; // 정우진 담당
+    for (const name of ["submitFieldReport", "updateProgress", "requestAttendanceFix", "checkIn", "checkOut", "confirmQr", "reportCrew"] as CommandName[]) expect(() => authorize(FIELD, name, { siteId: other }, db, NOW), name).toThrow(ForbiddenError);
+    const othersReport = db.reports.find((r) => r.createdBy !== "u-field")!;
+    expect(() => authorize(FIELD, "voidReport", { reportId: othersReport.id }, db, NOW)).toThrow(ForbiddenError);
+    expect(() => authorize(FIELD, "supplementReport", { reportId: othersReport.id }, db, NOW)).toThrow(ForbiddenError);
+    const othersEntry = db.costEntries.find((e) => e.createdBy !== "u-field")!;
+    expect(() => authorize(FIELD, "voidCostEntry", { entryId: othersEntry.id }, db, NOW)).toThrow(ForbiddenError);
+    expect(() => authorize(FIELD, "editCostEntry", { entryId: othersEntry.id }, db, NOW)).toThrow(ForbiddenError);
+    const othersOrder = (db.workOrders ?? []).find((w) => w.assigneeUserId !== "u-field");
+    if (othersOrder) expect(() => authorize(FIELD, "workOrderStep", { workOrderId: othersOrder.id }, db, NOW)).toThrow(ForbiddenError);
+    expect(() => authorize(FIELD, "workOrderStep", { workOrderId: "nope" }, db, NOW)).toThrow(ForbiddenError);
+    const notMine = db.actions.find((a) => a.assigneeUserId !== "u-field");
+    if (notMine) expect(() => authorize(FIELD, "setActionStatus", { actionId: notMine.id, to: "in_progress" }, db, NOW)).toThrow(ForbiddenError);
+    const mine = db.actions.find((a) => a.assigneeUserId === "u-field");
+    if (mine) {
+      // 현장은 ‘완료 확정’을 할 수 없다
+      expect(() => authorize(FIELD, "setActionStatus", { actionId: mine.id, to: "done" }, db, NOW)).toThrow(ForbiddenError);
+      const args = authorize(FIELD, "completeAction", { actionId: mine.id, input: { confirm: true } }, db, NOW) as { input: { confirm: boolean } };
+      expect(args.input.confirm).toBe(false);
+    }
+    // 현장 보고의 출처는 서버가 정한다 (PC로 위장 불가)
+    expect((authorize(FIELD, "submitFieldReport", { siteId: "site-a", source: "PC" }, db, NOW) as { source: string }).source).toBe("FIELD");
+  });
+
+  it("발주처: 본인 현장 요청 등록만, 나머지는 전부 거부", () => {
+    const db = createSeed(NOW);
+    for (const name of ALL.filter((n) => !PARTNER_ALLOWED.has(n))) expect(() => authorize(PARTNER, name, sample(db, name), db, NOW), name).toThrow(ForbiddenError);
+    expect(() => authorize(PARTNER, "createPartnerRequest", { siteId: "site-a" }, db, NOW)).not.toThrow();
+    expect(() => authorize(PARTNER, "createPartnerRequest", { siteId: "site-b" }, db, NOW)).toThrow(ForbiddenError);
+  });
+});
+
+/** 금액으로 볼 수 있는 0보다 큰 숫자를 찾는다 */
+const MONEY_KEY = /amount|Amount|dayRate|DayRate|budget|Budget|eac|profit|Profit|margin|Margin|outstanding|contract|Contract|remaining|incurred|estimate/;
+function moneyPaths(x: unknown, path = ""): string[] {
+  if (Array.isArray(x)) return x.flatMap((v, i) => moneyPaths(v, `${path}[${i}]`));
+  if (x && typeof x === "object") return Object.entries(x).flatMap(([k, v]) => (typeof v === "number" && v > 0 && MONEY_KEY.test(k) ? [`${path}.${k}`] : moneyPaths(v, `${path}.${k}`)));
+  return [];
+}
+
+describe("역할별로 내려보내는 데이터 — 금액 전수 검사", () => {
+  it("발주처에게는 금액이 하나도 가지 않는다", () => {
+    const db = createSeed(NOW);
+    db.settings = { ...db.settings!, teamRates: [{ team: "유리 설치팀", dayRate: 320_000 }] };
+    const v = viewFor(PARTNER, db);
+    // 목표 이익률·하락 기준은 작동하지 않는 값으로 (회사 내부 경영 정보)
+    expect(v.thresholds).toMatchObject({ targetMarginPct: 0, marginDropPp: 100 });
+    expect(moneyPaths(v).filter((p) => p !== ".thresholds.marginDropPp")).toEqual([]);
+    expect(v.importBatches).toEqual([]);
+    expect(v.users.every((u) => u.role !== "partner" || u.id === "u-partner")).toBe(true);
+  });
+
+  it("현장 직원에게는 본인이 입력한 비용과 기본 일당만 (계약·예산·기성·변경공사·팀 단가·이익 없음)", () => {
+    const db = createSeed(NOW);
+    db.settings = { ...db.settings!, teamRates: [{ team: "유리 설치팀", dayRate: 320_000 }] };
+    const v = viewFor(FIELD, db);
+    expect(v.thresholds).toMatchObject({ targetMarginPct: 0, marginDropPp: 100 });
+    const leaks = moneyPaths(v).filter((p) => !/^\.costEntries\[\d+\]\.amount$|^\.costEntries\[\d+\]\.qty\.dayRate$|^\.settings\.laborDayRate$|^\.thresholds\.marginDropPp$/.test(p));
+    expect(leaks).toEqual([]);
+    expect(v.costEntries.every((e) => e.createdBy === "u-field")).toBe(true);
+    expect(v.settings?.teamRates).toBeUndefined();
+    expect(v.billings).toEqual([]);
+    expect(v.changeOrders).toEqual([]);
+    expect(v.budgets).toEqual([]);
+  });
+
+  it("모든 역할: QR 단말기 비밀값·연결 코드와 중복 방지 키는 내려가지 않는다", () => {
+    const db = createSeed(NOW);
+    for (const m of [CEO, MANAGER, FIELD, PARTNER]) {
+      const v = viewFor(m, db);
+      expect(JSON.stringify(v.kiosks ?? [])).not.toMatch(/"secret"|"pairHash"/);
+      expect(v.idempotencyKeys).toEqual([]);
+    }
+  });
+});

@@ -298,12 +298,19 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     const backup = JSON.parse(backupText);
     expect(backup.data.sites.map((x: { shortName: string }) => x.shortName)).toContain("물류센터");
     expect(backup.data.importBatches.length).toBeGreaterThanOrEqual(2);
+    // 활동 이력: 서버에서 조건으로 찾기 (자료 가져오기·취소가 남아 있음)
+    await page.goto("/audit");
+    await page.getByTestId("audit-type").selectOption("import");
+    await expect(page.getByTestId("audit-row").filter({ hasText: "자료 가져오기 취소" })).toHaveCount(1);
+    await expect(page.getByTestId("audit-row").filter({ hasText: "변경공사 1건" })).toHaveCount(1);
+    expect((await page.request.get("/api/activity?from=2026-01-01&to=2026-12-31&type=import")).status()).toBe(200);
     // 사용 현황: 박현장의 실제 출근·보고가 집계된다
     await page.goto("/usage");
     await expect(page.getByTestId("usage-user").filter({ hasText: "박현장" })).toContainText("출근 기록");
     // 현장소장은 가져오기·백업 불가
     const field = await login(browser, FIELD.email, FIELD.password, { width: 390, height: 844 });
     expect((await field.request.get("/api/export")).status()).toBe(403);
+    expect((await field.request.get("/api/activity?from=2026-01-01&to=2026-12-31")).status()).toBe(403);
     expect((await field.request.post("/api/commands", { data: { name: "importData", args: { kind: "billing", text: bill, idempotencyKey: "live-f" } } })).status()).toBe(403);
     expect((await field.request.post("/api/commands", { data: { name: "undoImport", args: { batchId: "x" } } })).status()).toBe(403);
   });
@@ -463,7 +470,7 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
   test("로그아웃 후 데이터 접근 불가 / 화면 가로 넘침 없음", async ({ browser }) => {
     for (const w of [390, 1440]) {
       const page = await login(browser, CEO.email, CEO.password, { width: w, height: 900 });
-      for (const r of ["/dashboard", `/sites/${siteId}`, "/admin", "/admin?tab=members", "/report", "/settings", "/labor", "/attendance", "/orders", "/schedule", "/data", "/usage", "/help"]) {
+      for (const r of ["/dashboard", `/sites/${siteId}`, "/admin", "/admin?tab=members", "/report", "/settings", "/labor", "/attendance", "/orders", "/schedule", "/data", "/usage", "/help", "/audit", "/daily"]) {
         await page.goto(r);
         await page.waitForTimeout(300);
         const over = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
