@@ -12,6 +12,7 @@ import { todayIso } from "@/lib/domain/format";
 import { PageSkeleton, cx } from "@/components/ui/primitives";
 import { BigTile } from "./ui";
 import { PushNudge } from "@/components/PushCard";
+import { OutboxTile } from "./Outbox";
 import { EasyAttendance, FixLink } from "./EasyAttendance";
 import { EASY_CATEGORY, easyDate, easyWon } from "./words";
 import { downscalePhoto } from "./photo";
@@ -45,6 +46,8 @@ export function EasyHome() {
           <FixLink />
         </div>
       )}
+
+      <OutboxTile userId={userId} />
 
       {sites.length === 0 ? (
         <p className="rounded-2xl border-2 border-line bg-surface px-4 py-4 text-[1.1rem] leading-relaxed" data-testid="easy-no-site">

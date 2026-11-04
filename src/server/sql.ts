@@ -77,7 +77,10 @@ async function openPglite(location: string): Promise<Db> {
 async function openPostgres(url: string): Promise<Db> {
   const postgres = (await import("postgres")).default;
   // Supabase 트랜잭션 풀러(6543)는 prepared statement를 지원하지 않으므로 prepare: false
-  const sql = postgres(url, { prepare: false, max: Number(process.env.DB_POOL_MAX ?? 5), idle_timeout: 20, connect_timeout: 15 });
+  // jsonb 매개변수: 앱은 이미 JSON.stringify 한 문자열을 넘긴다. postgres.js 기본 직렬화는 문자열을 한 번 더 감싸
+  // ‘JSON 문자열’로 저장해 버리므로(실제 Postgres에서만 발생, PGlite는 정상) 문자열은 그대로 보낸다 (D-41)
+  const jsonb = { to: 3802, from: [114, 3802], serialize: (x: unknown) => (typeof x === "string" ? x : JSON.stringify(x)), parse: (x: string) => JSON.parse(x) };
+  const sql = postgres(url, { prepare: false, max: Number(process.env.DB_POOL_MAX ?? 5), idle_timeout: 20, connect_timeout: 15, types: { jsonb } as never });
   type Runner = { unsafe: (text: string, params?: never[]) => Promise<unknown> };
   const q = (s: Runner): Tx["query"] => (async (text: string, params?: unknown[]) => (await s.unsafe(text, (params ?? []) as never[])) as never) as Tx["query"];
   return {

@@ -4,6 +4,14 @@ import { test, expect, type Page } from "@playwright/test";
 const PREFS = "tk-site-intel:prefs:v1";
 const DB = "tk-site-intel:db:v1";
 
+/** 화면이 준비되기 전(하이드레이션 전) 클릭이 무시될 수 있어, 테마가 실제로 바뀔 때까지 다시 누른다 */
+async function pickTheme(page: Page, id: string) {
+  await expect(async () => {
+    await page.getByTestId(`theme-${id}`).click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", id, { timeout: 2_000 });
+  }).toPass({ timeout: 20_000 });
+}
+
 async function freshStart(page: Page, prefs: Record<string, unknown> = {}) {
   await page.goto("/dashboard");
   await page.evaluate(
@@ -80,11 +88,12 @@ test("7 Theme 실제 전환 + 글자 크기 + 모바일 프레임 테마 공유"
   await page.goto("/settings");
   const ids = ["deep-navy", "navy-gold", "emerald-gold", "forest-sage", "deep-teal", "onyx-gold", "pure-white"];
   const shells = new Set<string>();
+  const sidebarBg = () => page.getByTestId("sidebar").evaluate((el) => getComputedStyle(el).backgroundColor);
   for (const id of ids) {
-    await page.getByTestId(`theme-${id}`).click();
-    await expect(page.locator("html")).toHaveAttribute("data-theme", id);
-    const bg = await page.getByTestId("sidebar").evaluate((el) => getComputedStyle(el).backgroundColor);
-    shells.add(bg);
+    await pickTheme(page, id);
+    // 테마마다 사이드바 색이 달라야 한다 — 색이 실제로 바뀔 때까지 기다린 뒤 기록
+    await expect.poll(async () => (shells.has(await sidebarBg()) ? "같은 색" : "새 색")).toBe("새 색");
+    shells.add(await sidebarBg());
   }
   expect(shells.size).toBe(7);
   await page.getByTestId("font-lg").click();
@@ -92,12 +101,13 @@ test("7 Theme 실제 전환 + 글자 크기 + 모바일 프레임 테마 공유"
   const fs = await page.evaluate(() => getComputedStyle(document.documentElement).fontSize);
   expect(parseFloat(fs)).toBeGreaterThan(20);
 
-  await page.getByTestId("theme-deep-teal").click();
+  await pickTheme(page, "deep-teal");
   await page.getByTestId("device-dual").click();
   const frame = page.frameLocator('[data-testid="device-frame"]');
-  await expect(frame.locator("html")).toHaveAttribute("data-theme", "deep-teal");
-  await page.getByTestId("theme-emerald-gold").click();
-  await expect(frame.locator("html")).toHaveAttribute("data-theme", "emerald-gold");
+  // 모바일 프레임은 앱 전체를 새로 불러오므로 넉넉히 기다린다
+  await expect(frame.locator("html")).toHaveAttribute("data-theme", "deep-teal", { timeout: 20_000 });
+  await pickTheme(page, "emerald-gold");
+  await expect(frame.locator("html")).toHaveAttribute("data-theme", "emerald-gold", { timeout: 20_000 });
 });
 
 test("CSV 검증 오류 표시 → 정상 가져오기 → 손익 반영, Demo Reset 복구", async ({ page }) => {

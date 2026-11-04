@@ -32,7 +32,12 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
  */
 export async function listActivity(m: Member, f: AuditFilter): Promise<{ logs: ActivityLog[]; truncated: boolean }> {
   requireAdmin(m);
-  if (!DATE_RE.test(String(f.from)) || !DATE_RE.test(String(f.to)) || f.from > f.to) throw new CommandError("기간을 확인해주세요.", "VALIDATION");
+  const real = (d: unknown) => {
+    if (!DATE_RE.test(String(d))) return false;
+    const t = Date.parse(`${d}T00:00:00Z`);
+    return Number.isFinite(t) && new Date(t).toISOString().slice(0, 10) === d;
+  };
+  if (!real(f.from) || !real(f.to) || f.from > f.to) throw new CommandError("기간을 확인해주세요.", "VALIDATION");
   const { fromIso, toIso } = auditRange(f);
   const params: unknown[] = [m.companyId, fromIso, toIso];
   const where = ["company_id = $1", "collection = 'activityLogs'", "data->>'at' >= $2", "data->>'at' <= $3"];
@@ -66,7 +71,10 @@ export async function exportCompany(m: Member): Promise<{ filename: string; body
     return rest;
   });
   const exportedAt = new Date().toISOString();
-  const data = { ...state, kiosks, idempotencyKeys: [], me: undefined, scope: undefined };
+  // 활동 이력은 화면 데이터에 최근 300건만 실리므로, 백업에는 DB의 전체 이력을 넣는다 (D-41)
+  const logRows = await db.query<{ data: unknown }>(`select data from records where company_id = $1 and collection = 'activityLogs' order by seq desc`, [m.companyId]);
+  const activityLogs = logRows.map((r) => (typeof r.data === "string" ? JSON.parse(r.data) : r.data));
+  const data = { ...state, activityLogs, kiosks, idempotencyKeys: [], me: undefined, scope: undefined };
   const body = JSON.stringify(
     {
       format: "taekang-site-intelligence-backup",
@@ -319,8 +327,10 @@ export interface MemberInput {
 function validateMemberInput(input: MemberInput, creating: boolean): Record<string, string> {
   const errors: Record<string, string> = {};
   if (creating || input.email !== undefined) if (!normalizeEmail(input.email)) errors.email = "이메일 형식을 확인해주세요.";
-  if (creating || input.name !== undefined) if (!input.name?.trim() || input.name.length > 40) errors.name = "이름 (40자 이내)";
-  if (input.title !== undefined && input.title.length > 40) errors.title = "40자 이내";
+  if (creating || input.name !== undefined) if (typeof input.name !== "string" || !input.name.trim() || input.name.length > 40) errors.name = "이름 (40자 이내)";
+  if (input.title !== undefined && (typeof input.title !== "string" || input.title.length > 40)) errors.title = "40자 이내";
+  // ‘비활성화’ 판단이 문자열 "false"로 우회되지 않게
+  if (input.active !== undefined && typeof input.active !== "boolean") errors.active = "활성 여부 형식";
   if (creating || input.role !== undefined) if (!ROLES.includes(input.role as RoleId)) errors.role = "역할을 선택해주세요.";
   if (creating || input.password !== undefined) {
     const p = passwordProblem(input.password);

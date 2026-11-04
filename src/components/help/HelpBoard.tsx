@@ -44,7 +44,7 @@ export function HelpBoard() {
       {!IS_LIVE && <Notice tone="info" className="no-print">실제 운영(로그인) 기준 안내입니다. 시연 화면에는 로그인·비밀번호 단계가 없습니다.</Notice>}
       {list.length > 1 && (
         <div className="no-print overflow-x-auto">
-          <Segmented label="매뉴얼" value={cur.id} onChange={setId} options={list.map((m) => ({ value: m.id, label: m.title, testId: `help-tab-${m.id}` }))} />
+          <Segmented label="매뉴얼" size={role === "field" ? "lg" : "md"} value={cur.id} onChange={setId} options={list.map((m) => ({ value: m.id, label: m.title, testId: `help-tab-${m.id}` }))} />
         </div>
       )}
       <ManualView m={cur} />

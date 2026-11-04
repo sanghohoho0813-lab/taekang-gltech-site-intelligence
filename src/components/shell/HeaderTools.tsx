@@ -147,7 +147,7 @@ export function NotificationBell() {
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="press relative grid size-11 place-items-center rounded-xl text-ink-2 hover:bg-surface-3"
-        aria-label={`알림 ${items.length}건`}
+        aria-label={items.length ? `알림 ${items.length}` : "알림"}
         aria-expanded={open}
         data-testid="notifications"
       >
@@ -204,9 +204,9 @@ export function UserMenu() {
         onClick={() => setOpen((v) => !v)}
         className="press flex items-center gap-2.5 rounded-xl px-2 py-1.5 hover:bg-surface-3"
         aria-expanded={open}
-        aria-label="사용자 메뉴 · 역할 전환"
         data-testid="user-menu"
       >
+        <span className="sr-only">사용자 메뉴</span>
         <span className="grid size-9 place-items-center rounded-full bg-surface-3 text-ink-2">
           <UserRound size={19} />
         </span>

@@ -3,9 +3,12 @@
  * 최초 설정 → 로그인 → 명령 실행·저장 → 역할별 데이터 필터 → 권한 거부를 검증한다.
  */
 import { readFileSync } from "node:fs";
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-process.env.DATABASE_URL = "pglite:memory";
+import { dropTestDatabase, testDatabaseUrl } from "./testDb";
+
+// 기본은 PGlite 메모리 DB. 실제 Postgres로: TEST_DATABASE_URL=postgres://… → 이 파일 전용 빈 임시 DB를 만들고 끝나면 지운다
+process.env.DATABASE_URL = await testDatabaseUrl("server");
 
 const { getDb } = await import("@/server/sql");
 const { migrationSqlFile } = await import("@/server/migrations");
@@ -43,6 +46,12 @@ const fieldReport = (key: string, extra: Record<string, unknown> = {}) => ({
   ...extra,
 });
 
+const DB_URL = process.env.DATABASE_URL!;
+afterAll(async () => {
+  await (await getDb()).close();
+  await dropTestDatabase(DB_URL);
+});
+
 beforeAll(async () => {
   expect(await svc.needsSetup()).toBe(true);
   const r = await svc.setupCompany({ companyName: "(주)태강지엘텍", name: "대표", email: "ceo@taekang.test", password: PW, withDemoData: true });
@@ -56,6 +65,17 @@ beforeAll(async () => {
 describe("스키마·최초 설정", () => {
   it("supabase/migrations/001_init.sql 이 앱 스키마와 같다", () => {
     expect(readFileSync("supabase/migrations/001_init.sql", "utf8")).toBe(migrationSqlFile());
+  });
+  it("JSON 값이 문자열로 이중 저장되지 않는다 (실제 Postgres 회귀 방지 · D-41)", async () => {
+    const db = await getDb();
+    const types = await db.query<{ t: string; n: number }>(`select jsonb_typeof(data) as t, count(*)::int as n from records group by 1`);
+    expect(types.map((r) => r.t)).toEqual(["object"]);
+    const [st] = await db.query<{ t: string; s: string }>(`select jsonb_typeof(settings) as t, jsonb_typeof(baseline) as s from company_state limit 1`);
+    expect(st).toMatchObject({ t: "object", s: "object" });
+    const [m] = await db.query<{ t: string }>(`select jsonb_typeof(site_ids) as t from members limit 1`);
+    expect(m.t).toBe("array");
+    const [one] = await db.query<{ id: string | null }>(`select data->>'id' as id from records where collection = 'sites' limit 1`);
+    expect(one.id).toBeTruthy();
   });
   it("최초 설정은 한 번만 — 두 번째는 거부", async () => {
     expect(await svc.needsSetup()).toBe(false);
@@ -359,6 +379,23 @@ describe("사진·이력·설정", () => {
     await expect(svc.listActivity(partner, { from: "2026-08-01", to: "2026-08-01" })).rejects.toBeInstanceOf(ForbiddenError);
     await expect(svc.listActivity(ceo, { from: "2026-08-02", to: "2026-08-01" })).rejects.toBeInstanceOf(CommandError);
     await expect(svc.listActivity(ceo, { from: "bad", to: "2026-08-01" })).rejects.toBeInstanceOf(CommandError);
+    // 없는 날짜는 서버 오류(500)가 아니라 입력 오류
+    await expect(svc.listActivity(ceo, { from: "2026-13-45", to: "2026-08-01" })).rejects.toBeInstanceOf(CommandError);
+    // 백업에는 300건 제한 없이 전체 이력이 들어간다
+    const backup = JSON.parse((await svc.exportCompany(ceo)).body);
+    expect(backup.data.activityLogs.length).toBeGreaterThan(320);
+    expect(backup.data.activityLogs.some((l: { id: string }) => l.id === "log-old-0")).toBe(true);
+  });
+
+  it("사진에는 휴대폰 사진 데이터만 — 다른 주소·GIF·스크립트는 거부 (본사 화면이 내부 주소를 불러오지 않게)", async () => {
+    for (const dataUrl of ["/api/export", "https://evil.example/x.png", "data:image/gif;base64,R0lGODlhAQABAAAAACw=", "data:image/svg+xml;base64,PHN2Zz4=", "javascript:alert(1)"])
+      await expect(svc.executeCommand(field, "submitFieldReport", fieldReport(`k-ph-${dataUrl.slice(0, 12)}`, { costs: [], photos: [{ dataUrl }] }))).rejects.toBeInstanceOf(CommandError);
+    await expect(svc.executeCommand(manager, "addActionNote", { actionId: "nope", text: "", photoDataUrl: "/api/export" })).rejects.toBeInstanceOf(CommandError);
+  });
+
+  it("사용자 수정: 활성 여부는 참/거짓만 (문자열 \"false\"로 비활성화 보호 장치 우회 불가), 이름은 문자만", async () => {
+    await expect(svc.updateMember(ceo, ceo.id, { active: "false" as never })).rejects.toBeInstanceOf(CommandError);
+    await expect(svc.updateMember(ceo, manager.id, { name: 123 as never })).rejects.toBeInstanceOf(CommandError);
   });
 
   it("활동 이력은 지워지지 않는다 (DB에는 계속 쌓임)", async () => {

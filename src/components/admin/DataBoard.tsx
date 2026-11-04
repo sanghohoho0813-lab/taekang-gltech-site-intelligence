@@ -192,7 +192,7 @@ function ImportCard({ kind, setKind }: { kind: ImportKind; setKind: (k: ImportKi
           />
         </div>
         <p className="text-[0.86rem] text-ink-2">{spec.desc}</p>
-        <div className="relative overflow-x-auto rounded-xl border border-line">
+        <div tabIndex={0} role="region" aria-label="양식 열 설명 (가로 스크롤)" className="relative overflow-x-auto rounded-xl border border-line">
           <table className="w-full min-w-[34rem] text-[0.8rem]">
             <thead>
               <tr className="bg-surface-2 text-left text-ink-3">

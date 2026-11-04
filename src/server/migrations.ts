@@ -101,21 +101,23 @@ function statements(sql: string): string[] {
 }
 
 export async function runMigrations(db: Tx & { transaction?: <R>(fn: (tx: Tx) => Promise<R>) => Promise<R> }) {
-  await db.query(`create table if not exists schema_migrations (name text primary key, applied_at timestamptz not null default now())`);
-  const done = new Set((await db.query<{ name: string }>(`select name from schema_migrations`)).map((r) => r.name));
-  for (const m of MIGRATIONS) {
-    if (done.has(m.name)) continue;
-    const apply = async (tx: Tx) => {
-      // 서버 여러 대(서버리스)가 동시에 처음 뜰 때 한 곳만 적용하도록 잠금 → 잠금을 얻은 뒤 다시 확인
-      await tx.query(`select pg_advisory_xact_lock(7240311)`);
-      const [again] = await tx.query<{ n: string | number }>(`select count(*) as n from schema_migrations where name = $1`, [m.name]);
-      if (Number(again?.n ?? 0) > 0) return;
+  const all = async (tx: Tx) => {
+    // 서버 여러 대(서버리스)가 빈 DB에 동시에 처음 뜰 때 한 곳씩만 — 잠금을 맨 먼저 얻는다.
+    // 적용 기록 표를 잠금 밖에서 동시에 만들면 Postgres가 중복 오류(pg_type_typname_nsp_index)를 낸다 (D-42)
+    await tx.query(`select pg_advisory_xact_lock(7240311)`);
+    await tx.query(`create table if not exists schema_migrations (name text primary key, applied_at timestamptz not null default now())`);
+    // Supabase 공개 API로 적용 기록을 읽거나 고치지 못하게 (다른 표와 같은 원칙 · D-41)
+    await tx.query(`alter table schema_migrations enable row level security`);
+    const done = new Set((await tx.query<{ name: string }>(`select name from schema_migrations`)).map((r) => r.name));
+    for (const m of MIGRATIONS) {
+      if (done.has(m.name)) continue;
       for (const st of statements(m.sql)) await tx.query(st);
       await tx.query(`insert into schema_migrations (name) values ($1) on conflict (name) do nothing`, [m.name]);
-    };
-    if (db.transaction) await db.transaction(apply);
-    else await apply(db);
-  }
+    }
+  };
+  // 한 트랜잭션: 중간에 실패하면 전부 되돌아가 다음 시작 때 처음부터 다시 적용된다
+  if (db.transaction) await db.transaction(all);
+  else await all(db);
 }
 
 /** supabase/migrations/001_init.sql 과 같은 형태로 출력 (Supabase SQL Editor에 붙여넣기용) */

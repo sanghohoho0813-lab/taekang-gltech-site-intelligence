@@ -32,6 +32,7 @@ import {
 import { run } from "@/lib/data/store";
 import { useMe } from "@/lib/data/hooks";
 import { IS_LIVE } from "@/lib/mode";
+import { outboxAdd } from "@/lib/browser/outbox";
 import { CommandError, type CostLineInput } from "@/lib/data/commands";
 import { DEMO_SCENARIO } from "@/lib/data/seed";
 import type { CostCategory, CostReason, GeoStamp, Site } from "@/lib/domain/types";
@@ -146,7 +147,7 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
   const [netFail, setNetFail] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resume, setResume] = useState<Draft | null>(null);
-  const [done, setDone] = useState<{ reportId?: string; pendingReview?: boolean; costSum: number; already?: boolean; siteName: string } | null>(null);
+  const [done, setDone] = useState<{ reportId?: string; pendingReview?: boolean; costSum: number; already?: boolean; queued?: boolean; siteName: string } | null>(null);
   const [undoAsk, setUndoAsk] = useState(false);
   const [undone, setUndone] = useState(false);
   const [dateEdit, setDateEdit] = useState(false);
@@ -285,8 +286,7 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
     if (sending || !site) return;
     setSending(true);
     setError(null);
-    try {
-      const result = await run("submitFieldReport", {
+    const args = {
         idempotencyKey: idemKey,
         siteId: site.id,
         reportDate: d.reportDate,
@@ -296,18 +296,26 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
         costs: costLines,
         reason: costLines.length ? d.reason || "other" : undefined,
         reasonNote: unknownImpact ? "예산 포함 여부: 현장에서 모름 — 본사 확인 필요" : "",
-        source: "FIELD",
+        source: "FIELD" as const,
         ...(d.workOrderId && linkedOrder ? { workOrderId: d.workOrderId } : {}),
         geo: geo ?? { noLocation: consented ? "timeout" : "skipped" },
         ...(d.progress !== null && d.progress !== site.progressPct ? { progressPct: d.progress } : {}),
         ...(stageChanges.length ? { stageProgress: stageChanges.map((c) => ({ stageId: c.id, progressPct: c.to })) } : {}),
-      });
+      };
+    try {
+      const result = await run("submitFieldReport", args);
       clearDraft();
       setNetFail(false);
       setDone({ reportId: result.reportId, pendingReview: result.pendingReview, costSum, siteName: site.shortName });
     } catch (e) {
       if (e instanceof CommandError && e.code === "NETWORK") {
-        setNetFail(true);
+        // 사진까지 휴대폰에 보관 → 신호가 잡히면 자동으로 보낸다 (앱을 닫아도 남음)
+        const saved = IS_LIVE && userId ? await outboxAdd({ id: idemKey, userId, name: "submitFieldReport", args: args as unknown as Record<string, unknown>, label: `${site.shortName} · ${easyDate(d.reportDate)} 보고${photos.length ? ` · 사진 ${photos.length}장` : ""}` }) : false;
+        if (saved) {
+          clearDraft();
+          setNetFail(false);
+          setDone({ costSum, queued: true, siteName: site.shortName });
+        } else setNetFail(true);
       } else if (e instanceof CommandError && e.code === "DUPLICATE") {
         // 이미 서버에 저장된 보고 (연결이 끊긴 사이 저장된 경우)
         clearDraft();
@@ -389,21 +397,24 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
     return (
       <div ref={topRef} className="anim-pop space-y-5 pb-4" data-testid="report-done">
         <div className="flex flex-col items-center gap-3 pt-4 text-center">
-          <span className={cx("grid size-24 place-items-center rounded-full", undone ? "bg-surface-3 text-ink-2" : "bg-ok-bg text-ok")}>
-            {undone ? <Undo2 size={46} /> : <CircleCheck size={52} />}
+          <span className={cx("grid size-24 place-items-center rounded-full", undone ? "bg-surface-3 text-ink-2" : done.queued ? "bg-warn-bg text-warn" : "bg-ok-bg text-ok")}>
+            {undone ? <Undo2 size={46} /> : done.queued ? <WifiOff size={48} /> : <CircleCheck size={52} />}
           </span>
-          <p className="text-[1.7rem] font-extrabold leading-tight">{undone ? "보낸 보고를 취소했어요" : done.already ? "이미 보낸 보고예요" : "본사로 보냈습니다"}</p>
+          <p className="text-[1.7rem] font-extrabold leading-tight" data-testid={done.queued ? "report-queued" : undefined}>
+            {undone ? "보낸 보고를 취소했어요" : done.queued ? "휴대폰에 보관했어요" : done.already ? "이미 보낸 보고예요" : "본사로 보냈습니다"}
+          </p>
+          {done.queued && <p className="text-[1.12rem] leading-relaxed text-ink-2">인터넷이 약해서 아직 본사에 못 갔어요. 사진까지 그대로 보관했고, 신호가 잡히면 자동으로 보내요. 앱을 닫아도 괜찮아요.</p>}
           <p className="text-[1.1rem] text-ink-2">
             {done.siteName} · {easyDate(d.reportDate)}
           </p>
         </div>
-        {!undone && done.costSum > 0 && (
+        {!undone && !done.queued && done.costSum > 0 && (
           <div className="rounded-2xl border-2 border-line bg-surface-2 p-4 text-[1.1rem] leading-relaxed" data-testid="report-impact" data-pending={done.pendingReview ? "1" : undefined}>
             추가 비용 <b className="num">{easyWon(done.costSum)}</b>
             {done.pendingReview ? " — 본사 공무가 확인한 뒤 회사 손익에 반영돼요." : " — 회사 손익에 바로 반영됐어요."}
           </div>
         )}
-        {!undone && (
+        {!undone && !done.queued && (
           <p className="text-center text-[1.05rem] text-ink-2">
             잘못 보냈다면 아래 <b>‘보낸 것 취소하기’</b>를 누르세요.
           </p>
@@ -448,7 +459,7 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
   const demoFill = !IS_LIVE && (
     <div className="flex items-center justify-between gap-2 rounded-xl bg-[#FFF7D6] px-3 py-2 text-[0.85rem] text-[#7A5200]">
       <span>DEMO · 미팅 시나리오 값</span>
-      <button type="button" onClick={fillDemo} className="press inline-flex shrink-0 items-center gap-1 rounded-lg bg-white/70 px-2.5 py-1.5 font-bold hover:bg-white" data-testid="fill-demo">
+      <button type="button" onClick={fillDemo} className="press inline-flex min-h-11 shrink-0 items-center gap-1 rounded-lg bg-white/70 px-3 py-1.5 font-bold hover:bg-white" data-testid="fill-demo">
         <Wand2 size={15} aria-hidden /> 데모 값 채우기
       </button>
     </div>

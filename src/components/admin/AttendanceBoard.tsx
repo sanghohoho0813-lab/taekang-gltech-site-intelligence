@@ -189,7 +189,7 @@ export function AttendanceBoard() {
               {crew.length === 0 ? (
                 <p className="px-5 pb-5 text-[0.84rem] text-ink-3">배정된 현장 직원이 없습니다.</p>
               ) : (
-                <div className="relative overflow-x-auto border-t border-line">
+                <div tabIndex={0} role="region" aria-label="출퇴근 표 (가로 스크롤)" className="relative overflow-x-auto border-t border-line">
                   <table className="w-full min-w-[34rem] text-[0.84rem]">
                     <thead>
                       <tr className="text-left text-[0.74rem] text-ink-3">
@@ -297,7 +297,7 @@ export function AttendanceBoard() {
         {month.length === 0 ? (
           <EmptyState title="이 달의 출퇴근 기록이 없습니다" />
         ) : (
-          <div className="relative overflow-x-auto border-t border-line">
+          <div tabIndex={0} role="region" aria-label="출퇴근 표 (가로 스크롤)" className="relative overflow-x-auto border-t border-line">
             <table className="w-full min-w-[36rem] text-[0.84rem]">
               <thead>
                 <tr className="text-left text-[0.74rem] text-ink-3">
@@ -567,7 +567,7 @@ function CrewCard({ db, date, name }: { db: DemoDB; date: string; name: (id: str
       {rows.length === 0 ? (
         <p className="border-t border-line px-5 py-4 text-[0.84rem] text-ink-3">이 날짜에 보낸 작업 인원이 없습니다.</p>
       ) : (
-        <div className="relative overflow-x-auto border-t border-line">
+        <div tabIndex={0} role="region" aria-label="출퇴근 표 (가로 스크롤)" className="relative overflow-x-auto border-t border-line">
           <table className="w-full min-w-[42rem] text-[0.84rem]">
             <thead>
               <tr className="text-left text-[0.74rem] text-ink-3">

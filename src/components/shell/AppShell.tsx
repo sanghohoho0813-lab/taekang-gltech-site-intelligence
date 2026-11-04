@@ -14,6 +14,7 @@ import { Sidebar, GroupIcon, isActivePath } from "./Sidebar";
 import { Clock } from "./Clock";
 import { GlobalSearch, NotificationBell, UserMenu } from "./HeaderTools";
 import { LogoMark } from "./Logo";
+import { OutboxRunner } from "@/components/easy/Outbox";
 
 /** 내부(Business AX) Surface 셸. /partner는 별도 Customer Surface 셸을 사용한다. */
 export function AppShell({ children, compactSidebar }: { children: ReactNode; compactSidebar: boolean }) {
@@ -33,6 +34,7 @@ export function AppShell({ children, compactSidebar }: { children: ReactNode; co
           <AccessGate>{children}</AccessGate>
         </main>
         {role === "field" ? <FieldBottomNav /> : <BottomNav />}
+        {role === "field" && IS_LIVE && <FieldOutbox />}
       </div>
     </div>
   );
@@ -67,6 +69,12 @@ function DesktopHeader() {
   );
 }
 
+/** 현장 휴대폰: 보내지 못한 보고를 자동으로 다시 보낸다 (D-39) */
+function FieldOutbox() {
+  const db = useDb();
+  return <OutboxRunner userId={db?.me || undefined} />;
+}
+
 /** 현장 직원 휴대폰 머리글 — 메뉴·시계·알림 대신 ‘글자 크게’와 ‘본사 전화’만 */
 function FieldMobileHeader() {
   const prefs = usePrefs();
@@ -77,7 +85,7 @@ function FieldMobileHeader() {
   const next = order[(order.indexOf(cur) + 1) % order.length];
   return (
     <header className="no-print sticky top-[var(--demo-bar-h)] z-30 flex h-[4.1rem] items-center gap-2 border-b border-line bg-surface/95 px-3 backdrop-blur pt-[env(safe-area-inset-top)] lg:hidden" data-testid="mobile-header">
-      <Link href="/field" className="flex min-w-0 items-center gap-2" aria-label="처음 화면">
+      <Link href="/field" className="flex min-h-11 min-w-0 items-center gap-2" aria-label="TAEKANG 처음 화면">
         <LogoMark size={28} />
         <span className="truncate text-[0.95rem] font-extrabold tracking-[0.06em] text-ink">TAEKANG</span>
       </Link>
@@ -87,7 +95,6 @@ function FieldMobileHeader() {
           type="button"
           onClick={() => setPrefs({ fontScale: next })}
           className="press inline-flex h-12 items-center gap-1.5 rounded-xl border-2 border-line-strong bg-surface px-3 font-bold text-ink"
-          aria-label={cur === "xl" ? "글자를 보통 크기로" : "글자 더 크게"}
           data-testid="font-toggle"
         >
           <span className="text-[1.35rem] font-extrabold leading-none" aria-hidden>

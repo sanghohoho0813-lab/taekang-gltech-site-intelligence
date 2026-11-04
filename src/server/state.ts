@@ -8,6 +8,7 @@
 import type { DemoDB, DemoUser, RiskThresholds } from "@/lib/domain/types";
 import { DEFAULT_SETTINGS } from "@/lib/domain/types";
 import type { Tx } from "./sql";
+import { CommandError } from "@/lib/data/commands";
 
 type Item = Record<string, unknown>;
 type KeyFn = (x: Item) => string;
@@ -128,13 +129,15 @@ export async function loadState(tx: Tx, companyId: string): Promise<DemoDB> {
 /** data:image/...;base64 → photo_blobs, 엔터티에는 주소만 */
 async function extractPhoto(tx: Tx, companyId: string, item: Item, key: "dataUrl"): Promise<void> {
   const v = item[key];
-  if (typeof v !== "string" || !v.startsWith("data:")) return;
+  // 이미 저장된 사진(주소)은 그대로, 그 밖의 값(다른 주소·스크립트)은 받지 않는다 (D-41)
+  if (typeof v === "string" && /^\/api\/photos\/[\w%-]+$/.test(v)) return;
+  if (typeof v !== "string" || !v.startsWith("data:")) throw new CommandError("사진 형식을 읽을 수 없습니다.", "VALIDATION");
   const m = /^data:([\w/+.-]+);base64,(.*)$/s.exec(v);
-  if (!m) throw new Error("사진 형식을 읽을 수 없습니다.");
+  if (!m) throw new CommandError("사진 형식을 읽을 수 없습니다.", "VALIDATION");
   const mime = m[1];
-  if (!/^image\/(jpeg|png|webp)$/.test(mime)) throw new Error("JPEG·PNG·WEBP 사진만 저장할 수 있습니다.");
+  if (!/^image\/(jpeg|png|webp)$/.test(mime)) throw new CommandError("JPEG·PNG·WEBP 사진만 저장할 수 있습니다.", "VALIDATION");
   const bytes = Buffer.from(m[2], "base64");
-  if (bytes.length > 2_500_000) throw new Error("사진 1장이 너무 큽니다 (2.5MB 이하).");
+  if (bytes.length > 2_500_000) throw new CommandError("사진 1장이 너무 큽니다 (2.5MB 이하).", "VALIDATION");
   const id = String(item.id);
   await tx.query(
     `insert into photo_blobs (id, company_id, site_id, mime, data) values ($1, $2, $3, $4, $5)

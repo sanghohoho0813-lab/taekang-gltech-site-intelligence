@@ -61,7 +61,7 @@ export function Sidebar({ compact }: { compact: boolean }) {
       data-testid="sidebar"
     >
       <div className={cx("flex h-16 shrink-0 items-center border-b border-shell-line", compact ? "justify-center px-2" : "px-4")}>
-        <Link href="/dashboard" className="press rounded-lg" aria-label="TAEKANG SITE INTELLIGENCE 홈">
+        <Link href="/dashboard" className="press rounded-lg" aria-label={compact ? "TAEKANG GLTECH 홈" : undefined}>
           <Logo compact={compact} onDark={!theme?.shellLight} />
         </Link>
       </div>

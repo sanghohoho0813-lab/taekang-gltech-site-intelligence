@@ -49,6 +49,10 @@ export class CommandError extends Error {
 }
 
 export const MAX_AMOUNT = 5_000_000_000; // 1건 50억 원 상한 (입력 오류 방지)
+/** 사진은 휴대폰에서 줄인 JPEG·PNG·WEBP 데이터만 (다른 주소를 넣어 본사 화면이 내부 주소를 불러오게 하는 것 방지 · D-41) */
+export const PHOTO_DATA_URL = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/;
+export const MAX_PHOTO_CHARS = 3_500_000; // 약 2.5MB
+export const validPhoto = (v: unknown): v is string => typeof v === "string" && v.length <= MAX_PHOTO_CHARS && PHOTO_DATA_URL.test(v);
 
 export function clone(db: DemoDB): DemoDB {
   return structuredClone(db);
@@ -169,6 +173,7 @@ export function submitFieldReport(db0: DemoDB, input: FieldReportInput, ctx: Ctx
   if (input.workOrderId && !(db0.workOrders ?? []).some((w) => w.id === input.workOrderId && w.siteId === input.siteId)) errors.workOrderId = "작업지시를 찾을 수 없습니다.";
   if (costs.length > 0 && !input.reason) errors.reason = "비용 발생 사유를 선택해주세요.";
   if ((input.photos ?? []).length > 3) errors.photos = "사진은 최대 3장";
+  else if ((input.photos ?? []).some((p) => !p || !validPhoto(p.dataUrl) || (p.caption !== undefined && (typeof p.caption !== "string" || p.caption.length > 80)))) errors.photos = "사진 형식을 확인해 주세요 (JPEG·PNG·WEBP, 2.5MB 이하)";
   if (Object.keys(errors).length) throw new CommandError("입력값을 확인해주세요.", "VALIDATION", errors);
 
   const db = clone(db0);
@@ -457,7 +462,9 @@ export function setActionStatus(db0: DemoDB, actionId: string, to: ActionStatus,
 export function addActionNote(db0: DemoDB, actionId: string, text: string, photoDataUrl: string | undefined, ctx: Ctx) {
   const db = clone(db0);
   const a = requireAction(db, actionId);
+  if (typeof text !== "string" || text.length > 500) throw new CommandError("메모는 500자 이내", "VALIDATION");
   if (!text.trim() && !photoDataUrl) throw new CommandError("메모 또는 사진을 추가해주세요.");
+  if (photoDataUrl !== undefined && !validPhoto(photoDataUrl)) throw new CommandError("사진 형식을 확인해 주세요 (JPEG·PNG·WEBP, 2.5MB 이하)", "VALIDATION");
   let photoId: string | undefined;
   if (photoDataUrl) {
     photoId = uid("ph");

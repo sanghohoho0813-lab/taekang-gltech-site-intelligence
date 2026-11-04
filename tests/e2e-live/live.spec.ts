@@ -489,8 +489,44 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     await anon.close();
   });
 
+  test("인터넷이 끊겨도 보고가 사라지지 않음: 사진까지 휴대폰에 보관 → 첫 화면 안내 → 연결되면 보내기 → 본사에 1건만 도착", async ({ browser }) => {
+    const hq = await login(browser, CEO.email, CEO.password);
+    const countReports = async () => ((await (await hq.request.get("/api/state")).json()).db.reports as { siteId: string; photoIds: string[] }[]).filter((r) => r.siteId === siteId).length;
+    const before = await countReports();
+    const page = await login(browser, FIELD.email, FIELD.password, { width: 390, height: 844 });
+    await page.goto("/field");
+    await page.getByTestId("easy-go-photo").click();
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+    await page.getByTestId("photo-album").setInputFiles({ name: "basement.png", mimeType: "image/png", buffer: png });
+    await page.getByTestId("easy-next").click();
+    // 지하층: 서버로 가는 요청만 끊긴 상태
+    await page.route("**/api/commands", (r) => r.abort("internetdisconnected"));
+    await page.getByTestId("submit-report").click();
+    await expect(page.getByTestId("report-queued")).toBeVisible();
+    await expect(page.getByTestId("report-done")).toContainText("앱을 닫아도 괜찮아요");
+    // 앱을 다시 열어도(새로고침) 남아 있다
+    await page.goto("/field");
+    await expect(page.getByTestId("outbox-waiting")).toContainText("아직 못 보낸 보고 1건");
+    await expect(page.getByTestId("outbox-waiting")).toContainText("사진 1장");
+    expect(await countReports()).toBe(before);
+    // 신호가 잡힘 → 지금 보내기
+    await page.unroute("**/api/commands");
+    await page.getByTestId("outbox-send").click();
+    await expect(page.getByTestId("outbox")).toHaveCount(0);
+    expect(await countReports()).toBe(before + 1);
+    // 한 번 더 보내도 중복으로 쌓이지 않는다 (같은 중복 방지 키)
+    await page.reload();
+    await expect(page.getByTestId("easy-go-report")).toBeVisible();
+    expect(await countReports()).toBe(before + 1);
+    const st = (await (await hq.request.get("/api/state")).json()).db;
+    const last = (st.reports as { siteId: string; photoIds: string[]; createdAt: string }[]).filter((r) => r.siteId === siteId).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+    expect(last.photoIds).toHaveLength(1);
+  });
+
   test("다른 사이트에서 보낸 쓰기 요청은 차단 (Origin 확인)", async ({ browser }) => {
     const page = await login(browser, CEO.email, CEO.password);
+    // 형식이 틀린 본문(null·배열)은 서버 오류(500)가 아니라 400
+    for (const body of ["null", "[]", "1"]) expect((await page.request.post("/api/commands", { headers: { "Content-Type": "application/json" }, data: body })).status()).toBe(400);
     const r = await page.request.post("/api/commands", { headers: { Origin: "https://evil.example" }, data: { name: "setThresholds", args: {} } });
     expect(r.status()).toBe(403);
   });

@@ -9,11 +9,11 @@ import type { AttendanceRecord, AttendanceRequest, DemoDB, WorkOrder } from "@/l
 import { todayIso } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
 import { shiftDate } from "@/lib/domain/attendance";
-import { CommandError, claimKey, clone, log, nowIso, requireSite, touch, userName, type Ctx } from "./commands";
+import { CommandError, claimKey, clone, log, nowIso, requireSite, touch, userName, validPhoto, type Ctx } from "./commands";
 
 const HM = /^([01]\d|2[0-3]):[0-5]\d$/;
 const kst = (date: string, hm: string) => new Date(`${date}T${hm}:00+09:00`).toISOString();
-const PHOTO = /^data:image\/(jpeg|png|webp);base64,/;
+const PHOTO = { test: (v: unknown) => validPhoto(v) };
 
 export const FIX_KIND_LABEL: Record<AttendanceRequest["kind"], string> = {
   missed_in: "출근을 못 눌렀어요",

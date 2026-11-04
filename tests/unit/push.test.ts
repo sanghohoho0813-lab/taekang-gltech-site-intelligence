@@ -3,9 +3,12 @@
  * 실제 푸시 서버 대신 테스트용 발송 함수로 받는다.
  */
 import { createECDH, randomBytes } from "node:crypto";
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-process.env.DATABASE_URL = "pglite:memory";
+import { dropTestDatabase, testDatabaseUrl } from "./testDb";
+
+// 기본은 PGlite 메모리 DB. 실제 Postgres로: TEST_DATABASE_URL=postgres://… → 이 파일 전용 빈 임시 DB를 만들고 끝나면 지운다
+process.env.DATABASE_URL = await testDatabaseUrl("push");
 delete process.env.VAPID_PUBLIC_KEY;
 delete process.env.VAPID_PRIVATE_KEY;
 
@@ -34,6 +37,12 @@ async function loginAs(email: string) {
   if (!r.ok) throw new Error(r.error);
   return (await auth.memberFromToken(r.token))!;
 }
+
+const DB_URL = process.env.DATABASE_URL!;
+afterAll(async () => {
+  await (await getDb()).close();
+  await dropTestDatabase(DB_URL);
+});
 
 beforeAll(async () => {
   await svc.setupCompany({ companyName: "(주)태강지엘텍", name: "대표", email: "ceo@push.test", password: PW, withDemoData: true });

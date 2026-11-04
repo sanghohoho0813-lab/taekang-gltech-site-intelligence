@@ -235,7 +235,7 @@ export function Field({ label, htmlFor, required, hint, error, children, counter
 export const inputCls =
   "w-full rounded-xl border border-line-strong bg-surface px-3.5 py-2.5 text-[0.95rem] text-ink placeholder:text-ink-3/80 transition-colors focus:border-active focus:outline-none focus:ring-3 focus:ring-active/20 disabled:bg-surface-3";
 
-export function Segmented<T extends string>({ value, onChange, options, label, size = "md" }: { value: T; onChange: (v: T) => void; options: { value: T; label: ReactNode; icon?: ReactNode; testId?: string }[]; label: string; size?: "sm" | "md" }) {
+export function Segmented<T extends string>({ value, onChange, options, label, size = "md" }: { value: T; onChange: (v: T) => void; options: { value: T; label: ReactNode; icon?: ReactNode; testId?: string }[]; label: string; size?: "sm" | "md" | "lg" }) {
   return (
     <div role="radiogroup" aria-label={label} className="inline-flex rounded-xl border border-line bg-surface-2 p-1 gap-1">
       {options.map((o) => {
@@ -250,7 +250,7 @@ export function Segmented<T extends string>({ value, onChange, options, label, s
             onClick={() => onChange(o.value)}
             className={cx(
               "press inline-flex items-center gap-1.5 rounded-lg font-semibold whitespace-nowrap",
-              size === "sm" ? "h-8 px-2.5 text-[0.78rem]" : "h-9 px-3 text-[0.85rem]",
+              size === "sm" ? "h-8 px-2.5 text-[0.78rem]" : size === "lg" ? "h-12 px-4 text-[1.05rem]" : "h-9 px-3 text-[0.85rem]",
               on ? "bg-surface text-ink shadow-sm ring-1 ring-line-strong" : "text-ink-3 hover:text-ink hover:bg-surface",
             )}
           >

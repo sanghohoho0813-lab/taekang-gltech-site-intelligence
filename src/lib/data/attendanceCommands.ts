@@ -13,7 +13,7 @@ import { hex, randomBytes, sha256, utf8 } from "@/lib/domain/hmac";
 import { judgeGeo, geoText, validSample, type GeoSample } from "@/lib/domain/geo";
 import { todayIso } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
-import { CommandError, claimKey, clone, log, nowIso, requireSite, touch, userName, type Ctx } from "./commands";
+import { CommandError, claimKey, clone, log, nowIso, requireSite, touch, userName, validPhoto, type Ctx } from "./commands";
 
 /** 동의 문구 판 (문구를 바꾸면 올려서 다시 동의받는다) */
 export const CONSENT_VERSION = 1;
@@ -282,7 +282,7 @@ export function reportCrew(db0: DemoDB, input: CrewInput, ctx: Ctx) {
   const team = normTeam(input.team ?? "");
   if (!team) errors.team = "팀 이름을 넣어 주세요.";
   if (!Number.isInteger(input.headcount) || input.headcount < 1 || input.headcount > 300) errors.headcount = "인원은 1~300명";
-  if (input.photoDataUrl !== undefined && (typeof input.photoDataUrl !== "string" || !/^data:image\/(jpeg|png|webp);base64,/.test(input.photoDataUrl))) errors.photo = "사진 형식을 확인해 주세요.";
+  if (input.photoDataUrl !== undefined && !validPhoto(input.photoDataUrl)) errors.photo = "사진 형식을 확인해 주세요.";
   if (Object.keys(errors).length) throw new CommandError("입력값을 확인해주세요.", "VALIDATION", errors);
   const db = clone(db0);
   claimKey(db, input.idempotencyKey);

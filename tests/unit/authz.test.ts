@@ -147,6 +147,24 @@ describe("역할별로 내려보내는 데이터 — 금액 전수 검사", () =
     expect(ids(viewFor(MANAGER, db, NOW).attendance ?? [])).toContain("att-old");
   });
 
+  it("현장에 배정된 위험 조치·실증 기록에도 금액 문구가 없다 (미수 조치를 현장에 배정해도)", async () => {
+    const { createAction, completeAction } = await import("@/lib/data/commands");
+    let db = createSeed(NOW);
+    const sig = computeSignals(db, NOW).find((s) => s.rule === "RECEIVABLE_OVERDUE") ?? computeSignals(db, NOW)[0];
+    const made = createAction(db, { signal: sig, title: sig.recommendation.actionTitle, description: sig.recommendation.description, assigneeUserId: "u-field", dueDate: "2026-11-10" }, { userId: "u-ceo", now: NOW });
+    db = made.db;
+    const actionId = (made.result as { actionId: string }).actionId;
+    db = completeAction(db, actionId, { result: "현장 확인 완료", confirm: false } as never, { userId: "u-field", now: NOW }).db;
+    const v = viewFor(FIELD, db, NOW);
+    const text = JSON.stringify({ actions: v.actions, proofEvents: v.proofEvents });
+    expect(text).not.toMatch(/\d[\d,.]*\s*(만\s*원|억|원)/);
+    const a = v.actions.find((x) => x.id === actionId)!;
+    expect(a).toMatchObject({ title: sig.recommendation.actionTitle, signalTitle: "", signalWhy: [], result: "현장 확인 완료" });
+    expect(a.claimAmount).toBeUndefined();
+    // 현장 화면이 쓰는 확인 상태는 남는다
+    if (a.proofEventId) expect(v.proofEvents.find((p) => p.proof_event_id === a.proofEventId)?.status).toBeTruthy();
+  });
+
   it("모든 역할: QR 단말기 비밀값·연결 코드와 중복 방지 키는 내려가지 않는다", () => {
     const db = createSeed(NOW);
     for (const m of [CEO, MANAGER, FIELD, PARTNER]) {

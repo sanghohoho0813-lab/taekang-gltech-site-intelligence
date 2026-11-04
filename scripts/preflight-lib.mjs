@@ -5,7 +5,7 @@
 
 /** @typedef {{ level: "ok" | "warn" | "error", key: string, text: string }} Check */
 
-const TABLES = ["companies", "company_state", "members", "sessions", "records", "photo_blobs"];
+const TABLES = ["companies", "company_state", "members", "sessions", "records", "photo_blobs", "schema_migrations"];
 
 /**
  * 환경변수 점검 (DB에 연결하지 않음)

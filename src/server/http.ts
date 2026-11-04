@@ -29,11 +29,15 @@ export function crossSite(req: NextRequest): NextResponse | null {
 export async function readJson(req: NextRequest, maxBytes = 12_000_000): Promise<unknown> {
   const len = Number(req.headers.get("content-length") ?? 0);
   if (len > maxBytes) throw new CommandError("요청이 너무 큽니다. 사진 수를 줄여주세요.");
+  let body: unknown;
   try {
-    return await req.json();
+    body = await req.json();
   } catch {
     throw new CommandError("요청 형식이 올바르지 않습니다.");
   }
+  // null·숫자·문자열 본문은 거부 (서버 오류 500 대신 400)
+  if (!body || typeof body !== "object" || Array.isArray(body)) throw new CommandError("요청 형식이 올바르지 않습니다.");
+  return body;
 }
 
 export async function sessionMember(req: NextRequest): Promise<Member | null> {

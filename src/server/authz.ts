@@ -172,9 +172,17 @@ export function viewFor(m: Member, db: DemoDB, now = new Date()): DemoDB {
     const sites = fieldSiteIds(m, db);
     // 휴대폰에는 최근 60일 + 아직 끝나지 않은 것만 (데이터 사용량·개인정보 최소화, D-34)
     const since = kstDate(new Date(now.getTime() - FIELD_WINDOW_DAYS * 86_400_000).toISOString());
+    // 위험 조치: 자동 생성된 근거 문구(signalTitle·signalWhy)·청구 금액·본사가 쓴 결과에는 금액이 들어가므로 빼고 보낸다 (D-41)
     const actions = db.actions
       .filter((a) => a.assigneeUserId === m.id)
-      .map((a) => ({ ...a, kpiBefore: { ...a.kpiBefore, eac: 0, expectedProfit: 0, marginPct: 0, adjustedContract: 0, pendingClaimAmount: 0 } }));
+      .map((a) => ({
+        ...a,
+        signalTitle: "",
+        signalWhy: [],
+        claimAmount: undefined,
+        result: a.completedBy === m.id ? a.result : undefined,
+        kpiBefore: { ...a.kpiBefore, eac: 0, expectedProfit: 0, marginPct: 0, adjustedContract: 0, pendingClaimAmount: 0 },
+      }));
     const actionIds = new Set(actions.map((a) => a.id));
     const reports = db.reports.filter((r) => sites.has(r.siteId) && (r.reportDate >= since || (r.createdBy === m.id && r.review?.status === "returned")));
     const crewChecks = (db.crewChecks ?? []).filter((c) => sites.has(c.siteId) && c.workDate >= since);
@@ -197,9 +205,10 @@ export function viewFor(m: Member, db: DemoDB, now = new Date()): DemoDB {
       photos: db.photos.filter((p) => sites.has(p.siteId) && (photoRefs.has(p.id) || (!!p.actionId && actionIds.has(p.actionId)) || kstDate(p.createdAt) >= since)),
       partnerRequests: db.partnerRequests.filter((r) => sites.has(r.siteId)),
       actions,
+      // 실증 기록은 확인 여부만 (근거·결과 문구에 금액이 들어감)
       proofEvents: db.proofEvents
         .filter((p) => actionIds.has(p.action_id))
-        .map((p) => ({ ...p, kpi_before: {}, kpi_after: {} })),
+        .map((p) => ({ ...p, trigger: "", why: [], decision: "", action: "", result: "", kpi_before: {}, kpi_after: {} })),
       activityLogs: db.activityLogs.filter((l) => l.by === m.id),
       // 출퇴근은 본인 기록만
       attendance: (db.attendance ?? []).filter((r) => r.userId === m.id && r.workDate >= since),

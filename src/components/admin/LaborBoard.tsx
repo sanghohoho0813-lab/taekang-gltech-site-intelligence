@@ -135,7 +135,7 @@ function SiteLabor({ r }: { r: LaborSite }) {
         {r.teams.length === 0 ? (
           !empty && <p className="text-[0.84rem] text-ink-3">이 기간 작업 인원(출력) 기록이 없습니다. 현장소장 휴대폰 ‘오늘 작업 인원 알리기’로 쌓입니다.</p>
         ) : (
-          <div className="relative overflow-x-auto">
+          <div tabIndex={0} role="region" aria-label="팀별 인건비 표 (가로 스크롤)" className="relative overflow-x-auto">
             <table className="w-full min-w-[38rem] text-[0.84rem]">
               <thead>
                 <tr className="text-left text-[0.74rem] text-ink-3">

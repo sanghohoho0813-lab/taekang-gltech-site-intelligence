@@ -127,7 +127,7 @@ export function BigTile({
       </span>
       <span className="min-w-0 flex-1">
         <span className="block text-[1.3rem] font-extrabold leading-tight">{label}</span>
-        {sub && <span className={cx("mt-1 block text-[0.98rem] leading-snug", tone === "cta" ? "text-cta-text/90" : "text-ink-2")}>{sub}</span>}
+        {sub && <span className={cx("mt-1 block text-[0.98rem] leading-snug", tone === "cta" ? "text-cta-text" : "text-ink-2")}>{sub}</span>}
       </span>
       {badge}
     </>
