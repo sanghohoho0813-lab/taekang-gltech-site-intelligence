@@ -1,4 +1,8 @@
 import { defineConfig } from "@playwright/test";
+
+// 브라우저가 한글 파일 이름을 그대로 쓰도록 (이 컨테이너는 언어 설정이 비어 있어 내려받은 파일 이름이 "download"가 됨 — 실제 PC는 UTF-8)
+process.env.LANG ||= "C.UTF-8";
+process.env.LC_ALL ||= "C.UTF-8";
 import webpush from "web-push";
 
 // 휴대폰 알림 시험용 키 — 실행할 때마다 새로 만든다 (저장소에 키를 두지 않음)

@@ -9,7 +9,8 @@
  */
 import type { ChangeOrderStatus, CostCategory, CostReason, CrewCheck, DemoDB, ForecastImpact, ImportKind, Site } from "./types";
 import { COST_CATEGORIES } from "./labels";
-import { parseCsvText } from "./csv";
+import { parseCsvRecords } from "./csv";
+import { writeXlsx } from "./xlsx";
 
 export type { ImportKind };
 
@@ -35,7 +36,14 @@ export interface ImportPlan {
   duplicates: { line: number; text: string }[];
   /** 현장별 요약 (미리보기용) */
   summary: { siteId?: string; label: string; count: number; amount?: number; amount2?: number }[];
+  /** 양식의 예시 줄을 지우지 않고 올려 건너뛴 행 번호 (D-45) */
+  skippedExamples?: number[];
+  /** 머리글(열 이름) 행 번호 — 위쪽 제목·빈 줄이 있으면 1이 아님 */
+  headerLine?: number;
 }
+
+/** 머리글을 찾는 범위 (엑셀 위쪽 제목·날짜·빈 줄 허용) */
+const HEADER_SCAN_ROWS = 10;
 
 export const MAX_IMPORT_ROWS = 500;
 const MAX_AMOUNT = 5_000_000_000; // 1건 50억 원 (현장 보고·기성 입력과 같은 상한)
@@ -151,9 +159,9 @@ function validDate(s: string): boolean {
   return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
 }
 
-/** 엑셀에서 2026.10.20 / 2026/10/20 / 2026-10-20 으로 저장된 날짜를 받아준다 */
+/** 엑셀에서 2026.10.20 / 2026/10/20 / 2026-10-20 / 2026. 10. 20. 으로 저장된 날짜를 받아준다 */
 export function normDate(v: string): string {
-  const m = v.trim().match(/^(\d{4})[-./](\d{1,2})[-./](\d{1,2})\.?$/);
+  const m = v.trim().match(/^(\d{4})\s*[-./]\s*(\d{1,2})\s*[-./]\s*(\d{1,2})\.?$/);
   return m ? `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}` : v.trim();
 }
 
@@ -167,7 +175,7 @@ const CHANGE_STATUS: Record<string, ChangeOrderStatus> = { 검토: "review", 검
 const CATEGORY_IN: Record<string, CostCategory> = { 자재: "material", 자재비: "material", material: "material", 노무: "labor", 노무비: "labor", 인건비: "labor", labor: "labor", 외주: "subcontract", 외주비: "subcontract", subcontract: "subcontract", 장비: "equipment", 장비비: "equipment", equipment: "equipment", 경비: "overhead", 현장경비: "overhead", overhead: "overhead" };
 const REASON_IN: Record<string, CostReason> = { 계획: "planned", planned: "planned", 설계변경: "design_change", design_change: "design_change", 단가인상: "price_increase", price_increase: "price_increase", 물량증가: "quantity_increase", quantity_increase: "quantity_increase", 재시공: "rework", rework: "rework", 공기: "schedule", 공기지연: "schedule", schedule: "schedule", 기타: "other", other: "other" };
 
-export const CSV_ENCODING_HINT = "엑셀에서 ‘CSV UTF-8’ 또는 ‘CSV(쉼표로 분리)’로 저장한 파일 모두 읽습니다.";
+export const CSV_ENCODING_HINT = "엑셀 파일(.xlsx)은 CSV로 바꿀 필요 없이 그대로 올리면 됩니다. CSV는 ‘CSV UTF-8’·‘CSV(쉼표로 분리)’ 모두 읽습니다.";
 
 /** CSV 원문 → 검증·중복 확인·요약. today는 서버 기준 날짜 (작업 인원 미래 날짜 거부) */
 export function planImport(db: DemoDB, kind: ImportKind, text: string, today: string): ImportPlan {
@@ -181,28 +189,55 @@ export function planImport(db: DemoDB, kind: ImportKind, text: string, today: st
     plan.errors.push({ line: 1, field: "file", message: "파일이 너무 큽니다 (1MB 이하)." });
     return plan;
   }
-  const table = parseCsvText(text);
+  const table = parseCsvRecords(text);
   if (!table.length) {
     plan.errors.push({ line: 1, field: "file", message: "빈 파일입니다." });
     return plan;
   }
-  const header = table[0].map(norm);
-  const col: Record<string, number> = {};
-  for (const c of spec.columns) col[c.key] = header.findIndex((h) => c.aliases.some((a) => norm(a) === h));
+  const colsOf = (cells: string[]) => {
+    const header = cells.map(norm);
+    const col: Record<string, number> = {};
+    for (const c of spec.columns) col[c.key] = header.findIndex((h) => c.aliases.some((a) => norm(a) === h));
+    return col;
+  };
+  // 머리글: 처음 몇 행 안에서 필요한 열 이름이 모두 있는 첫 행 (엑셀 위쪽 제목·빈 줄 허용)
+  const found = table.slice(0, HEADER_SCAN_ROWS).findIndex((r) => {
+    const c = colsOf(r.cells);
+    return spec.columns.every((s) => !s.required || c[s.key] >= 0);
+  });
+  const hi = Math.max(0, found);
+  const col = colsOf(table[hi].cells);
+  plan.headerLine = table[hi].line;
   const missing = spec.columns.filter((c) => c.required && col[c.key] < 0).map((c) => c.label);
   if (missing.length) {
-    plan.errors.push({ line: 1, field: "header", message: `첫 줄에 필요한 열이 없습니다: ${missing.join(", ")} (양식을 내려받아 첫 줄을 그대로 쓰세요)` });
+    plan.errors.push({ line: table[hi].line, field: "header", message: `첫 줄에 필요한 열이 없습니다: ${missing.join(", ")} (양식을 내려받아 첫 줄을 그대로 쓰세요)` });
     return plan;
   }
-  const body = table.slice(1);
+  // 양식에 들어 있던 예시 줄은 지우지 않고 올려도 넣지 않는다 (예시 데이터가 실제 자료로 들어가는 사고 방지)
+  const cmp = (v: string) => normDate(v).replace(/[,\s원₩]/g, "");
+  const sampleHead = spec.sample[0].map(norm);
+  const sampleKey = (get: (k: string) => string) => spec.columns.map((c) => cmp(get(c.key))).join("\u0001");
+  const examples = new Set(
+    spec.sample.slice(1).map((r) =>
+      sampleKey((k) => {
+        const i = sampleHead.findIndex((h) => spec.columns.find((c) => c.key === k)!.aliases.some((a) => norm(a) === h));
+        return i >= 0 ? (r[i] ?? "") : "";
+      }),
+    ),
+  );
+  const allBody = table.slice(hi + 1);
+  const body = allBody.filter((r) => {
+    const isExample = examples.has(sampleKey((k) => (col[k] >= 0 ? String(r.cells[col[k]] ?? "").trim() : "")));
+    if (isExample) (plan.skippedExamples ??= []).push(r.line);
+    return !isExample;
+  });
   if (!body.length) {
-    plan.errors.push({ line: 2, field: "file", message: "데이터 행이 없습니다." });
+    plan.errors.push({ line: table[hi].line + 1, field: "file", message: plan.skippedExamples?.length ? "양식의 예시 줄만 있습니다. 예시 줄을 지우고 실제 자료를 적어 주세요." : "데이터 행이 없습니다." });
     return plan;
   }
-  if (body.length > MAX_IMPORT_ROWS) plan.errors.push({ line: 1, field: "file", message: `한 번에 최대 ${MAX_IMPORT_ROWS}행까지 가져올 수 있습니다 (${body.length}행).` });
+  if (body.length > MAX_IMPORT_ROWS) plan.errors.push({ line: table[hi].line, field: "file", message: `한 번에 최대 ${MAX_IMPORT_ROWS}행까지 가져올 수 있습니다 (${body.length}행).` });
 
-  body.slice(0, MAX_IMPORT_ROWS).forEach((cells, i) => {
-    const line = i + 2;
+  body.slice(0, MAX_IMPORT_ROWS).forEach(({ line, cells }) => {
     const get = (k: string) => (col[k] >= 0 ? String(cells[col[k]] ?? "").trim() : "");
     const err = (field: string, message: string) => plan.errors.push({ line, field, message });
     const before = plan.errors.length;
@@ -392,4 +427,37 @@ function summarize(db: DemoDB, kind: ImportKind, rows: ImportRow[]): ImportPlan[
 /** 양식(CSV 원문) */
 export function importTemplate(kind: ImportKind): string {
   return IMPORT_SPECS[kind].sample.map((r) => r.map((c) => (/[",\n]/.test(c) ? `"${c.replace(/"/g, '""')}"` : c)).join(",")).join("\n");
+}
+
+/** 엑셀 파일의 시트 중 이 자료 종류의 열 이름이 있는 첫 시트 (숨긴 시트 제외) — 없으면 첫 시트 */
+export function pickImportSheet(sheets: { hidden: boolean; rows: string[][] }[], kind: ImportKind): number {
+  const spec = IMPORT_SPECS[kind];
+  const ok = (rows: string[][]) =>
+    rows.slice(0, HEADER_SCAN_ROWS + 5).some((r) => {
+      const h = r.map(norm);
+      return spec.columns.every((c) => !c.required || h.some((x) => c.aliases.some((a) => norm(a) === x)));
+    });
+  const visible = sheets.map((s, i) => ({ s, i })).filter((x) => !x.s.hidden);
+  return (visible.find((x) => ok(x.s.rows)) ?? visible[0] ?? { i: 0 }).i;
+}
+
+/** 엑셀 양식 (.xlsx): ‘입력’ 시트(열 이름 + 예시 줄) + ‘작성 안내’ 시트 */
+export function importTemplateXlsx(kind: ImportKind): Uint8Array {
+  const spec = IMPORT_SPECS[kind];
+  const guide: string[][] = [
+    ["열 이름", "꼭 적기", "설명", "예"],
+    ...spec.columns.map((c) => [c.label, c.required ? "필수" : "선택", c.desc, c.example]),
+    [],
+    ["작성 방법"],
+    ["1. ‘입력’ 시트의 첫 줄(열 이름)은 바꾸지 마세요."],
+    ["2. 예시 줄은 지우고 실제 자료를 적으세요. 지우지 않아도 예시 줄은 넣지 않습니다."],
+    ["3. 날짜는 2026-10-20처럼 적거나 엑셀 날짜로 적으세요."],
+    ["4. 금액은 원 단위 숫자로 적으세요. 쉼표가 있어도 됩니다."],
+    [`5. 한 번에 ${MAX_IMPORT_ROWS}행까지 넣을 수 있습니다.`],
+    ["6. 저장한 엑셀 파일(.xlsx)을 그대로 올리면 됩니다. CSV로 바꿀 필요가 없습니다."],
+  ];
+  return writeXlsx([
+    { name: "입력", rows: spec.sample, header: true, widths: spec.sample[0].map((h, i) => Math.max(12, Math.min(40, Math.max(h.length * 2, ...spec.sample.slice(1).map((r) => (r[i] ?? "").length * 1.6)) + 4))) },
+    { name: "작성 안내", rows: guide, header: true, wrap: true, typed: false, widths: [16, 10, 60, 24] },
+  ]);
 }

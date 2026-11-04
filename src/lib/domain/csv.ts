@@ -26,6 +26,51 @@ export function sampleCsv(siteCode = "TK-DEMO-A"): string {
   ].join("\n");
 }
 
+/** CSV(또는 탭 구분) → 행 목록. line = 파일의 몇 번째 행인지 (빈 행은 빼되 번호는 유지 — 엑셀 행 번호와 같게) */
+export function parseCsvRecords(text: string, delimiter = ","): { line: number; cells: string[] }[] {
+  const out: { line: number; cells: string[] }[] = [];
+  let row: string[] = [];
+  let cur = "";
+  let q = false;
+  let line = 1;
+  const s = text.replace(/^\uFEFF/, "");
+  const push = () => {
+    row.push(cur);
+    if (row.some((c) => c.trim() !== "")) out.push({ line, cells: row });
+    row = [];
+    cur = "";
+    line += 1;
+  };
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (q) {
+      if (ch === '"') {
+        if (s[i + 1] === '"') {
+          cur += '"';
+          i++;
+        } else q = false;
+      } else cur += ch;
+    } else if (ch === '"' && cur === "") q = true;
+    else if (ch === delimiter) {
+      row.push(cur);
+      cur = "";
+    } else if (ch === "\n" || ch === "\r") {
+      if (ch === "\r" && s[i + 1] === "\n") i++;
+      push();
+    } else cur += ch;
+  }
+  if (cur !== "" || row.length) push();
+  return out;
+}
+
+/** 엑셀에서 복사한 표(탭 구분) → CSV. 셀 안의 쉼표(예: 10,000,000)가 열을 나누지 않게 따옴표로 감싼다 */
+export function tsvToCsv(text: string): string {
+  if (!text.includes("\t")) return text;
+  return parseCsvRecords(text, "\t")
+    .map((r) => r.cells.map((c) => (/[",\r\n]/.test(c) ? `"${c.replace(/"/g, '""')}"` : c)).join(","))
+    .join("\n");
+}
+
 /** RFC4180 수준의 간단한 CSV 파서 (따옴표·쉼표 포함 필드 지원) */
 export function parseCsvText(text: string): string[][] {
   const rows: string[][] = [];

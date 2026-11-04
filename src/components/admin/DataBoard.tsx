@@ -7,12 +7,13 @@ import { CircleAlert, CircleCheck, CircleDashed, Download, FileUp, Undo2, Upload
 import { useMe, userLabel } from "@/lib/data/hooks";
 import { run } from "@/lib/data/store";
 import { CommandError } from "@/lib/data/commands";
-import { CSV_ENCODING_HINT, IMPORT_SPECS, importTemplate, planImport, type ImportKind } from "@/lib/domain/importers";
+import { CSV_ENCODING_HINT, IMPORT_SPECS, importTemplate, importTemplateXlsx, planImport, type ImportKind } from "@/lib/domain/importers";
+import { tsvToCsv } from "@/lib/domain/csv";
 import { readinessAll, type ReadyFix, type ReadyItem, type ReadyStatus } from "@/lib/domain/readiness";
 import { fmtDateTime, fmtMan, todayIso } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
-import { downloadCsv } from "@/lib/browser/download";
-import { readCsvFile } from "@/lib/browser/readCsv";
+import { XLSX_MIME, downloadBytes, downloadCsv } from "@/lib/browser/download";
+import { readImportFile } from "@/lib/browser/readSheet";
 import { IS_LIVE } from "@/lib/mode";
 import { PageBody, PageHeader } from "@/components/shell/AppShell";
 import { Badge, Button, Card, CardHeader, DemoBadge, Notice, PageSkeleton, Segmented, cx, inputCls } from "@/components/ui/primitives";
@@ -181,7 +182,7 @@ function ImportCard({ kind, setKind }: { kind: ImportKind; setKind: (k: ImportKi
   };
   return (
     <Card data-testid="import-card">
-      <CardHeader title="자료 가져오기" sub={`양식 내려받기 → 엑셀에서 채우기 → 저장한 CSV 올리기 → 확인 → 넣기. ${CSV_ENCODING_HINT}`} />
+      <CardHeader title="자료 가져오기" sub={`엑셀 양식 내려받기 → 엑셀에서 채우기 → 저장한 파일 그대로 올리기 → 확인 → 넣기. ${CSV_ENCODING_HINT}`} />
       <div className="space-y-4 px-5 pb-5">
         <div className="overflow-x-auto">
           <Segmented
@@ -216,17 +217,20 @@ function ImportCard({ kind, setKind }: { kind: ImportKind; setKind: (k: ImportKi
           </table>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button size="sm" icon={<Download size={15} />} onClick={() => downloadCsv(`양식_${spec.title.replace(/[^\w가-힣]/g, "")}.csv`, importTemplate(kind))} data-testid="import-template">
-            양식 내려받기
+          <Button size="sm" icon={<Download size={15} />} onClick={() => downloadBytes(`양식_${spec.title.replace(/[^\w가-힣]/g, "")}.xlsx`, importTemplateXlsx(kind), XLSX_MIME)} data-testid="import-template">
+            엑셀 양식 내려받기
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => downloadCsv(`양식_${spec.title.replace(/[^\w가-힣]/g, "")}.csv`, importTemplate(kind))} data-testid="import-template-csv">
+            CSV 양식
           </Button>
           <Button size="sm" variant="soft" icon={<Upload size={15} />} onClick={() => fileRef.current?.click()} data-testid="import-file-btn">
-            CSV 파일 올리기
+            엑셀·CSV 파일 올리기
           </Button>
           <input
             ref={fileRef}
             type="file"
-            accept=".csv,text/csv"
-            aria-label={`${spec.title} CSV 파일 선택`}
+            accept={`.xlsx,.csv,text/csv,${XLSX_MIME}`}
+            aria-label={`${spec.title} 엑셀·CSV 파일 선택`}
             tabIndex={-1}
             className="sr-only"
             data-testid="import-file"
@@ -235,8 +239,9 @@ function ImportCard({ kind, setKind }: { kind: ImportKind; setKind: (k: ImportKi
               e.target.value = "";
               if (!f) return;
               try {
-                setText(await readCsvFile(f));
-                setFileName(f.name);
+                const r = await readImportFile(f, kind);
+                setText(r.text);
+                setFileName(r.note ? `${f.name} · ${r.note}` : f.name);
                 setDone(null);
                 setKey(uid("idem"));
               } catch (err) {
@@ -256,7 +261,8 @@ function ImportCard({ kind, setKind }: { kind: ImportKind; setKind: (k: ImportKi
             className={cx(inputCls, "mt-1 font-mono text-[0.78rem]")}
             value={text}
             onChange={(e) => {
-              setText(e.target.value.replace(/\t/g, ","));
+              // 엑셀에서 복사한 표는 탭으로 나뉜다 → 셀 안 쉼표(10,000,000)가 열을 나누지 않게 변환
+              setText(tsvToCsv(e.target.value));
               setDone(null);
               setKey(uid("idem"));
             }}
@@ -267,6 +273,12 @@ function ImportCard({ kind, setKind }: { kind: ImportKind; setKind: (k: ImportKi
 
         {plan && (
           <div className="space-y-3" data-testid="import-preview">
+            {(plan.skippedExamples?.length || (plan.headerLine ?? 1) > 1) && (
+              <p className="rounded-xl bg-info-bg px-3.5 py-2 text-[0.82rem] text-ink-2" data-testid="import-notes">
+                {(plan.headerLine ?? 1) > 1 && <>열 이름은 {plan.headerLine}행에서 찾았습니다 (위쪽 제목은 건너뜀). </>}
+                {plan.skippedExamples?.length ? <>양식의 예시 줄 {plan.skippedExamples.length}개({plan.skippedExamples.join(", ")}행)는 넣지 않습니다.</> : null}
+              </p>
+            )}
             {plan.errors.length > 0 && (
               <Notice tone="err" title={`오류 ${plan.errors.length}건 — 고친 뒤 다시 올려주세요 (오류가 있으면 아무것도 넣지 않습니다)`}>
                 <ul className="mt-1 space-y-0.5 text-[0.8rem]" data-testid="import-errors">

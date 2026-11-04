@@ -367,11 +367,18 @@ test("자료 이관·점검: 준비 점검 → 기성·입금 붙여넣기(오�
   await b.locator('[data-key="crew"]').getByTestId("ready-import").click();
   await expect(page.getByTestId("import-kind-crew")).toHaveAttribute("aria-checked", "true");
 
-  // 양식 내려받기 (내용 확인)
+  // 양식 내려받기 — 엑셀(.xlsx)이 기본, CSV도 가능 (D-45)
   await page.getByTestId("import-kind-billing").click();
   const dl = page.waitForEvent("download");
   await page.getByTestId("import-template").click();
-  expect(readFileSync((await (await dl).path())!, "utf8")).toContain("현장,구분,날짜,금액,메모");
+  const xlsx = await dl;
+  expect(xlsx.suggestedFilename()).toBe("양식_기성입금이력.xlsx");
+  const bytes = readFileSync((await xlsx.path())!);
+  expect(bytes.subarray(0, 2).toString("latin1")).toBe("PK"); // zip = 엑셀 통합 문서
+  expect(bytes.toString("latin1")).toContain("xl/workbook.xml");
+  const dlCsv = page.waitForEvent("download");
+  await page.getByTestId("import-template-csv").click();
+  expect(readFileSync((await (await dlCsv).path())!, "utf8")).toContain("현장,구분,날짜,금액,메모");
 
   // 오류가 있으면 넣기 버튼이 없다
   const bad = "현장,구분,날짜,금액\nB현장,기성,2026-03-31,120000000\nB현장,선금,2026-04-30,1000";
@@ -391,6 +398,22 @@ test("자료 이관·점검: 준비 점검 → 기성·입금 붙여넣기(오�
   // 기성·수금 화면: 날짜가 가장 이른 기성이라 B현장 1차가 되고, 기존 기성은 2차부터로 밀린다
   await page.goto("/finance");
   await expect(page.locator("main")).toContainText(/B현장 1차\s*2026\.03\.31/);
+
+  // 엑셀 파일 그대로 (LibreOffice 저장 — 안내 시트 + 자료 시트, 위쪽 제목, 날짜·#,##0 서식, 수식)
+  await page.goto("/data");
+  await page.getByTestId("import-kind-billing").click();
+  await page.getByTestId("import-file").setInputFiles("tests/e2e/fixtures/billing_excel.xlsx");
+  await expect(page.getByTestId("import-card")).toContainText("‘기성입금’ 시트를 읽었습니다");
+  await expect(page.getByTestId("import-notes")).toContainText("열 이름은 3행에서 찾았습니다");
+  // 위에서 붙여넣은 2건은 중복으로 건너뛰고, 7행(글자로 적은 날짜·금액)만 새로
+  await expect(page.getByTestId("import-dups")).toContainText("4행");
+  await expect(page.getByTestId("import-dups")).toContainText("5행");
+  await expect(page.getByTestId("import-summary")).toContainText("B현장 — 기성 1건 · 입금 0건");
+  await page.getByTestId("import-apply").click();
+  await expect(page.getByTestId("import-done")).toBeVisible();
+  // 예전 형식(.xls)은 이유를 알려주고 받지 않는다
+  await page.getByTestId("import-file").setInputFiles("tests/e2e/fixtures/legacy.xls");
+  await expect(page.getByText("Excel 통합 문서(.xlsx)")).toBeVisible();
 
   // 한글 엑셀 ‘CSV(쉼표로 분리)’ = CP949 파일
   await page.goto("/data");
