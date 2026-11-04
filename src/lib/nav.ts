@@ -55,6 +55,7 @@ export const NAV: NavItem[] = [
   { href: "/why-ax", label: "기획의도", icon: "Lightbulb", group: "ax", roles: ALL_INTERNAL, desc: "왜 이 AX인가", only: "demo" },
   { href: "/data", label: "자료 이관·점검", icon: "FileUp", group: "admin", roles: INTERNAL, desc: "지난 기성·변경공사·출력·원가 엑셀 가져오기 · 현장별 자료 준비 점검" },
   { href: "/admin", label: "운영 관리", icon: "Building2", group: "admin", roles: INTERNAL, desc: "현장 등록·사용자·운영 설정·공무 확인", only: "live" },
+  { href: "/quality", label: "오류·의견", icon: "MessageSquareWarning", group: "admin", roles: INTERNAL, desc: "현장 앱 의견 반영·앱 오류 기록 (4단계 검수 근거)" },
   { href: "/audit", label: "활동 이력", icon: "History", group: "admin", roles: INTERNAL, desc: "누가·언제·무엇을 바꿨는지 회사 전체 검색·CSV (지워지지 않음)" },
   { href: "/help", label: "사용 안내", icon: "BookOpen", group: "admin", roles: ["ceo", "manager", "partner"], alsoAccess: ["field"], desc: "역할별 운영 매뉴얼 (인쇄용)" },
   { href: "/settings", label: "설정", icon: "Settings", group: "admin", roles: ["ceo", "manager", "field", "partner"], desc: IS_LIVE ? "화면·위험 기준·데이터 가져오기" : "테마·글자·역할·데모·데이터" },

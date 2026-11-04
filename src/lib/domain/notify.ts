@@ -46,6 +46,14 @@ export function noticesFor(before: DemoDB, after: DemoDB, actorId: string): Noti
     else if (prev.status !== w.status && w.status === "done") push({ to: [w.createdBy], title: "작업지시 완료 보고", body: `${site(w.siteId)} · ${clip(w.title)} — ${name(w.assigneeUserId)}`, url: "/orders", tag: `wo-${w.id}` });
   }
 
+  // 앱 의견: 본사가 반영·보류하면 보낸 사람에게
+  const fbBefore = new Map((before.feedback ?? []).map((f) => [f.id, f]));
+  for (const f of after.feedback ?? []) {
+    const prev = fbBefore.get(f.id);
+    if (prev && prev.status !== f.status && (f.status === "done" || f.status === "hold"))
+      push({ to: [f.userId], title: f.status === "done" ? "보내 주신 의견을 반영했어요" : "보내 주신 의견 답변", body: f.reply ? clip(f.reply) : "내 정보에서 확인해 주세요", url: "/my", tag: `fb-${f.id}` });
+  }
+
   // 현장 보고
   const repBefore = new Map(before.reports.map((r) => [r.id, r]));
   for (const r of after.reports) {

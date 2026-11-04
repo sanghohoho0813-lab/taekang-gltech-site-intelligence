@@ -14,6 +14,7 @@ import { Choice } from "./ui";
 import { PushCard } from "@/components/PushCard";
 import { MyRecords } from "./EasyHome";
 import { MyLocationCard } from "./MyLocation";
+import { MyFeedback } from "./MyFeedback";
 
 export function EasyMy() {
   const { db, role, userId, user } = useMe();
@@ -65,6 +66,8 @@ export function EasyMy() {
       <PushCard audience={role === "field" ? "field" : "hq"} />
 
       {(role === "field" || (db.attendance ?? []).some((r) => r.userId === userId)) && <MyLocationCard />}
+
+      <MyFeedback />
 
       <section className="space-y-3" aria-labelledby="records-title">
         <h2 id="records-title" className="text-[1.3rem] font-extrabold">

@@ -564,6 +564,41 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     await field.context().close();
   });
 
+  test("오류·의견: 화면 오류 자동 기록(개인정보 지움) · 현장 의견 → 대표 반영 → 현장에 결과 · 로그인 없이 보내기 차단", async ({ browser }) => {
+    const field = await login(browser, FIELD.email, FIELD.password, { width: 390, height: 844 });
+    await field.goto("/my");
+    // 화면에서 예상 못 한 오류 (전화번호가 섞인 문구)
+    const sentErr = field.waitForResponse((r) => r.url().endsWith("/api/client-error") && r.request().method() === "POST");
+    await field.evaluate(() => setTimeout(() => { throw new Error("테스트 화면 오류 010-1234-5678"); }, 0));
+    expect((await sentErr).status()).toBe(200);
+    // 현장 의견
+    await field.getByTestId("fb-cat-photo").click();
+    await field.getByTestId("fb-send").click();
+    await expect(field.getByTestId("fb-msg")).toContainText("보냈어요");
+
+    const ceo = await login(browser, CEO.email, CEO.password);
+    await ceo.goto("/quality");
+    const err = ceo.getByTestId("quality-error").filter({ hasText: "테스트 화면 오류" });
+    await expect(err).toHaveAttribute("data-source", "client");
+    await expect(err).toContainText("[숫자]");
+    await expect(err).not.toContainText("1234-5678");
+    await expect(err).toContainText("/my");
+    const fb = ceo.getByTestId("quality-fb").filter({ hasText: "사진이 잘 안 올라가요" });
+    await fb.getByTestId("fb-status-done").click();
+    await fb.getByTestId("fb-reply").fill("사진 크기를 줄여 더 빨리 올라가게 했습니다");
+    await fb.getByTestId("fb-save").click();
+    await expect(fb).toHaveAttribute("data-status", "done");
+    // 현장 직원은 오류 기록을 볼 수 없다 / 로그인 없이 오류 보내기 차단
+    expect((await field.request.get("/api/errors")).status()).toBe(403);
+    const anon = await browser.newContext();
+    expect((await anon.request.post(new URL("/api/client-error", ceo.url()).toString(), { data: { message: "x" } })).status()).toBe(401);
+    await anon.close();
+    await field.reload();
+    await expect(field.locator('[data-testid="fb-mine-item"][data-status="done"]')).toContainText("사진 크기를 줄여");
+    await ceo.context().close();
+    await field.context().close();
+  });
+
   test("다른 사이트에서 보낸 쓰기 요청은 차단 (Origin 확인)", async ({ browser }) => {
     const page = await login(browser, CEO.email, CEO.password);
     // 형식이 틀린 본문(null·배열)은 서버 오류(500)가 아니라 400

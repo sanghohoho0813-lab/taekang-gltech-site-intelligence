@@ -10,6 +10,7 @@ import { AUDIT_LIMIT, auditRange, type AuditFilter } from "@/lib/domain/audit";
 import { COMMANDS, isCommandName, type CommandName } from "@/lib/data/registry";
 import { CommandError } from "@/lib/data/commands";
 import { applyLocationRetention } from "@/lib/data/privacyCommands";
+import { recordError } from "./errors";
 import { createSeed } from "@/lib/data/seed";
 import { uid } from "@/lib/domain/ids";
 import { getDb, type Tx } from "./sql";
@@ -107,28 +108,39 @@ export async function currentRev(companyId: string): Promise<number> {
 export async function executeCommand(m: Member, name: unknown, args: unknown): Promise<{ result: unknown; rev: number; db: DemoDB }> {
   if (!isCommandName(name)) throw new CommandError("알 수 없는 요청입니다.");
   const db = await getDb();
-  const { response, notices } = await db.transaction(async (tx) => {
-    await tx.query(`select rev from companies where id = $1 for update`, [m.companyId]);
-    const loaded = await loadState(tx, m.companyId);
-    const now = new Date();
-    // 하루 한 번: 보관 기간이 지난 위치 좌표를 지운다 (명령과 같은 트랜잭션 — 명령이 실패하면 함께 되돌아감 · D-43)
-    const state = applyLocationRetention(loaded, now);
-    const safeArgs = authorize(m, name, args, state, now);
-    const fn = COMMANDS[name as CommandName] as unknown as (d: DemoDB, a: unknown, c: { userId: string; now: Date }) => { db: DemoDB; result: unknown };
-    let out: { db: DemoDB; result: unknown };
-    try {
-      out = fn(state, safeArgs, { userId: m.id, now });
-    } catch (e) {
-      if (e instanceof CommandError || e instanceof ForbiddenError) throw e;
-      // 형식이 맞지 않는 입력으로 명령 내부에서 난 오류는 사용자에게는 형식 오류로
-      console.error("[command]", name, e);
-      throw new CommandError("요청 형식이 올바르지 않습니다.");
-    }
-    // 알림 대상은 저장 전에 계산 (실행 전·후 비교)
-    const notices = noticesFor(state, out.db, m.id);
-    await persistState(tx, m.companyId, loaded, out.db);
-    return { response: { result: sanitizeResult(m, out.result), rev: out.db.rev, db: viewFor(m, out.db) }, notices };
-  });
+  // 명령 안에서 난 예상 못 한 오류 — 사용자에게는 형식 오류로 알리고, 오류 기록에는 원래 오류를 남긴다 (D-47)
+  let unexpected: unknown = null;
+  let done: { response: { result: unknown; rev: number; db: DemoDB }; notices: Awaited<ReturnType<typeof noticesFor>> };
+  try {
+    done = await db.transaction(async (tx) => {
+      await tx.query(`select rev from companies where id = $1 for update`, [m.companyId]);
+      const loaded = await loadState(tx, m.companyId);
+      const now = new Date();
+      // 하루 한 번: 보관 기간이 지난 위치 좌표를 지운다 (명령과 같은 트랜잭션 — 명령이 실패하면 함께 되돌아감 · D-43)
+      const state = applyLocationRetention(loaded, now);
+      const safeArgs = authorize(m, name, args, state, now);
+      const fn = COMMANDS[name as CommandName] as unknown as (d: DemoDB, a: unknown, c: { userId: string; now: Date }) => { db: DemoDB; result: unknown };
+      let out: { db: DemoDB; result: unknown };
+      try {
+        out = fn(state, safeArgs, { userId: m.id, now });
+      } catch (e) {
+        if (e instanceof CommandError || e instanceof ForbiddenError) throw e;
+        // 형식이 맞지 않는 입력으로 명령 내부에서 난 오류는 사용자에게는 형식 오류로
+        console.error("[command]", name, e);
+        unexpected = e;
+        throw new CommandError("요청 형식이 올바르지 않습니다.");
+      }
+      // 알림 대상은 저장 전에 계산 (실행 전·후 비교)
+      const notices = noticesFor(state, out.db, m.id);
+      await persistState(tx, m.companyId, loaded, out.db);
+      return { response: { result: sanitizeResult(m, out.result), rev: out.db.rev, db: viewFor(m, out.db) }, notices };
+    });
+  } catch (e) {
+    const bug = unexpected ?? (e instanceof CommandError || e instanceof ForbiddenError ? null : e);
+    if (bug) await recordError(m, { source: "server", route: `명령 ${name}`, message: bug instanceof Error ? bug.message : String(bug), stack: bug instanceof Error ? bug.stack : undefined }).catch(() => {});
+    throw e;
+  }
+  const { response, notices } = done;
   // 저장이 끝난 뒤에 알림 — 실패해도 명령 결과에는 영향 없음
   if (notices.length) await deliver(m.companyId, notices).catch((e) => console.error("[push]", e));
   return response;

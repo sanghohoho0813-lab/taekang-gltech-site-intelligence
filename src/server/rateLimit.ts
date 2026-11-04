@@ -25,6 +25,7 @@ export const RULES = {
   kioskStatus: { name: "kioskStatus", limit: 120, windowMs: 60_000 },
   export: { name: "export", limit: 6, windowMs: 10 * 60_000 },
   pushTest: { name: "pushTest", limit: 5, windowMs: 10 * 60_000 },
+  clientError: { name: "clientError", limit: 30, windowMs: 10 * 60_000 },
 } satisfies Record<string, RateRule>;
 
 /** 이번 요청을 세고, 한도를 넘었으면 다시 시도할 수 있을 때까지 남은 초를 돌려준다 */

@@ -505,6 +505,11 @@ function seedAttendance(db: DemoDB, now: Date) {
     { userId: "u-field", at: dayOffset(now, -10), version: 1 },
     { userId: "u-field2", at: dayOffset(now, -20), version: CONSENT_VERSION, retentionDays: null, viewers: "hq" },
   ];
+  // 앱 의견 (가상) — 반영된 것 1건, 확인 전 1건 (D-47)
+  db.feedback = [
+    { id: "fb-seed-1", at: dayOffset(now, -5), userId: "u-field2", category: "small_text", text: "출퇴근 버튼 아래 안내 글씨가 작아요 (가상)", route: "/field", status: "done", reply: "안내 글씨를 키웠습니다. 화면 위 ‘글자 크게’도 써 보세요 (가상)", reviewedAt: dayOffset(now, -4), reviewedBy: "u-manager" },
+    { id: "fb-seed-2", at: dayOffset(now, -1), userId: "u-field", category: "location", text: "B현장 지하에서는 위치가 잘 안 잡혀요 (가상)", route: "/field", status: "new" },
+  ];
   // 작업 인원(출력) — A현장 유리 설치팀 지난 5일 매일 4명 (사진은 실제 사진을 쓰지 않으므로 없음)
   db.crewChecks = [1, 2, 3, 4, 5].map((i) => ({
     id: `crew-seed-a-${i}`,

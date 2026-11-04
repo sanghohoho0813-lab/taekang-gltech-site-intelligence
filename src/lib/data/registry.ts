@@ -11,6 +11,7 @@ import * as O from "./opsCommands";
 import * as I from "./importCommands";
 import * as P from "./privacyCommands";
 import * as D from "./deviceCommands";
+import * as F from "./feedbackCommands";
 
 type Ctx = C.Ctx;
 
@@ -65,6 +66,9 @@ export const COMMANDS = {
   withdrawLocationConsent: (db: DemoDB, a: Record<string, never>, ctx: Ctx) => P.withdrawLocationConsent(db, a, ctx),
   // 휴대폰 점검 (D-46) — 본인 결과만
   reportDeviceCheck: (db: DemoDB, a: D.DeviceCheckInput, ctx: Ctx) => D.reportDeviceCheck(db, a, ctx),
+  // 앱 의견 (D-47) — 보내기는 본인, 확인은 본사
+  sendFeedback: (db: DemoDB, a: F.FeedbackInput, ctx: Ctx) => F.sendFeedback(db, a, ctx),
+  reviewFeedback: (db: DemoDB, a: Parameters<typeof F.reviewFeedback>[1], ctx: Ctx) => F.reviewFeedback(db, a, ctx),
   // pairKiosk는 목록에 넣지 않는다 — 로그인하지 않은 태블릿 전용 경로(/api/kiosk/pair)에서만 실행
 } as const;
 

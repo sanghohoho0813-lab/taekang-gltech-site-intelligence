@@ -110,7 +110,8 @@ export function authorize(m: Member, name: CommandName, argsIn: unknown, db: Dem
         // 본인 동의만 (명령이 로그인 사용자 id로 처리)
         return {};
       case "reportDeviceCheck":
-        // 본인 휴대폰 결과만 (명령이 로그인 사용자 id로 기록)
+      case "sendFeedback":
+        // 본인 것만 (명령이 로그인 사용자 id로 기록)
         return args;
       case "checkIn":
       case "checkOut":
@@ -186,6 +187,7 @@ export function viewFor(m: Member, db: DemoDB, now = new Date()): DemoDB {
     attendance: [],
     consents: [],
     deviceChecks: [],
+    feedback: [],
     kiosks: [],
     crewChecks: [],
     attendanceRequests: [],
@@ -241,6 +243,7 @@ export function viewFor(m: Member, db: DemoDB, now = new Date()): DemoDB {
       attendance: (db.attendance ?? []).filter((r) => r.userId === m.id && r.workDate >= since),
       consents: (db.consents ?? []).filter((c) => c.userId === m.id),
       deviceChecks: (db.deviceChecks ?? []).filter((c) => c.userId === m.id),
+      feedback: (db.feedback ?? []).filter((f) => f.userId === m.id),
       // 작업 인원은 담당 현장 것만
       crewChecks,
       attendanceRequests: (db.attendanceRequests ?? []).filter((q) => q.userId === m.id && (q.workDate >= since || q.status === "pending")),

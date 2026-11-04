@@ -23,10 +23,12 @@ import {
   NotebookText,
   History,
   Images,
+  MessageSquareWarning,
   type LucideIcon,
 } from "lucide-react";
 
 const MAP: Record<string, LucideIcon> = {
+  MessageSquareWarning,
   LayoutDashboard,
   Building2,
   ClipboardPen,

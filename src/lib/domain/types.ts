@@ -4,6 +4,7 @@
  * 이 MVP의 데이터는 전부 DEMO(가상 시연 데이터)이다.
  */
 import type { DeviceCheck } from "./device";
+import type { Feedback } from "./feedback";
 
 export type RoleId = "ceo" | "manager" | "field" | "partner";
 
@@ -592,6 +593,8 @@ export interface DemoDB {
   consents?: LocationConsent[];
   /** 휴대폰 점검 결과 — 사람마다 마지막 1개 (D-46) */
   deviceChecks?: DeviceCheck[];
+  /** 현장·본사 앱 의견 (D-47) */
+  feedback?: Feedback[];
   kiosks?: Kiosk[];
   crewChecks?: CrewCheck[];
   attendanceRequests?: AttendanceRequest[];

@@ -721,6 +721,7 @@ export function addBilling(db0: DemoDB, input: { siteId: string; amount: number;
 }
 
 export function addPayment(db0: DemoDB, input: { siteId: string; amount: number; receivedDate: string; idempotencyKey?: string }, ctx: Ctx) {
+  requireSite(db0, input.siteId);
   const f = siteFinancials(db0, input.siteId);
   validateAmount(input.amount);
   if (input.amount > f.outstanding) throw new CommandError(`수금액이 미수금(${fmtMan(f.outstanding)})보다 클 수 없습니다.`, "VALIDATION", { amount: "미수금 초과" });

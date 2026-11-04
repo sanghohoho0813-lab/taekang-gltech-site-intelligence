@@ -35,6 +35,7 @@ export const COLLECTIONS = {
   attendance: byId,
   consents: (x: Item) => String(x.userId),
   deviceChecks: (x: Item) => String(x.userId),
+  feedback: byId,
   kiosks: byId,
   crewChecks: byId,
   attendanceRequests: byId,
