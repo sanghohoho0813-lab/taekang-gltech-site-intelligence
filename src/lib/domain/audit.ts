@@ -23,6 +23,7 @@ export const LOG_TYPE_LABEL: Record<string, string> = {
   forecast: "잔여예상원가",
   site: "현장 정보",
   settings: "설정",
+  privacy: "개인위치정보",
 };
 
 export interface AuditFilter {

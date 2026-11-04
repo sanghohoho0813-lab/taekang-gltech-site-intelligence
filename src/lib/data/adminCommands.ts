@@ -250,6 +250,8 @@ export function setCompanySettings(db0: DemoDB, input: CompanySettingsInput, ctx
     ...((input.attendanceMode ?? prev.attendanceMode) ? { attendanceMode: input.attendanceMode ?? prev.attendanceMode } : {}),
     ...((input.teamRates ?? prev.teamRates)?.length ? { teamRates: (input.teamRates ?? prev.teamRates)!.map((t) => ({ team: t.team.trim(), dayRate: t.dayRate })) } : {}),
     ...((input.helpPhone !== undefined ? phone : prev.helpPhone) ? { helpPhone: input.helpPhone !== undefined ? phone : prev.helpPhone } : {}),
+    // 개인위치정보 규칙은 여기서 바꾸지 않는다 (대표 전용 setLocationPolicy · D-43)
+    ...(prev.location ? { location: prev.location } : {}),
   };
   if (input.companyName) db.company = { ...db.company, name: input.companyName.trim() };
   log(db, ctx, "settings", `운영 설정 변경 — 원가 반영: ${db.settings.costApproval === "review" ? "본사 공무 확인 후" : "저장 즉시"} · 기본 일당 ${fmtMan(db.settings.laborDayRate)} · 출근 ${db.settings.attendanceMode === "qr" ? "현장 QR+GPS" : "GPS"}`);

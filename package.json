@@ -18,7 +18,8 @@
     "e2e:live": "playwright test -c playwright.live.config.ts",
     "preflight": "node scripts/preflight.mjs",
     "perf": "vitest run --config vitest.perf.config.ts",
-    "vapid": "node scripts/vapid.mjs"
+    "vapid": "node scripts/vapid.mjs",
+    "smoke": "node scripts/smoke.mjs"
   },
   "engines": {
     "node": ">=20"

@@ -9,6 +9,7 @@ import { DEFAULT_SETTINGS } from "@/lib/domain/types";
 import { AUDIT_LIMIT, auditRange, type AuditFilter } from "@/lib/domain/audit";
 import { COMMANDS, isCommandName, type CommandName } from "@/lib/data/registry";
 import { CommandError } from "@/lib/data/commands";
+import { applyLocationRetention } from "@/lib/data/privacyCommands";
 import { createSeed } from "@/lib/data/seed";
 import { uid } from "@/lib/domain/ids";
 import { getDb, type Tx } from "./sql";
@@ -108,8 +109,10 @@ export async function executeCommand(m: Member, name: unknown, args: unknown): P
   const db = await getDb();
   const { response, notices } = await db.transaction(async (tx) => {
     await tx.query(`select rev from companies where id = $1 for update`, [m.companyId]);
-    const state = await loadState(tx, m.companyId);
+    const loaded = await loadState(tx, m.companyId);
     const now = new Date();
+    // 하루 한 번: 보관 기간이 지난 위치 좌표를 지운다 (명령과 같은 트랜잭션 — 명령이 실패하면 함께 되돌아감 · D-43)
+    const state = applyLocationRetention(loaded, now);
     const safeArgs = authorize(m, name, args, state, now);
     const fn = COMMANDS[name as CommandName] as unknown as (d: DemoDB, a: unknown, c: { userId: string; now: Date }) => { db: DemoDB; result: unknown };
     let out: { db: DemoDB; result: unknown };
@@ -123,7 +126,7 @@ export async function executeCommand(m: Member, name: unknown, args: unknown): P
     }
     // 알림 대상은 저장 전에 계산 (실행 전·후 비교)
     const notices = noticesFor(state, out.db, m.id);
-    await persistState(tx, m.companyId, state, out.db);
+    await persistState(tx, m.companyId, loaded, out.db);
     return { response: { result: sanitizeResult(m, out.result), rev: out.db.rev, db: viewFor(m, out.db) }, notices };
   });
   // 저장이 끝난 뒤에 알림 — 실패해도 명령 결과에는 영향 없음

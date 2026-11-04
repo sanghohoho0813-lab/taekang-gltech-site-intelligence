@@ -17,7 +17,9 @@ export async function GET() {
     const db = await getDb();
     await db.query("select 1");
     const [m] = await db.query<{ n: number }>("select count(*)::int as n from schema_migrations");
-    return json({ ok: true, ...base, db: "ok", dbMs: Date.now() - t0, migrations: Number(m?.n ?? 0) });
+    // 알림 키가 있는지만 (값은 내보내지 않음) — 배포 후 점검(npm run smoke)이 확인
+    const push = process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY ? "on" : "off";
+    return json({ ok: true, ...base, db: "ok", dbMs: Date.now() - t0, migrations: Number(m?.n ?? 0), push });
   } catch {
     return json({ ok: false, ...base, db: "error" }, 503);
   }

@@ -461,3 +461,40 @@ describe("현장 등록·사용자 관리", () => {
     expect((await auth.login("field2@demo.local", "NewPass123")).ok).toBe(true);
   });
 });
+
+describe("개인위치정보 규칙 (LIVE · D-43)", () => {
+  it("규칙은 대표만 / ‘대표만’이면 관리자에게 좌표 없이 / 보관 기간이 지난 좌표는 다음 명령과 같은 트랜잭션에서 지워진다", async () => {
+    await expect(svc.executeCommand(manager, "setLocationPolicy", { retentionDays: 90, viewers: "ceo" })).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(svc.executeCommand(manager, "purgeMemberLocations", { userId: "u-field" })).rejects.toBeInstanceOf(ForbiddenError);
+    // 좌표가 있는 출퇴근 기록 하나를 오래전 기록으로 바꿔 둔다 (DB 직접)
+    const db = await getDb();
+    const [row] = await db.query<{ id: string }>(`select id from records where collection = 'attendance' and data->'inGeo'->>'lat' is not null order by id limit 1`);
+    expect(row?.id).toBeTruthy();
+    await db.query(`update records set data = jsonb_set(data, '{inAt}', to_jsonb('2026-01-05T00:00:00.000Z'::text)) where collection = 'attendance' and id = $1`, [row.id]);
+
+    await svc.executeCommand(ceo, "setLocationPolicy", { retentionDays: 90, viewers: "ceo" });
+    // 관리자: 좌표·거리 없이 판정만 / 대표: 그대로
+    const mv = await svc.getView(manager);
+    expect(mv.db.attendance!.length).toBeGreaterThan(0);
+    expect(JSON.stringify(mv.db.attendance)).not.toMatch(/"lat"|"distanceM"|"accuracyM"/);
+    const cv = await svc.getView(ceo);
+    expect(JSON.stringify(cv.db.attendance)).toMatch(/"lat"/);
+
+    // 다음 명령(현장 보고) 때 하루 한 번 자동 삭제
+    await svc.executeCommand(field, "submitFieldReport", { ...fieldReport("k-priv-1"), costs: [], workDone: "위치 정리 확인" });
+    const st = await db.transaction((tx) => loadState(tx, ceo.companyId));
+    const old = st.attendance!.find((r) => r.id === row.id)!;
+    expect(old.inGeo).toMatchObject({ purged: true });
+    expect(old.inGeo.lat).toBeUndefined();
+    expect(old.inAt).toBe("2026-01-05T00:00:00.000Z");
+    expect(st.settings?.location?.purgedOn).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    const logs = await svc.listActivity(ceo, { from: "2026-01-01", to: "2030-12-31", type: "privacy" });
+    expect(logs.logs.some((l) => l.by === "system" && l.summary.includes("자동 삭제"))).toBe(true);
+    // 저장된 값도 jsonb 객체 (좌표 키 없음)
+    const [saved] = await db.query<{ t: string; lat: string | null }>(`select jsonb_typeof(data->'inGeo') as t, data->'inGeo'->>'lat' as lat from records where collection = 'attendance' and id = $1`, [row.id]);
+    expect(saved).toEqual({ t: "object", lat: null });
+
+    // 다른 테스트에 영향이 없도록 기본값으로
+    await svc.executeCommand(ceo, "setLocationPolicy", { retentionDays: null, viewers: "hq" });
+  });
+});

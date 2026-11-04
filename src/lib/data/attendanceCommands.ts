@@ -11,12 +11,13 @@ import type { AttendanceRecord, DemoDB, GeoStamp, Kiosk, QrStamp } from "@/lib/d
 import { verifyQrToken } from "@/lib/domain/qr";
 import { hex, randomBytes, sha256, utf8 } from "@/lib/domain/hmac";
 import { judgeGeo, geoText, validSample, type GeoSample } from "@/lib/domain/geo";
+import { consentRecord, hasConsent, retentionText, viewersText } from "@/lib/domain/privacy";
 import { todayIso } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
 import { CommandError, claimKey, clone, log, nowIso, requireSite, touch, userName, validPhoto, type Ctx } from "./commands";
 
-/** 동의 문구 판 (문구를 바꾸면 올려서 다시 동의받는다) */
-export const CONSENT_VERSION = 1;
+/** 동의 문구 판·동의 확인은 개인위치정보 규칙(privacy.ts)에서 — 보관 기간·볼 수 있는 사람 조건 포함 (D-43) */
+export { CONSENT_VERSION, hasConsent } from "@/lib/domain/privacy";
 
 export interface CheckInput {
   siteId: string;
@@ -36,10 +37,6 @@ export interface CheckInput {
 const cleanDevice = (d: unknown) => (typeof d === "string" && /^[A-Za-z0-9_-]{6,64}$/.test(d) ? d : undefined);
 const REASONS: GeoStamp["reason"][] = ["denied", "unavailable", "timeout", "unsupported", "skipped"];
 
-export function hasConsent(db: DemoDB, userId: string): boolean {
-  return (db.consents ?? []).some((c) => c.userId === userId && c.version >= CONSENT_VERSION);
-}
-
 /** 동의가 없으면 좌표를 남기지 않는다 */
 function stamp(db: DemoDB, siteId: string, userId: string, input: Pick<CheckInput, "sample" | "noLocation">): GeoStamp {
   const site = db.sites.find((s) => s.id === siteId);
@@ -52,8 +49,9 @@ function stamp(db: DemoDB, siteId: string, userId: string, input: Pick<CheckInpu
 function recordConsent(db: DemoDB, input: { consent?: boolean; sample?: unknown }, ctx: Ctx) {
   if (!validSample(input.sample) || hasConsent(db, ctx.userId)) return;
   if (!input.consent) throw new CommandError("위치를 기록하려면 먼저 동의가 필요합니다.", "VALIDATION", { consent: "동의 필요" });
-  db.consents = [...(db.consents ?? []).filter((c) => c.userId !== ctx.userId), { userId: ctx.userId, at: nowIso(ctx), version: CONSENT_VERSION }];
-  log(db, ctx, "attendance", `${userName(db, ctx.userId)} 출퇴근 위치 기록 동의`);
+  const rec = consentRecord(db, ctx.userId, nowIso(ctx));
+  db.consents = [...(db.consents ?? []).filter((c) => c.userId !== ctx.userId), rec];
+  log(db, ctx, "privacy", `${userName(db, ctx.userId)} 출퇴근 위치 기록 동의 (문구 ${rec.version}판 · 보관 ${retentionText(rec.retentionDays)} · 열람 ${viewersText(rec.viewers ?? "hq")})`);
 }
 
 export function checkIn(db0: DemoDB, input: CheckInput, ctx: Ctx): { db: DemoDB; result: { attendanceId: string; geo: GeoStamp; at: string; qr?: QrStamp } } {
@@ -88,7 +86,7 @@ export function checkIn(db0: DemoDB, input: CheckInput, ctx: Ctx): { db: DemoDB;
     ...(cleanDevice(input.deviceId) ? { inDevice: cleanDevice(input.deviceId) } : {}),
   };
   db.attendance.push(rec);
-  log(db, ctx, "attendance", `${userName(db, ctx.userId)} 출근 — ${site.shortName} · ${geoText(geo)}${qr ? ` · ${qr.status === "ok" ? "QR 확인" : "QR 확인 실패"}` : ""}`, site.id, "/attendance");
+  log(db, ctx, "attendance", `${userName(db, ctx.userId)} 출근 — ${site.shortName} · ${geoText(geo, false)}${qr ? ` · ${qr.status === "ok" ? "QR 확인" : "QR 확인 실패"}` : ""}`, site.id, "/attendance");
   touch(db, ctx);
   return { db, result: { attendanceId: rec.id, geo, at, qr } };
 }
@@ -111,7 +109,7 @@ export function checkOut(db0: DemoDB, input: CheckInput, ctx: Ctx): { db: DemoDB
   const rec: AttendanceRecord = { ...open, outAt: at, outGeo: geo, ...(cleanDevice(input.deviceId) ? { outDevice: cleanDevice(input.deviceId) } : {}) };
   db.attendance[idx] = rec;
   const minutes = Math.round((new Date(at).getTime() - new Date(open.inAt).getTime()) / 60_000);
-  log(db, ctx, "attendance", `${userName(db, ctx.userId)} 퇴근 — ${site.shortName} · ${geoText(geo)} · ${Math.floor(minutes / 60)}시간 ${minutes % 60}분`, site.id, "/attendance");
+  log(db, ctx, "attendance", `${userName(db, ctx.userId)} 퇴근 — ${site.shortName} · ${geoText(geo, false)} · ${Math.floor(minutes / 60)}시간 ${minutes % 60}분`, site.id, "/attendance");
   touch(db, ctx);
   return { db, result: { attendanceId: rec.id, geo, at, minutes } };
 }

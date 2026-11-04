@@ -57,10 +57,11 @@ export const GEO_LABEL: Record<GeoStatus, string> = {
 };
 
 /** "현장 안 · 45m" / "현장 밖 · 1.2km" */
-export function geoText(g: GeoStamp | undefined): string {
+/** 위치 판정 문구. withDistance = false 이면 거리를 빼고 (활동 기록처럼 오래 남는 곳에 쓰는 문구 — 거리도 위치 정보다 · D-43) */
+export function geoText(g: GeoStamp | undefined, withDistance = true): string {
   if (!g) return "위치 기록 없음";
-  const dist = g.distanceM === undefined ? "" : ` · ${g.distanceM >= 1000 ? `${(g.distanceM / 1000).toFixed(1)}km` : `${g.distanceM}m`}`;
-  const why = g.status === "none" ? (g.reason === "denied" ? " (위치 권한 거부)" : g.reason === "skipped" ? " (위치 없이 진행)" : " (위치를 못 잡음)") : g.status === "weak" ? ` (오차 ${g.accuracyM}m)` : "";
+  const dist = !withDistance || g.distanceM === undefined ? "" : ` · ${g.distanceM >= 1000 ? `${(g.distanceM / 1000).toFixed(1)}km` : `${g.distanceM}m`}`;
+  const why = g.status === "none" ? (g.reason === "denied" ? " (위치 권한 거부)" : g.reason === "skipped" ? " (위치 없이 진행)" : " (위치를 못 잡음)") : g.status === "weak" && withDistance && g.accuracyM !== undefined ? ` (오차 ${g.accuracyM}m)` : "";
   return `${GEO_LABEL[g.status]}${dist}${why}`;
 }
 

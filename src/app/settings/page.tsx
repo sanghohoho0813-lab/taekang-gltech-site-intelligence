@@ -21,6 +21,7 @@ import { ResetDialog } from "@/components/device/DemoBar";
 import { AiReadyButton } from "@/components/domain/Widgets";
 import { IS_LIVE } from "@/lib/mode";
 import { PushCard } from "@/components/PushCard";
+import { PrivacyAdmin } from "@/components/admin/PrivacyAdmin";
 import { downloadCsv } from "@/lib/browser/download";
 import { readCsvFile } from "@/lib/browser/readCsv";
 
@@ -110,6 +111,9 @@ export default function SettingsPage() {
           </div>
         </Card>
       )}
+
+      {/* 개인위치정보 규칙 — 실제 운영에서는 ‘운영 관리 → 개인위치정보’ (D-43) */}
+      {!IS_LIVE && isManager && <PrivacyAdmin db={db} role={role} />}
 
       {!IS_LIVE && (<Card>
         <CardHeader title="사용자 · 권한 프리뷰" sub="실제 로그인·보안이 아닙니다 — 역할별 화면 노출을 미리 보여주는 DEMO 기능입니다" right={<Badge tone="warn" icon={<ShieldCheck size={13} />}>RLS 미적용 (READY)</Badge>} />

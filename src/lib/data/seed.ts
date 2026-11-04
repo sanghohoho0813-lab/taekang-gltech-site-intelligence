@@ -24,6 +24,7 @@ import type {
   AttendanceRecord,
 } from "@/lib/domain/types";
 import { siteFinancials, snapshotOf } from "@/lib/domain/calc";
+import { CONSENT_VERSION } from "@/lib/domain/privacy";
 
 const M = 1_000_000; // 백만 원
 
@@ -499,7 +500,11 @@ function seedAttendance(db: DemoDB, now: Date) {
     rec.push({ id: "att-seed-c-0", siteId: "site-c", userId: "u-field2", workDate: today, inAt: inToday, inGeo: { status: "outside", lat: 36.3721, lng: 127.4093, accuracyM: 18, distanceM: 3279 }, inDevice: "dev-demo-jung" });
   }
   db.attendance = rec;
-  db.consents = [{ userId: "u-field2", at: dayOffset(now, -20), version: 1 }];
+  // 최성민은 예전 문구(1판)로 동의 → 문구가 2판으로 바뀌어 다음 출근 때 한 번 다시 묻는다 (좌표는 동의한 사람만 남는다는 규칙과 맞춤 · D-43)
+  db.consents = [
+    { userId: "u-field", at: dayOffset(now, -10), version: 1 },
+    { userId: "u-field2", at: dayOffset(now, -20), version: CONSENT_VERSION, retentionDays: null, viewers: "hq" },
+  ];
   // 작업 인원(출력) — A현장 유리 설치팀 지난 5일 매일 4명 (사진은 실제 사진을 쓰지 않으므로 없음)
   db.crewChecks = [1, 2, 3, 4, 5].map((i) => ({
     id: `crew-seed-a-${i}`,

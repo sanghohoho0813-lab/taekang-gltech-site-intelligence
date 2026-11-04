@@ -1,6 +1,6 @@
 "use client";
 
-/** 내 정보 — 글자 크기 · 본사 전화 · 내가 보낸 보고 · 비밀번호 · 로그아웃 */
+/** 내 정보 — 글자 크기 · 본사 전화 · 내 위치 기록 · 내가 보낸 보고 · 비밀번호 · 로그아웃 */
 import Link from "next/link";
 import { useState } from "react";
 import { KeyRound, LogOut, Phone, Type, BookOpen } from "lucide-react";
@@ -12,6 +12,7 @@ import { PageSkeleton } from "@/components/ui/primitives";
 import { Choice } from "./ui";
 import { PushCard } from "@/components/PushCard";
 import { MyRecords } from "./EasyHome";
+import { MyLocationCard } from "./MyLocation";
 
 export function EasyMy() {
   const { db, role, userId, user } = useMe();
@@ -55,6 +56,8 @@ export function EasyMy() {
       </Link>
 
       <PushCard audience={role === "field" ? "field" : "hq"} />
+
+      {(role === "field" || (db.attendance ?? []).some((r) => r.userId === userId)) && <MyLocationCard />}
 
       <section className="space-y-3" aria-labelledby="records-title">
         <h2 id="records-title" className="text-[1.3rem] font-extrabold">

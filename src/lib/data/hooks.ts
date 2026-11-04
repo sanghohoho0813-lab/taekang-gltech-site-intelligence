@@ -55,6 +55,7 @@ export function useMe() {
 
 export function userLabel(db: DemoDB | null, id?: string) {
   if (!db || !id) return "—";
+  if (id === "system") return "자동 (시스템)";
   const u = db.users.find((x) => x.id === id);
   return u ? `${u.name} ${u.title}` : id;
 }

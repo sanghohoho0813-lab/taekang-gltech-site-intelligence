@@ -84,6 +84,8 @@ export interface GeoStamp {
   distanceM?: number;
   /** 위치가 없을 때 이유 */
   reason?: "denied" | "unavailable" | "timeout" | "unsupported" | "skipped";
+  /** 보관 기간이 지났거나 본인이 동의를 철회해 좌표를 지움 (판정만 남음 · D-43) */
+  purged?: true;
 }
 
 /** 출퇴근 기록 — 본인 휴대폰에서 출근·퇴근 버튼을 누를 때 1번씩 위치를 남긴다 (계속 추적하지 않음) */
@@ -188,6 +190,22 @@ export interface LocationConsent {
   at: string;
   /** 동의 문구 판 */
   version: number;
+  /** 동의할 때 알린 보관 기간 (일, null = 회사가 정하는 기간) — 더 길어지면 다시 동의받음 */
+  retentionDays?: number | null;
+  /** 동의할 때 알린 볼 수 있는 사람 — 넓어지면 다시 동의받음 */
+  viewers?: "ceo" | "hq";
+}
+
+/** 개인위치정보 운영 규칙 (대표가 정함 · D-43) */
+export interface LocationPolicy {
+  /** 좌표 보관 기간 (일). null = 아직 정하지 않음 (자동 삭제 안 함) */
+  retentionDays: number | null;
+  /** 좌표를 볼 수 있는 사람: ceo = 대표만, hq = 대표·관리자 (직원 본인은 언제나 자기 기록을 봄) */
+  viewers: "ceo" | "hq";
+  /** 마지막 자동 삭제 날짜 (하루 한 번) */
+  purgedOn?: string;
+  /** 규칙을 바꾼 시각 */
+  updatedAt?: string;
 }
 
 export interface SiteStage {
@@ -536,6 +554,8 @@ export interface CompanySettings {
   attendanceMode?: "gps" | "qr";
   /** 작업 인원(출력) 팀별 기준 단가 (1인 1일, 원) — 인건비 추정용 */
   teamRates?: { team: string; dayRate: number }[];
+  /** 개인위치정보 보관 기간·볼 수 있는 사람 (없으면 기간 미정·대표와 관리자) */
+  location?: LocationPolicy;
 }
 
 export const DEFAULT_SETTINGS: CompanySettings = { costApproval: "immediate", laborDayRate: 300_000 };

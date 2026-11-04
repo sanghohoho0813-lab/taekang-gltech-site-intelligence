@@ -52,5 +52,5 @@ describe("배포 전 자동 점검", () => {
     const bad = await checkDb(q);
     expect(bad.find((c) => c.key === "rls")).toMatchObject({ level: "error", text: expect.stringContaining("records") });
     await db.close();
-  });
+  }, 30_000); // PGlite 시작이 테스트를 동시에 많이 돌릴 때 5초를 넘기기도 한다
 });

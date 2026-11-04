@@ -13,6 +13,7 @@ import type { DemoDB, GeoStamp, Site } from "@/lib/domain/types";
 import { distanceM, geoText, type GeoSample } from "@/lib/domain/geo";
 import { hhmm, minutesOf } from "@/lib/domain/attendance";
 import { todayIso } from "@/lib/domain/format";
+import { consentNotice, hasConsent, locationPolicy } from "@/lib/domain/privacy";
 import { deviceId, locateOnce } from "@/lib/geo/client";
 import { decodeQrFromFile } from "@/lib/geo/qrClient";
 import { makeQrToken, parseQrText, qrWindow, QR_LABEL } from "@/lib/domain/qr";
@@ -38,7 +39,9 @@ export function EasyAttendance({ db, userId, sites, autoQr }: { db: DemoDB; user
   const mine = (db.attendance ?? []).filter((r) => r.userId === userId && r.workDate === today);
   const open = mine.find((r) => !r.outAt);
   const closed = mine.filter((r) => r.outAt);
-  const consented = (db.consents ?? []).some((c) => c.userId === userId);
+  // 지금 조건(보관 기간·볼 수 있는 사람)으로 동의했는지 — 회사가 조건을 불리하게 바꾸면 다시 묻는다 (D-43)
+  const consented = hasConsent(db, userId);
+  const reasked = !consented && (db.consents ?? []).some((c) => c.userId === userId);
   const openSite = open ? db.sites.find((s) => s.id === open.siteId) : undefined;
   // 출근 방식: 현장 QR + GPS
   const qrMode = db.settings?.attendanceMode === "qr";
@@ -196,12 +199,11 @@ export function EasyAttendance({ db, userId, sites, autoQr }: { db: DemoDB; user
         <p className="flex items-center gap-2 text-[1.3rem] font-extrabold">
           <ShieldCheck size={26} className="text-theme-ink" aria-hidden /> 위치 기록 동의
         </p>
-        <ul className="list-disc space-y-1.5 pl-5 text-[1.05rem] leading-relaxed text-ink">
-          <li>
-            <b>출근·퇴근 버튼을 누를 때만</b> 위치를 한 번 기록합니다. 계속 따라다니며 기록하지 않습니다.
-          </li>
-          <li>현장에 있었는지 확인하는 데만 씁니다. 기록은 회사 본사(대표·관리자)만 봅니다.</li>
-          <li>동의하지 않아도 출근은 됩니다. 이때는 본사에 ‘위치 없음’으로 표시됩니다.</li>
+        {reasked && <p className="rounded-xl bg-warn-bg px-3 py-2 text-[1.02rem] font-semibold">회사가 위치 기록 조건을 바꿔서 다시 여쭤봐요.</p>}
+        <ul className="list-disc space-y-1.5 pl-5 text-[1.05rem] leading-relaxed text-ink" data-testid="att-consent-notice">
+          {consentNotice(locationPolicy(db)).map((t) => (
+            <li key={t}>{t}</li>
+          ))}
         </ul>
         <button type="button" onClick={() => (phase.qr ? void startQr(phase.qr, true) : void start(phase.mode, true))} className={cx(bigBtn, "bg-cta text-cta-text")} data-testid="att-consent-yes">
           동의하고 {phase.mode === "in" ? "출근" : "퇴근"}하기

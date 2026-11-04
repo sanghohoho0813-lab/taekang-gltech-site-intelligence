@@ -523,6 +523,47 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     expect(last.photoIds).toHaveLength(1);
   });
 
+  test("개인위치정보: 대표가 보관 기간·열람 범위를 정함 → 현장소장 ‘내 위치 기록’ → 그만두기 → 서버에서 좌표 삭제", async ({ browser }) => {
+    const ceo = await login(browser, CEO.email, CEO.password);
+    await ceo.goto("/admin?tab=privacy");
+    await expect(ceo.getByTestId("admin-privacy")).toContainText("보관 기간이 정해지지 않았습니다");
+    await ceo.getByTestId("privacy-days").selectOption("365");
+    await pick(ceo, "privacy-viewers-ceo");
+    await ceo.getByTestId("privacy-save").click();
+    await expect(ceo.getByTestId("privacy-notice")).toContainText("1년이 지나면 좌표를 자동으로 지웁니다");
+    const park = ceo.locator('[data-testid="privacy-person"]').filter({ hasText: "박현장" }).first();
+    await expect(park).toContainText("동의");
+    // 대표는 서버에서 좌표를 받는다
+    const before = await (await ceo.request.get("/api/state")).json();
+    expect(JSON.stringify(before.db.attendance)).toMatch(/"lat"/);
+
+    // 현장소장: 조건이 더 짧고 좁아졌으므로 다시 묻지 않음 → 그만두기
+    const field = await login(browser, FIELD.email, FIELD.password, { width: 390, height: 844 });
+    await field.goto("/my");
+    await expect(field.getByTestId("my-location-state")).toHaveAttribute("data-state", "agreed");
+    await expect(field.getByTestId("my-location")).toContainText("1년 지나면 좌표 자동 삭제");
+    await expect(field.getByTestId("my-location-row").first()).toBeVisible();
+    await field.getByTestId("my-location-withdraw").click();
+    await field.getByTestId("my-location-withdraw-yes").click();
+    await expect(field.getByTestId("my-location-msg")).toContainText("위치 기록을 그만뒀어요");
+    await expect(field.getByTestId("my-location-state")).toHaveAttribute("data-state", "none");
+    // 규칙·삭제는 대표만 (현장 직원이 직접 보내도 서버가 거부)
+    const origin = new URL(field.url()).origin;
+    const denied = await field.request.post("/api/commands", { headers: { Origin: origin }, data: { name: "setLocationPolicy", args: { retentionDays: 30, viewers: "hq" } } });
+    expect(denied.status()).toBe(403);
+
+    // 서버 DB에서 좌표가 지워졌다 (대표가 받아도 없음) · 판정은 남음
+    const after = await (await ceo.request.get("/api/state")).json();
+    const mine = (after.db.attendance as { userId: string; inGeo: { status: string; lat?: number; purged?: boolean } }[]).filter((r) => r.userId === after.db.users.find((u: { name: string }) => u.name === "박현장")?.id);
+    expect(mine.length).toBeGreaterThan(0);
+    expect(mine.every((r) => r.inGeo.lat === undefined && !!r.inGeo.status)).toBe(true);
+    expect(mine.some((r) => r.inGeo.purged)).toBe(true);
+    await ceo.reload();
+    await expect(park).toContainText("동의 안 함");
+    await ceo.context().close();
+    await field.context().close();
+  });
+
   test("다른 사이트에서 보낸 쓰기 요청은 차단 (Origin 확인)", async ({ browser }) => {
     const page = await login(browser, CEO.email, CEO.password);
     // 형식이 틀린 본문(null·배열)은 서버 오류(500)가 아니라 400

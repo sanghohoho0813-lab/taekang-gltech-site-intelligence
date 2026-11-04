@@ -10,6 +10,7 @@ import type { DemoDB, RoleId } from "@/lib/domain/types";
 import { createSeed, ROLE_DEFAULT_USER } from "./seed";
 import { CommandError } from "./commands";
 import { COMMANDS, type CommandArgs, type CommandName, type CommandResult } from "./registry";
+import { applyLocationRetention } from "./privacyCommands";
 import { DEFAULT_THEME, type ThemeId } from "@/lib/theme/themes";
 import { IS_LIVE } from "@/lib/mode";
 
@@ -409,7 +410,8 @@ export function dispatch<R>(fn: (db: DemoDB, ctx: { userId: string; now: Date })
 export async function run<N extends CommandName>(name: N, args: CommandArgs<N>): Promise<CommandResult<N>> {
   if (!IS_LIVE) {
     const fn = COMMANDS[name] as unknown as (d: DemoDB, a: CommandArgs<N>, c: { userId: string; now: Date }) => { db: DemoDB; result: CommandResult<N> };
-    return dispatch((d, ctx) => fn(d, args, ctx));
+    // 하루 한 번 보관 기간이 지난 위치 좌표 정리 (서버와 같은 규칙 · D-43)
+    return dispatch((d, ctx) => fn(applyLocationRetention(d, ctx.now), args, ctx));
   }
   let r: Response;
   try {

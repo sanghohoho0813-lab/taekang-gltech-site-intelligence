@@ -4,6 +4,7 @@
  * 저장소(Repository)는 결과 db를 영속화만 한다.
  */
 import { judgeGeo, validSample, type GeoSample } from "@/lib/domain/geo";
+import { hasConsent } from "@/lib/domain/privacy";
 import { siteProgressDelta } from "@/lib/domain/schedule";
 import type {
   ActionItem,
@@ -236,7 +237,7 @@ export function submitFieldReport(db0: DemoDB, input: FieldReportInput, ctx: Ctx
   };
   if (input.geo) {
     // 위치 기록 동의가 있을 때만 좌표를 남긴다. 판정은 서버(이 함수)가 다시 한다.
-    const consented = (db.consents ?? []).some((c) => c.userId === ctx.userId);
+    const consented = hasConsent(db, ctx.userId);
     const site = db.sites.find((s) => s.id === input.siteId);
     report.geo = validSample(input.geo.sample) && consented ? judgeGeo(site, input.geo.sample) : judgeGeo(site, null, consented ? (input.geo.noLocation ?? "unavailable") : "skipped");
   }

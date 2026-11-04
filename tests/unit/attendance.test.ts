@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createSeed } from "@/lib/data/seed";
-import { checkIn, checkOut, correctAttendance, setSiteGeo } from "@/lib/data/attendanceCommands";
+import { CONSENT_VERSION, checkIn, checkOut, correctAttendance, setSiteGeo } from "@/lib/data/attendanceCommands";
 import { submitFieldReport, CommandError } from "@/lib/data/commands";
 import { judgeGeo, distanceM } from "@/lib/domain/geo";
 import { backdatedDays, dayFlags, periodSummary, recentFlags } from "@/lib/domain/attendance";
@@ -56,7 +56,7 @@ describe("출퇴근", () => {
 
   it("같은 휴대폰으로 두 사람이 출근 → 본사에 ‘같은 휴대폰’ 표시", () => {
     let db: DemoDB = createSeed(NOW);
-    db.consents = [...db.consents!, { userId: "u-field", at: "", version: 1 }];
+    db.consents = [...db.consents!, { userId: "u-field", at: "", version: CONSENT_VERSION, retentionDays: null, viewers: "hq" as const }];
     db = checkIn(db, { siteId: "site-a", sample: near, deviceId: "dev-shared1" }, ctx("u-field")).db;
     db.attendance = db.attendance!.filter((r) => r.id !== "att-seed-c-0"); // 오늘 기록 없는 상태에서
     db = checkIn(db, { siteId: "site-c", noLocation: "unavailable", deviceId: "dev-shared1" }, ctx("u-field2", new Date(NOW.getTime() + 60_000))).db;
@@ -105,7 +105,7 @@ describe("현장 보고 위치·날짜", () => {
     const db0 = createSeed(NOW);
     const r1 = submitFieldReport(db0, { ...base, geo: { sample: far } }, ctx("u-field")).db.reports[0];
     expect(r1.geo).toEqual({ status: "none", reason: "skipped" }); // 동의 전 → 좌표 미기록
-    db0.consents = [...db0.consents!, { userId: "u-field", at: "", version: 1 }];
+    db0.consents = [...db0.consents!, { userId: "u-field", at: "", version: CONSENT_VERSION, retentionDays: null, viewers: "hq" as const }];
     const r2 = submitFieldReport(db0, { ...base, idempotencyKey: "k2", geo: { sample: far } }, ctx("u-field")).db.reports[0];
     expect(r2.geo?.status).toBe("outside");
   });

@@ -18,6 +18,7 @@ import { cx } from "@/components/ui/primitives";
 import { Choice, EasyBar, EasyQuestion, SectionBar, Stepper, VoiceHint, easyTextareaCls } from "./ui";
 import { downscalePhoto } from "./photo";
 import { easyDate } from "./words";
+import { hasConsent } from "@/lib/domain/privacy";
 
 type Step = "site" | "team" | "count" | "photo" | "confirm";
 
@@ -37,7 +38,7 @@ export function EasyCrew() {
   const [err, setErr] = useState<string | null>(null);
   const [done, setDone] = useState<{ team: string; count: number; updated: boolean } | null>(null);
   const step = stack[stack.length - 1];
-  const consented = !!db && (db.consents ?? []).some((c) => c.userId === userId);
+  const consented = !!db && hasConsent(db, userId);
 
   useEffect(() => {
     if (!siteId && sites.length === 1) {

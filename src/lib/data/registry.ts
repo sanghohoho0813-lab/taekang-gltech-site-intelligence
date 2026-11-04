@@ -9,6 +9,7 @@ import * as A from "./adminCommands";
 import * as T from "./attendanceCommands";
 import * as O from "./opsCommands";
 import * as I from "./importCommands";
+import * as P from "./privacyCommands";
 
 type Ctx = C.Ctx;
 
@@ -56,6 +57,11 @@ export const COMMANDS = {
   supplementReport: (db: DemoDB, a: Parameters<typeof O.supplementReport>[1], ctx: Ctx) => O.supplementReport(db, a, ctx),
   createKiosk: (db: DemoDB, a: { siteId: string; name?: string }, ctx: Ctx) => T.createKiosk(db, a, ctx),
   revokeKiosk: (db: DemoDB, a: { kioskId: string }, ctx: Ctx) => T.revokeKiosk(db, a, ctx),
+  // 개인위치정보 (D-43) — 규칙·정리는 대표만, 동의 철회는 본인
+  setLocationPolicy: (db: DemoDB, a: P.LocationPolicyInput, ctx: Ctx) => P.setLocationPolicy(db, a, ctx),
+  purgeLocationsNow: (db: DemoDB, a: Record<string, never>, ctx: Ctx) => P.purgeLocationsNow(db, a, ctx),
+  purgeMemberLocations: (db: DemoDB, a: { userId: string; reason?: string }, ctx: Ctx) => P.purgeMemberLocations(db, a, ctx),
+  withdrawLocationConsent: (db: DemoDB, a: Record<string, never>, ctx: Ctx) => P.withdrawLocationConsent(db, a, ctx),
   // pairKiosk는 목록에 넣지 않는다 — 로그인하지 않은 태블릿 전용 경로(/api/kiosk/pair)에서만 실행
 } as const;
 

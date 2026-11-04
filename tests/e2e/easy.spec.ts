@@ -194,7 +194,7 @@ test.describe("GPS 출퇴근", () => {
     await page.goto("/field");
     await page.getByTestId("att-in").click();
     // 처음에는 위치 기록 동의를 먼저 묻는다
-    await expect(page.getByTestId("att-card")).toContainText("출근·퇴근 버튼을 누를 때만");
+    await expect(page.getByTestId("att-card")).toContainText("버튼을 누를 때만 위치를 한 번 기록");
     await page.getByTestId("att-consent-yes").click();
     // 담당 현장이 2곳이어도 위치로 A현장을 자동 선택
     await expect(page.getByTestId("att-result")).toContainText("출근 기록 완료");

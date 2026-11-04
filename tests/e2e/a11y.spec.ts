@@ -29,7 +29,7 @@ async function scan(page: Page, route: string) {
 
 const CASES: { role: string; width: number; routes: string[] }[] = [
   { role: "field", width: 390, routes: ["/field", "/field/report", "/field/crew", "/field/fix", "/my", "/my-actions", "/help"] },
-  { role: "ceo", width: 1440, routes: ["/dashboard", "/sites/site-a", "/daily", "/photos", "/labor", "/usage", "/data", "/audit", "/attendance", "/orders", "/schedule", "/insights", "/finance", "/report", "/help"] },
+  { role: "ceo", width: 1440, routes: ["/dashboard", "/sites/site-a", "/daily", "/photos", "/labor", "/usage", "/data", "/audit", "/attendance", "/orders", "/schedule", "/insights", "/finance", "/report", "/settings", "/help"] },
   { role: "partner", width: 1280, routes: ["/partner", "/help"] },
 ];
 

@@ -44,6 +44,7 @@ import { cx } from "@/components/ui/primitives";
 import { BigNumber, Chip, Choice, EasyBar, EasyQuestion, SectionBar, Stepper, VoiceHint, easyTextareaCls } from "./ui";
 import { DEFAULT_WORK, EASY_CATEGORY, EASY_CATEGORY_ORDER, EASY_REASON, EASY_REASON_ORDER, ISSUE_CHIPS, NO_WORK, easyDate, easyWon } from "./words";
 import { downscalePhoto } from "./photo";
+import { hasConsent } from "@/lib/domain/privacy";
 
 export type EasyMode = "full" | "photo" | "cost";
 
@@ -153,7 +154,7 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
   const [dateEdit, setDateEdit] = useState(false);
   const [rateOpen, setRateOpen] = useState(false);
   // 보내는 곳 (위치 기록에 동의한 사람만, 확인 화면에서 1번)
-  const consented = !!db && (db.consents ?? []).some((c) => c.userId === userId);
+  const consented = !!db && hasConsent(db, userId);
   const [geo, setGeo] = useState<{ sample?: GeoSample; noLocation?: GeoStamp["reason"] } | null>(null);
   const topRef = useRef<HTMLDivElement>(null);
   const rawStep = stack[stack.length - 1];

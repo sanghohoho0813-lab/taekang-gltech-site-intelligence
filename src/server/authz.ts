@@ -4,7 +4,8 @@
  * 2) viewFor: 역할별로 내려보낼 데이터만 남긴다 — 현장직원·발주처에게는 계약·원가·이익·기성·미수가 아예 전송되지 않음
  * 3) sanitizeResult: 명령 결과에서도 금액 정보 제거
  */
-import type { ActionItem, DemoDB, SiteContract } from "@/lib/domain/types";
+import type { ActionItem, DemoDB, GeoStamp, SiteContract } from "@/lib/domain/types";
+import { canSeeCoordinates, hasCoords, locationPolicy, stripGeo } from "@/lib/domain/privacy";
 import { computeSignals } from "@/lib/domain/risk";
 import { CommandError } from "@/lib/data/commands";
 import type { CommandName } from "@/lib/data/registry";
@@ -27,6 +28,7 @@ export function fieldSiteIds(m: Member, db: DemoDB): Set<string> {
 }
 
 type Args = Record<string, unknown>;
+const CEO_ONLY = new Set<CommandName>(["setLocationPolicy", "purgeLocationsNow", "purgeMemberLocations"]);
 const str = (v: unknown) => (typeof v === "string" ? v : "");
 
 /** 실행 가능하면 (서버 값으로 보정된) 인자를 돌려주고, 아니면 ForbiddenError */
@@ -43,6 +45,8 @@ export function authorize(m: Member, name: CommandName, argsIn: unknown, db: Dem
   }
 
   if (canSeeMoney(m)) {
+    // 개인위치정보 규칙·좌표 삭제는 대표만 (관리자가 자기 열람 범위를 넓히거나 기록을 지우지 못하게 · D-43)
+    if (CEO_ONLY.has(name) && m.role !== "ceo") throw new ForbiddenError("대표만 할 수 있습니다.");
     if (name === "submitFieldReport") args.source = args.source === "FIELD" ? "FIELD" : "PC";
     return args;
   }
@@ -102,6 +106,9 @@ export function authorize(m: Member, name: CommandName, argsIn: unknown, db: Dem
         if (!r || r.createdBy !== m.id) throw new ForbiddenError("본인이 보낸 보고만 보완할 수 있습니다.");
         return args;
       }
+      case "withdrawLocationConsent":
+        // 본인 동의만 (명령이 로그인 사용자 id로 처리)
+        return {};
       case "checkIn":
       case "checkOut":
       case "confirmQr":
@@ -130,6 +137,16 @@ const hideMarginTargets = (t: DemoDB["thresholds"]): DemoDB["thresholds"] => ({ 
 export const FIELD_WINDOW_DAYS = 60;
 const kstDate = (iso: string) => new Date(new Date(iso).getTime() + 9 * 3_600_000).toISOString().slice(0, 10);
 
+const strip = (g: GeoStamp | undefined) => (hasCoords(g) ? stripGeo(g) : g);
+/** 다른 사람의 출퇴근·작업 인원·보고 위치에서 좌표를 뺀다 (판정만 남김) */
+function withoutOthersCoords(db: DemoDB, me: string): Pick<DemoDB, "attendance" | "crewChecks" | "reports"> {
+  return {
+    attendance: (db.attendance ?? []).map((r) => (r.userId === me ? r : { ...r, inGeo: strip(r.inGeo)!, ...(r.outGeo ? { outGeo: strip(r.outGeo) } : {}) })),
+    crewChecks: (db.crewChecks ?? []).map((c) => (c.by === me || !hasCoords(c.geo) ? c : { ...c, geo: strip(c.geo) })),
+    reports: db.reports.map((r) => (r.createdBy === me || !hasCoords(r.geo) ? r : { ...r, geo: strip(r.geo) })),
+  };
+}
+
 /** 역할별로 내려보낼 데이터만 남긴다 */
 export function viewFor(m: Member, db: DemoDB, now = new Date()): DemoDB {
   // QR 단말기 비밀값·연결 코드는 누구에게도 내려보내지 않는다 (태블릿은 연결할 때 한 번만 받음)
@@ -140,7 +157,11 @@ export function viewFor(m: Member, db: DemoDB, now = new Date()): DemoDB {
     return rest;
   });
   const base = { ...db, idempotencyKeys: [], me: m.id, kiosks };
-  if (canSeeMoney(m)) return { ...base, scope: "full" };
+  if (canSeeMoney(m)) {
+    if (canSeeCoordinates(m.role, locationPolicy(db))) return { ...base, scope: "full" };
+    // 대표가 ‘좌표는 대표만’으로 정한 회사의 관리자: 판정(현장 안/밖)만 보내고 좌표·거리·오차는 뺀다 (본인 기록은 그대로 · D-43)
+    return { ...base, scope: "full", ...withoutOthersCoords(db, m.id) };
+  }
 
   const users = db.users.map((u) => ({ id: u.id, role: u.role, name: u.name, title: u.title, ...(u.inactive ? { inactive: true } : {}) }));
   const empty = {
@@ -184,8 +205,10 @@ export function viewFor(m: Member, db: DemoDB, now = new Date()): DemoDB {
         kpiBefore: { ...a.kpiBefore, eac: 0, expectedProfit: 0, marginPct: 0, adjustedContract: 0, pendingClaimAmount: 0 },
       }));
     const actionIds = new Set(actions.map((a) => a.id));
-    const reports = db.reports.filter((r) => sites.has(r.siteId) && (r.reportDate >= since || (r.createdBy === m.id && r.review?.status === "returned")));
-    const crewChecks = (db.crewChecks ?? []).filter((c) => sites.has(c.siteId) && c.workDate >= since);
+    // 같은 현장 동료의 보고·작업 인원 기록은 보되, 동료가 보낸 위치 좌표는 빼고 보낸다 (D-43)
+    const others = withoutOthersCoords({ ...db, attendance: [] }, m.id);
+    const reports = others.reports.filter((r) => sites.has(r.siteId) && (r.reportDate >= since || (r.createdBy === m.id && r.review?.status === "returned")));
+    const crewChecks = (others.crewChecks ?? []).filter((c) => sites.has(c.siteId) && c.workDate >= since);
     const workOrders = (db.workOrders ?? []).filter((w) => w.assigneeUserId === m.id && (w.status !== "confirmed" || kstDate(w.createdAt) >= since));
     const photoRefs = new Set([
       ...reports.flatMap((r) => [...r.photoIds, ...(r.supplements ?? []).flatMap((s) => s.photoIds)]),
