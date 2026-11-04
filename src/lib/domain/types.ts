@@ -3,6 +3,7 @@
  * 모든 금액 단위: 원(KRW), 공급가액 기준(부가세 별도).
  * 이 MVP의 데이터는 전부 DEMO(가상 시연 데이터)이다.
  */
+import type { DeviceCheck } from "./device";
 
 export type RoleId = "ceo" | "manager" | "field" | "partner";
 
@@ -589,6 +590,8 @@ export interface DemoDB {
   /** 출퇴근 기록 (이전 버전 DEMO 저장분에는 없을 수 있음) */
   attendance?: AttendanceRecord[];
   consents?: LocationConsent[];
+  /** 휴대폰 점검 결과 — 사람마다 마지막 1개 (D-46) */
+  deviceChecks?: DeviceCheck[];
   kiosks?: Kiosk[];
   crewChecks?: CrewCheck[];
   attendanceRequests?: AttendanceRequest[];

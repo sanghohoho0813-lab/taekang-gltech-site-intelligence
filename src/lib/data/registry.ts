@@ -10,6 +10,7 @@ import * as T from "./attendanceCommands";
 import * as O from "./opsCommands";
 import * as I from "./importCommands";
 import * as P from "./privacyCommands";
+import * as D from "./deviceCommands";
 
 type Ctx = C.Ctx;
 
@@ -62,6 +63,8 @@ export const COMMANDS = {
   purgeLocationsNow: (db: DemoDB, a: Record<string, never>, ctx: Ctx) => P.purgeLocationsNow(db, a, ctx),
   purgeMemberLocations: (db: DemoDB, a: { userId: string; reason?: string }, ctx: Ctx) => P.purgeMemberLocations(db, a, ctx),
   withdrawLocationConsent: (db: DemoDB, a: Record<string, never>, ctx: Ctx) => P.withdrawLocationConsent(db, a, ctx),
+  // 휴대폰 점검 (D-46) — 본인 결과만
+  reportDeviceCheck: (db: DemoDB, a: D.DeviceCheckInput, ctx: Ctx) => D.reportDeviceCheck(db, a, ctx),
   // pairKiosk는 목록에 넣지 않는다 — 로그인하지 않은 태블릿 전용 경로(/api/kiosk/pair)에서만 실행
 } as const;
 

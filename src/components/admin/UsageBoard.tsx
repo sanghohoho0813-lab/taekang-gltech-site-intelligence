@@ -7,6 +7,7 @@ import { useMe } from "@/lib/data/hooks";
 import { shiftDate } from "@/lib/domain/attendance";
 import { fmtDate, fmtRelative, todayIso } from "@/lib/domain/format";
 import { ADOPTION_LABEL, fmtHours, usageSummary, type Adoption, type FieldUsage } from "@/lib/domain/usage";
+import { DEVICE_CHECK_LABEL, VERDICT_LABEL, deviceVerdict, type DeviceCheck, type DeviceCheckKey } from "@/lib/domain/device";
 import { downloadCsv } from "@/lib/browser/download";
 import { toCsv } from "@/lib/domain/csv";
 import { PageBody, PageHeader } from "@/components/shell/AppShell";
@@ -29,8 +30,8 @@ export function UsageBoard() {
   const overdue = u.response.reduce((a, r) => a + r.overdue, 0);
   const report = u.response.find((r) => r.key === "report")!;
   const csv = () => {
-    const head = ["이름", "직함", "상태", "집계 시작", "작업일(월~토)", "출근 기록일", "출근 기록률", "퇴근까지 찍은 날", "보고일", "보고율(출근일 중)", "보고 수", "사진 있는 보고", "작업 인원 보고일", "받은 작업지시", "끝낸 작업지시", "지시 확인까지(시간, 중앙값)", "근태 수정 요청", "마지막 기록", "확인할 점"];
-    const rows = u.field.map((f) => [f.user.name, f.user.title, ADOPTION_LABEL[f.status], f.since ?? "", f.workdays, f.attendDays, pct(f.attendRate), f.outDays, f.reportDays, pct(f.reportRate), f.reports, f.photoReports, f.crewDays, f.ordersAssigned, f.ordersDone, f.orderAckHours === null ? "" : Math.round(f.orderAckHours * 10) / 10, f.fixRequests, f.lastAt ?? "", f.notes.join(" / ")]);
+    const head = ["이름", "직함", "상태", "집계 시작", "작업일(월~토)", "출근 기록일", "출근 기록률", "퇴근까지 찍은 날", "보고일", "보고율(출근일 중)", "보고 수", "사진 있는 보고", "작업 인원 보고일", "받은 작업지시", "끝낸 작업지시", "지시 확인까지(시간, 중앙값)", "근태 수정 요청", "마지막 기록", "확인할 점", "휴대폰 점검", "휴대폰 점검일", "휴대폰·브라우저"];
+    const rows = u.field.map((f) => [f.user.name, f.user.title, ADOPTION_LABEL[f.status], f.since ?? "", f.workdays, f.attendDays, pct(f.attendRate), f.outDays, f.reportDays, pct(f.reportRate), f.reports, f.photoReports, f.crewDays, f.ordersAssigned, f.ordersDone, f.orderAckHours === null ? "" : Math.round(f.orderAckHours * 10) / 10, f.fixRequests, f.lastAt ?? "", f.notes.join(" / "), ...deviceCols(db.deviceChecks?.find((c) => c.userId === f.user.id))]);
     const resp = [[], ["본사 응답", "중앙값(시간)", "처리 건수", "미처리", "기준 초과 미처리", "기준(시간)"], ...u.response.map((r) => [r.label, r.medianHours === null ? "" : Math.round(r.medianHours * 10) / 10, r.n, r.open, r.overdue, r.targetHours])];
     downloadCsv(`사용현황_${from}_${to}.csv`, toCsv([[`기간 ${from} ~ ${to}`], head, ...rows, ...resp]));
   };
@@ -71,7 +72,7 @@ export function UsageBoard() {
         ) : (
           <ul className="divide-y divide-line border-t border-line">
             {u.field.map((f) => (
-              <FieldRow key={f.user.id} f={f} />
+              <FieldRow key={f.user.id} f={f} device={(db.deviceChecks ?? []).find((c) => c.userId === f.user.id)} />
             ))}
           </ul>
         )}
@@ -101,7 +102,34 @@ export function UsageBoard() {
   );
 }
 
-function FieldRow({ f }: { f: FieldUsage }) {
+const deviceCols = (d?: DeviceCheck) => (d ? [VERDICT_LABEL[deviceVerdict(d)], d.at.slice(0, 10), `${d.platform === "ios" ? "아이폰" : d.platform === "android" ? "안드로이드" : "기타"} · ${d.browser}`] : ["안 함", "", ""]);
+
+/** 휴대폰 점검 결과 (계약 2단계 ③ 실기기 확인 근거 · D-46) */
+function DeviceLine({ device }: { device?: DeviceCheck }) {
+  if (!device)
+    return (
+      <p className="mt-1.5 text-[0.8rem] text-ink-3" data-testid="usage-device" data-verdict="none">
+        휴대폰 점검: 아직 안 함 — 현장 휴대폰 ‘내 정보 → 내 휴대폰 점검’
+      </p>
+    );
+  const v = deviceVerdict(device);
+  const bad = (Object.entries(device.items) as [DeviceCheckKey, string][]).filter(([, s]) => s === "fail" || s === "warn");
+  return (
+    <p className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[0.8rem] text-ink-2" data-testid="usage-device" data-verdict={v}>
+      휴대폰 점검 <Badge tone={v === "ready" ? "ok" : v === "warn" ? "warn" : "err"}>{VERDICT_LABEL[v]}</Badge>
+      <span className="text-ink-3">
+        {device.browser} · {fmtRelative(device.at)}
+      </span>
+      {bad.map(([k, s]) => (
+        <span key={k} className={cx("rounded-md px-1.5 py-0.5", s === "fail" ? "bg-err-bg" : "bg-warn-bg")}>
+          {DEVICE_CHECK_LABEL[k]}
+        </span>
+      ))}
+    </p>
+  );
+}
+
+function FieldRow({ f, device }: { f: FieldUsage; device?: DeviceCheck }) {
   return (
     <li className="px-5 py-3.5" data-testid="usage-user" data-user={f.user.id} data-status={f.status}>
       <div className="flex flex-wrap items-center gap-2">
@@ -118,6 +146,7 @@ function FieldRow({ f }: { f: FieldUsage }) {
         <Kv k="작업 인원 보고" v={`${f.crewDays}일`} />
         <Kv k="작업지시" v={f.ordersAssigned ? `${f.ordersDone}/${f.ordersAssigned} 끝냄 · 확인까지 ${fmtHours(f.orderAckHours)}` : "없음"} />
       </dl>
+      <DeviceLine device={device} />
       {f.notes.length > 0 && (
         <ul className="mt-1.5 flex flex-wrap gap-1.5" data-testid="usage-notes">
           {f.notes.map((n) => (

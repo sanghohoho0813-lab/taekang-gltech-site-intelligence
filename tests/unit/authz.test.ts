@@ -14,7 +14,7 @@ const NOW = new Date("2026-11-04T03:00:00Z");
 const ALL = Object.keys(COMMANDS).sort() as CommandName[];
 
 /** 현장 직원이 실행할 수 있는 명령 (그 안에서도 담당 현장·본인 것만) */
-const FIELD_ALLOWED = new Set<CommandName>(["submitFieldReport", "voidReport", "voidCostEntry", "editCostEntry", "setActionStatus", "addActionNote", "completeAction", "updateProgress", "requestAttendanceFix", "workOrderStep", "supplementReport", "checkIn", "checkOut", "confirmQr", "reportCrew", "withdrawLocationConsent"]);
+const FIELD_ALLOWED = new Set<CommandName>(["submitFieldReport", "voidReport", "voidCostEntry", "editCostEntry", "setActionStatus", "addActionNote", "completeAction", "updateProgress", "requestAttendanceFix", "workOrderStep", "supplementReport", "checkIn", "checkOut", "confirmQr", "reportCrew", "withdrawLocationConsent", "reportDeviceCheck"]);
 /** 대표만 실행할 수 있는 명령 (개인위치정보 규칙·좌표 삭제 · D-43) */
 const CEO_ONLY = new Set<CommandName>(["setLocationPolicy", "purgeLocationsNow", "purgeMemberLocations"]);
 /** 발주처가 실행할 수 있는 명령 */
@@ -32,10 +32,10 @@ function sample(db: DemoDB, name: CommandName): Record<string, unknown> {
 }
 
 describe("권한 매트릭스 — 모든 명령 × 역할", () => {
-  it("명령 목록이 바뀌면 이 표를 먼저 갱신한다 (43개)", () => {
+  it("명령 목록이 바뀌면 이 표를 먼저 갱신한다 (44개)", () => {
     expect(ALL).toEqual(
       [
-        "addActionNote", "addBilling", "addPayment", "assignAction", "checkIn", "checkOut", "completeAction", "confirmProofEvent", "confirmQr", "correctAttendance", "createAction", "createKiosk", "createPartnerRequest", "createWorkOrder", "editCostEntry", "importCostRows", "importData", "purgeLocationsNow", "purgeMemberLocations", "reportCrew", "requestAttendanceFix", "reviewAttendanceFix", "reviewCostEntry", "reviewReport", "reviewWorkOrder", "revokeKiosk", "saveSite", "setActionStatus", "setChangeOrderStatus", "setCompanySettings", "setLocationPolicy", "setSiteGeo", "setThresholds", "submitFieldReport", "supplementReport", "undoImport", "updateForecast", "updatePartnerRequest", "updateProgress", "voidCostEntry", "voidReport", "withdrawLocationConsent", "workOrderStep",
+        "addActionNote", "addBilling", "addPayment", "assignAction", "checkIn", "checkOut", "completeAction", "confirmProofEvent", "confirmQr", "correctAttendance", "createAction", "createKiosk", "createPartnerRequest", "createWorkOrder", "editCostEntry", "importCostRows", "importData", "purgeLocationsNow", "purgeMemberLocations", "reportCrew", "reportDeviceCheck", "requestAttendanceFix", "reviewAttendanceFix", "reviewCostEntry", "reviewReport", "reviewWorkOrder", "revokeKiosk", "saveSite", "setActionStatus", "setChangeOrderStatus", "setCompanySettings", "setLocationPolicy", "setSiteGeo", "setThresholds", "submitFieldReport", "supplementReport", "undoImport", "updateForecast", "updatePartnerRequest", "updateProgress", "voidCostEntry", "voidReport", "withdrawLocationConsent", "workOrderStep",
       ].sort(),
     );
     // QR 태블릿 연결은 로그인 없는 전용 API로만 (명령 목록에 없어야 함)

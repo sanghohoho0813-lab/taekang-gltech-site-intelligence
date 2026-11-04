@@ -3,7 +3,8 @@
 /** 내 정보 — 글자 크기 · 본사 전화 · 내 위치 기록 · 내가 보낸 보고 · 비밀번호 · 로그아웃 */
 import Link from "next/link";
 import { useState } from "react";
-import { KeyRound, LogOut, Phone, Type, BookOpen } from "lucide-react";
+import { KeyRound, LogOut, Phone, Smartphone, Type, BookOpen } from "lucide-react";
+import { VERDICT_LABEL, deviceVerdict } from "@/lib/domain/device";
 import { useMe } from "@/lib/data/hooks";
 import { logout, setPrefs, usePrefs, type FontScale } from "@/lib/data/store";
 import { IS_LIVE } from "@/lib/mode";
@@ -20,6 +21,7 @@ export function EasyMy() {
   const [askOut, setAskOut] = useState(false);
   if (!db) return <PageSkeleton />;
   const phone = db.settings?.helpPhone;
+  const lastCheck = (db.deviceChecks ?? []).find((c) => c.userId === userId);
   return (
     <div className="mx-auto w-full max-w-xl space-y-6 px-4 pb-8 pt-5" data-testid="easy-my">
       <header className="space-y-1">
@@ -49,6 +51,11 @@ export function EasyMy() {
           <Phone size={26} className="text-ok" aria-hidden /> 본사에 전화하기 <span className="ml-auto text-[1.05rem] font-semibold text-ink-2">{phone}</span>
         </a>
       )}
+
+      <Link href="/field/check" className="press flex min-h-[4rem] items-center gap-3 rounded-2xl border-2 border-line bg-surface px-4 text-[1.15rem] font-bold" data-testid="my-device-check">
+        <Smartphone size={24} aria-hidden /> 내 휴대폰 점검
+        <span className="ml-auto text-[0.98rem] font-semibold text-ink-3">{lastCheck ? `마지막 ${VERDICT_LABEL[deviceVerdict(lastCheck)]}` : "1분이면 끝나요"}</span>
+      </Link>
 
       <Link href="/help" className="press flex min-h-[4rem] items-center gap-3 rounded-2xl border-2 border-line bg-surface px-4 text-[1.15rem] font-bold" data-testid="my-help">
         <BookOpen size={24} aria-hidden /> 사용 안내 보기
