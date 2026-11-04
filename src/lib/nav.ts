@@ -38,6 +38,7 @@ export const NAV: NavItem[] = [
   { href: "/dashboard", label: "대시보드", icon: "LayoutDashboard", group: "ops", roles: INTERNAL, alsoAccess: ["field"], desc: "전체 현장 손익·위험 한눈에" },
   { href: "/sites", label: "현장 관리", fieldLabel: "내 현장", icon: "Building2", group: "ops", roles: ALL_INTERNAL, desc: "현장별 손익·원가·공정" },
   { href: "/field", label: "현장 보고", fieldLabel: "홈", icon: "ClipboardPen", group: "ops", roles: ALL_INTERNAL, desc: "모바일 일보·추가 비용 입력" },
+  { href: "/daily", label: "공사일보", icon: "NotebookText", group: "ops", roles: INTERNAL, desc: "현장 보고·작업 인원·출퇴근·사진으로 자동 작성되는 공사일보·주간 보고 (인쇄)" },
   { href: "/orders", label: "지시·확인", icon: "ClipboardCheck", group: "ops", roles: INTERNAL, desc: "작업지시·현장 보고 확인·근태 수정 요청" },
   { href: "/schedule", label: "공정 일정", icon: "CalendarClock", group: "ops", roles: INTERNAL, desc: "계획 대비 늦은 공정·준공 예상·출근 공백" },
   { href: "/labor", label: "투입·인건비", icon: "HardHat", group: "ops", roles: INTERNAL, desc: "작업 인원 × 팀 단가 추정 vs 실제 노무비·누락 표시" },

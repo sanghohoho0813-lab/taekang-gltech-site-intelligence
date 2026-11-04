@@ -257,7 +257,7 @@ for (const w of [390, 430, 768, 1024, 1280, 1440, 1920]) {
   test(`반응형 ${w}px: 가로 넘침 없음 (주요 화면)`, async ({ page }) => {
     await page.setViewportSize({ width: w, height: 900 });
     await freshStart(page);
-    for (const r of ["/dashboard", "/sites/site-a", "/field", "/insights", "/finance", "/report", "/partner", "/settings", "/why-ax", "/evidence", "/labor", "/orders", "/schedule", "/attendance", "/data", "/usage", "/help"]) {
+    for (const r of ["/dashboard", "/sites/site-a", "/field", "/insights", "/finance", "/report", "/partner", "/settings", "/why-ax", "/evidence", "/labor", "/orders", "/schedule", "/attendance", "/data", "/usage", "/help", "/daily"]) {
       await page.goto(r);
       await page.waitForTimeout(250);
       const over = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
@@ -460,4 +460,47 @@ test("4단계 준비: 사용 현황 · 역할별 사용 안내(인쇄) · 대표
   await page.getByTestId("partner-help").click();
   await expect(page.getByTestId("help-manual")).toHaveAttribute("data-manual", "partner");
   await expect(page.getByTestId("help-manual")).not.toContainText("원가");
+});
+
+test("공사일보 자동 작성: 현장 보고 → 일보(작업·공정 진척·인원·특이사항·사진, 금액 없음) → 주간 보고(미래 날짜는 ‘예정’)", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await freshStart(page, { role: "field" });
+  // 현장소장이 오늘 보고(공정 + 사진 없이) + 작업 인원을 보냄
+  await page.goto("/field");
+  await page.getByTestId("easy-go-crew").click();
+  await page.getByTestId("crew-site-site-a").click();
+  await page.getByTestId("crew-team-chip").first().click();
+  await page.getByTestId("crew-count-stepper-plus").click();
+  await page.getByTestId("easy-next").click();
+  await page.getByTestId("easy-next").click(); // 사진 없이
+  await page.getByTestId("crew-send").click();
+  await expect(page.getByTestId("crew-done")).toBeVisible();
+
+  await page.evaluate(([pk]) => localStorage.setItem(pk, JSON.stringify({ ...JSON.parse(localStorage.getItem(pk)!), role: "manager" })), [PREFS] as const);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/dashboard");
+  await page.getByTestId("today-daily-link").click();
+  await expect(page).toHaveURL(/\/daily/);
+  const doc = page.getByTestId("daily-doc");
+  await expect(doc).toContainText("공 사 일 보");
+  await expect(page.getByTestId("daily-crew")).toContainText("작업 인원");
+  await expect(page.getByTestId("daily-crew")).toContainText("명");
+  // 어제(시드 보고): 작업 내용·특이사항·명일 계획
+  await page.getByTestId("daily-prev").click();
+  await expect(page.getByTestId("daily-work")).toContainText("커튼월");
+  await expect(page.getByTestId("daily-issues")).not.toContainText("없음");
+  // 금액은 일보에 없다
+  expect((await doc.innerText()).replace(/\s+/g, " ")).not.toMatch(/\d[\d,]*만 원|\d+(\.\d+)?억|원가|이익/);
+  // 주간 보고
+  await page.getByTestId("daily-mode-week").click();
+  const wk = page.getByTestId("weekly-doc");
+  await expect(wk).toContainText("주간 공정 보고");
+  await expect(page.getByTestId("weekly-days").locator("tbody tr")).toHaveCount(7);
+  const future = page.locator('[data-testid="weekly-days"] tr[data-future="1"]');
+  if (await future.count()) await expect(future.first()).toContainText("예정");
+  await expect(page.getByTestId("daily-print")).toBeVisible();
+  // 현장직원·발주처는 접근 불가
+  await page.getByTestId("demo-role").selectOption("partner");
+  await page.goto("/daily");
+  await expect(page.getByTestId("access-denied")).toBeVisible();
 });

@@ -272,6 +272,8 @@ export interface FieldReport {
   review?: { status: "confirmed" | "returned"; at: string; by: string; note?: string };
   /** 보완 요청 뒤 현장이 덧붙인 내용 */
   supplements?: { at: string; by: string; text: string; photoIds: string[] }[];
+  /** 이 보고로 바뀐 공정 단계 진척 (공사일보용) */
+  stages?: { stageId: string; name: string; from: number; to: number }[];
 }
 
 /** 근태 수정 요청 (GPS 실패·출퇴근 누락·잘못 찍힘) — 직원이 사유와 함께 요청, 본사가 승인·반려 */

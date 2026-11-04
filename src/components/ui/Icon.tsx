@@ -20,6 +20,7 @@ import {
   FileUp,
   Activity,
   BookOpen,
+  NotebookText,
   type LucideIcon,
 } from "lucide-react";
 
@@ -45,6 +46,7 @@ const MAP: Record<string, LucideIcon> = {
   FileUp,
   Activity,
   BookOpen,
+  NotebookText,
 };
 
 export function NavIcon({ name, className, size = 20 }: { name: string; className?: string; size?: number }) {

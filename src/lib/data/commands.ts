@@ -253,6 +253,10 @@ export function submitFieldReport(db0: DemoDB, input: FieldReportInput, ctx: Ctx
       const st = site.stages.find((x) => x.id === c.stageId)!;
       return `${st.name} ${st.progressPct}% → ${c.progressPct}%`;
     });
+    report.stages = stageChanges.map((c) => {
+      const st = site.stages.find((x) => x.id === c.stageId)!;
+      return { stageId: c.stageId, name: st.name, from: st.progressPct, to: c.progressPct };
+    });
     site.stages = site.stages.map((st) => {
       const c = stageChanges.find((x) => x.stageId === st.id);
       return c ? { ...st, progressPct: c.progressPct } : st;
