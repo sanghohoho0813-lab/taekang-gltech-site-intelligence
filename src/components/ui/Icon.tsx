@@ -22,6 +22,7 @@ import {
   BookOpen,
   NotebookText,
   History,
+  Images,
   type LucideIcon,
 } from "lucide-react";
 
@@ -49,6 +50,7 @@ const MAP: Record<string, LucideIcon> = {
   BookOpen,
   NotebookText,
   History,
+  Images,
 };
 
 export function NavIcon({ name, className, size = 20 }: { name: string; className?: string; size?: number }) {

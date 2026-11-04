@@ -375,6 +375,13 @@ html.tk-scroll-lock {
   .no-print {
     display: none !important;
   }
+  /* 사진대장: 6장마다 새 쪽 */
+  .ledger-page {
+    break-after: page;
+  }
+  .ledger-page:last-of-type {
+    break-after: auto;
+  }
   /* 등장 애니메이션 시작 프레임(투명)으로 인쇄되지 않게 */
   *,
   *::before,

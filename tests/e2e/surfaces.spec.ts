@@ -257,7 +257,7 @@ for (const w of [390, 430, 768, 1024, 1280, 1440, 1920]) {
   test(`반응형 ${w}px: 가로 넘침 없음 (주요 화면)`, async ({ page }) => {
     await page.setViewportSize({ width: w, height: 900 });
     await freshStart(page);
-    for (const r of ["/dashboard", "/sites/site-a", "/field", "/insights", "/finance", "/report", "/partner", "/settings", "/why-ax", "/evidence", "/labor", "/orders", "/schedule", "/attendance", "/data", "/usage", "/help", "/daily", "/audit"]) {
+    for (const r of ["/dashboard", "/sites/site-a", "/field", "/insights", "/finance", "/report", "/partner", "/settings", "/why-ax", "/evidence", "/labor", "/orders", "/schedule", "/attendance", "/data", "/usage", "/help", "/daily", "/audit", "/photos"]) {
       await page.goto(r);
       await page.waitForTimeout(250);
       const over = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
@@ -572,4 +572,37 @@ test("휴대폰 알림 카드: 시연에서는 ‘실제 운영에서 켬’ 안
   await page.goto("/field");
   await expect(page.getByTestId("easy-go-report")).toBeVisible();
   await expect(page.getByTestId("push-nudge")).toHaveCount(0);
+});
+
+test("사진대장: 현장 ‘사진만 보내기’ → 본사 사진대장(번호·일자·공종·내용) → 빼고 넣기 → 인쇄 장수 · 발주처 차단", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await freshStart(page, { role: "field" });
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+  for (const name of ["a.png", "b.png"]) {
+    await page.goto("/field");
+    await page.getByTestId("easy-go-photo").click();
+    await page.getByTestId("easy-site-site-a").click();
+    await page.getByTestId("photo-album").setInputFiles({ name, mimeType: "image/png", buffer: png });
+    await page.getByTestId("easy-next").click();
+    await page.getByTestId("submit-report").click();
+    await expect(page.getByTestId("report-home")).toBeVisible();
+  }
+  await page.evaluate(([pk]) => localStorage.setItem(pk, JSON.stringify({ ...JSON.parse(localStorage.getItem(pk)!), role: "manager" })), [PREFS] as const);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/photos");
+  await expect(page.getByTestId("ledger-thumb")).toHaveCount(2);
+  const cells = page.getByTestId("ledger-cell");
+  await expect(cells).toHaveCount(2);
+  await expect(cells.first()).toContainText("번호");
+  await expect(cells.first()).toContainText("공종");
+  await expect(page.getByTestId("ledger-page")).toHaveCount(1);
+  await page.getByTestId("ledger-thumb").first().click();
+  await expect(page.getByTestId("ledger-count")).toHaveText("1");
+  await expect(cells).toHaveCount(1);
+  await expect(page.getByTestId("ledger-print")).toContainText("1장");
+  // 금액 없음
+  expect((await page.getByTestId("ledger-page").innerText()).replace(/\s+/g, " ")).not.toMatch(/\d[\d,]*만 원|억/);
+  await page.getByTestId("demo-role").selectOption("partner");
+  await page.goto("/photos");
+  await expect(page.getByTestId("access-denied")).toBeVisible();
 });
