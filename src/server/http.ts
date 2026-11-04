@@ -40,13 +40,13 @@ export async function readJson(req: NextRequest, maxBytes = 12_000_000): Promise
   return body;
 }
 
-export async function sessionMember(req: NextRequest): Promise<Member | null> {
-  return memberFromToken(req.cookies.get(SESSION_COOKIE)?.value);
+export async function sessionMember(req: NextRequest, onRenew?: (expires: Date) => void): Promise<Member | null> {
+  return memberFromToken(req.cookies.get(SESSION_COOKIE)?.value, onRenew);
 }
 
-/** 로그인 + (비밀번호 변경 필요 시 차단) */
-export async function requireMember(req: NextRequest, allowMustChange = false): Promise<Member | NextResponse> {
-  const m = await sessionMember(req);
+/** 로그인 + (비밀번호 변경 필요 시 차단). onRenew: 로그인 기간을 늘렸을 때 (쿠키를 다시 써야 함 · D-48) */
+export async function requireMember(req: NextRequest, allowMustChange = false, onRenew?: (expires: Date) => void): Promise<Member | NextResponse> {
+  const m = await sessionMember(req, onRenew);
   if (!m) return json({ error: "로그인이 필요합니다.", code: "UNAUTHENTICATED" }, 401);
   if (m.mustChangePassword && !allowMustChange) return json({ error: "비밀번호를 먼저 바꿔주세요.", code: "MUST_CHANGE_PASSWORD" }, 403);
   return m;
@@ -69,8 +69,16 @@ export function setSessionCookie(res: NextResponse, req: NextRequest, token: str
     secure: req.nextUrl.protocol === "https:" || req.headers.get("x-forwarded-proto") === "https",
     path: "/",
     expires,
-    maxAge: SESSION_DAYS * 86_400,
+    // 만료 시각에 맞춘다 (로그인 연장 시 새 만료로 다시 설정 · D-48)
+    maxAge: Math.max(0, Math.min(SESSION_DAYS * 86_400, Math.floor((expires.getTime() - Date.now()) / 1000))),
   });
+}
+
+/** 로그인 기간을 늘렸으면 같은 토큰으로 쿠키 만료도 늘린다 */
+export function renewCookie(res: NextResponse, req: NextRequest, expires: Date | null): NextResponse {
+  const token = req.cookies.get(SESSION_COOKIE)?.value;
+  if (expires && token) setSessionCookie(res, req, token, expires);
+  return res;
 }
 
 export function clearSessionCookie(res: NextResponse) {

@@ -599,6 +599,24 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     await field.context().close();
   });
 
+  test("휴대폰 분실: 대표가 ‘모든 기기 로그아웃’ → 그 휴대폰은 바로 로그인 풀림 → 활동 이력에 남음", async ({ browser }) => {
+    const phone = await login(browser, FIELD.email, FIELD.password, { width: 390, height: 844 });
+    expect((await phone.request.get("/api/state")).status()).toBe(200);
+    const ceo = await login(browser, CEO.email, CEO.password);
+    await ceo.goto("/admin?tab=members");
+    const row = ceo.getByTestId("member-row").filter({ hasText: "박현장" });
+    await expect(row.getByTestId("member-devices")).toContainText("로그인된 기기");
+    await expect(row.getByTestId("member-devices")).toContainText("마지막 사용");
+    await row.getByTestId("member-signout").click();
+    await row.getByTestId("member-signout-yes").click();
+    await expect(row.getByTestId("member-devices")).toHaveAttribute("data-devices", "0");
+    expect((await phone.request.get("/api/state")).status()).toBe(401);
+    await ceo.goto("/audit");
+    await expect(ceo.locator('[data-testid="audit-row"][data-type="member"]').filter({ hasText: "모든 기기 로그아웃 — 박현장" })).toHaveCount(1);
+    await phone.context().close();
+    await ceo.context().close();
+  });
+
   test("다른 사이트에서 보낸 쓰기 요청은 차단 (Origin 확인)", async ({ browser }) => {
     const page = await login(browser, CEO.email, CEO.password);
     // 형식이 틀린 본문(null·배열)은 서버 오류(500)가 아니라 400

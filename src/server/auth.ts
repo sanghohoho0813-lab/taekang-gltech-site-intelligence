@@ -9,7 +9,10 @@ import type { RoleId } from "@/lib/domain/types";
 import { getDb, type Tx } from "./sql";
 
 export const SESSION_COOKIE = "tk_session";
+/** 마지막으로 쓴 뒤 이 기간 동안 로그인 유지 (쓸 때마다 연장 · D-48) */
 export const SESSION_DAYS = 30;
+/** 처음 로그인한 뒤 최대 이 기간이 지나면 다시 로그인 (연장 상한) */
+export const SESSION_MAX_DAYS = 180;
 const MAX_FAILS = 8;
 const LOCK_MINUTES = 10;
 
@@ -108,11 +111,15 @@ export async function createSession(tx: Tx, memberId: string): Promise<{ token: 
   return { token, expires };
 }
 
-export async function memberFromToken(token: string | undefined | null): Promise<Member | null> {
+/**
+ * 로그인 확인. 10분마다 마지막 사용 시각을 남기고, 남은 기간이 하루 넘게 줄었으면 만료를 ‘지금부터 30일’로 늘린다
+ * (처음 로그인 후 180일이 상한). 늘렸으면 onRenew로 새 만료 시각을 알려 쿠키도 같이 늘린다.
+ */
+export async function memberFromToken(token: string | undefined | null, onRenew?: (expires: Date) => void): Promise<Member | null> {
   if (!token || token.length < 20 || token.length > 100) return null;
   const db = await getDb();
-  const rows = await db.query<MemberRecord & { last_seen_at: string | Date }>(
-    `select m.id, m.company_id, m.email, m.name, m.title, m.role, m.site_ids, m.partner_site_ids, m.active, m.must_change_password, s.last_seen_at
+  const rows = await db.query<MemberRecord & { last_seen_at: string | Date; expires_at: string | Date }>(
+    `select m.id, m.company_id, m.email, m.name, m.title, m.role, m.site_ids, m.partner_site_ids, m.active, m.must_change_password, s.last_seen_at, s.expires_at
      from sessions s join members m on m.id = s.member_id
      where s.token_hash = $1 and s.expires_at > now() and m.active = true`,
     [tokenHash(token)],
@@ -120,7 +127,15 @@ export async function memberFromToken(token: string | undefined | null): Promise
   const row = rows[0];
   if (!row) return null;
   if (Date.now() - new Date(row.last_seen_at).getTime() > 10 * 60_000) {
-    await db.query(`update sessions set last_seen_at = now() where token_hash = $1`, [tokenHash(token)]);
+    const [u] = await db.query<{ expires_at: string | Date }>(
+      `update sessions set last_seen_at = now(),
+         expires_at = case when expires_at < now() + ($2::int * interval '1 day')
+                           then least(now() + ($3::int * interval '1 day'), created_at + ($4::int * interval '1 day'))
+                           else expires_at end
+       where token_hash = $1 returning expires_at`,
+      [tokenHash(token), SESSION_DAYS - 1, SESSION_DAYS, SESSION_MAX_DAYS],
+    );
+    if (u && new Date(u.expires_at).getTime() > new Date(row.expires_at).getTime() + 60_000) onRenew?.(new Date(u.expires_at));
   }
   return toMember(row);
 }

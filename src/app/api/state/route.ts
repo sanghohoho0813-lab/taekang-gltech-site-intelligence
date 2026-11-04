@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { currentRev, getView } from "@/server/service";
-import { errorResponse, json, notLive, requireMember } from "@/server/http";
+import { NextResponse } from "next/server";
+import { errorResponse, json, notLive, renewCookie, requireMember } from "@/server/http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,11 +11,13 @@ export async function GET(req: NextRequest) {
   const blocked = notLive();
   if (blocked) return blocked;
   try {
-    const m = await requireMember(req);
+    // 쓰는 동안 로그인이 계속 유지되도록, 서버가 기간을 늘렸으면 쿠키도 늘린다 (D-48)
+    let renewed: Date | null = null;
+    const m = await requireMember(req, false, (exp) => (renewed = exp));
     if (m instanceof Response) return m;
     const known = req.nextUrl.searchParams.get("rev");
-    if (known !== null && Number(known) === (await currentRev(m.companyId))) return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
-    return json(await getView(m));
+    if (known !== null && Number(known) === (await currentRev(m.companyId))) return renewCookie(new NextResponse(null, { status: 204, headers: { "Cache-Control": "no-store" } }), req, renewed);
+    return renewCookie(json(await getView(m)), req, renewed);
   } catch (e) {
     return errorResponse(e);
   }

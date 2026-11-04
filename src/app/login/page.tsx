@@ -94,7 +94,7 @@ function LoginForm() {
           로그인
         </button>
         <p className="text-center text-[1rem] leading-relaxed text-ink-2">
-          한 번 로그인하면 이 휴대폰에서는 30일 동안 유지돼요.
+          한 번 로그인하면 쓰는 동안 이 휴대폰에서 계속 유지돼요.
           <br />
           비밀번호를 잊었다면 회사 관리자에게 초기화를 요청하세요.
         </p>

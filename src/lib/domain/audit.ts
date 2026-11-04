@@ -26,6 +26,7 @@ export const LOG_TYPE_LABEL: Record<string, string> = {
   privacy: "개인위치정보",
   device: "휴대폰 점검",
   feedback: "앱 의견",
+  member: "사용자 관리",
 };
 
 export interface AuditFilter {

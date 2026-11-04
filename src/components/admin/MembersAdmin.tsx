@@ -1,8 +1,9 @@
 "use client";
 
-/** 운영 관리 · 사용자 — 추가(임시 비밀번호), 역할·담당 현장, 비밀번호 초기화, 비활성화 */
+/** 운영 관리 · 사용자 — 추가(임시 비밀번호), 역할·담당 현장, 비밀번호 초기화, 비활성화, 로그인된 기기·모든 기기 로그아웃 */
 import { useCallback, useEffect, useState } from "react";
-import { KeyRound, Pencil, Plus, UserRound, UserX, UserCheck } from "lucide-react";
+import { KeyRound, LogOut, Pencil, Plus, UserRound, UserX, UserCheck } from "lucide-react";
+import { fmtRelative } from "@/lib/domain/format";
 import type { DemoDB, RoleId } from "@/lib/domain/types";
 import { ROLE_LABEL } from "@/lib/domain/labels";
 import { api } from "@/lib/live/api";
@@ -22,6 +23,8 @@ interface MemberView {
   active: boolean;
   mustChangePassword: boolean;
   lockedUntil: string | null;
+  devices: number;
+  lastSeenAt: string | null;
 }
 
 const ROLES: RoleId[] = ["ceo", "manager", "field", "partner"];
@@ -48,6 +51,14 @@ export function MembersAdmin({ db, me }: { db: DemoDB; me: { id: string; role: R
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<MemberView | "new" | null>(null);
   const [issued, setIssued] = useState<{ name: string; email: string; password: string } | null>(null);
+  const [askOut, setAskOut] = useState<string | null>(null);
+  const signOut = async (m: MemberView) => {
+    const r = await api<{ devices: number }>(`/api/admin/members/${encodeURIComponent(m.id)}/signout`, { method: "POST", body: {} });
+    setAskOut(null);
+    if (!r.ok) return void toast.push({ tone: "err", title: r.error ?? "실패" });
+    toast.push({ tone: "ok", title: `모든 기기에서 로그아웃시켰습니다 (${r.data?.devices ?? 0}대)`, desc: `${m.name} — 휴대폰 알림도 해제됨. 다시 쓰려면 아이디·비밀번호로 로그인합니다.` });
+    await load();
+  };
 
   const load = useCallback(async () => {
     const r = await api<{ members: MemberView[] }>("/api/admin/members");
@@ -124,7 +135,11 @@ export function MembersAdmin({ db, me }: { db: DemoDB; me: { id: string; role: R
                 {m.active && m.mustChangePassword && <Badge tone="warn">첫 로그인 전</Badge>}
               </div>
               <p className="min-w-[10rem] text-[0.8rem] text-ink-2">{assignedSites(m) || "담당 현장 없음"}</p>
-              <div className="flex gap-1">
+              <p className="min-w-[9rem] text-[0.78rem] text-ink-3" data-testid="member-devices" data-devices={m.devices}>
+                {m.devices ? `로그인된 기기 ${m.devices}대` : "로그인된 기기 없음"}
+                {m.lastSeenAt ? ` · 마지막 사용 ${fmtRelative(m.lastSeenAt)}` : ""}
+              </p>
+              <div className="flex flex-wrap gap-1">
                 <Button size="sm" variant="ghost" icon={<Pencil size={14} />} onClick={() => setEditing(m)} disabled={m.role === "ceo" && me.role !== "ceo"}>
                   수정
                 </Button>
@@ -141,6 +156,11 @@ export function MembersAdmin({ db, me }: { db: DemoDB; me: { id: string; role: R
                 >
                   비밀번호 초기화
                 </Button>
+                {m.id !== me.id && m.devices > 0 && (
+                  <Button size="sm" variant="ghost" icon={<LogOut size={14} />} disabled={m.role === "ceo" && me.role !== "ceo"} onClick={() => setAskOut(m.id)} data-testid="member-signout">
+                    모든 기기 로그아웃
+                  </Button>
+                )}
                 {m.id !== me.id && (
                   <Button
                     size="sm"
@@ -153,6 +173,19 @@ export function MembersAdmin({ db, me }: { db: DemoDB; me: { id: string; role: R
                   </Button>
                 )}
               </div>
+              {askOut === m.id && (
+                <div className="basis-full rounded-xl border border-err/30 bg-err-bg px-3.5 py-2.5 text-[0.84rem]" role="alertdialog" aria-label={`${m.name} 모든 기기 로그아웃 확인`}>
+                  <p className="font-semibold">{m.name}의 휴대폰·PC {m.devices}대에서 바로 로그아웃시키고 휴대폰 알림도 끕니다. 휴대폰을 잃어버렸을 때 쓰세요.</p>
+                  <div className="mt-2 flex gap-2">
+                    <Button size="sm" variant="ghost" onClick={() => setAskOut(null)}>
+                      취소
+                    </Button>
+                    <Button size="sm" variant="danger" onClick={() => void signOut(m)} data-testid="member-signout-yes">
+                      로그아웃시키기
+                    </Button>
+                  </div>
+                </div>
+              )}
             </li>
           ))}
         </ul>

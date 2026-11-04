@@ -11,6 +11,7 @@ import { COMMANDS, isCommandName, type CommandName } from "@/lib/data/registry";
 import { CommandError } from "@/lib/data/commands";
 import { applyLocationRetention } from "@/lib/data/privacyCommands";
 import { recordError } from "./errors";
+import { ROLE_LABEL } from "@/lib/domain/labels";
 import { createSeed } from "@/lib/data/seed";
 import { uid } from "@/lib/domain/ids";
 import { getDb, type Tx } from "./sql";
@@ -302,6 +303,9 @@ export interface MemberView {
   active: boolean;
   mustChangePassword: boolean;
   lockedUntil: string | null;
+  /** 로그인된 기기 수 (만료 전 세션) · 마지막 사용 시각 (D-48) */
+  devices: number;
+  lastSeenAt: string | null;
 }
 
 function requireAdmin(m: Member) {
@@ -312,16 +316,30 @@ async function bumpRev(tx: Tx, companyId: string) {
   await tx.query(`update companies set rev = rev + 1, updated_at = now() where id = $1`, [companyId]);
 }
 
+/** 사용자 관리(명령 밖) 변경을 활동 이력에 남긴다 — 누가 비밀번호를 초기화·로그아웃시켰는지 (D-48) */
+async function appendActivity(tx: Tx, companyId: string, by: string, summary: string) {
+  const log = { id: uid("log"), at: new Date().toISOString(), by, type: "member", summary, link: "/admin?tab=members" };
+  await tx.query(`insert into records (company_id, collection, id, site_id, data) values ($1, 'activityLogs', $2, null, $3::jsonb)`, [companyId, log.id, JSON.stringify(log)]);
+}
+
 export async function listMembers(m: Member): Promise<MemberView[]> {
   requireAdmin(m);
   const db = await getDb();
-  const rows = await db.query<Parameters<typeof toMember>[0] & { locked_until: string | Date | null }>(
-    `select ${MEMBER_COLS}, locked_until from members where company_id = $1 order by active desc, role, name`,
+  const rows = await db.query<Parameters<typeof toMember>[0] & { locked_until: string | Date | null; devices: number; last_seen: string | Date | null }>(
+    `select ${MEMBER_COLS}, locked_until,
+       (select count(*)::int from sessions s where s.member_id = members.id and s.expires_at > now()) as devices,
+       (select max(s.last_seen_at) from sessions s where s.member_id = members.id) as last_seen
+     from members where company_id = $1 order by active desc, role, name`,
     [m.companyId],
   );
   return rows.map((r) => {
     const x = toMember(r);
-    return { ...x, lockedUntil: r.locked_until && new Date(r.locked_until).getTime() > Date.now() ? new Date(r.locked_until).toISOString() : null };
+    return {
+      ...x,
+      lockedUntil: r.locked_until && new Date(r.locked_until).getTime() > Date.now() ? new Date(r.locked_until).toISOString() : null,
+      devices: Number(r.devices ?? 0),
+      lastSeenAt: r.last_seen ? new Date(r.last_seen).toISOString() : null,
+    };
   });
 }
 
@@ -379,9 +397,28 @@ export async function createMember(m: Member, input: MemberInput): Promise<Membe
       siteIds: input.siteIds,
       partnerSiteIds: input.partnerSiteIds,
     });
+    await appendActivity(tx, m.companyId, m.id, `사용자 추가 — ${input.name!.trim()} (${ROLE_LABEL[input.role!]})`);
     await bumpRev(tx, m.companyId);
   });
   return (await listMembers(m)).find((x) => x.id === id)!;
+}
+
+/** 이 사람의 모든 기기에서 로그아웃 + 휴대폰 알림 해제 — 휴대폰 분실·퇴사 직후 (D-48) */
+export async function signOutMember(m: Member, id: string): Promise<{ devices: number }> {
+  requireAdmin(m);
+  const db = await getDb();
+  return db.transaction(async (tx) => {
+    const [row] = await tx.query<Parameters<typeof toMember>[0]>(`select ${MEMBER_COLS} from members where id = $1 and company_id = $2`, [id, m.companyId]);
+    if (!row) throw new CommandError("사용자를 찾을 수 없습니다.", "NOT_FOUND");
+    const target = toMember(row);
+    if (target.role === "ceo" && m.role !== "ceo") throw new ForbiddenError("대표 계정은 대표만 로그아웃시킬 수 있습니다.");
+    const [c] = await tx.query<{ n: number }>(`select count(*)::int as n from sessions where member_id = $1 and expires_at > now()`, [id]);
+    await tx.query(`delete from sessions where member_id = $1`, [id]);
+    await tx.query(`delete from records where company_id = $1 and collection = 'pushSubscriptions' and data->>'userId' = $2`, [m.companyId, id]);
+    await appendActivity(tx, m.companyId, m.id, `모든 기기 로그아웃 — ${target.name} (기기 ${Number(c?.n ?? 0)}대, 휴대폰 알림 해제)`);
+    await bumpRev(tx, m.companyId);
+    return { devices: Number(c?.n ?? 0) };
+  });
 }
 
 export async function updateMember(m: Member, id: string, input: MemberInput): Promise<MemberView> {
@@ -426,6 +463,15 @@ export async function updateMember(m: Member, id: string, input: MemberInput): P
     if (!sets.length) return;
     sets.push("updated_at = now()");
     await tx.query(`update members set ${sets.join(", ")} where id = $1`, vals);
+    const what = [
+      input.password !== undefined && "비밀번호 초기화 (첫 로그인 때 본인이 변경)",
+      input.active === false && target.active && "비활성화 (로그인 종료·휴대폰 알림 해제)",
+      input.active === true && !target.active && "다시 활성화",
+      input.role !== undefined && input.role !== target.role && `역할 ${ROLE_LABEL[target.role]} → ${ROLE_LABEL[input.role]}`,
+      (input.siteIds !== undefined || input.partnerSiteIds !== undefined) && "담당 현장 변경",
+      (input.name !== undefined || input.title !== undefined || input.email !== undefined) && "정보 수정",
+    ].filter(Boolean);
+    if (what.length) await appendActivity(tx, m.companyId, m.id, `사용자 변경 — ${target.name}: ${what.join(", ")}`);
     // 비활성화·비밀번호 초기화·역할 변경 시 기존 로그인 세션을 끊는다
     if (input.active === false || input.password !== undefined || input.role !== undefined) {
       await tx.query(`delete from sessions where member_id = $1`, [id]);

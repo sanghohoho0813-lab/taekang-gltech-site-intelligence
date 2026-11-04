@@ -99,7 +99,7 @@ export function EasyMy() {
               <LogOut size={24} aria-hidden /> 로그아웃
             </button>
           )}
-          <p className="text-[0.98rem] text-ink-2">한 번 로그인하면 이 휴대폰에서는 30일 동안 다시 넣지 않아도 돼요.</p>
+          <p className="text-[0.98rem] text-ink-2">쓰는 동안에는 이 휴대폰에서 계속 로그인돼 있어요. 30일 넘게 안 쓰면(그리고 반년에 한 번) 다시 넣어요.</p>
         </section>
       ) : (
         <p className="rounded-2xl bg-surface-2 px-4 py-3 text-[1rem] text-ink-2">DEMO에서는 로그인이 없습니다. 실제 운영에서는 여기서 비밀번호 변경·로그아웃을 합니다.</p>
