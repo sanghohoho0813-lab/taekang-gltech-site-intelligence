@@ -171,13 +171,14 @@ export function acceptanceItems(db: DemoDB, stage: StageNo, from: string, to: st
     const costs = db.costEntries.filter((e) => e.status !== "voided" && inD(e.date));
     const answered = partnerReq.filter((r) => r.status === "answered").length;
     const byKind = (k: string) => imports.filter((b) => b.kind === k && !b.undoneAt).length;
+    const mats = (db.materialMoves ?? []).filter((m) => !m.voided && inD(m.workDate));
     return [
       {
         key: "S4",
         title: "S4 원가집계",
         criteria: "투입시간·단가·자재·외주·기성으로 추정 원가와 실제 발생액 구분, 원천자료 누락 시 확인 필요 표시",
-        how: "현장 ‘오늘 작업 인원 알리기’ → 본사 ‘투입·인건비’에서 추정 vs 실제·표시 확인 → 팀 단가 → CSV",
-        evidence: [ev("작업 인원 보고", crew.length, "건", crew.length ? ` (${teams.size}팀)` : ""), ev("팀 단가 설정", (db.settings?.teamRates ?? []).length, "팀"), ev("원가 입력", costs.length, "건", costs.length ? ` (확인 대기 ${costs.filter((e) => e.status === "pending").length})` : "")],
+        how: "현장 ‘오늘 작업 인원 알리기’ → 본사 ‘투입·인건비’에서 추정 vs 실제·표시 확인 → 팀 단가 → CSV · 자재는 현장 ‘자재 반입·설치 남기기’ → 현장 상세 ‘자재’",
+        evidence: [ev("작업 인원 보고", crew.length, "건", crew.length ? ` (${teams.size}팀)` : ""), ev("팀 단가 설정", (db.settings?.teamRates ?? []).length, "팀"), ev("원가 입력", costs.length, "건", costs.length ? ` (확인 대기 ${costs.filter((e) => e.status === "pending").length})` : ""), ev("자재 반입·설치 기록", mats.length, "건", mats.length ? ` (품목 ${new Set(mats.map((m) => m.itemId)).size}개)` : "")],
       },
       {
         key: "S5",

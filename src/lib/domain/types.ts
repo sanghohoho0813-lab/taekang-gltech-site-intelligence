@@ -59,6 +59,40 @@ export interface Site {
   illustration: "logistics" | "office" | "civic";
   /** 출퇴근 확인용 현장 위치 (본사가 등록) */
   geo?: SiteGeo;
+  /** 수량을 챙길 주요 자재 (본사가 정함 · D-62) — 수량만, 단가·금액 없음 */
+  materials?: MaterialItem[];
+}
+
+/** 현장 주요 자재 품목 (예: 커튼월 유닛 EA · 로이유리 장) */
+export interface MaterialItem {
+  id: string;
+  name: string;
+  /** 단위 (EA · 장 · m · ㎡ · 톤 …) */
+  unit: string;
+  /** 설계·계약 수량 (0이면 ‘정하지 않음’ — 설치율을 계산하지 않음) */
+  plannedQty: number;
+  /** 더 쓰지 않는 품목 — 기록이 있으면 지우지 않고 숨긴다 */
+  archived?: boolean;
+}
+
+/** 자재 반입·설치 기록 (D-62) */
+export type MaterialMoveKind = "in" | "install";
+export interface MaterialMove {
+  id: string;
+  siteId: string;
+  itemId: string;
+  kind: MaterialMoveKind;
+  qty: number;
+  /** 근무일 (서버 기준, 한국 시간) */
+  workDate: string;
+  /** 송장·반입 사진 또는 설치 사진 */
+  photoId?: string;
+  note?: string;
+  /** 보낸 시각 (서버) */
+  at: string;
+  by: string;
+  /** 잘못 넣은 기록 — 지우지 않고 취소 표시 (사유·누가·언제) */
+  voided?: { at: string; by: string; reason: string };
 }
 
 /** 현장 위치 + 인정 반경 */
@@ -355,6 +389,8 @@ export interface SitePhoto {
   actionId?: string;
   /** 작업 인원(출력) 단체 사진 */
   crewId?: string;
+  /** 자재 반입·설치 사진 (D-62) */
+  materialMoveId?: string;
   dataUrl: string;
   caption: string;
   createdAt: string;
@@ -431,7 +467,8 @@ export type SignalRule =
   | "UNBILLED_CHANGE"
   | "RECEIVABLE_OVERDUE"
   | "PENDING_CHANGE_ORDER"
-  | "BELOW_TARGET_MARGIN";
+  | "BELOW_TARGET_MARGIN"
+  | "BILLING_LAG";
 
 export type Severity = "high" | "medium" | "low";
 
@@ -552,6 +589,8 @@ export interface RiskThresholds {
   costProgressGapPp: number;
   receivableDays: number;
   changeOrderPendingDays: number;
+  /** 공정률 − 확정 기성률이 이만큼(%p) 넘으면 ‘기성 청구 지연’ (D-62 · 이전 저장분에는 없을 수 있어 기본 10) */
+  billingLagPp?: number;
 }
 
 /** 회사 운영 설정 (LIVE 운영에서 대표·관리자가 변경) */
@@ -612,6 +651,8 @@ export interface DemoDB {
   attendanceRequests?: AttendanceRequest[];
   workOrders?: WorkOrder[];
   importBatches?: ImportBatch[];
+  /** 자재 반입·설치 기록 (D-62) */
+  materialMoves?: MaterialMove[];
   /** LIVE: 현재 로그인 사용자 id (서버가 채움). DEMO에서는 없음 */
   me?: string;
   /** LIVE: 서버가 역할별로 걸러 보낸 데이터인지 */

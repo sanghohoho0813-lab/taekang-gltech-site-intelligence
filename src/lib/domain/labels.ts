@@ -72,6 +72,7 @@ export const RULE_LABEL: Record<SignalRule, string> = {
   RECEIVABLE_OVERDUE: "미수금 장기화",
   PENDING_CHANGE_ORDER: "미승인 변경공사",
   BELOW_TARGET_MARGIN: "목표 이익률 미달",
+  BILLING_LAG: "기성 청구 지연",
 };
 
 export const ACTION_STATUS_LABEL: Record<ActionStatus, string> = {

@@ -14,7 +14,7 @@ const NOW = new Date("2026-11-04T03:00:00Z");
 const ALL = Object.keys(COMMANDS).sort() as CommandName[];
 
 /** 현장 직원이 실행할 수 있는 명령 (그 안에서도 담당 현장·본인 것만) */
-const FIELD_ALLOWED = new Set<CommandName>(["submitFieldReport", "voidReport", "voidCostEntry", "editCostEntry", "setActionStatus", "addActionNote", "completeAction", "updateProgress", "requestAttendanceFix", "workOrderStep", "supplementReport", "checkIn", "checkOut", "confirmQr", "reportCrew", "withdrawLocationConsent", "reportDeviceCheck", "sendFeedback"]);
+const FIELD_ALLOWED = new Set<CommandName>(["submitFieldReport", "voidReport", "voidCostEntry", "editCostEntry", "setActionStatus", "addActionNote", "completeAction", "updateProgress", "requestAttendanceFix", "workOrderStep", "supplementReport", "checkIn", "checkOut", "confirmQr", "reportCrew", "recordMaterial", "voidMaterialMove", "withdrawLocationConsent", "reportDeviceCheck", "sendFeedback"]);
 /** 대표만 실행할 수 있는 명령 (개인위치정보 규칙·좌표 삭제 · D-43) */
 const CEO_ONLY = new Set<CommandName>(["setLocationPolicy", "purgeLocationsNow", "purgeMemberLocations"]);
 /** 발주처가 실행할 수 있는 명령 */
@@ -32,10 +32,10 @@ function sample(db: DemoDB, name: CommandName): Record<string, unknown> {
 }
 
 describe("권한 매트릭스 — 모든 명령 × 역할", () => {
-  it("명령 목록이 바뀌면 이 표를 먼저 갱신한다 (46개)", () => {
+  it("명령 목록이 바뀌면 이 표를 먼저 갱신한다 (49개)", () => {
     expect(ALL).toEqual(
       [
-        "addActionNote", "addBilling", "addPayment", "assignAction", "checkIn", "checkOut", "completeAction", "confirmProofEvent", "confirmQr", "correctAttendance", "createAction", "createKiosk", "createPartnerRequest", "createWorkOrder", "editCostEntry", "importCostRows", "importData", "purgeLocationsNow", "purgeMemberLocations", "reportCrew", "reportDeviceCheck", "reviewFeedback", "requestAttendanceFix", "reviewAttendanceFix", "reviewCostEntry", "reviewReport", "reviewWorkOrder", "revokeKiosk", "saveSite", "setActionStatus", "setChangeOrderStatus", "setCompanySettings", "setLocationPolicy", "setSiteGeo", "sendFeedback", "setThresholds", "submitFieldReport", "supplementReport", "undoImport", "updateForecast", "updatePartnerRequest", "updateProgress", "voidCostEntry", "voidReport", "withdrawLocationConsent", "workOrderStep",
+        "addActionNote", "addBilling", "addPayment", "assignAction", "checkIn", "checkOut", "completeAction", "confirmProofEvent", "confirmQr", "correctAttendance", "createAction", "createKiosk", "createPartnerRequest", "createWorkOrder", "editCostEntry", "importCostRows", "importData", "purgeLocationsNow", "purgeMemberLocations", "recordMaterial", "reportCrew", "reportDeviceCheck", "reviewFeedback", "requestAttendanceFix", "reviewAttendanceFix", "reviewCostEntry", "reviewReport", "reviewWorkOrder", "revokeKiosk", "saveSite", "setActionStatus", "setChangeOrderStatus", "setCompanySettings", "setLocationPolicy", "setSiteGeo", "setSiteMaterials", "sendFeedback", "setThresholds", "submitFieldReport", "supplementReport", "undoImport", "updateForecast", "updatePartnerRequest", "updateProgress", "voidCostEntry", "voidMaterialMove", "voidReport", "withdrawLocationConsent", "workOrderStep",
       ].sort(),
     );
     // QR 태블릿 연결은 로그인 없는 전용 API로만 (명령 목록에 없어야 함)
@@ -60,7 +60,13 @@ describe("권한 매트릭스 — 모든 명령 × 역할", () => {
   it("현장 직원: 허용된 명령도 담당 현장·본인 것만", () => {
     const db = createSeed(NOW);
     const other = "site-c"; // 정우진 담당
-    for (const name of ["submitFieldReport", "updateProgress", "requestAttendanceFix", "checkIn", "checkOut", "confirmQr", "reportCrew"] as CommandName[]) expect(() => authorize(FIELD, name, { siteId: other }, db, NOW), name).toThrow(ForbiddenError);
+    for (const name of ["submitFieldReport", "updateProgress", "requestAttendanceFix", "checkIn", "checkOut", "confirmQr", "reportCrew", "recordMaterial"] as CommandName[]) expect(() => authorize(FIELD, name, { siteId: other }, db, NOW), name).toThrow(ForbiddenError);
+    // 자재 기록 취소는 본인 기록만 (D-62)
+    expect(() => authorize(FIELD, "voidMaterialMove", { moveId: "mm-seed-a1" }, db, NOW)).not.toThrow();
+    const othersMove = { ...db.materialMoves![0], id: "mm-other", by: "u-manager" };
+    const db2 = { ...db, materialMoves: [...db.materialMoves!, othersMove] };
+    expect(() => authorize(FIELD, "voidMaterialMove", { moveId: "mm-other" }, db2, NOW)).toThrow(ForbiddenError);
+    expect(() => authorize(FIELD, "voidMaterialMove", { moveId: "nope" }, db, NOW)).toThrow(ForbiddenError);
     const othersReport = db.reports.find((r) => r.createdBy !== "u-field")!;
     expect(() => authorize(FIELD, "voidReport", { reportId: othersReport.id }, db, NOW)).toThrow(ForbiddenError);
     expect(() => authorize(FIELD, "supplementReport", { reportId: othersReport.id }, db, NOW)).toThrow(ForbiddenError);

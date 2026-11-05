@@ -45,6 +45,8 @@ export const COMMAND_SPEC: Record<CommandName, { label: string; group: CmdGroup;
   supplementReport: { label: "보완 요청에 보완 보고", group: "field", allow: FIELD },
   updateProgress: { label: "공정률·공정 진척 갱신", group: "field", allow: FIELD },
   reportCrew: { label: "작업 인원(출력) 알리기", group: "field", allow: FIELD },
+  recordMaterial: { label: "자재 반입·설치 수량 남기기 (사진 선택)", group: "field", allow: FIELD },
+  voidMaterialMove: { label: "잘못 넣은 자재 기록 취소 (사유 필수 · 현장은 본인 기록만)", group: "field", allow: FIELD },
   requestAttendanceFix: { label: "근태 수정 요청", group: "field", allow: FIELD },
   workOrderStep: { label: "작업지시 접수·진행·완료", group: "field", allow: FIELD },
   reportDeviceCheck: { label: "내 휴대폰 점검 결과 보내기", group: "field", allow: FIELD },
@@ -71,6 +73,7 @@ export const COMMAND_SPEC: Record<CommandName, { label: string; group: CmdGroup;
   importCostRows: { label: "원가 엑셀 가져오기", group: "money", allow: HQ },
   saveSite: { label: "현장 등록·수정 (계약·실행예산·담당·공정 단계)", group: "ops", allow: HQ },
   setSiteGeo: { label: "현장 위치·반경 등록", group: "ops", allow: HQ },
+  setSiteMaterials: { label: "현장 주요 자재 품목·설계 수량 정하기", group: "ops", allow: HQ },
   setCompanySettings: { label: "운영 설정 (본사 전화·기본 일당·반영 방식)", group: "ops", allow: HQ },
   setThresholds: { label: "위험 기준 (목표 이익률 등)", group: "ops", allow: HQ },
   importData: { label: "지난 자료 엑셀 가져오기 (기성·변경공사·출력·팀 단가)", group: "ops", allow: HQ },
@@ -103,13 +106,13 @@ export interface CollectionSpec {
   keep: string;
 }
 export const COLLECTION_SPEC: Record<CollectionName, CollectionSpec> = {
-  sites: { label: "현장", holds: "현장명·발주처·공사 기간·공정률·공정 단계·담당·출퇴근 위치와 반경", field: "담당 현장만", partner: "공개된 현장만", keep: "준공 뒤에도 보관" },
+  sites: { label: "현장", holds: "현장명·발주처·공사 기간·공정률·공정 단계·담당·출퇴근 위치와 반경·주요 자재 품목(설계 수량)", field: "담당 현장만", partner: "공개된 현장만 (자재 품목은 빼고)", keep: "준공 뒤에도 보관" },
   contracts: { label: "계약", holds: "원 계약 금액·계약일·실행예산 합계", field: "금액 0으로 바꿔 보냄", partner: "금액 0으로 바꿔 보냄", keep: "보관" },
   budgets: { label: "실행예산", holds: "공종(자재·노무·외주·장비·경비)별 실행예산", field: DATA_NONE, partner: DATA_NONE, keep: "보관" },
   forecasts: { label: "잔여 예상 원가", holds: "공종별 앞으로 더 들 비용 (본사 추정)", field: DATA_NONE, partner: DATA_NONE, keep: "보관" },
   costEntries: { label: "원가·추가 비용", holds: "현장·공종·금액·내용·확인 상태·수정 이력", field: "본인이 올린 것 (최근 60일·확인 대기)", partner: DATA_NONE, keep: "보관 (무효 처리는 이력으로 남음)" },
   reports: { label: "현장 보고", holds: "작업 내용·사진·문제·공정 진척·본사 확인·보완", field: "담당 현장 최근 60일 (동료의 위치 좌표는 빼고)", partner: DATA_NONE, keep: "보관" },
-  photos: { label: "사진", holds: "현장 보고·작업 인원·작업지시·조치 사진 (원본은 별도 저장)", field: "담당 현장 관련 사진", partner: DATA_NONE, keep: "보관" },
+  photos: { label: "사진", holds: "현장 보고·작업 인원·자재 반입·설치·작업지시·조치 사진 (원본은 별도 저장)", field: "담당 현장 관련 사진", partner: DATA_NONE, keep: "보관" },
   changeOrders: { label: "변경공사", holds: "변경 내용·요청 금액·승인 금액·상태", field: DATA_NONE, partner: DATA_NONE, keep: "보관" },
   billings: { label: "기성 청구", holds: "회차·청구일·금액", field: DATA_NONE, partner: DATA_NONE, keep: "보관" },
   payments: { label: "입금", holds: "입금일·금액", field: DATA_NONE, partner: DATA_NONE, keep: "보관" },
@@ -126,6 +129,7 @@ export const COLLECTION_SPEC: Record<CollectionName, CollectionSpec> = {
   attendanceRequests: { label: "근태 수정 요청", holds: "날짜·무엇이 잘못됐는지·요청 시각·사유·승인/반려", field: "본인 것", partner: DATA_NONE, keep: "보관" },
   workOrders: { label: "작업지시", holds: "지시 내용·받는 사람·기한·접수→진행→완료→확인 이력·작업량·사진", field: "본인에게 온 것", partner: DATA_NONE, keep: "보관" },
   importBatches: { label: "자료 가져오기 기록", holds: "종류·건수·건너뛴 행·취소 여부", field: DATA_NONE, partner: DATA_NONE, keep: "보관" },
+  materialMoves: { label: "자재 반입·설치", holds: "품목·반입/설치·수량·날짜·사진·메모·취소 사유 (금액 없음)", field: "담당 현장 것 (누계가 맞도록 기간 제한 없음)", partner: DATA_NONE, keep: "보관 (취소는 지우지 않고 표시)" },
 };
 
 /** 회사 데이터 밖의 서버 표 */
@@ -142,6 +146,7 @@ export const FIELD_SCREENS: { href: string; label: string; desc: string }[] = [
   { href: "/field", label: "현장 홈", desc: "출근·퇴근, 오늘 보고 상태, 보고·작업 인원·사진·추가 비용·본사 요청 바로가기" },
   { href: "/field/report", label: "보고하기", desc: "현장 → 작업 → 사진 → 문제 → 비용 → 확인, 누르기만으로" },
   { href: "/field/crew", label: "작업 인원 알리기", desc: "팀별 인원과 단체 사진" },
+  { href: "/field/material", label: "자재 반입·설치", desc: "들어온 수량·설치한 수량(사진 선택) — 본사가 품목을 정한 현장만, 금액 없음" },
   { href: "/field/fix", label: "근태 수정 요청", desc: "날짜 → 무엇이 잘못됐는지 → 시각 → 사유" },
   { href: "/field/check", label: "내 휴대폰 점검", desc: "위치·사진·알림·저장 공간 1분 점검" },
   { href: "/my-actions", label: "본사 요청", desc: "작업지시·조치 — ‘확인했어요’·‘다 했어요’" },
@@ -162,6 +167,7 @@ export const FLOWS: { key: string; title: string; steps: FlowStep[] }[] = [
       { who: "field", text: "현장에 도착해 ‘출근하기’ — 처음 한 번 위치 기록 동의, 서버가 시각·현장 안/밖 판정" },
       { who: "field", text: "아침에 ‘오늘 작업 인원 알리기’ — 팀별 인원·단체 사진" },
       { who: "field", text: "‘본사 요청’에 온 작업지시를 ‘확인했어요’ → 끝나면 ‘다 했어요’(작업량·사진)" },
+      { who: "field", text: "자재가 들어오거나 설치하면 ‘자재 반입·설치 남기기’ — 수량·사진, 본사 공사일보와 현장 자재 현황에 바로 반영" },
       { who: "field", text: "일이 끝나면 ‘오늘 보고하기’ — 작업·사진·문제·추가 비용, 마지막에 ‘본사로 보내기’" },
       { who: "field", text: "‘퇴근하기’ — 잘못 찍혔으면 ‘출퇴근이 잘못 찍혔나요? 수정 요청하기’" },
     ],
@@ -203,9 +209,9 @@ export const FLOWS: { key: string; title: string; steps: FlowStep[] }[] = [
 /** 계약 별지 핵심 모듈 → 화면 */
 export const MODULES: { no: string; name: string; routes: string[]; note: string }[] = [
   { no: "01", name: "GPS 근태·현장 확인", routes: ["/field", "/field/fix", "/attendance", "/orders"], note: "출퇴근(동의·서버 판정)·근태 수정 요청·본사 승인·정정 이력·현장 QR(선택)" },
-  { no: "02", name: "현장 업무보고", routes: ["/field/report", "/field/crew", "/orders", "/daily", "/photos"], note: "작업지시와 연결된 보고·사진·작업 인원·공사일보·사진대장 자동 작성" },
+  { no: "02", name: "현장 업무보고", routes: ["/field/report", "/field/crew", "/field/material", "/orders", "/daily", "/photos"], note: "작업지시와 연결된 보고·사진·작업 인원·자재 반입·설치 수량·공사일보·사진대장 자동 작성" },
   { no: "03", name: "본사-현장 소통", routes: ["/orders", "/my-actions", "/audit"], note: "지시→접수→진행→완료→확인, 보완 요청, 휴대폰 알림, 활동 이력" },
-  { no: "04", name: "공정·투입 원가", routes: ["/sites", "/schedule", "/labor", "/finance"], note: "현장 손익·공정 일정·투입 인건비 추정 vs 실제·기성·변경공사" },
+  { no: "04", name: "공정·투입 원가", routes: ["/sites", "/schedule", "/labor", "/finance"], note: "현장 손익·공정 일정·투입 인건비 추정 vs 실제·기성·변경공사·자재 설치율·기성 청구 지연 표시" },
   { no: "05", name: "대표자 통합 현황판", routes: ["/dashboard", "/report", "/insights"], note: "처리 대기·현장별 손익·위험 신호(규칙 기반)·대표 보고서" },
   { no: "06", name: "고객·협력사 초기화면", routes: ["/partner"], note: "공개 현장 진행·견적 문의·주문 요청·회신 (내부 금액 비노출)" },
   { no: "07", name: "기존 프로그램 일부 기능", routes: ["/data"], note: "엑셀 가져오기 5종·내려받기 — 합의 항목은 계약에 따라 확정" },

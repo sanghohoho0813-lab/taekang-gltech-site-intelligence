@@ -42,6 +42,8 @@ export function photoLedger(db: DemoDB, siteId: string, from: string, to: string
   for (const w of db.workOrders ?? []) for (const id of w.donePhotoIds ?? []) orderOf.set(id, { title: w.title, doneNote: w.doneNote });
   const supplementIds = new Set(db.reports.flatMap((r) => (r.supplements ?? []).flatMap((s) => s.photoIds)));
   const actions = new Map(db.actions.map((a) => [a.id, a]));
+  // 취소한 자재 기록의 사진은 넣지 않는다 (D-62)
+  const voidedMoves = new Set((db.materialMoves ?? []).filter((m) => m.voided).map((m) => m.id));
   const user = (id: string) => db.users.find((u) => u.id === id)?.name ?? "";
 
   const rows = db.photos
@@ -52,6 +54,7 @@ export function photoLedger(db: DemoDB, siteId: string, from: string, to: string
       const isCrew = !!p.crewId || p.caption.startsWith("작업 인원");
       const kind: PhotoKind = isCrew ? "crew" : orderOf.has(p.id) ? "order" : supplementIds.has(p.id) ? "supplement" : p.actionId ? "action" : r ? "report" : "other";
       if (r?.status === "voided") return null;
+      if (p.materialMoveId && voidedMoves.has(p.materialMoveId)) return null;
       // 공종: 그 보고가 바꾼 공정 단계 → 그날 진행 중인 단계 → 현장 공종
       const stage = r?.stages?.[0]?.name ?? site.stages.find((s) => s.startDate <= date && s.endDate >= date)?.name ?? site.workType;
       const caption = p.caption && !["현장 사진", "보완 사진"].includes(p.caption) ? p.caption : "";

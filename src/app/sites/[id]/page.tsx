@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ClipboardPen, ChevronLeft, MapPin, CalendarDays, Info, Handshake, ShieldAlert, Image as ImageIcon } from "lucide-react";
 import { useMe, useSignals, siteHealth, useFinancials, userLabel } from "@/lib/data/hooks";
 import { PageBody } from "@/components/shell/AppShell";
@@ -17,6 +17,7 @@ import { stagePlan } from "@/lib/domain/schedule";
 import { todayIso } from "@/lib/domain/format";
 import { useFrameCommand } from "@/components/device/frameCommands";
 import { CostEntryList } from "@/components/domain/CostEntryList";
+import { MaterialTab } from "@/components/admin/MaterialTab";
 import { simulateApprovedClaims, type SiteFinancials } from "@/lib/domain/calc";
 import { receivableAging } from "@/lib/domain/risk";
 import { fmtDate, fmtDateTime, fmtEok, fmtMan, fmtManNum, fmtPct, fmtPp, fmtRelative } from "@/lib/domain/format";
@@ -24,7 +25,8 @@ import { CATEGORY_LABEL, CO_STATUS_LABEL, PARTNER_STATUS_LABEL, PARTNER_TYPE_LAB
 import type { DemoDB, Site } from "@/lib/domain/types";
 import { IS_LIVE, BASE_LABEL } from "@/lib/mode";
 
-type Tab = "overview" | "cost" | "progress" | "reports" | "contract" | "billing" | "requests" | "history";
+type Tab = "overview" | "cost" | "progress" | "material" | "reports" | "contract" | "billing" | "requests" | "history";
+const TAB_IDS: Tab[] = ["overview", "cost", "progress", "material", "reports", "contract", "billing", "requests", "history"];
 
 export default function SiteDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -33,6 +35,11 @@ export default function SiteDetailPage() {
   const signals = useSignals(db);
   const [tab, setTab] = useState<Tab>("overview");
   const [sheet, setSheet] = useState(false);
+  // 활동 이력·알림의 바로가기(?tab=material 등)로 들어오면 그 탭부터 (D-62)
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get("tab") as Tab | null;
+    if (t && TAB_IDS.includes(t)) setTab(t);
+  }, []);
   // 시연 모드가 모바일 Frame의 입력 시트를 열고 닫을 수 있게 (저장은 사람이 직접)
   useFrameCommand((cmd) => {
     if (cmd === "close-report") {
@@ -62,6 +69,7 @@ export default function SiteDetailPage() {
     { id: "overview", label: "개요" },
     { id: "cost", label: "원가" },
     { id: "progress", label: "공정" },
+    { id: "material", label: "자재" },
     { id: "reports", label: "보고·사진" },
     { id: "contract", label: "계약·변경", money: true },
     { id: "billing", label: "기성·입금", money: true },
@@ -180,6 +188,7 @@ export default function SiteDetailPage() {
         {tab === "overview" && <OverviewTab db={db} site={site} f={f} canSeeMoney={canSeeMoney} />}
         {tab === "cost" && <CostTab db={db} site={site} f={f} canSeeMoney={canSeeMoney} />}
         {tab === "progress" && <ProgressTab site={site} f={f} canSeeMoney={canSeeMoney} />}
+        {tab === "material" && <MaterialTab db={db} site={site} />}
         {tab === "reports" && <ReportsTab db={db} site={site} />}
         {tab === "contract" && canSeeMoney && <ContractTab db={db} site={site} f={f} />}
         {tab === "billing" && canSeeMoney && <BillingTab db={db} site={site} f={f} />}

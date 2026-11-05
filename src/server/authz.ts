@@ -113,6 +113,14 @@ export function authorize(m: Member, name: CommandName, argsIn: unknown, db: Dem
       case "sendFeedback":
         // 본인 것만 (명령이 로그인 사용자 id로 기록)
         return args;
+      case "recordMaterial":
+        if (!sites.has(str(args.siteId))) throw new ForbiddenError("담당 현장의 자재만 기록할 수 있습니다.");
+        return args;
+      case "voidMaterialMove": {
+        const mv = (db.materialMoves ?? []).find((x) => x.id === args.moveId);
+        if (!mv || mv.by !== m.id || !sites.has(mv.siteId)) throw new ForbiddenError("본인이 남긴 자재 기록만 취소할 수 있습니다.");
+        return args;
+      }
       case "checkIn":
       case "checkOut":
       case "confirmQr":
@@ -197,6 +205,7 @@ export function viewFor(m: Member, db: DemoDB, now = new Date()): DemoDB {
     attendanceRequests: [],
     workOrders: [],
     importBatches: [],
+    materialMoves: [],
   } satisfies Partial<DemoDB>;
 
   if (m.role === "field") {
@@ -225,6 +234,8 @@ export function viewFor(m: Member, db: DemoDB, now = new Date()): DemoDB {
       ...crewChecks.flatMap((c) => (c.photoId ? [c.photoId] : [])),
       ...workOrders.flatMap((w) => w.donePhotoIds ?? []),
     ]);
+    // 자재 반입·설치는 담당 현장 것 전부 — 휴대폰이 보여 주는 누계·현장 보관 수량이 60일 밖 기록 때문에 틀리지 않게 (수량만 · 금액·좌표 없음)
+    const materialMoves = (db.materialMoves ?? []).filter((x) => sites.has(x.siteId));
     return {
       ...base,
       ...empty,
@@ -250,6 +261,7 @@ export function viewFor(m: Member, db: DemoDB, now = new Date()): DemoDB {
       feedback: (db.feedback ?? []).filter((f) => f.userId === m.id),
       // 작업 인원은 담당 현장 것만
       crewChecks,
+      materialMoves,
       attendanceRequests: (db.attendanceRequests ?? []).filter((q) => q.userId === m.id && (q.workDate >= since || q.status === "pending")),
       workOrders,
       // 팀별 단가(협력업체 단가)는 현장에 보내지 않는다 — 노무비 입력에 쓰는 기본 일당만
@@ -265,7 +277,8 @@ export function viewFor(m: Member, db: DemoDB, now = new Date()): DemoDB {
     ...empty,
     scope: "partner",
     users: users.filter((u) => u.role !== "partner" || u.id === m.id).map((u) => (u.id === m.id ? { ...u, partnerSiteIds: m.partnerSiteIds } : u)),
-    sites: db.sites.filter((s) => sites.has(s.id)),
+    // 자재 품목·설계 수량(내부 운영 정보)은 빼고 보낸다 (D-62)
+    sites: db.sites.filter((s) => sites.has(s.id)).map(({ materials: _m, ...s }) => (void _m, s)),
     contracts: [...sites].map(zeroContract),
     partnerRequests: db.partnerRequests.filter((r) => sites.has(r.siteId) && r.partnerUserId === m.id),
     // 내부 운영 설정(일당 등)은 숨기고, 가상 데이터 회사라는 표시만 전달

@@ -406,6 +406,89 @@ test("작업 인원(출력): 팀 고르기 → 인원 → 단체 사진 → 보�
   await expect(card.getByTestId("crew-flags")).toContainText("보낸 사람 출근 기록 없음"); // 최성민 오늘 출근 안 함
 });
 
+test("자재 반입·설치 (D-62): 반입 → 수량 → 사진 → 보내기 → 누계 · 오늘 기록 취소 · 설치 → 본사 자재 표·공사일보·품목 추가", async ({ page }) => {
+  await asField(page);
+  await page.goto("/field");
+  await page.getByTestId("easy-go-material").click();
+  await page.getByTestId("material-site-site-a").click();
+  await page.getByTestId("material-kind-in").click();
+  await page.getByTestId("material-item-mat-a-glass").click();
+  // 큰 글씨·큰 버튼 (수량 화면)
+  const sz = await sizes(page, "easy-material");
+  expect(sz.minFont).toBeGreaterThanOrEqual(16);
+  expect(sz.minBtn).toBeGreaterThanOrEqual(44);
+  await page.getByTestId("material-qty-input").fill("4O"); // 글자는 들어가지 않는다
+  await expect(page.getByTestId("material-qty-input")).toHaveValue("4");
+  await page.getByTestId("material-qty-input").fill("40");
+  await page.getByTestId("easy-next").click();
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+  await page.getByTestId("material-photo-file").setInputFiles({ name: "slip.png", mimeType: "image/png", buffer: png });
+  await page.getByTestId("material-note").fill("송장 대조");
+  await page.getByTestId("easy-next").click();
+  await expect(page.getByTestId("material-confirm-text")).toContainText("삼중 로이유리 40 장 반입");
+  await page.getByTestId("material-send").click();
+  await expect(page.getByTestId("material-done-totals")).toContainText("들어온 누계 220 장");
+  await expect(page.getByTestId("material-done-totals")).toContainText("현장에 남은 것 116 장");
+
+  // 오늘 내가 남긴 기록 → 사유를 골라 취소 (지우지 않고 취소 표시)
+  await page.getByTestId("material-again").click();
+  await expect(page.getByTestId("material-today-row")).toHaveCount(1);
+  await page.getByTestId("material-void").click();
+  await page.getByTestId("material-void-reason").first().click();
+  await expect(page.getByTestId("material-today-row")).toHaveCount(0);
+
+  // 설치 10 EA (+10 버튼)
+  await page.getByTestId("material-kind-install").click();
+  await page.getByTestId("material-item-mat-a-unit").click();
+  await page.getByTestId("material-plus-10").click();
+  await page.getByTestId("easy-next").click();
+  await page.getByTestId("easy-next").click();
+  await page.getByTestId("material-send").click();
+  await expect(page.getByTestId("material-done-totals")).toContainText("설치 누계 118 EA");
+
+  // 본사: 현장 상세 → 자재
+  await page.evaluate(([pk]) => localStorage.setItem(pk, JSON.stringify({ ...JSON.parse(localStorage.getItem(pk)!), role: "manager" })), [PREFS] as const);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/sites/site-a?tab=material");
+  await expect(page.getByTestId("material-row").filter({ hasText: "커튼월 유닛" })).toContainText("118 EA");
+  await expect(page.getByTestId("material-row").filter({ hasText: "삼중 로이유리" })).toContainText("180 장"); // 취소한 40장은 빠짐
+  await expect(page.locator('[data-testid="material-move"][data-voided="1"]')).toContainText("취소 — 수량을 잘못 넣었어요");
+  // 품목 추가 (설계 수량 모르면 비움)
+  await page.getByTestId("material-setup").click();
+  await page.getByTestId("material-setup-add").click();
+  await page.getByTestId("material-setup-name").last().fill("실링재");
+  await page.getByTestId("material-setup-unit").last().fill("박스");
+  await page.getByTestId("material-setup-save").click();
+  await expect(page.getByTestId("material-row").filter({ hasText: "실링재" })).toContainText("설계 수량 없음");
+  // 공사일보: 오늘 설치 10 EA (취소한 반입은 없음)
+  await page.goto("/daily");
+  const q = page.getByTestId("daily-material-qty");
+  await expect(q).toContainText("커튼월 유닛");
+  await expect(q).toContainText("10 EA");
+  await expect(q).not.toContainText("40 장");
+  // B현장: 설치가 반입보다 많음 표시
+  await page.goto("/sites/site-b?tab=material");
+  await expect(page.getByTestId("material-flag")).toContainText("반입 기록이 빠졌는지 확인");
+});
+
+test("기성 청구 지연 (D-62): 위험 기준에서 기준을 낮추면 공정보다 기성이 늦은 현장에 신호 — 근거·청구 가능 추정", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/settings");
+  await page.evaluate(([pk]) => { localStorage.clear(); localStorage.setItem(pk, JSON.stringify({ theme: "onyx-gold", fontScale: "md", reduceMotion: true, role: "ceo", deviceView: "pc", mobilePersona: "same", tutorialDone: true, viewRev: 2 })); }, [PREFS] as const);
+  await page.goto("/insights");
+  await expect(page.locator('[data-rule="BILLING_LAG"]')).toHaveCount(0);
+  await page.goto("/settings");
+  await expect(page.locator("#th-billingLagPp")).toHaveValue("10");
+  await page.locator("#th-billingLagPp").fill("5");
+  await page.getByRole("button", { name: "기준 저장" }).click();
+  await page.goto("/insights");
+  // B현장: 공정률 72% vs 확정 기성 64.5% → 7.5%p > 5%p
+  const sig = page.locator('[data-testid="signal-board"] [data-rule="BILLING_LAG"]');
+  await expect(sig).toHaveCount(1);
+  await expect(sig).toContainText("B현장 공정률 72%");
+  await expect(sig).toContainText("확정 기성 64.5%");
+});
+
 test("지시·확인 왕복 (계약 검수 S2·S3): 작업지시 접수·완료 → 보고 연결 → 근태 수정 요청 → 본사 확인·보완 → 현장 보완 → 확인", async ({ page }) => {
   await asField(page);
   const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");

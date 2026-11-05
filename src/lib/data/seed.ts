@@ -392,6 +392,7 @@ export function createSeed(now = new Date()): DemoDB {
       marginDropPp: 3,
       overrunPct: 5,
       costProgressGapPp: 10,
+      billingLagPp: 10,
       receivableDays: 60,
       changeOrderPendingDays: 30,
     },
@@ -521,6 +522,31 @@ function seedAttendance(db: DemoDB, now: Date) {
     at: at(kstDate(-i), "07:50"),
     by: "u-field",
   }));
+  // 주요 자재 수량 (가상 · D-62) — A현장 커튼월 유닛·로이유리, B현장 단열유리. C현장은 품목을 아직 정하지 않음
+  //   A 유닛: 설계 240 · 반입 144 · 설치 108(45%) / A 유리: 설계 520 · 반입 180 · 설치 104(20%)
+  //   B 유리: 설계 460 · 반입 260 · 설치 276 → ‘설치가 반입보다 많음’(반입 기록 빠짐 확인) 예시
+  const MAT: Record<string, DemoDB["sites"][number]["materials"]> = {
+    "site-a": [
+      { id: "mat-a-unit", name: "커튼월 유닛", unit: "EA", plannedQty: 240 },
+      { id: "mat-a-glass", name: "삼중 로이유리", unit: "장", plannedQty: 520 },
+    ],
+    "site-b": [{ id: "mat-b-glass", name: "단열유리 (복층)", unit: "장", plannedQty: 460 }],
+  };
+  db.sites = db.sites.map((s) => (MAT[s.id] ? { ...s, materials: MAT[s.id] } : s));
+  const mv = (id: string, siteId: string, itemId: string, kind: "in" | "install", qty: number, day: number, hm: string, note?: string) => ({ id, siteId, itemId, kind, qty, workDate: kstDate(day), at: at(kstDate(day), hm), by: "u-field", ...(note ? { note } : {}) });
+  db.materialMoves = [
+    mv("mm-seed-a1", "site-a", "mat-a-unit", "in", 96, -40, "09:10", "이전 반입 누계 (가상)"),
+    mv("mm-seed-a2", "site-a", "mat-a-unit", "install", 48, -35, "17:00", "이전 설치 누계 (가상)"),
+    mv("mm-seed-a3", "site-a", "mat-a-glass", "in", 180, -6, "10:20", "송장 대조 완료 (가상)"),
+    mv("mm-seed-a4", "site-a", "mat-a-unit", "in", 48, -3, "08:40"),
+    ...[5, 4, 3, 2, 1].map((d) => mv(`mm-seed-a-u${d}`, "site-a", "mat-a-unit", "install", 12, -d, "16:30")),
+    mv("mm-seed-a5", "site-a", "mat-a-glass", "install", 60, -2, "16:40"),
+    mv("mm-seed-a6", "site-a", "mat-a-glass", "install", 44, -1, "16:45"),
+    mv("mm-seed-b1", "site-b", "mat-b-glass", "in", 260, -20, "09:00", "이전 반입 누계 (가상)"),
+    mv("mm-seed-b2", "site-b", "mat-b-glass", "install", 230, -15, "17:10", "이전 설치 누계 (가상)"),
+    mv("mm-seed-b3", "site-b", "mat-b-glass", "install", 46, -1, "16:50", "8~9층 (가상)"),
+  ];
+
   // 근태 수정 요청 (가상) — 정우진 어제 퇴근 누락, 본사 확인 대기
   db.attendanceRequests = [
     { id: "afr-seed-1", siteId: "site-c", userId: "u-field2", workDate: kstDate(-1), kind: "missed_out", outTime: "17:30", reason: "휴대폰 배터리가 꺼짐", status: "pending", createdAt: at(kstDate(0), "07:40"), attendanceId: "att-seed-c-1" },

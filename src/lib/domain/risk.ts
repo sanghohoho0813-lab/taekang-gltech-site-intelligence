@@ -6,6 +6,7 @@ import type { CostEntry, DemoDB, RiskSignal, Severity } from "./types";
 import { siteFinancials } from "./calc";
 import { CATEGORY_LABEL, RULE_VERSION } from "./labels";
 import { daysBetween, fmtEok, fmtMan, fmtPct, fmtPp } from "./format";
+import { siteInstallPct } from "./material";
 
 const SEV_ORDER: Record<Severity, number> = { high: 0, medium: 1, low: 2 };
 
@@ -216,6 +217,43 @@ export function computeSignals(db: DemoDB, now = new Date()): RiskSignal[] {
         causeEntryIds: [],
         amountAtRisk: sum,
       });
+    }
+
+    // 8) 기성 청구 지연 — 공정은 나갔는데 확정 기성이 따라오지 않음 (D-62)
+    //    현장·발주처 화면은 계약 금액이 0이라 계산하지 않는다
+    const lagPp = t.billingLagPp ?? 10;
+    if (f.adjustedContract > 0) {
+      const billedPct = (f.billed / f.adjustedContract) * 100;
+      const lag = f.physicalProgressPct - billedPct;
+      if (lag > lagPp) {
+        const claimable = Math.round((f.adjustedContract * lag) / 100);
+        const bills = db.billings.filter((b) => b.siteId === site.id && b.status === "confirmed").sort((a, b) => b.billedDate.localeCompare(a.billedDate));
+        const install = siteInstallPct(db, site.id);
+        signals.push({
+          key: `BILLING_LAG:${site.id}`,
+          rule: "BILLING_LAG",
+          siteId: site.id,
+          severity: lag > lagPp * 2 ? "high" : "medium",
+          title: `${name} 공정률 ${fmtPct(f.physicalProgressPct)} — 확정 기성 ${fmtPct(billedPct)}`,
+          summary: `공정보다 기성 청구가 ${fmtPp(lag)} 늦습니다. 청구할 수 있는 금액이 남아 있을 수 있습니다 (추정 ${fmtEok(claimable)}).`,
+          why: [
+            `확정 기성률 = 확정 기성 ${fmtEok(f.billed)} ÷ 변경 반영 계약 ${fmtEok(f.adjustedContract)} = ${fmtPct(billedPct)}`,
+            `현장 보고 공정률 ${fmtPct(f.physicalProgressPct)} − 기성률 = ${fmtPp(lag)} > 기준 ${lagPp}%p`,
+            bills[0] ? `마지막 확정 기성 ${bills[0].round}차 ${bills[0].billedDate} (${daysBetween(bills[0].billedDate, now)}일 전)` : "확정된 기성 청구가 아직 없습니다",
+            ...(install ? [`주요 자재 설치율 ${fmtPct(install.pct)} (품목 ${install.items}개 평균 · 현장 반입·설치 기록)`] : []),
+          ],
+          dataUsed: ["progress_updates", "progress_billings", "change_orders", ...(install ? ["material_moves"] : [])],
+          threshold: `공정률 − 확정 기성률 > ${lagPp}%p`,
+          metric: { label: "공정·기성 차이", current: fmtPp(lag) },
+          recommendation: {
+            actionTitle: "기성 청구 준비",
+            description: "공정 사진·공사일보·자재 설치 수량으로 기성 내역을 정리해 원청(발주처)에 청구합니다. 공정률 산정이 과하면 공정률을 먼저 바로잡습니다.",
+          },
+          detectedAt: bills[0] ? new Date(bills[0].billedDate).toISOString() : db.seededAt,
+          causeEntryIds: [],
+          amountAtRisk: claimable,
+        });
+      }
     }
 
     // 7) 미승인 변경공사 장기 대기

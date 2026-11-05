@@ -6,6 +6,7 @@ import { ChevronLeft, ChevronRight, Printer } from "lucide-react";
 import { useMe } from "@/lib/data/hooks";
 import { dailyLog, weekStart, weeklyLog, weekdayOf, type DailyLog, type WeeklyLog } from "@/lib/domain/dailylog";
 import { shiftDate } from "@/lib/domain/attendance";
+import { fmtQty, MOVE_LABEL } from "@/lib/domain/material";
 import { CATEGORY_LABEL } from "@/lib/domain/labels";
 import { fmtDate, fmtDateTime, todayIso } from "@/lib/domain/format";
 import { IS_LIVE } from "@/lib/mode";
@@ -217,6 +218,34 @@ function DayDoc({ d }: { d: DailyLog }) {
             </tbody>
           </table>
         </Section>
+
+        {d.materialQty.length > 0 && (
+          <Section title="자재 반입·설치 수량" testId="daily-material-qty">
+            <table className="w-full text-[0.88rem]">
+              <thead>
+                <tr>
+                  <th className={th}>구분</th>
+                  <th className={th}>품목</th>
+                  <th className={cx(th, "text-right")}>수량</th>
+                  <th className={th}>메모</th>
+                </tr>
+              </thead>
+              <tbody>
+                {d.materialQty.map((m, i) => (
+                  <tr key={i}>
+                    <td className={td}>{MOVE_LABEL[m.kind]}</td>
+                    <td className={td}>{m.name}</td>
+                    <td className={cx(td, "num text-right")}>{fmtQty(m.qty, m.unit)}</td>
+                    <td className={cx(td, "text-[0.8rem] text-ink-2")}>
+                      {m.note ?? ""}
+                      {m.photo && <span className="ml-1 text-ink-3">(사진)</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Section>
+        )}
 
         {d.materials.length > 0 && (
           <Section title="자재·장비·외주 (현장 보고 내용)" testId="daily-materials">

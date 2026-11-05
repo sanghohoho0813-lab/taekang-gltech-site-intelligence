@@ -12,6 +12,7 @@ import * as I from "./importCommands";
 import * as P from "./privacyCommands";
 import * as D from "./deviceCommands";
 import * as F from "./feedbackCommands";
+import * as M from "./materialCommands";
 
 type Ctx = C.Ctx;
 
@@ -49,6 +50,10 @@ export const COMMANDS = {
   correctAttendance: (db: DemoDB, a: T.CorrectAttendanceInput, ctx: Ctx) => T.correctAttendance(db, a, ctx),
   confirmQr: (db: DemoDB, a: { siteId: string; qrToken: string }, ctx: Ctx) => T.confirmQr(db, a, ctx),
   reportCrew: (db: DemoDB, a: T.CrewInput, ctx: Ctx) => T.reportCrew(db, a, ctx),
+  // 자재 반입·설치 수량 (D-62) — 품목은 본사, 기록은 현장(담당 현장)·본사, 취소는 현장 본인 것만
+  setSiteMaterials: (db: DemoDB, a: { siteId: string; items: M.MaterialItemInput[] }, ctx: Ctx) => M.setSiteMaterials(db, a, ctx),
+  recordMaterial: (db: DemoDB, a: M.MaterialMoveInput, ctx: Ctx) => M.recordMaterial(db, a, ctx),
+  voidMaterialMove: (db: DemoDB, a: { moveId: string; reason: string }, ctx: Ctx) => M.voidMaterialMove(db, a, ctx),
   // 본사–현장 소통
   requestAttendanceFix: (db: DemoDB, a: O.FixRequestInput, ctx: Ctx) => O.requestAttendanceFix(db, a, ctx),
   reviewAttendanceFix: (db: DemoDB, a: Parameters<typeof O.reviewAttendanceFix>[1], ctx: Ctx) => O.reviewAttendanceFix(db, a, ctx),

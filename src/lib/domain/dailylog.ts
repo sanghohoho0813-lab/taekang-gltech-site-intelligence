@@ -4,6 +4,7 @@
  */
 import type { CostCategory, DemoDB, FieldReport, Site, SitePhoto, WorkOrder } from "./types";
 import { hhmm, minutesOf, shiftDate } from "./attendance";
+import { movesOn } from "./material";
 
 export interface DailyCrewRow {
   team: string;
@@ -27,6 +28,8 @@ export interface DailyLog {
   issues: string[];
   plans: string[];
   materials: { category: CostCategory; note: string }[];
+  /** 자재 반입·설치 수량 (D-62 · 금액 없음) */
+  materialQty: { kind: "in" | "install"; name: string; unit: string; qty: number; note?: string; photo: boolean }[];
   orders: { title: string; event: string; note?: string }[];
   photos: SitePhoto[];
   review: { status: "confirmed" | "returned" | "none"; by?: string; at?: string };
@@ -71,7 +74,12 @@ export function dailyLog(db: DemoDB, site: Site, date: string): DailyLog {
   const materials = db.costEntries
     .filter((e) => entryIds.has(e.id) && e.status !== "voided" && e.status !== "rejected" && e.category !== "labor" && e.category !== "overhead")
     .map((e) => ({ category: e.category, note: e.note }));
-  const photoIds = new Set([...reports.flatMap((r) => [...r.photoIds, ...(r.supplements ?? []).flatMap((s) => s.photoIds)]), ...doneToday.flatMap((w) => w.donePhotoIds ?? [])]);
+  const materialQty = movesOn(db, site.id, date).map(({ move, item }) => ({ kind: move.kind, name: item?.name ?? "(지운 품목)", unit: item?.unit ?? "", qty: move.qty, ...(move.note ? { note: move.note } : {}), photo: !!move.photoId }));
+  const photoIds = new Set([
+    ...reports.flatMap((r) => [...r.photoIds, ...(r.supplements ?? []).flatMap((s) => s.photoIds)]),
+    ...doneToday.flatMap((w) => w.donePhotoIds ?? []),
+    ...movesOn(db, site.id, date).flatMap(({ move }) => (move.photoId ? [move.photoId] : [])),
+  ]);
   const photos = db.photos.filter((p) => photoIds.has(p.id));
   const reviewed = reports.filter((r) => r.review);
   const lastReview = reviewed.map((r) => r.review!).sort((a, b) => a.at.localeCompare(b.at)).at(-1);
@@ -93,6 +101,7 @@ export function dailyLog(db: DemoDB, site: Site, date: string): DailyLog {
     issues: uniq(reports.map((r) => r.issues)),
     plans: uniq(reports.map((r) => r.tomorrowPlan)),
     materials,
+    materialQty,
     orders,
     photos,
     review: lastReview ? { status: lastReview.status, by: user(lastReview.by)?.name, at: lastReview.at } : { status: "none" },

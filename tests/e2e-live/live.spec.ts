@@ -407,6 +407,56 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     await expect(admin.locator(`[data-testid="att-site"][data-site="${siteId}"]`).getByTestId("att-row")).toContainText("현장 요청 승인");
   });
 
+  test("자재 수량 (D-62): 본사 품목 정하기 → 현장소장 휴대폰 반입·설치 → 본사 자재 표·공사일보 / 남의 기록 취소·다른 현장 기록은 서버가 거부", async ({ browser }) => {
+    const admin = await login(browser, CEO.email, CEO.password);
+    await admin.goto(`/sites/${siteId}?tab=material`);
+    await admin.getByTestId("material-setup").click();
+    await admin.getByTestId("material-setup-name").first().fill("커튼월 유닛");
+    await admin.getByTestId("material-setup-unit").first().fill("EA");
+    await admin.getByTestId("material-setup-planned").first().fill("100");
+    await admin.getByTestId("material-setup-save").click();
+    await expect(admin.getByTestId("material-row")).toHaveCount(1);
+
+    const fp = await login(browser, FIELD.email, FIELD.password, { width: 390, height: 844 });
+    await fp.goto("/field");
+    await fp.getByTestId("easy-go-material").click();
+    await fp.getByTestId("material-kind-in").click();
+    await fp.locator('[data-testid^="material-item-"]').filter({ hasText: "커튼월 유닛" }).click();
+    await fp.getByTestId("material-qty-input").fill("30");
+    await fp.getByTestId("easy-next").click();
+    await fp.getByTestId("easy-next").click();
+    await fp.getByTestId("material-send").click();
+    await expect(fp.getByTestId("material-done-totals")).toContainText("들어온 누계 30 EA");
+    await fp.getByTestId("material-again").click();
+    await fp.getByTestId("material-kind-install").click();
+    await fp.locator('[data-testid^="material-item-"]').filter({ hasText: "커튼월 유닛" }).click();
+    await fp.getByTestId("material-qty-input").fill("12");
+    await fp.getByTestId("easy-next").click();
+    await fp.getByTestId("easy-next").click();
+    await fp.getByTestId("material-send").click();
+    await expect(fp.getByTestId("material-done-totals")).toContainText("현장에 남은 것 18 EA");
+
+    await admin.reload();
+    const row = admin.getByTestId("material-row").filter({ hasText: "커튼월 유닛" });
+    await expect(row).toContainText("30 EA");
+    await expect(row).toContainText("12 EA");
+    await expect(row).toContainText("18 EA");
+    await admin.goto("/daily");
+    await expect(admin.getByTestId("daily-material-qty")).toContainText("커튼월 유닛");
+
+    // 본사가 넣은 기록은 현장소장이 취소할 수 없다 · 다른 현장 이름으로 보낼 수 없다 (서버 권한)
+    const call = (page: Page, name: string, args: unknown) => page.evaluate(async ([n, a]) => (await fetch("/api/commands", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: n, args: a }) })).status, [name, args] as const);
+    const st = await admin.evaluate(async () => (await (await fetch("/api/state")).json()).db);
+    const itemId = st.sites.find((x: { id: string }) => x.id === siteId).materials[0].id;
+    expect(await call(admin, "recordMaterial", { siteId, itemId, kind: "in", qty: 5, note: "본사 송장 입력" })).toBe(200);
+    const hqMove = (await admin.evaluate(async () => (await (await fetch("/api/state")).json()).db.materialMoves)).find((m: { note?: string }) => m.note === "본사 송장 입력");
+    expect(await call(fp, "voidMaterialMove", { moveId: hqMove.id, reason: "테스트" })).toBe(403);
+    expect(await call(fp, "recordMaterial", { siteId: "site-nope", itemId, kind: "in", qty: 1 })).toBe(403);
+    expect(await call(fp, "setSiteMaterials", { siteId, items: [] })).toBe(403);
+    await admin.context().close();
+    await fp.context().close();
+  });
+
   test("발주처: 첫 로그인 후 공개 현장만, 요청 등록, 내부 정보 없음", async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     const page = await ctx.newPage();
@@ -438,6 +488,9 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     const st = await page.evaluate(async () => (await (await fetch("/api/state")).json()).db);
     expect(st.scope).toBe("partner");
     expect(st.costEntries).toHaveLength(0);
+    // 자재 기록·품목(내부 운영 정보)도 받지 않는다 (D-62)
+    expect(st.materialMoves).toHaveLength(0);
+    expect(st.sites.every((x: { materials?: unknown }) => x.materials === undefined)).toBe(true);
     expect(st.actions).toHaveLength(0);
     // 사진 원본·관리 API 차단
     expect((await page.request.get("/api/photos/anything")).status()).toBe(404);

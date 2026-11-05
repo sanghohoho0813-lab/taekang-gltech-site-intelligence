@@ -12,6 +12,7 @@ export const LOG_TYPE_LABEL: Record<string, string> = {
   progress: "공정",
   attendance: "출퇴근·근태",
   crew: "작업 인원",
+  material: "자재 반입·설치",
   order: "작업지시",
   action: "위험 조치",
   action_note: "조치 메모",

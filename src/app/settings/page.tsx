@@ -365,7 +365,9 @@ function DataSection() {
 
 function ThresholdCard({ thresholds }: { thresholds: RiskThresholds }) {
   const toast = useToast();
-  const [t, setT] = useState(thresholds);
+  // 이전에 저장된 기준에는 ‘기성 청구 지연’이 없을 수 있다 (D-62 · 기본 10%p)
+  const withDefaults = { billingLagPp: 10, ...thresholds };
+  const [t, setT] = useState(withDefaults);
   const fields: { k: keyof RiskThresholds; label: string; unit: string }[] = [
     { k: "targetMarginPct", label: "목표 이익률", unit: "%" },
     { k: "marginDropPp", label: "이익률 하락 경고", unit: "%p" },
@@ -373,6 +375,7 @@ function ThresholdCard({ thresholds }: { thresholds: RiskThresholds }) {
     { k: "costProgressGapPp", label: "공정 대비 원가 차이", unit: "%p" },
     { k: "receivableDays", label: "장기 미수 기준", unit: "일" },
     { k: "changeOrderPendingDays", label: "변경공사 승인 대기", unit: "일" },
+    { k: "billingLagPp", label: "공정 대비 기성 청구 지연", unit: "%p" },
   ];
   return (
     <Card>
@@ -385,7 +388,7 @@ function ThresholdCard({ thresholds }: { thresholds: RiskThresholds }) {
         ))}
       </div>
       <div className="flex justify-end gap-2 px-5 py-4">
-        <Button onClick={() => setT(thresholds)}>되돌리기</Button>
+        <Button onClick={() => setT(withDefaults)}>되돌리기</Button>
         <Button
           variant="cta"
           onClick={async () => {
