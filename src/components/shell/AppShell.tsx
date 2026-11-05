@@ -27,7 +27,7 @@ export function AppShell({ children, compactSidebar }: { children: ReactNode; co
   // 로그인·최초 설정 화면은 메뉴 없이
   if (isPartnerSurface || pathname === "/login" || pathname === "/setup" || pathname === "/account") return <>{children}</>;
   return (
-    <div className="flex min-h-[calc(100dvh-var(--demo-bar-h))] w-full min-w-0">
+    <div className="app-frame flex min-h-[calc(100dvh-var(--demo-bar-h))] w-full min-w-0">
       <Sidebar compact={compactSidebar} />
       <div className="@container/shell flex min-w-0 flex-1 flex-col">
         <DesktopHeader />

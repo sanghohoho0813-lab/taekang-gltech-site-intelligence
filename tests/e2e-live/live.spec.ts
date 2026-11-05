@@ -599,6 +599,33 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     await field.context().close();
   });
 
+  test("검수 확인서·그림 안내: 운영 기록으로 근거(출근·앱 오류 횟수) · 가상 데이터 표시 없음 · 현장 직원은 확인서 못 봄", async ({ browser }) => {
+    const ceo = await login(browser, CEO.email, CEO.password);
+    await ceo.goto("/acceptance");
+    await ceo.getByTestId("acc-stage-2").click();
+    const s1 = ceo.locator('[data-testid="acc-item"][data-key="S1"]');
+    await expect(s1.locator('[data-has="1"]').first()).toContainText("출근 기록");
+    await expect(ceo.getByTestId("acc-foot")).not.toContainText("DEMO");
+    await ceo.getByTestId("acc-stage-4").click();
+    // 앞 시험에서 기록된 화면 오류를 서버 오류 기록에서 센다
+    await expect(ceo.locator('[data-testid="acc-item"][data-key="feedback"]')).toContainText(/기록된 앱 오류\s*[1-9]\d*회/);
+    const text = (await ceo.getByTestId("acc-doc").innerText()).replace(/\s+/g, " ");
+    expect(text).not.toMatch(/\d[\d,]*\s*(만\s*)?원(?![가-힣])|\d\s*억/);
+    await ceo.context().close();
+
+    const field = await login(browser, FIELD.email, FIELD.password, { width: 390, height: 844 });
+    await field.goto("/acceptance");
+    await expect(field.getByTestId("access-denied")).toBeVisible();
+    await field.goto("/help");
+    await field.getByTestId("help-quick-link").click();
+    await expect(field.getByTestId("quick-step")).toHaveCount(6);
+    for (const el of await field.getByTestId("quick-img").all()) {
+      await el.scrollIntoViewIfNeeded();
+      await expect.poll(() => el.evaluate((i: HTMLImageElement) => i.complete && i.naturalWidth > 0)).toBe(true);
+    }
+    await field.context().close();
+  });
+
   test("휴대폰 분실: 대표가 ‘모든 기기 로그아웃’ → 그 휴대폰은 바로 로그인 풀림 → 활동 이력에 남음", async ({ browser }) => {
     const phone = await login(browser, FIELD.email, FIELD.password, { width: 390, height: 844 });
     expect((await phone.request.get("/api/state")).status()).toBe(200);
@@ -638,7 +665,7 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
   test("로그아웃 후 데이터 접근 불가 / 화면 가로 넘침 없음", async ({ browser }) => {
     for (const w of [390, 1440]) {
       const page = await login(browser, CEO.email, CEO.password, { width: w, height: 900 });
-      for (const r of ["/dashboard", `/sites/${siteId}`, "/admin", "/admin?tab=members", "/report", "/settings", "/labor", "/attendance", "/orders", "/schedule", "/data", "/usage", "/help", "/audit", "/daily", "/quality", "/admin?tab=privacy", "/field/check", "/my"]) {
+      for (const r of ["/dashboard", `/sites/${siteId}`, "/admin", "/admin?tab=members", "/report", "/settings", "/labor", "/attendance", "/orders", "/schedule", "/data", "/usage", "/help", "/audit", "/daily", "/quality", "/acceptance", "/help/quick", "/admin?tab=privacy", "/field/check", "/my"]) {
         await page.goto(r);
         await page.waitForTimeout(300);
         const over = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);

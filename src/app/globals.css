@@ -399,6 +399,15 @@ html.tk-scroll-lock {
   main#main {
     padding-bottom: 0 !important;
   }
+  /* 화면용 위·아래 여백과 ‘화면 높이만큼’ 최소 높이 때문에 끝에 빈 쪽이 생기지 않게 */
+  main#main > div {
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+  }
+  .app-frame,
+  main#main {
+    min-height: 0 !important;
+  }
   /* 가로 스크롤 표는 용지 폭에 맞춰 줄여서 잘리지 않게 */
   main [role="region"][tabindex] {
     overflow: visible !important;

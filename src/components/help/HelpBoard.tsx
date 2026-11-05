@@ -2,7 +2,8 @@
 
 /** 사용 안내 (계약 4단계 운영 매뉴얼) — 역할별 매뉴얼, 인쇄용. 현장 직원용은 큰 글씨 */
 import { useState, type ReactNode } from "react";
-import { Printer } from "lucide-react";
+import Link from "next/link";
+import { ChevronRight, Images, Printer } from "lucide-react";
 import { useMe } from "@/lib/data/hooks";
 import { manualsFor, type Manual, type ManualId } from "@/lib/help/manuals";
 import { IS_LIVE } from "@/lib/mode";
@@ -42,6 +43,16 @@ export function HelpBoard() {
         }
       />
       {!IS_LIVE && <Notice tone="info" className="no-print">실제 운영(로그인) 기준 안내입니다. 시연 화면에는 로그인·비밀번호 단계가 없습니다.</Notice>}
+      {role !== "partner" && (
+        <Link href="/help/quick" className="no-print press flex min-h-14 items-center gap-3 rounded-2xl border-2 border-line-strong bg-surface px-4 py-3" data-testid="help-quick-link">
+          <Images size={26} className="shrink-0 text-theme-ink" aria-hidden />
+          <span className="min-w-0 flex-1">
+            <span className={cx("block font-extrabold", role === "field" ? "text-[1.2rem]" : "text-[1rem]")}>그림 안내 1장</span>
+            <span className={cx("block text-ink-2", role === "field" ? "text-[1.02rem]" : "text-[0.86rem]")}>{role === "field" ? "누르는 버튼을 그림으로 봐요" : "현장 직원에게 나눠 줄 휴대폰 사용법 — 실제 화면 그림 6개, A4 1장 인쇄"}</span>
+          </span>
+          <ChevronRight size={22} className="shrink-0 text-ink-3" aria-hidden />
+        </Link>
+      )}
       {list.length > 1 && (
         <div className="no-print overflow-x-auto">
           <Segmented label="매뉴얼" size={role === "field" ? "lg" : "md"} value={cur.id} onChange={setId} options={list.map((m) => ({ value: m.id, label: m.title, testId: `help-tab-${m.id}` }))} />
