@@ -53,6 +53,7 @@ export const NAV: NavItem[] = [
   { href: "/usage", label: "사용 현황", icon: "Activity", group: "ax", roles: INTERNAL, desc: "현장 직원 정착도·본사 응답 시간 (실사용 검증)" },
   { href: "/evidence", label: "실증 Evidence", icon: "BadgeCheck", group: "ax", roles: INTERNAL, desc: "Proof Event·KPI·12주 계획" },
   { href: "/why-ax", label: "기획의도", icon: "Lightbulb", group: "ax", roles: ALL_INTERNAL, desc: "왜 이 AX인가", only: "demo" },
+  { href: "/launch", label: "시범 운영 준비", icon: "Rocket", group: "admin", roles: INTERNAL, desc: "첫날 준비 점검 — 회사 설정·현장 위치·직원별 첫 로그인·휴대폰·위치 동의 · 로그인 쪽지 인쇄" },
   { href: "/data", label: "자료 이관·점검", icon: "FileUp", group: "admin", roles: INTERNAL, desc: "지난 기성·변경공사·출력·원가 엑셀 가져오기 · 현장별 자료 준비 점검" },
   { href: "/admin", label: "운영 관리", icon: "Building2", group: "admin", roles: INTERNAL, desc: "현장 등록·사용자·운영 설정·공무 확인", only: "live" },
   { href: "/quality", label: "오류·의견", icon: "MessageSquareWarning", group: "admin", roles: INTERNAL, desc: "현장 앱 의견 반영·앱 오류 기록 (4단계 검수 근거)" },

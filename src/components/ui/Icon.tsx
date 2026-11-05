@@ -25,12 +25,14 @@ import {
   Images,
   MessageSquareWarning,
   FileCheck2,
+  Rocket,
   type LucideIcon,
 } from "lucide-react";
 
 const MAP: Record<string, LucideIcon> = {
   MessageSquareWarning,
   FileCheck2,
+  Rocket,
   LayoutDashboard,
   Building2,
   ClipboardPen,

@@ -370,6 +370,22 @@ html.tk-scroll-lock {
   display: none;
 }
 
+/* 로그인 쪽지 (D-54): 화면에서는 숨김, 쪽지 인쇄 때만 이것만 */
+.slip-print-root {
+  display: none;
+}
+@media print {
+  html.print-slips body > *:not(.slip-print-root) {
+    display: none !important;
+  }
+  html.print-slips .slip-print-root {
+    display: block !important;
+  }
+  .slip-card {
+    break-inside: avoid;
+  }
+}
+
 /* 인쇄용 보고서 */
 @media print {
   .no-print {

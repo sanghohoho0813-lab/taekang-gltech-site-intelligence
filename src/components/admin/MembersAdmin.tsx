@@ -2,7 +2,7 @@
 
 /** 운영 관리 · 사용자 — 추가(임시 비밀번호), 역할·담당 현장, 비밀번호 초기화, 비활성화, 로그인된 기기·모든 기기 로그아웃 */
 import { useCallback, useEffect, useState } from "react";
-import { KeyRound, LogOut, Pencil, Plus, UserRound, UserX, UserCheck } from "lucide-react";
+import { KeyRound, LogOut, Pencil, Plus, Printer, UserRound, UserX, UserCheck } from "lucide-react";
 import { fmtRelative } from "@/lib/domain/format";
 import type { DemoDB, RoleId } from "@/lib/domain/types";
 import { ROLE_LABEL } from "@/lib/domain/labels";
@@ -11,6 +11,8 @@ import { liveFetch } from "@/lib/data/store";
 import { Badge, Button, Card, CardHeader, EmptyState, Field, Notice, cx, inputCls } from "@/components/ui/primitives";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
+import { tempPassword } from "@/lib/domain/password";
+import { SlipPrintDialog, type Slip } from "./LoginSlips";
 
 interface MemberView {
   id: string;
@@ -35,22 +37,19 @@ const ROLE_HELP: Record<RoleId, string> = {
   partner: "지정 현장의 공정·요청만 (내부 정보 안 보임)",
 };
 
-/** 읽기 쉬운 임시 비밀번호 (영문+숫자 10자, 헷갈리는 글자 제외) */
-function tempPassword(): string {
-  const letters = "abcdefghjkmnpqrstuvwxyz";
-  const digits = "23456789";
-  const all = letters + letters.toUpperCase() + digits;
-  const pick = (s: string) => s[crypto.getRandomValues(new Uint32Array(1))[0] % s.length];
-  const chars = [pick(letters), pick(digits), ...Array.from({ length: 8 }, () => pick(all))];
-  return chars.sort(() => (crypto.getRandomValues(new Uint8Array(1))[0] > 127 ? 1 : -1)).join("");
-}
-
 export function MembersAdmin({ db, me }: { db: DemoDB; me: { id: string; role: RoleId } }) {
   const toast = useToast();
   const [members, setMembers] = useState<MemberView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<MemberView | "new" | null>(null);
-  const [issued, setIssued] = useState<{ name: string; email: string; password: string } | null>(null);
+  const [issued, setIssued] = useState<Issued | null>(null);
+  /** 이 화면에서 만든 임시 비밀번호들 — 로그인 쪽지로 한 번에 인쇄 (새로고침하면 사라짐 · 저장 안 함) */
+  const [issuedAll, setIssuedAll] = useState<Issued[]>([]);
+  const [slipOpen, setSlipOpen] = useState(false);
+  const remember = (x: Issued) => {
+    setIssued(x);
+    setIssuedAll((all) => [...all.filter((a) => a.id !== x.id), x]);
+  };
   const [askOut, setAskOut] = useState<string | null>(null);
   const signOut = async (m: MemberView) => {
     const r = await api<{ devices: number }>(`/api/admin/members/${encodeURIComponent(m.id)}/signout`, { method: "POST", body: {} });
@@ -103,9 +102,14 @@ export function MembersAdmin({ db, me }: { db: DemoDB; me: { id: string; role: R
             <span className="num" data-testid="issued-password">
               아이디 <b>{issued.email}</b> · 임시 비밀번호 <b className="rounded bg-surface px-1.5 py-0.5 tracking-wider">{issued.password}</b>
             </span>
-            <button type="button" className="ml-2 font-bold underline" onClick={() => setIssued(null)}>
-              닫기
-            </button>
+            <span className="mt-2 flex flex-wrap gap-2">
+              <Button size="sm" variant="cta" icon={<Printer size={15} />} onClick={() => setSlipOpen(true)} data-testid="issued-slips">
+                로그인 쪽지 인쇄 ({issuedAll.length}장)
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setIssued(null)}>
+                닫기
+              </Button>
+            </span>
           </Notice>
         </div>
       )}
@@ -150,7 +154,7 @@ export function MembersAdmin({ db, me }: { db: DemoDB; me: { id: string; role: R
                   disabled={!m.active || (m.role === "ceo" && me.role !== "ceo")}
                   onClick={async () => {
                     const pw = tempPassword();
-                    if (await patch(m, { password: pw }, "비밀번호를 초기화했습니다")) setIssued({ name: m.name, email: m.email, password: pw });
+                    if (await patch(m, { password: pw }, "비밀번호를 초기화했습니다")) remember({ id: m.id, name: m.name, title: m.title, role: m.role, email: m.email, password: pw, siteIds: m.role === "partner" ? m.partnerSiteIds : m.siteIds });
                   }}
                   data-testid="member-reset"
                 >
@@ -190,6 +194,7 @@ export function MembersAdmin({ db, me }: { db: DemoDB; me: { id: string; role: R
           ))}
         </ul>
       )}
+      {slipOpen && <SlipPrintDialog slips={issuedAll.map((x) => toSlip(db, x))} phone={db.settings?.helpPhone} onClose={() => setSlipOpen(false)} />}
       {editing && (
         <MemberModal
           db={db}
@@ -197,7 +202,7 @@ export function MembersAdmin({ db, me }: { db: DemoDB; me: { id: string; role: R
           member={editing === "new" ? null : editing}
           onClose={() => setEditing(null)}
           onSaved={async (issuedPw) => {
-            if (issuedPw) setIssued(issuedPw);
+            if (issuedPw) remember(issuedPw);
             setEditing(null);
             await load();
             void liveFetch();
@@ -208,7 +213,23 @@ export function MembersAdmin({ db, me }: { db: DemoDB; me: { id: string; role: R
   );
 }
 
-function MemberModal({ db, me, member, onClose, onSaved }: { db: DemoDB; me: { role: RoleId }; member: MemberView | null; onClose: () => void; onSaved: (issued?: { name: string; email: string; password: string }) => Promise<void> }) {
+interface Issued {
+  id: string;
+  name: string;
+  title: string;
+  role: RoleId;
+  email: string;
+  password: string;
+  siteIds: string[];
+}
+
+/** 쪽지에 쓸 담당 현장 이름 (현장 담당으로 지정된 현장 포함) */
+function toSlip(db: DemoDB, x: Issued): Slip {
+  const sites = db.sites.filter((s) => s.status !== "completed" && (x.siteIds.includes(s.id) || (x.role === "field" && s.fieldUserId === x.id))).map((s) => s.shortName);
+  return { id: x.id, name: x.name, title: x.title, role: x.role, email: x.email, password: x.password, sites };
+}
+
+function MemberModal({ db, me, member, onClose, onSaved }: { db: DemoDB; me: { role: RoleId }; member: MemberView | null; onClose: () => void; onSaved: (issued?: Issued) => Promise<void> }) {
   const toast = useToast();
   const [f, setF] = useState({ name: member?.name ?? "", title: member?.title ?? "", email: member?.email ?? "", role: member?.role ?? ("field" as RoleId) });
   const [sites, setSites] = useState<string[]>(member ? (member.role === "partner" ? member.partnerSiteIds : member.siteIds) : []);
@@ -229,7 +250,7 @@ function MemberModal({ db, me, member, onClose, onSaved }: { db: DemoDB; me: { r
       partnerSiteIds: f.role === "partner" ? sites : [],
       ...(member ? {} : { password }),
     };
-    const r = member ? await api(`/api/admin/members/${encodeURIComponent(member.id)}`, { method: "PATCH", body }) : await api("/api/admin/members", { body });
+    const r = member ? await api<{ member: { id: string } }>(`/api/admin/members/${encodeURIComponent(member.id)}`, { method: "PATCH", body }) : await api<{ member: { id: string } }>("/api/admin/members", { body });
     setBusy(false);
     if (!r.ok) {
       setErrors(r.fieldErrors);
@@ -237,7 +258,8 @@ function MemberModal({ db, me, member, onClose, onSaved }: { db: DemoDB; me: { r
       return;
     }
     toast.push({ tone: "ok", title: member ? "사용자 정보를 저장했습니다" : "사용자를 추가했습니다", desc: `${f.name} · ${ROLE_LABEL[f.role]}` });
-    await onSaved(member ? undefined : { name: f.name, email: f.email.trim().toLowerCase(), password });
+    const email = f.email.trim().toLowerCase();
+    await onSaved(member ? undefined : { id: r.data?.member?.id ?? email, name: f.name, title: f.title, role: f.role, email, password, siteIds: f.role === "field" || f.role === "partner" ? sites : [] });
   };
 
   return (

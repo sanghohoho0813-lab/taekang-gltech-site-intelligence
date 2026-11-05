@@ -87,6 +87,13 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
       if (role === "field") fieldTemp = pw;
       else partnerTemp = pw;
     }
+    // 방금 만든 두 사람의 로그인 쪽지 (임시 비밀번호·접속 QR 포함 · D-54)
+    await page.getByTestId("issued-slips").click();
+    const dlg = page.getByTestId("slip-dialog");
+    await expect(dlg.getByTestId("slip-card")).toHaveCount(2);
+    await expect(dlg.getByTestId("slip-password")).toHaveText([fieldTemp, partnerTemp]);
+    await expect(dlg.getByTestId("slip-qr").first()).toHaveAttribute("data-text", new URL("/login", page.url()).toString());
+    await dlg.getByRole("button", { name: "닫기" }).first().click();
     await page.getByTestId("admin-tab-sites").click();
     await page.getByTestId("site-new").click();
     await page.locator("#sf-name").fill("○○물류센터 커튼월·창호 공사");
@@ -626,6 +633,42 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     await field.context().close();
   });
 
+  test("시범 운영 준비: 직원별 첫 로그인·첫 출근 · 첫 로그인 전 직원은 임시 비밀번호를 새로 만들어 쪽지로 → 그 비밀번호로 로그인", async ({ browser }) => {
+    const ceo = await login(browser, CEO.email, CEO.password);
+    await ceo.goto("/admin?tab=members");
+    await ceo.getByTestId("member-new").click();
+    await ceo.locator("#mf-name").fill("신입현장");
+    await ceo.locator("#mf-email").fill("new@taekang.test");
+    await pick(ceo, "mf-role-field");
+    await ceo.getByTestId("member-save").click();
+    await expect(ceo.getByTestId("issued-password")).toContainText("new@taekang.test");
+
+    await ceo.goto("/launch");
+    await expect(ceo.getByTestId("launch-summary")).toBeVisible();
+    await expect(ceo.getByTestId("launch-site")).toHaveCount(1);
+    await expect(ceo.locator('[data-testid="launch-site"] [data-key="geo"]')).toHaveAttribute("data-status", "ok");
+    const park = ceo.locator('[data-testid="launch-person"]').filter({ hasText: "박현장" });
+    await expect(park).toContainText("첫 로그인 끝");
+    await expect(park).toContainText("첫 출근");
+    await expect(park).toContainText("park@taekang.test");
+    const fresh = ceo.locator('[data-testid="launch-person"]').filter({ hasText: "신입현장" });
+    await expect(fresh).toContainText("첫 로그인 전");
+    await expect(fresh).toContainText("담당 현장 없음");
+    await expect(ceo.getByTestId("launch-blockers")).toContainText("신입현장 담당 현장");
+    await fresh.getByTestId("launch-pick").check();
+    await ceo.getByTestId("launch-slips").click();
+    await expect(ceo.getByTestId("launch-reset-ask")).toContainText("신입현장");
+    await ceo.getByTestId("launch-reset-yes").click();
+    const pw = (await ceo.getByTestId("slip-dialog").getByTestId("slip-password").innerText()).trim();
+    expect(pw).toMatch(/^[A-Za-z2-9]{10}$/);
+    await expect(ceo.getByTestId("slip-dialog")).toContainText("new@taekang.test");
+    await ceo.context().close();
+    // 쪽지의 임시 비밀번호로 로그인 → 새 비밀번호 정하기 화면
+    const n = await login(browser, "new@taekang.test", pw, { width: 390, height: 844 });
+    await expect(n).toHaveURL(/\/account/);
+    await n.context().close();
+  });
+
   test("휴대폰 분실: 대표가 ‘모든 기기 로그아웃’ → 그 휴대폰은 바로 로그인 풀림 → 활동 이력에 남음", async ({ browser }) => {
     const phone = await login(browser, FIELD.email, FIELD.password, { width: 390, height: 844 });
     expect((await phone.request.get("/api/state")).status()).toBe(200);
@@ -665,7 +708,7 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
   test("로그아웃 후 데이터 접근 불가 / 화면 가로 넘침 없음", async ({ browser }) => {
     for (const w of [390, 1440]) {
       const page = await login(browser, CEO.email, CEO.password, { width: w, height: 900 });
-      for (const r of ["/dashboard", `/sites/${siteId}`, "/admin", "/admin?tab=members", "/report", "/settings", "/labor", "/attendance", "/orders", "/schedule", "/data", "/usage", "/help", "/audit", "/daily", "/quality", "/acceptance", "/help/quick", "/admin?tab=privacy", "/field/check", "/my"]) {
+      for (const r of ["/dashboard", `/sites/${siteId}`, "/admin", "/admin?tab=members", "/report", "/settings", "/labor", "/attendance", "/orders", "/schedule", "/data", "/usage", "/help", "/audit", "/daily", "/quality", "/acceptance", "/launch", "/help/quick", "/admin?tab=privacy", "/field/check", "/my"]) {
         await page.goto(r);
         await page.waitForTimeout(300);
         const over = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);

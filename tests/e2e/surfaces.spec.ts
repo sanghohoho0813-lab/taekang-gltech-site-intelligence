@@ -267,7 +267,7 @@ for (const w of [390, 430, 768, 1024, 1280, 1440, 1920]) {
   test(`반응형 ${w}px: 가로 넘침 없음 (주요 화면)`, async ({ page }) => {
     await page.setViewportSize({ width: w, height: 900 });
     await freshStart(page);
-    for (const r of ["/dashboard", "/sites/site-a", "/field", "/insights", "/finance", "/report", "/partner", "/settings", "/why-ax", "/evidence", "/labor", "/orders", "/schedule", "/attendance", "/data", "/usage", "/help", "/daily", "/audit", "/photos", "/quality", "/acceptance", "/field/check", "/my"]) {
+    for (const r of ["/dashboard", "/sites/site-a", "/field", "/insights", "/finance", "/report", "/partner", "/settings", "/why-ax", "/evidence", "/labor", "/orders", "/schedule", "/attendance", "/data", "/usage", "/help", "/daily", "/audit", "/photos", "/quality", "/acceptance", "/launch", "/field/check", "/my"]) {
       await page.goto(r);
       await page.waitForTimeout(250);
       const over = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);

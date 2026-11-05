@@ -361,12 +361,13 @@ function GettingStarted({ userCount }: { userCount: number }) {
   const steps = [
     { n: 1, t: "직원·발주처 계정 추가", d: "현장소장·공무 담당 계정을 만들면 임시 비밀번호가 나옵니다.", href: "/admin?tab=members", done: userCount > 1, cta: "사용자 추가" },
     { n: 2, t: "첫 현장 등록", d: "원 계약금액·실행예산(5개 항목)·현장 담당을 넣으면 계획 이익률이 계산됩니다. 진행 중인 현장이면 등록 뒤 ‘자료 이관·점검’에서 지난 기성·변경공사·출력을 한 번에 넣으세요.", href: "/admin?tab=sites", done: false, cta: "현장 등록" },
-    { n: 3, t: "현장소장 첫 보고", d: "현장소장이 휴대폰으로 로그인해 작업·추가 비용을 보고하면 이 화면이 바뀝니다.", href: "/admin?tab=settings", done: false, cta: "반영 방식 확인" },
+    { n: 3, t: "시범 운영 준비 점검", d: "현장 위치·담당·직원별 첫 로그인·휴대폰 점검·위치 동의를 한 화면에서 확인하고, 직원 로그인 쪽지를 인쇄합니다.", href: "/launch", done: false, cta: "준비 점검" },
+    { n: 4, t: "현장소장 첫 보고", d: "현장소장이 휴대폰으로 로그인해 작업·추가 비용을 보고하면 이 화면이 바뀝니다.", href: "/admin?tab=settings", done: false, cta: "반영 방식 확인" },
   ];
   return (
     <Card data-testid="getting-started">
-      <CardHeader title="시작하기 — 3단계" sub="실제 현장 1곳으로 먼저 시작하는 것을 권장합니다" />
-      <ol className="grid gap-3 px-5 pb-5 @min-[900px]:grid-cols-3">
+      <CardHeader title="시작하기 — 4단계" sub="실제 현장 1곳으로 먼저 시작하는 것을 권장합니다" />
+      <ol className="grid gap-3 px-5 pb-5 @min-[700px]:grid-cols-2 @min-[1100px]:grid-cols-4">
         {steps.map((s) => (
           <li key={s.n} className={cx("rounded-2xl border p-4", s.done ? "border-ok/30 bg-ok-bg" : "border-line bg-surface-2")}>
             <p className="text-[0.75rem] font-bold text-theme-ink">{s.done ? "완료" : `${s.n}단계`}</p>
