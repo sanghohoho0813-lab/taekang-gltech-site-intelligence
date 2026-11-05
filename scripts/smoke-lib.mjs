@@ -50,6 +50,11 @@ export async function smokeCheck(baseUrl, fetchFn = fetch) {
   else {
     if (health.mode !== "live") add("error", "mode", "시연(DEMO) 빌드가 배포되어 있습니다 — NEXT_PUBLIC_DATA_MODE=live로 다시 배포하세요");
     else add("ok", "mode", `운영 모드(live) · 버전 ${health.version ?? "?"}`);
+    // 서버 지역 — 서울(icn1)이 아니면 서울 DB와 오가느라 버튼마다 느려진다 (vercel.json regions · D-56)
+    if (health.region && health.region !== "local") {
+      if (health.region === "icn1") add("ok", "region", "서버 지역: 서울(icn1)");
+      else add("warn", "region", `서버 지역이 ${health.region}입니다 — 서울(icn1)이 아니면 느립니다. vercel.json의 regions 또는 Vercel 설정 → Functions → Region을 Seoul(icn1)로`);
+    }
     if (health.mode === "live") {
       if (h.status === 200 && health.db === "ok") add(health.dbMs > 2000 ? "warn" : "ok", "db", `DB 연결 정상 (${health.dbMs}ms${health.dbMs > 2000 ? " — 느림: DB 지역·연결 주소 확인" : ""}) · 스키마 ${health.migrations}개 적용`);
       else add("error", "db", "DB에 연결되지 않습니다 — DATABASE_URL(Supabase 연결 문자열)을 확인하세요");

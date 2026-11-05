@@ -54,14 +54,15 @@ export function OutboxTile({ userId }: { userId: string | undefined }) {
   if (!items.length) return null;
   const waiting = items.filter((i) => !i.failed);
   const failed = items.filter((i) => i.failed);
+  const what = waiting.every((i) => i.name === "submitFieldReport") ? "보고" : "기록";
   return (
     <div className="space-y-2.5" data-testid="outbox">
       {waiting.length > 0 && (
         <div className="rounded-2xl border-2 border-warn/50 bg-warn-bg p-4" data-testid="outbox-waiting">
           <p className="flex items-center gap-2 text-[1.2rem] font-extrabold">
-            <WifiOff size={24} aria-hidden /> 아직 못 보낸 보고 {waiting.length}건
+            <WifiOff size={24} aria-hidden /> 아직 못 보낸 {what} {waiting.length}건
           </p>
-          <p className="mt-1 text-[1.05rem] text-ink-2">휴대폰에 사진까지 그대로 보관하고 있어요. 신호가 잡히면 자동으로 보내요.</p>
+          <p className="mt-1 text-[1.05rem] text-ink-2">{what === "보고" ? "휴대폰에 사진까지 그대로 보관하고 있어요." : "휴대폰에 그대로 보관하고 있어요. 출퇴근은 누른 시각을 본사가 확인해요."} 신호가 잡히면 자동으로 보내요.</p>
           <ul className="mt-2 space-y-1 text-[1rem] text-ink-2">
             {waiting.map((i) => (
               <li key={i.id}>· {i.label}</li>
@@ -85,9 +86,9 @@ export function OutboxTile({ userId }: { userId: string | undefined }) {
       )}
       {failed.map((i) => (
         <div key={i.id} className="rounded-2xl border-2 border-err/40 bg-err-bg p-4" data-testid="outbox-failed">
-          <p className="text-[1.12rem] font-extrabold">보내지 못한 보고 — {i.label}</p>
+          <p className="text-[1.12rem] font-extrabold">보내지 못한 {i.name === "submitFieldReport" ? "보고" : "출퇴근"} — {i.label}</p>
           <p className="mt-1 text-[1.02rem] text-ink-2">본사 서버가 받지 않았어요: {i.failed}</p>
-          <p className="text-[1.02rem] text-ink-2">본사에 전화해 확인한 뒤 지우세요.</p>
+          <p className="text-[1.02rem] text-ink-2">{i.name === "submitFieldReport" ? "본사에 전화해 확인한 뒤 지우세요." : "출퇴근이 빠졌으면 ‘출퇴근이 잘못 찍혔나요? 수정 요청하기’로 알린 뒤 지우세요."}</p>
           {ask === i.id ? (
             <div className="mt-2 grid grid-cols-2 gap-2">
               <button type="button" onClick={() => setAsk(null)} className="press h-[3.4rem] rounded-2xl border-2 border-line-strong bg-surface text-[1.05rem] font-bold">
@@ -107,7 +108,7 @@ export function OutboxTile({ userId }: { userId: string | undefined }) {
             </div>
           ) : (
             <button type="button" onClick={() => setAsk(i.id)} className="press mt-2 flex min-h-[3.2rem] w-full items-center justify-center gap-2 rounded-2xl border-2 border-line-strong bg-surface text-[1.05rem] font-bold" data-testid="outbox-delete-ask">
-              <Trash2 size={20} aria-hidden /> 이 보고 지우기
+              <Trash2 size={20} aria-hidden /> {i.name === "submitFieldReport" ? "이 보고 지우기" : "이 기록 지우기"}
             </button>
           )}
         </div>

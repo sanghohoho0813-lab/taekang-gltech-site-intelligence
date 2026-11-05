@@ -16,6 +16,7 @@ export interface RateRule {
 }
 
 export const RULES = {
+  /** 실패한 로그인만 센다 — 첫날 같은 와이파이(같은 접속 주소)로 직원 20~30명이 한꺼번에 로그인해도 막히지 않게 (D-57) */
   login: { name: "login", limit: 30, windowMs: 10 * 60_000 },
   setup: { name: "setup", limit: 10, windowMs: 10 * 60_000 },
   password: { name: "password", limit: 10, windowMs: 10 * 60_000 },
@@ -56,9 +57,16 @@ export function clientIp(req: NextRequest): string {
   return (fwd?.split(",")[0] ?? req.headers.get("x-real-ip") ?? "local").trim() || "local";
 }
 
-/** 한도를 넘었으면 429 응답, 아니면 null */
-export function limited(rule: RateRule, who: string): NextResponse | null {
-  const r = hit(rule, who);
+/** 세지 않고 지금 막혀 있는지만 본다 (로그인: 실패만 센다 · D-57) */
+export function peek(rule: RateRule, who: string, now = Date.now()): { ok: true } | { ok: false; retryAfter: number } {
+  const list = (buckets.get(`${rule.name}:${who}`) ?? []).filter((t) => t > now - rule.windowMs);
+  if (list.length < rule.limit) return { ok: true };
+  return { ok: false, retryAfter: Math.max(1, Math.ceil((list[0] + rule.windowMs - now) / 1000)) };
+}
+
+/** 한도를 넘었으면 429 응답, 아니면 null (count=false면 세지 않고 확인만) */
+export function limited(rule: RateRule, who: string, count = true): NextResponse | null {
+  const r = count ? hit(rule, who) : peek(rule, who);
   if (r.ok) return null;
   return NextResponse.json(
     { error: `요청이 너무 많습니다. ${r.retryAfter >= 60 ? `${Math.ceil(r.retryAfter / 60)}분` : `${r.retryAfter}초`} 뒤에 다시 시도해주세요.`, code: "RATE_LIMIT" },

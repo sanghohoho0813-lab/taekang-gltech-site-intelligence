@@ -72,6 +72,15 @@ describe("배포 후 점검", () => {
     expect(bad.find((c) => c.key === "setup")).toMatchObject({ level: "error", text: expect.stringContaining("SETUP_CODE") });
   });
 
+  it("서버 지역: 서울(icn1)이면 통과, 다른 지역이면 경고, 로컬은 표시 안 함 (D-56)", async () => {
+    const at = (region?: string) => smokeCheck("https://t.example", server({ "/api/health": { body: { ok: true, mode: "live", version: "abc1234", db: "ok", dbMs: 40, migrations: 1, push: "on", ...(region ? { region } : {}) } } }));
+    expect(levels(await at("icn1")).region).toBe("ok");
+    const us = await at("iad1");
+    expect(us.find((c) => c.key === "region")).toMatchObject({ level: "warn", text: expect.stringContaining("iad1") });
+    expect(levels(await at("local")).region).toBeUndefined();
+    expect(levels(await at()).region).toBeUndefined();
+  });
+
   it("알림 키 없음·느린 DB는 경고, 접속 불가는 오류", async () => {
     const cs = await smokeCheck("https://t.example", server({ "/api/health": { body: { ok: true, mode: "live", db: "ok", dbMs: 3500, migrations: 1, push: "off" } } }));
     expect(levels(cs)).toMatchObject({ push: "warn", db: "warn" });

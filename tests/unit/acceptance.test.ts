@@ -71,6 +71,10 @@ describe("검수 확인서", () => {
     const s2 = value(db, 2, "S2", "근태 수정 요청");
     expect(s2.value).toBe("2건 (승인 1 · 반려 0 · 대기 1)");
     expect(s2.has).toBe(true);
+    // 통신 불량 자동 요청은 직원 요청 수에 넣지 않고 따로 (리뷰 반영)
+    db.attendanceRequests = [...db.attendanceRequests!, { ...req("q4", "2026-11-03T02:00:00Z", "pending"), auto: "offline" } as AttendanceRequest];
+    expect(value(db, 2, "S2", "근태 수정 요청").value).toBe("2건 (승인 1 · 반려 0 · 대기 1)");
+    expect(value(db, 2, "S2", "통신 불량 자동 확인").value).toContain("1건");
   });
 
   it("4단계 앱 오류: 불러오지 못했으면 확인 화면 안내, 0회면 0회, 있으면 횟수·종류·날", () => {
@@ -80,6 +84,8 @@ describe("검수 확인서", () => {
     expect(e([])).toMatchObject({ label: "기록된 앱 오류", value: "0회", has: true });
     const err = (id: string, lastAt: string, count: number): ErrorEntry => ({ id, at: lastAt, lastAt, count, source: "client", userId: "u-field", role: "field", route: "/field", message: "x" });
     expect(e([err("a", "2026-11-02T01:00:00Z", 3), err("b", "2026-11-04T01:00:00Z", 1), err("c", "2026-10-20T01:00:00Z", 9)]).value).toBe("4회 (2종류 · 오류 난 날 2일)");
+    // 서버가 최근 기록만 보냈으면(잘림) ‘이상’ — 0회로 잘못 보이지 않게
+    expect(acceptanceItems(db, 4, FROM, TO, NOW, [], true).find((i) => i.key === "feedback")!.evidence[1].value).toMatch(/^0회 이상/);
   });
 
   it("운영 모드는 최근 활동 이력 300건만 실으므로, 기간 시작 전까지 실려 있지 않으면 ‘이상’으로 표시", () => {

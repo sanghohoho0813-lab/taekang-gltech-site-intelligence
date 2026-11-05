@@ -10,6 +10,7 @@ import { useState } from "react";
 import { MapPin, ShieldCheck, ShieldOff } from "lucide-react";
 import { useMe } from "@/lib/data/hooks";
 import { run } from "@/lib/data/store";
+import { scrubQueuedLocation } from "@/lib/browser/outbox";
 import { CommandError } from "@/lib/data/commands";
 import { IS_LIVE } from "@/lib/mode";
 import { GEO_LABEL, mapLink } from "@/lib/domain/geo";
@@ -36,6 +37,8 @@ export function MyLocationCard() {
     setBusy(true);
     try {
       const r = await run("withdrawLocationConsent", {});
+      // 휴대폰에 저장해 둔(아직 못 보낸) 출퇴근의 좌표·동의도 지운다
+      if (IS_LIVE) await scrubQueuedLocation(userId);
       setMsg({ ok: true, text: `위치 기록을 그만뒀어요. 남아 있던 내 위치 좌표 ${r.count}건을 지웠어요.` });
       setAsk(false);
     } catch (e) {

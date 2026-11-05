@@ -18,7 +18,12 @@ import { deviceId, locateOnce } from "@/lib/geo/client";
 import { decodeQrFromFile } from "@/lib/geo/qrClient";
 import { makeQrToken, parseQrText, qrWindow, QR_LABEL } from "@/lib/domain/qr";
 import { cx } from "@/components/ui/primitives";
+import { uid } from "@/lib/domain/ids";
+import { flushOutbox, outboxAdd } from "@/lib/browser/outbox";
 import { Choice } from "./ui";
+import { useOutbox } from "./Outbox";
+
+const kstDay = (iso: unknown) => (typeof iso === "string" && Number.isFinite(Date.parse(iso)) ? new Date(Date.parse(iso) + 9 * 3_600_000).toISOString().slice(0, 10) : "");
 
 type Phase =
   | { k: "idle" }
@@ -42,7 +47,12 @@ export function EasyAttendance({ db, userId, sites, autoQr }: { db: DemoDB; user
   // 지금 조건(보관 기간·볼 수 있는 사람)으로 동의했는지 — 회사가 조건을 불리하게 바꾸면 다시 묻는다 (D-43)
   const consented = hasConsent(db, userId);
   const reasked = !consented && (db.consents ?? []).some((c) => c.userId === userId);
-  const openSite = open ? db.sites.find((s) => s.id === open.siteId) : undefined;
+  // 통신이 안 돼 휴대폰에 저장해 둔 오늘 출퇴근 (D-55) — 보내기 전까지 화면에 ‘저장됨’으로 보여준다
+  const queued = useOutbox(userId).filter((i) => (i.name === "checkIn" || i.name === "checkOut") && !i.failed && kstDay(i.args.pressedAt) === today);
+  const qIn = queued.find((i) => i.name === "checkIn");
+  const qOut = queued.find((i) => i.name === "checkOut");
+  const qInSite = qIn ? db.sites.find((s) => s.id === qIn.args.siteId) : undefined;
+  const openSite = open ? db.sites.find((s) => s.id === open.siteId) : qIn && !qOut ? qInSite : undefined;
   // 출근 방식: 현장 QR + GPS
   const qrMode = db.settings?.attendanceMode === "qr";
   const todayRec = open ?? closed[0];
@@ -61,9 +71,16 @@ export function EasyAttendance({ db, userId, sites, autoQr }: { db: DemoDB; user
   const commit = async (mode: "in" | "out", site: Site, sample: GeoSample | null, reason?: GeoStamp["reason"], consent?: boolean, qrToken?: string) => {
     setBusy(true);
     setErr(null);
+    // 중복 방지 키를 처음부터 붙인다 — 응답만 끊긴 경우 휴대폰에 저장했다가 다시 보내도 한 번만 기록된다
+    const key = uid(`att-${mode}`);
+    // 동의할 때는 화면에 보여준 조건을 함께 보낸다 — 그 사이 회사 규칙이 바뀌었으면 서버가 다시 보여달라고 한다 (D-49)
+    const args = { siteId: site.id, sample, noLocation: sample ? undefined : (reason ?? "unavailable"), deviceId: deviceId() || undefined, consent, ...(consent ? { consentTerms: currentTerms(db) } : {}), ...(qrToken ? { qrToken } : {}), idempotencyKey: key };
     try {
-      // 동의할 때는 화면에 보여준 조건을 함께 보낸다 — 그 사이 회사 규칙이 바뀌었으면 서버가 다시 보여달라고 한다 (D-49)
-      const args = { siteId: site.id, sample, noLocation: sample ? undefined : (reason ?? "unavailable"), deviceId: deviceId() || undefined, consent, ...(consent ? { consentTerms: currentTerms(db) } : {}), ...(qrToken ? { qrToken } : {}) };
+      // 출근을 아직 휴대폰에 저장만 했으면 먼저 그것부터 보내 본다 — 아직 안 되면 퇴근도 저장 (보내는 순서: 출근 → 퇴근)
+      if (mode === "out" && !open && qIn) {
+        const f = await flushOutbox(userId, (n, a) => run(n, a as never));
+        if (f.offline || f.waiting > 0) throw new CommandError("출근이 아직 전송 전", "NETWORK");
+      }
       const r = mode === "in" ? await run("checkIn", { ...args }) : await run("checkOut", args);
       const qr = "qr" in r ? r.qr : undefined;
       const ok = r.geo.status === "inside" && (!qrToken || qr?.status === "ok");
@@ -71,6 +88,18 @@ export function EasyAttendance({ db, userId, sites, autoQr }: { db: DemoDB; user
       const qrText = qrToken ? (qr?.status === "ok" ? " · 현장 QR 확인" : ` — ${QR_LABEL[qr?.status ?? "invalid"]}: ‘QR 다시 찍기’를 눌러 주세요`) : "";
       setPhase({ k: "done", mode, tone: ok ? "ok" : "warn", text: ok ? `${word} 기록 완료${qrText}` : `${word} 기록 완료${qrText}${r.geo.status !== "inside" ? ` — 본사에 ‘${geoText(r.geo)}’로 표시됩니다` : ""}` });
     } catch (e) {
+      if (IS_LIVE && e instanceof CommandError && e.code === "NETWORK") {
+        // 통신이 안 됨 → 휴대폰에 저장 (QR은 30초마다 바뀌어 나중에 보내면 확인할 수 없으므로 빼고 저장)
+        const pressedAt = new Date().toISOString();
+        const word = mode === "in" ? "출근" : "퇴근";
+        const { qrToken: _q, ...rest } = args;
+        void _q;
+        const saved = await outboxAdd({ id: key, userId, name: mode === "in" ? "checkIn" : "checkOut", args: { ...rest, pressedAt }, label: `${site.shortName} ${word} (${hhmm(pressedAt)}에 누름)` });
+        if (saved) {
+          setPhase({ k: "done", mode, tone: "warn", text: `연결이 안 돼서 ${word}을 휴대폰에 저장했어요 (${hhmm(pressedAt)}). 신호가 잡히면 자동으로 보내요. 누른 시각은 본사가 확인해요.` });
+          return;
+        }
+      }
       setErr(e instanceof CommandError || e instanceof Error ? e.message : "기록하지 못했습니다. 다시 눌러 주세요.");
       setPhase({ k: "idle" });
     } finally {
@@ -303,7 +332,31 @@ export function EasyAttendance({ db, userId, sites, autoQr }: { db: DemoDB; user
         </p>
       )}
       {err && <p className="rounded-2xl bg-err-bg px-4 py-3 text-[1.05rem] font-bold text-err">{err}</p>}
-      {open ? (
+      {(qIn && !open && !closed.length) || (open && qOut) ? (
+        <div className="space-y-1" data-testid="att-queued">
+          {qIn && !open && (
+            <p className="text-[1.15rem] font-bold" data-testid="att-status">
+              {qInSite?.shortName} 출근 {hhmm(String(qIn.args.pressedAt))} · <span className="text-warn">휴대폰에 저장됨 (아직 안 보냄)</span>
+            </p>
+          )}
+          {open && (
+            <p className="text-[1.15rem] font-bold" data-testid="att-status">
+              {openSite?.shortName} 출근 {hhmm(open.inAt)}
+            </p>
+          )}
+          {qOut && (
+            <p className="text-[1.15rem] font-bold">
+              퇴근 {hhmm(String(qOut.args.pressedAt))} · <span className="text-warn">휴대폰에 저장됨 (아직 안 보냄)</span>
+            </p>
+          )}
+          <p className="text-[1rem] text-ink-2">신호가 잡히면 자동으로 보내요. 누른 시각은 본사가 확인해요.</p>
+          {!qOut && (
+            <button type="button" onClick={() => tap("out")} disabled={busy} className={cx(bigBtn, "bg-primary text-white")} data-testid="att-out">
+              <LogOut size={28} aria-hidden /> 퇴근하기
+            </button>
+          )}
+        </div>
+      ) : open ? (
         <>
           <p className="text-[1.15rem] font-bold" data-testid="att-status">
             {openSite?.shortName} 출근 {hhmm(open.inAt)} · <span className={open.inGeo.status === "inside" ? "text-ok" : "text-warn"}>{geoText(open.inGeo)}</span>

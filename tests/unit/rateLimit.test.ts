@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hit, resetRateLimits, RULES } from "@/server/rateLimit";
+import { hit, peek, resetRateLimits, RULES } from "@/server/rateLimit";
 
 describe("요청 횟수 제한", () => {
   it("한도까지는 통과, 넘으면 남은 시간과 함께 거부, 창이 지나면 다시 통과", () => {
@@ -19,9 +19,20 @@ describe("요청 횟수 제한", () => {
     expect([hit(rule, "ip1", t1), hit(rule, "ip1", t1), hit(rule, "ip1", t1)].every((r) => r.ok)).toBe(true);
     expect(hit(rule, "ip1", t1).ok).toBe(false);
   });
-  it("로그인은 접속처당 10분에 30번 — 계정 잠금(8회)과 함께 동작", () => {
+  it("로그인은 접속처당 ‘실패’ 10분에 30번 — 계정 잠금(8회)과 함께 동작", () => {
     resetRateLimits();
     for (let i = 0; i < RULES.login.limit; i++) expect(hit(RULES.login, "1.2.3.4", 5_000 + i).ok).toBe(true);
     expect(hit(RULES.login, "1.2.3.4", 6_000).ok).toBe(false);
+  });
+  it("확인만 하면(peek) 세지 않는다 — 성공한 로그인은 한도를 쓰지 않음 (D-57)", () => {
+    resetRateLimits();
+    const rule = { name: "p", limit: 2, windowMs: 60_000 };
+    for (let i = 0; i < 50; i++) expect(peek(rule, "wifi", 1_000 + i).ok).toBe(true);
+    hit(rule, "wifi", 2_000);
+    hit(rule, "wifi", 2_001);
+    const no = peek(rule, "wifi", 3_000);
+    expect(no.ok).toBe(false);
+    if (!no.ok) expect(no.retryAfter).toBe(59);
+    expect(peek(rule, "wifi", 70_000).ok).toBe(true);
   });
 });

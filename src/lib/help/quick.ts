@@ -65,6 +65,6 @@ export const QUICK_STEPS: QuickStep[] = [
 
 export const QUICK_TIPS: { text: string; img?: string; alt?: string; labels: string[] }[] = [
   { text: "글씨가 작으면 오른쪽 위 ‘글자 크게’", img: "/guide/00-font.jpg", alt: "오른쪽 위 ‘가 글자 크게’ 버튼", labels: ["글자 크게"] },
-  { text: "인터넷이 안 되면 보고는 휴대폰에 저장됐다가, 연결되면 저절로 보내져요.", labels: [] },
+  { text: "인터넷이 안 되면 출퇴근·보고는 휴대폰에 저장됐다가, 연결되면 저절로 보내져요.", labels: [] },
   { text: "앱이 불편하면 ‘내 정보 → 앱 의견 보내기’로 알려 주세요.", labels: ["앱 의견 보내기"] },
 ];

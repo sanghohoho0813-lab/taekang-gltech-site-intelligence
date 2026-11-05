@@ -277,6 +277,8 @@ export function useLiveStatus(): { syncedAt: string | null; error: string | null
 
 export async function logout() {
   try {
+    // 휴대폰에 저장해 둔 출퇴근의 위치 좌표는 지운다 (기록은 다음 로그인 때 ‘위치 없음’으로 보냄)
+    await import("@/lib/browser/outbox").then((m) => m.scrubQueuedLocation()).catch(() => {});
     await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" });
   } finally {
     window.location.assign("/login");
@@ -421,6 +423,8 @@ export async function run<N extends CommandName>(name: N, args: CommandArgs<N>):
   }
   const body = await r.json().catch(() => null);
   if (handleAuth(r.status, body)) throw new CommandError("로그인이 필요합니다.", "STATE");
+  // 서버가 잠시 바쁨(5xx·요청 제한·게이트웨이 오류) — 다시 보내면 되는 경우라 ‘연결 안 됨’과 같이 다룬다 (리뷰 반영)
+  if (!r.ok && (r.status >= 500 || r.status === 429 || !body)) throw new CommandError("서버가 잠시 응답하지 않습니다. 잠시 뒤 다시 시도해주세요.", "NETWORK");
   if (!r.ok) {
     const code = ["VALIDATION", "DUPLICATE", "NOT_FOUND", "STATE"].includes(body?.code) ? body.code : "STATE";
     throw new CommandError(body?.error ?? "저장하지 못했습니다.", code, body?.fieldErrors ?? {});

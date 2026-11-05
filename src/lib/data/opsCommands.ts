@@ -54,8 +54,12 @@ export function requestAttendanceFix(db0: DemoDB, input: FixRequestInput, ctx: C
   const rec = (db0.attendance ?? []).find((r) => r.userId === ctx.userId && r.siteId === site.id && r.workDate === input.workDate);
   if (input.kind === "missed_in" && rec) throw new CommandError("그날 출근 기록이 이미 있어요. ‘시각이 잘못 찍혔어요’로 요청해 주세요.", "STATE");
   if (input.kind !== "missed_in" && !rec) throw new CommandError("그날 출근 기록이 없어요. ‘출근을 못 눌렀어요’로 요청해 주세요.", "STATE");
-  if ((db0.attendanceRequests ?? []).some((q) => q.userId === ctx.userId && q.siteId === site.id && q.workDate === input.workDate && q.status === "pending"))
-    throw new CommandError("그날 이미 본사 확인을 기다리는 요청이 있어요.", "DUPLICATE");
+  const waiting = (db0.attendanceRequests ?? []).find((q) => q.userId === ctx.userId && q.siteId === site.id && q.workDate === input.workDate && q.status === "pending");
+  if (waiting)
+    throw new CommandError(
+      waiting.auto === "offline" ? "그날은 통신 불량으로 자동 등록된 ‘누른 시각 확인’이 본사 확인을 기다리고 있어요. 더 고칠 것이 있으면 본사에 전화해 주세요." : "그날 이미 본사 확인을 기다리는 요청이 있어요.",
+      "DUPLICATE",
+    );
   const db = clone(db0);
   claimKey(db, input.idempotencyKey);
   const req: AttendanceRequest = {
@@ -118,7 +122,8 @@ export function reviewAttendanceFix(db0: DemoDB, input: { requestId: string; dec
         ...r,
         inAt,
         ...(outAt ? { outAt } : {}),
-        exceptionNote: stamp,
+        // 통신 불량 자동 요청은 ‘시각’만 확인한 것 — 위치 의심 표시(현장 밖 등)는 그대로 둔다 (리뷰 반영 D-55)
+        ...(q.auto === "offline" ? {} : { exceptionNote: stamp }),
         corrections: [...(r.corrections ?? []), { at, by: ctx.userId, note: stamp, before: { inAt: r.inAt, ...(r.outAt ? { outAt: r.outAt } : {}) } }],
       };
     }

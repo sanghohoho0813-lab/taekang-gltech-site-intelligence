@@ -11,6 +11,8 @@ describe("배포 전 자동 점검", () => {
     expect(cs.filter((c) => c.level === "error")).toEqual([]);
     expect(level(cs, "db-pool")).toEqual(["ok"]);
     expect(level(cs, "db-ssl")).toEqual(["ok"]);
+    expect(level(cs, "db-region")).toEqual(["ok"]); // 서울 DB (D-56)
+    expect(level(checkEnv({ NEXT_PUBLIC_DATA_MODE: "live", DATABASE_URL: "postgresql://postgres.abc:pw@aws-0-us-east-1.pooler.supabase.com:6543/postgres?sslmode=require" }), "db-region")).toEqual(["warn"]);
     // 결과에 비밀번호·연결 문자열이 나오지 않는다
     expect(JSON.stringify(cs)).not.toContain("pw@");
     expect(summarize(cs).errors).toBe(0);

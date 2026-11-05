@@ -49,14 +49,17 @@ const txt = (label: string, value: string, has = true, missing?: string): Eviden
  * 단계별 검수 항목과 기간 내 근거.
  * errors: 운영 모드의 앱 오류 기록 (/api/errors) — 없으면(시연·불러오기 전) ‘오류·의견 화면에서 확인’으로 표시
  */
-export function acceptanceItems(db: DemoDB, stage: StageNo, from: string, to: string, now: Date, errors?: ErrorEntry[] | null): AcceptanceItem[] {
+export function acceptanceItems(db: DemoDB, stage: StageNo, from: string, to: string, now: Date, errors?: ErrorEntry[] | null, errorsTruncated = false): AcceptanceItem[] {
   const inR = (iso: string | undefined) => !!iso && kst(iso) >= from && kst(iso) <= to;
   const inD = (d: string | undefined) => !!d && d >= from && d <= to;
   const field = db.users.filter((u) => u.role === "field" && !u.inactive);
   const att = (db.attendance ?? []).filter((r) => inD(r.workDate));
   const reports = db.reports.filter((r) => r.status !== "voided" && inR(r.createdAt));
   const orders = (db.workOrders ?? []).filter((w) => inR(w.createdAt));
-  const fixes = (db.attendanceRequests ?? []).filter((q) => inR(q.createdAt));
+  // 직원이 직접 낸 요청만 S2 근거로 센다 — 통신 불량 자동 요청은 따로 (리뷰 반영 D-55)
+  const allFixes = (db.attendanceRequests ?? []).filter((q) => inR(q.createdAt));
+  const fixes = allFixes.filter((q) => q.auto !== "offline");
+  const autoFixes = allFixes.length - fixes.length;
   const crew = (db.crewChecks ?? []).filter((c) => inD(c.workDate));
   const partnerReq = db.partnerRequests.filter((r) => inR(r.createdAt));
   const imports = (db.importBatches ?? []).filter((b) => inR(b.at));
@@ -124,6 +127,7 @@ export function acceptanceItems(db: DemoDB, stage: StageNo, from: string, to: st
         evidence: [
           ev("근태 수정 요청", fixes.length, "건", fixes.length ? ` (승인 ${fixes.filter((q) => q.status === "approved").length} · 반려 ${fixes.filter((q) => q.status === "rejected").length} · 대기 ${fixes.filter((q) => q.status === "pending").length})` : ""),
           ev("본사 정정(사유 기록)", corrections),
+          ...(autoFixes ? [txt("통신 불량 자동 확인", `${n(autoFixes)} (위 요청 수에 넣지 않음)`)] : []),
         ],
       },
       {
@@ -222,7 +226,9 @@ export function acceptanceItems(db: DemoDB, stage: StageNo, from: string, to: st
       evidence: [ev("앱 의견", fb.length, "건", fb.length ? ` (${FEEDBACK_STATUS_LABEL.done} ${st("done")} · ${FEEDBACK_STATUS_LABEL.hold} ${st("hold")} · ${FEEDBACK_STATUS_LABEL.new} ${st("new")})` : ""), errors
           ? (() => {
               const q = qualitySummary([], errors, from, to).errors;
-              return txt("기록된 앱 오류", q.total ? `${n(q.total, "회")} (${q.kinds}종류 · 오류 난 날 ${q.errorDays}일)` : "0회");
+              // 서버는 최근 300묶음만 보낸다 — 잘렸으면 ‘이상’ (0회로 잘못 보이지 않게 · 리뷰 반영)
+              const more = errorsTruncated ? " 이상 (최근 기록만 셈 — ‘오류·의견’ 화면 확인)" : "";
+              return txt("기록된 앱 오류", q.total ? `${n(q.total, "회")}${more} (${q.kinds}종류 · 오류 난 날 ${q.errorDays}일)` : `0회${more}`);
             })()
           : txt("앱 오류 기록", "‘오류·의견’ 화면 (운영 모드 자동 기록)", false, IS_LIVE_HINT),
       ],

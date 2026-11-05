@@ -117,6 +117,12 @@ export interface AttendanceRecord {
   exceptionNote?: string;
   /** 본사 정정 이력 (사유 필수) */
   corrections?: { at: string; by: string; note: string; before: { inAt: string; outAt?: string } }[];
+  /**
+   * 통신이 안 돼 휴대폰에 저장했다가 나중에 보낸 출근·퇴근 (D-55).
+   * 기록 시각(inAt·outAt)은 서버가 받은 시각이고, pressedAt은 휴대폰 시계로 누른 시각(믿지 않음 → 본사 승인 요청).
+   */
+  inSentLater?: { pressedAt: string; requestId?: string };
+  outSentLater?: { pressedAt: string; requestId?: string };
 }
 
 /** QR 확인 결과 — ok = 방금 그 현장 단말기에 떠 있던 QR */
@@ -318,6 +324,8 @@ export interface AttendanceRequest {
   reviewNote?: string;
   /** 승인으로 고치거나 만든 출퇴근 기록 */
   attendanceId?: string;
+  /** 시스템이 만든 요청 — offline: 통신 불량으로 나중에 보낸 출퇴근의 실제 누른 시각 확인 (D-55) */
+  auto?: "offline";
 }
 
 /** 본사 → 현장 작업지시: 지시 → 접수 → 진행 → 완료 → 본사 확인 (또는 보완 요청) */

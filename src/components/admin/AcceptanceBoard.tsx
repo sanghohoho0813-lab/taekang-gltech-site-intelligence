@@ -29,19 +29,24 @@ export function AcceptanceBoard() {
   const [marks, setMarks] = useState<Record<string, Mark | undefined>>({});
   const [notes, setNotes] = useState<Record<number, string>>({});
   const [errors, setErrors] = useState<ErrorEntry[] | null>(null);
+  const [truncated, setTruncated] = useState(false);
   useEffect(() => {
     if (!IS_LIVE || stage !== 4 || errors) return;
     let alive = true;
     fetch("/api/errors", { cache: "no-store", credentials: "same-origin" })
-      .then((r) => (r.ok ? (r.json() as Promise<{ errors: ErrorEntry[] }>) : null))
-      .then((j) => alive && j && setErrors(j.errors))
+      .then((r) => (r.ok ? (r.json() as Promise<{ errors: ErrorEntry[]; truncated?: boolean }>) : null))
+      .then((j) => {
+        if (!alive || !j) return;
+        setTruncated(!!j.truncated);
+        setErrors(j.errors);
+      })
       .catch(() => undefined);
     return () => {
       alive = false;
     };
   }, [stage, errors]);
   if (!db) return <PageSkeleton />;
-  const items = acceptanceItems(db, stage, from, to, new Date(), errors);
+  const items = acceptanceItems(db, stage, from, to, new Date(), errors, truncated);
   const gaps = items.filter((i) => i.evidence.some((e) => !e.has));
   const markOf = (k: string) => marks[`${stage}:${k}`];
   const setMark = (k: string, m: Mark) => setMarks((x) => ({ ...x, [`${stage}:${k}`]: x[`${stage}:${k}`] === m ? undefined : m }));

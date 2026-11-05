@@ -373,6 +373,8 @@ export interface MemberInput {
   active?: boolean;
   /** 신규 생성 시 초기 비밀번호 / 수정 시 비밀번호 초기화 */
   password?: string;
+  /** 비밀번호 초기화를 ‘아직 첫 로그인 전’인 사람에게만 (시범 운영 준비의 로그인 쪽지 · 이미 자기 비밀번호를 쓰는 사람을 실수로 초기화하지 않게) */
+  onlyIfMustChange?: boolean;
 }
 
 function validateMemberInput(input: MemberInput, creating: boolean): Record<string, string> {
@@ -450,6 +452,8 @@ export async function updateMember(m: Member, id: string, input: MemberInput): P
     const target = toMember(row);
     if (target.role === "ceo" && m.role !== "ceo") throw new ForbiddenError("대표 계정은 대표만 바꿀 수 있습니다.");
     if (input.role === "ceo" && m.role !== "ceo") throw new ForbiddenError("대표 권한은 대표만 부여할 수 있습니다.");
+    if (input.password !== undefined && input.onlyIfMustChange === true && !target.mustChangePassword)
+      throw new CommandError(`${target.name}님은 이미 첫 로그인을 마쳐 자기 비밀번호를 쓰고 있어 초기화하지 않았습니다.`, "STATE");
     if (id === m.id && (input.active === false || (input.role && input.role !== m.role))) throw new ForbiddenError("본인 계정의 역할 변경·비활성화는 할 수 없습니다.");
     if (target.role === "ceo" && (input.active === false || (input.role && input.role !== "ceo"))) {
       const [c] = await tx.query<{ n: string | number }>(`select count(*) as n from members where company_id = $1 and role = 'ceo' and active = true and id <> $2`, [m.companyId, id]);

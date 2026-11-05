@@ -7,7 +7,7 @@
  * - 위치를 기록하려면 본인 동의가 먼저 있어야 한다. 위치 없이 출근하면 본사에 '위치 없음'으로 표시된다.
  * - 본사도 남의 출근을 대신 만들 수 없다. 시각 정정만 가능하며, 사유가 이력으로 남는다.
  */
-import type { AttendanceRecord, DemoDB, GeoStamp, Kiosk, QrStamp } from "@/lib/domain/types";
+import type { AttendanceRecord, AttendanceRequest, DemoDB, GeoStamp, Kiosk, QrStamp } from "@/lib/domain/types";
 import { verifyQrToken } from "@/lib/domain/qr";
 import { hex, randomBytes, sha256, utf8 } from "@/lib/domain/hmac";
 import { judgeGeo, geoText, validSample, type GeoSample } from "@/lib/domain/geo";
@@ -33,7 +33,90 @@ export interface CheckInput {
   consentTerms?: ConsentTerms;
   /** 현장 태블릿 QR에서 읽은 코드 (출근만) */
   qrToken?: string;
+  /**
+   * 통신이 안 돼 휴대폰에 저장했다가 보낼 때, 누른 시각 (휴대폰 시계 · D-55).
+   * 기록은 서버가 받은 시각으로 하고, 이 시각은 근태 수정 요청(본사 승인)으로만 반영한다.
+   */
+  pressedAt?: string;
   idempotencyKey?: string;
+}
+
+/** 나중에 보낸 출퇴근으로 인정하는 범위 — 받은 시각보다 2분 넘게 이르고 12시간 안 */
+export const SENT_LATER_MIN_MS = 2 * 60_000;
+export const SENT_LATER_MAX_MS = 12 * 3_600_000;
+const kstDate = (iso: string) => new Date(new Date(iso).getTime() + 9 * 3_600_000).toISOString().slice(0, 10);
+const kstHm = (iso: string) => new Date(new Date(iso).getTime() + 9 * 3_600_000).toISOString().slice(11, 16);
+
+/**
+ * 휴대폰에 저장했다가 보낸 출퇴근이 너무 늦게 도착했는지 (리뷰 반영 D-55)
+ * — 12시간 넘게 지났거나, 출근인데 누른 날(한국 날짜)이 오늘이 아니면 받지 않는다.
+ *   받은 시각으로 조용히 기록하면 0분 근무·다음 날 출근 막힘·근무시간 부풀림이 생긴다 → 직원이 수정 요청으로
+ */
+function rejectTooLate(pressedAt: unknown, receivedAt: string, mode: "in" | "out", workDate?: string) {
+  if (typeof pressedAt !== "string") return;
+  const t = Date.parse(pressedAt);
+  if (!Number.isFinite(t)) return;
+  const word = mode === "in" ? "출근" : "퇴근";
+  const late = Date.parse(receivedAt) - t > SENT_LATER_MAX_MS || (mode === "in" && workDate && kstDate(new Date(t).toISOString()) !== workDate);
+  if (late) throw new CommandError(`휴대폰에 저장한 ${word}(${kstDate(new Date(t).toISOString()).slice(5).replace("-", "/")} ${kstHm(new Date(t).toISOString())})이 너무 늦게 도착해 기록하지 않았어요. ‘출퇴근이 잘못 찍혔나요? 수정 요청하기’로 알려 주세요.`, "STATE");
+}
+
+/** 저장했다 보낸 출퇴근: 그 사이 위치 기록 조건이 바뀌어 동의가 맞지 않으면, 막지 않고 위치 없이 기록한다 (리뷰 반영) */
+function consentOrSkip(db: DemoDB, input: CheckInput, ctx: Ctx): CheckInput {
+  try {
+    recordConsent(db, input, ctx);
+    return input;
+  } catch (e) {
+    if (typeof input.pressedAt !== "string" || !(e instanceof CommandError)) throw e;
+    return { ...input, sample: null, noLocation: "skipped", consent: undefined, consentTerms: undefined };
+  }
+}
+
+/** 누른 시각이 믿을 만한 범위인가 (아니면 무시 — 기록은 서버 시각 그대로) */
+export function sentLaterAt(pressedAt: unknown, receivedAt: string): string | null {
+  if (typeof pressedAt !== "string" || pressedAt.length > 40) return null;
+  const t = Date.parse(pressedAt);
+  if (!Number.isFinite(t)) return null;
+  const gap = Date.parse(receivedAt) - t;
+  if (gap < SENT_LATER_MIN_MS || gap > SENT_LATER_MAX_MS) return null;
+  return new Date(t).toISOString();
+}
+
+/**
+ * 나중에 보낸 출근·퇴근 → 본사가 확인할 근태 수정 요청(‘시각이 잘못 찍혔어요’)을 자동으로 만든다.
+ * - 같은 날 이미 자동 요청이 기다리는 중이면 거기에 출근/퇴근 시각을 더한다(출근·퇴근 둘 다 통신 불량인 날)
+ * - 직원이 직접 낸 요청이 기다리는 중이면 만들지 않는다(기록의 표시로 본사가 본다)
+ * - 누른 날(한국 날짜)이 근무일과 다르면(자정 넘김) 만들지 않는다 — 본사가 출퇴근 현황에서 정정
+ */
+function requestPressedTime(db: DemoDB, rec: AttendanceRecord, mode: "in" | "out", pressedAt: string, receivedAt: string, ctx: Ctx): string | undefined {
+  if (kstDate(pressedAt) !== rec.workDate) return undefined;
+  const hm = kstHm(pressedAt);
+  db.attendanceRequests = [...(db.attendanceRequests ?? [])];
+  const pending = db.attendanceRequests.findIndex((q) => q.userId === rec.userId && q.siteId === rec.siteId && q.workDate === rec.workDate && q.status === "pending");
+  const what = mode === "in" ? "출근" : "퇴근";
+  const line = `${what} ${hm}에 눌렀는데 통신이 안 돼 ${kstHm(receivedAt)}에 전송됨`;
+  if (pending >= 0) {
+    const q = db.attendanceRequests[pending];
+    if (q.auto !== "offline") return undefined;
+    db.attendanceRequests[pending] = { ...q, ...(mode === "in" ? { inTime: hm } : { outTime: hm }), reason: `${q.reason} · ${line}`.slice(0, 200) };
+    return q.id;
+  }
+  const req: AttendanceRequest = {
+    id: uid("afr"),
+    siteId: rec.siteId,
+    userId: rec.userId,
+    workDate: rec.workDate,
+    kind: "wrong_time",
+    ...(mode === "in" ? { inTime: hm } : { outTime: hm }),
+    reason: `통신 불량 — ${line} (누른 시각은 휴대폰 시계 기준)`,
+    status: "pending",
+    createdAt: receivedAt,
+    attendanceId: rec.id,
+    auto: "offline",
+  };
+  db.attendanceRequests.push(req);
+  log(db, ctx, "attendance", `${userName(db, rec.userId)} 통신 불량 ${what} — 누른 시각 ${hm} 확인 요청 자동 등록`, rec.siteId, "/orders");
+  return req.id;
 }
 
 const cleanDevice = (d: unknown) => (typeof d === "string" && /^[A-Za-z0-9_-]{6,64}$/.test(d) ? d : undefined);
@@ -58,7 +141,7 @@ function recordConsent(db: DemoDB, input: { consent?: boolean; consentTerms?: un
   log(db, ctx, "privacy", `${userName(db, ctx.userId)} 출퇴근 위치 기록 동의 (문구 ${rec.version}판 · 보관 ${retentionText(rec.retentionDays)} · 열람 ${viewersText(rec.viewers ?? "hq")})`);
 }
 
-export function checkIn(db0: DemoDB, input: CheckInput, ctx: Ctx): { db: DemoDB; result: { attendanceId: string; geo: GeoStamp; at: string; qr?: QrStamp } } {
+export function checkIn(db0: DemoDB, input: CheckInput, ctx: Ctx): { db: DemoDB; result: { attendanceId: string; geo: GeoStamp; at: string; qr?: QrStamp; sentLater?: boolean } } {
   const site = requireSite(db0, input.siteId);
   if (site.status === "completed") throw new CommandError("준공된 현장에는 출근할 수 없습니다.", "STATE");
   const db = clone(db0);
@@ -71,14 +154,15 @@ export function checkIn(db0: DemoDB, input: CheckInput, ctx: Ctx): { db: DemoDB;
   if (same) throw new CommandError(same.outAt ? "오늘 이 현장은 퇴근까지 기록되어 있습니다." : "이미 출근했습니다.", "STATE");
   const open = mine.find((r) => !r.outAt);
   if (open) throw new CommandError(`${db.sites.find((s) => s.id === open.siteId)?.shortName ?? "다른 현장"}에 출근 중입니다. 먼저 그곳에서 퇴근해 주세요.`, "STATE");
-  recordConsent(db, input, ctx);
-  const geo = stamp(db, site.id, ctx.userId, input);
+  rejectTooLate(input.pressedAt, at, "in", workDate);
+  const geo = stamp(db, site.id, ctx.userId, consentOrSkip(db, input, ctx));
   // QR은 서버(이 함수)가 단말기 비밀값으로 다시 확인한다
   let qr: QrStamp | undefined;
   if (typeof input.qrToken === "string" && input.qrToken) {
     qr = verifyQrToken(db, input.qrToken.slice(0, 300), site.id, new Date(at).getTime());
     if (qr.status === "ok") db.kiosks = (db.kiosks ?? []).map((k) => (k.id === qr!.kioskId ? { ...k, lastUsedAt: at } : k));
   }
+  const pressed = sentLaterAt(input.pressedAt, at);
   const rec: AttendanceRecord = {
     id: uid("att"),
     siteId: site.id,
@@ -88,14 +172,19 @@ export function checkIn(db0: DemoDB, input: CheckInput, ctx: Ctx): { db: DemoDB;
     inGeo: geo,
     ...(qr ? { inQr: qr } : {}),
     ...(cleanDevice(input.deviceId) ? { inDevice: cleanDevice(input.deviceId) } : {}),
+    ...(pressed ? { inSentLater: { pressedAt: pressed } } : {}),
   };
   db.attendance.push(rec);
-  log(db, ctx, "attendance", `${userName(db, ctx.userId)} 출근 — ${site.shortName} · ${geoText(geo, false)}${qr ? ` · ${qr.status === "ok" ? "QR 확인" : "QR 확인 실패"}` : ""}`, site.id, "/attendance");
+  log(db, ctx, "attendance", `${userName(db, ctx.userId)} 출근 — ${site.shortName} · ${geoText(geo, false)}${qr ? ` · ${qr.status === "ok" ? "QR 확인" : "QR 확인 실패"}` : ""}${pressed ? ` · 통신 불량으로 나중에 전송(누른 시각 ${kstHm(pressed)})` : ""}`, site.id, "/attendance");
+  if (pressed) {
+    const requestId = requestPressedTime(db, rec, "in", pressed, at, ctx);
+    if (requestId) db.attendance[db.attendance.length - 1] = { ...rec, inSentLater: { pressedAt: pressed, requestId } };
+  }
   touch(db, ctx);
-  return { db, result: { attendanceId: rec.id, geo, at, qr } };
+  return { db, result: { attendanceId: rec.id, geo, at, qr, ...(pressed ? { sentLater: true } : {}) } };
 }
 
-export function checkOut(db0: DemoDB, input: CheckInput, ctx: Ctx): { db: DemoDB; result: { attendanceId: string; geo: GeoStamp; at: string; minutes: number } } {
+export function checkOut(db0: DemoDB, input: CheckInput, ctx: Ctx): { db: DemoDB; result: { attendanceId: string; geo: GeoStamp; at: string; minutes: number; sentLater?: boolean } } {
   const site = requireSite(db0, input.siteId);
   const db = clone(db0);
   claimKey(db, input.idempotencyKey);
@@ -107,15 +196,23 @@ export function checkOut(db0: DemoDB, input: CheckInput, ctx: Ctx): { db: DemoDB
     .filter((r) => r.userId === ctx.userId && r.siteId === site.id && !r.outAt && r.inAt >= since)
     .sort((a, b) => b.inAt.localeCompare(a.inAt))[0];
   if (!open) throw new CommandError("오늘 이 현장의 출근 기록이 없습니다. 먼저 출근을 눌러 주세요.", "STATE");
-  recordConsent(db, input, ctx);
-  const geo = stamp(db, site.id, ctx.userId, input);
+  rejectTooLate(input.pressedAt, at, "out");
+  // 출근보다 앞선 ‘누른 시각’(휴대폰 시계가 틀림)은 조용히 받지 않고 알린다
+  const pressed = sentLaterAt(input.pressedAt, at);
+  if (pressed && pressed <= (open.inSentLater?.pressedAt ?? open.inAt))
+    throw new CommandError("휴대폰에 저장한 퇴근 시각이 출근보다 앞서 기록하지 않았어요. 휴대폰 시계를 확인하고 ‘출퇴근이 잘못 찍혔나요? 수정 요청하기’로 알려 주세요.", "STATE");
+  const geo = stamp(db, site.id, ctx.userId, consentOrSkip(db, input, ctx));
   const idx = db.attendance.findIndex((r) => r.id === open.id);
-  const rec: AttendanceRecord = { ...open, outAt: at, outGeo: geo, ...(cleanDevice(input.deviceId) ? { outDevice: cleanDevice(input.deviceId) } : {}) };
+  let rec: AttendanceRecord = { ...open, outAt: at, outGeo: geo, ...(cleanDevice(input.deviceId) ? { outDevice: cleanDevice(input.deviceId) } : {}), ...(pressed ? { outSentLater: { pressedAt: pressed } } : {}) };
   db.attendance[idx] = rec;
   const minutes = Math.round((new Date(at).getTime() - new Date(open.inAt).getTime()) / 60_000);
-  log(db, ctx, "attendance", `${userName(db, ctx.userId)} 퇴근 — ${site.shortName} · ${geoText(geo, false)} · ${Math.floor(minutes / 60)}시간 ${minutes % 60}분`, site.id, "/attendance");
+  log(db, ctx, "attendance", `${userName(db, ctx.userId)} 퇴근 — ${site.shortName} · ${geoText(geo, false)} · ${Math.floor(minutes / 60)}시간 ${minutes % 60}분${pressed ? ` · 통신 불량으로 나중에 전송(누른 시각 ${kstHm(pressed)})` : ""}`, site.id, "/attendance");
+  if (pressed) {
+    const requestId = requestPressedTime(db, rec, "out", pressed, at, ctx);
+    if (requestId) db.attendance[idx] = rec = { ...rec, outSentLater: { pressedAt: pressed, requestId } };
+  }
   touch(db, ctx);
-  return { db, result: { attendanceId: rec.id, geo, at, minutes } };
+  return { db, result: { attendanceId: rec.id, geo, at, minutes, ...(pressed ? { sentLater: true } : {}) } };
 }
 
 export interface SiteGeoInput {

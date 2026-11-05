@@ -138,3 +138,21 @@ describe("모든 기기 로그아웃 · 사용자 관리 이력", () => {
     expect(logs.some((s) => s.startsWith("사용자 변경 — 신규 소장: 비활성화"))).toBe(true);
   });
 });
+
+describe("로그인 쪽지용 비밀번호 초기화 (리뷰 반영 D-54)", () => {
+  it("onlyIfMustChange: 첫 로그인 전인 사람만 초기화, 이미 자기 비밀번호를 쓰는 사람은 거부", async () => {
+    const created = await svc.createMember(ceo, { name: "쪽지시험", title: "현장", email: "slip@ses.test", role: "field", siteIds: [], partnerSiteIds: [], password: "Temp2026aa" });
+    // 첫 로그인 전 → 초기화 가능
+    await svc.updateMember(manager, created.id, { password: "Temp2026bb", onlyIfMustChange: true });
+    // 본인이 첫 로그인해서 비밀번호를 바꿈
+    const r = await auth.login("slip@ses.test", "Temp2026bb");
+    if (!r.ok) throw new Error(r.error);
+    await auth.changePassword(r.member, "Temp2026bb", "Mine2026zz", r.token);
+    await expect(svc.updateMember(manager, created.id, { password: "Temp2026cc", onlyIfMustChange: true })).rejects.toThrow(/이미 첫 로그인을 마쳐/);
+    // 본인 비밀번호는 그대로
+    expect((await auth.login("slip@ses.test", "Mine2026zz")).ok).toBe(true);
+    // 운영 관리의 ‘비밀번호 초기화’(조건 없음)는 지금처럼 된다
+    await svc.updateMember(manager, created.id, { password: "Temp2026dd" });
+    expect((await auth.login("slip@ses.test", "Temp2026dd")).ok).toBe(true);
+  });
+});

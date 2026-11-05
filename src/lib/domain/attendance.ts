@@ -5,7 +5,7 @@
 import type { AttendanceRecord, DemoDB, FieldReport, Site } from "./types";
 import { todayIso } from "./format";
 
-export type AttendanceFlagKind = "outside" | "no_location" | "weak" | "nosite" | "shared_device" | "same_spot" | "no_checkout" | "missing" | "no_qr";
+export type AttendanceFlagKind = "outside" | "no_location" | "weak" | "nosite" | "shared_device" | "same_spot" | "no_checkout" | "missing" | "no_qr" | "sent_later";
 
 export interface AttendanceFlag {
   kind: AttendanceFlagKind;
@@ -26,10 +26,11 @@ export const FLAG_LABEL: Record<AttendanceFlagKind, string> = {
   no_checkout: "퇴근 기록 없음",
   missing: "미출근",
   no_qr: "현장 QR 없이 출근",
+  sent_later: "통신 불량 — 나중에 전송",
 };
 
 /** 위험도 순 (위가 먼저) */
-export const FLAG_ORDER: AttendanceFlagKind[] = ["shared_device", "same_spot", "no_qr", "outside", "no_location", "missing", "no_checkout", "weak", "nosite"];
+export const FLAG_ORDER: AttendanceFlagKind[] = ["shared_device", "same_spot", "no_qr", "outside", "sent_later", "no_location", "missing", "no_checkout", "weak", "nosite"];
 
 const att = (db: DemoDB) => db.attendance ?? [];
 
@@ -51,6 +52,15 @@ export function dayFlags(db: DemoDB, date: string, now = new Date()): Attendance
     // QR 출근 방식인데 현장 태블릿 QR이 확인되지 않은 출근
     if (qrMode && r.inQr?.status !== "ok")
       flags.push({ kind: "no_qr", userId: r.userId, siteId: r.siteId, recordId: r.id, workDate: date, text: `${name(r.userId)} — ${r.inQr ? `QR 확인 실패 (${r.inQr.status === "expired" ? "만료된 QR" : r.inQr.status === "wrong_site" ? "다른 현장 QR" : r.inQr.status === "revoked" ? "해제된 단말기" : "QR 오류"})` : "QR 없이 출근"}` });
+    // 통신 불량으로 나중에 보낸 출퇴근 — 본사가 누른 시각 요청을 처리하기 전까지 (D-55)
+    for (const [what, sl, sent] of [["출근", r.inSentLater, r.inAt], ["퇴근", r.outSentLater, r.outAt]] as const) {
+      if (!sl || !sent) continue;
+      const req = sl.requestId ? (db.attendanceRequests ?? []).find((q) => q.id === sl.requestId) : undefined;
+      if (req && req.status !== "pending") continue;
+      // 요청 없이 표시만 된 경우: 도착 뒤 본사가 정정했으면(또는 그날 요청을 처리했으면) 끝난 것으로 (리뷰 반영)
+      if (!req && ((r.corrections ?? []).some((c) => c.at >= sent) || (db.attendanceRequests ?? []).some((q) => q.userId === r.userId && q.siteId === r.siteId && q.workDate === r.workDate && q.status !== "pending" && (q.reviewedAt ?? "") >= sent))) continue;
+      flags.push({ kind: "sent_later", userId: r.userId, siteId: r.siteId, recordId: r.id, workDate: date, text: `${name(r.userId)} — ${what} ${hhmm(sl.pressedAt)}에 눌렀는데 통신이 안 돼 ${hhmm(sent)}에 도착 (${req ? "‘지시·확인’에서 누른 시각 승인/반려" : "누른 시각은 휴대폰 시계 기준 — 확인 후 정정"})` });
+    }
     const geos = [r.inGeo, r.outGeo].filter(Boolean);
     // 본사가 예외(GPS 실패·누락 등)를 승인한 기록은 위치 의심 표시를 하지 않는다 (사유는 화면에 표시)
     if (r.exceptionNote) continue;

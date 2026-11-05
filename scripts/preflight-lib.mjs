@@ -37,6 +37,10 @@ export function checkEnv(env) {
       const pooler = /pooler\.supabase\.com$/.test(u.hostname);
       if (pooler && u.port === "6543") add("ok", "db-pool", "Supabase 트랜잭션 풀러(6543) — 서버리스에 맞음");
       else if (/supabase\.(co|com)$/.test(u.hostname)) add("warn", "db-pool", "Supabase 직접 연결입니다 — Vercel(서버리스)에서는 트랜잭션 풀러(포트 6543) 주소를 권장합니다");
+      // Supabase 풀러 주소에는 지역이 들어 있다 (예: aws-0-ap-northeast-2) — 서버(Vercel icn1 서울)와 같은 지역이어야 빠르다 (D-56)
+      const region = /aws-\d+-([a-z]{2}-[a-z]+-\d)\./.exec(u.hostname)?.[1];
+      if (region === "ap-northeast-2") add("ok", "db-region", "DB 지역: 서울(ap-northeast-2) — 서버 지역(icn1)과 같음");
+      else if (region) add("warn", "db-region", `DB 지역이 ${region}입니다 — 서버는 서울(icn1)이라 오가는 데 시간이 걸립니다. 새 프로젝트를 서울(Northeast Asia (Seoul))로 만드는 것을 권장합니다`);
       const ssl = u.searchParams.get("sslmode");
       if (!ssl || ssl === "disable" || ssl === "allow" || ssl === "prefer") add("warn", "db-ssl", "연결 문자열에 sslmode=require를 붙이는 것을 권장합니다 (암호화 연결 강제)");
       else add("ok", "db-ssl", `암호화 연결 (sslmode=${ssl})`);

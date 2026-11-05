@@ -10,7 +10,8 @@ export const dynamic = "force-dynamic";
  * DB에 연결되면 200, 안 되면 503.
  */
 export async function GET() {
-  const base = { mode: IS_LIVE ? "live" : "demo", time: new Date().toISOString(), version: (process.env.VERCEL_GIT_COMMIT_SHA ?? "").slice(0, 7) || "local" };
+  // region: 서버가 실제로 도는 곳 (Vercel이 넣어 줌 · 서울 = icn1) — 배포 후 점검이 DB와 같은 지역인지 본다 (D-56)
+  const base = { mode: IS_LIVE ? "live" : "demo", time: new Date().toISOString(), version: (process.env.VERCEL_GIT_COMMIT_SHA ?? "").slice(0, 7) || "local", region: process.env.VERCEL_REGION ?? "local" };
   if (!IS_LIVE) return json({ ok: true, ...base });
   const t0 = Date.now();
   try {

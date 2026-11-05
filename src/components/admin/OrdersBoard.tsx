@@ -8,7 +8,7 @@ import { useMe } from "@/lib/data/hooks";
 import { run } from "@/lib/data/store";
 import { CommandError } from "@/lib/data/commands";
 import { FIX_KIND_LABEL } from "@/lib/data/opsCommands";
-import type { DemoDB, FieldReport, WorkOrder } from "@/lib/domain/types";
+import type { AttendanceRecord, DemoDB, FieldReport, WorkOrder } from "@/lib/domain/types";
 import { fmtDate, fmtMan, todayIso } from "@/lib/domain/format";
 import { backdatedDays, hhmm } from "@/lib/domain/attendance";
 import { GEO_LABEL } from "@/lib/domain/geo";
@@ -324,14 +324,20 @@ function Fixes({ db }: { db: DemoDB }) {
                   <Badge tone={q.status === "pending" ? "warn" : q.status === "approved" ? "ok" : "err"}>{q.status === "pending" ? "확인 대기" : q.status === "approved" ? "승인" : "반려"}</Badge>
                 </p>
                 <p className="text-[0.92rem] font-bold">
-                  {FIX_KIND_LABEL[q.kind]}
+                  {q.auto === "offline" ? (
+                    <Badge tone="info" className="mr-1.5">
+                      통신 불량 · 자동
+                    </Badge>
+                  ) : null}
+                  {q.auto === "offline" ? "누른 시각 확인" : FIX_KIND_LABEL[q.kind]}
                   {q.inTime ? ` · 출근 ${q.inTime}` : ""}
                   {q.outTime ? ` · 퇴근 ${q.outTime}` : ""}
                 </p>
                 <p className="text-[0.82rem] text-ink-2">
                   사유: {q.reason}
-                  {rec ? ` · 현재 기록: 출근 ${hhmm(rec.inAt)} ${GEO_LABEL[rec.inGeo.status]}${rec.outAt ? ` · 퇴근 ${hhmm(rec.outAt)}` : " · 퇴근 없음"}` : " · 현재 기록 없음"}
+                  {rec ? ` · 현재 기록: 출근 ${hhmm(rec.inAt)} ${GEO_LABEL[rec.inGeo.status]}${rec.outAt ? ` · 퇴근 ${hhmm(rec.outAt)}${rec.outGeo ? ` ${GEO_LABEL[rec.outGeo.status]}` : ""}` : " · 퇴근 없음"}` : " · 현재 기록 없음"}
                 </p>
+                {q.auto === "offline" && rec && <OfflineCheck db={db} rec={rec} userId={q.userId} pending={q.status === "pending"} />}
                 {q.reviewNote && <p className="text-[0.8rem] text-ink-3">처리 메모: {q.reviewNote}</p>}
                 {q.status === "pending" && (
                   <Decide
@@ -348,5 +354,34 @@ function Fixes({ db }: { db: DemoDB }) {
         </ul>
       )}
     </Card>
+  );
+}
+
+/**
+ * 통신 불량 자동 요청 확인 도움 (리뷰 반영 D-55) — 누른 시각은 휴대폰 시계라 확인되지 않는다.
+ * 누른 시각과 도착 시각의 차이, 그 사이 이 직원의 다른 앱 기록(있으면 통신이 됐을 수 있음)을 보여준다.
+ */
+function OfflineCheck({ db, rec, userId, pending }: { db: DemoDB; rec: AttendanceRecord; userId: string; pending: boolean }) {
+  const parts = (
+    [
+      ["출근", rec.inSentLater, rec.corrections?.[0]?.before.inAt ?? rec.inAt],
+      ["퇴근", rec.outSentLater, rec.corrections?.[0]?.before.outAt ?? rec.outAt],
+    ] as const
+  ).filter(([, sl, got]) => sl && got);
+  if (!parts.length) return null;
+  return (
+    <ul className="space-y-0.5 rounded-lg bg-surface-2 px-3 py-2 text-[0.8rem]" data-testid="fix-offline">
+      {parts.map(([what, sl, got]) => {
+        const gap = Math.round((Date.parse(got!) - Date.parse(sl!.pressedAt)) / 60_000);
+        const between = db.activityLogs.filter((l) => l.by === userId && l.at > sl!.pressedAt && l.at < got! && l.type !== "attendance").length;
+        return (
+          <li key={what}>
+            {what}: 누른 시각 <b>{hhmm(sl!.pressedAt)}</b> <span className="text-ink-3">(휴대폰 시계 · 확인 안 됨)</span> → 서버 도착 <b>{hhmm(got!)}</b> ({gap}분 뒤)
+            {between > 0 && pending && <span className="ml-1 font-bold text-warn" data-testid="fix-offline-between">· 그 사이 이 직원의 다른 앱 기록 {between}건 — 통신이 됐을 수 있어요</span>}
+          </li>
+        );
+      })}
+      <li className="text-ink-3">승인해도 ‘현장 밖’ 같은 위치 표시는 출퇴근 현황에 그대로 남습니다.</li>
+    </ul>
   );
 }

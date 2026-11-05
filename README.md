@@ -71,7 +71,7 @@ DEMO와 LIVE 빌드 결과는 서로 다른 폴더(`.next` / `.next-live`)에 �
    | `SETUP_CODE` | 아무도 모르는 긴 문자열 | 최초 설정 보호. **Vercel 운영 배포에서는 없으면 최초 설정이 거부됨** |
    | `DB_POOL_MAX` | (선택) `5` | 서버 1대당 DB 연결 수. 기본 5 |
 
-4. **Settings → Functions → Function Region**: `Seoul (icn1)` — DB와 같은 지역이라 응답이 빨라집니다
+4. 서버 지역은 저장소의 `vercel.json`이 **서울(icn1)**로 고정합니다 — DB(서울)와 같은 지역이라 응답이 빨라집니다. 배포 후 `npm run smoke -- 주소`가 ‘서버 지역: 서울(icn1)’인지 확인합니다. 다르게 나오면 **Settings → Functions → Function Region**에서 `Seoul (icn1)`로 바꿉니다 (D-56)
 5. **Deploy**
 
 ### 2-3. 최초 설정 — 대표가 1회

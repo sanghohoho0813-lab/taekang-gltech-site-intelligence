@@ -73,14 +73,20 @@ export function LaunchBoard() {
   const toSlips = (list: PersonLaunch[], pw: Record<string, string> = {}): Slip[] =>
     list.map((p) => ({ id: p.user.id, name: p.user.name, title: p.user.title, role: p.user.role, email: p.email, password: pw[p.user.id], sites: p.sites.map((s) => s.shortName) }));
 
-  /** 첫 로그인 전인 사람은 임시 비밀번호를 새로 만들어 쪽지에 넣는다 (전에 준 것은 더 이상 안 됨) */
+  /**
+   * 첫 로그인 전인 사람은 임시 비밀번호를 새로 만들어 쪽지에 넣는다 (전에 준 것은 더 이상 안 됨).
+   * 화면을 연 뒤 그 사이 로그인한 사람이 있을 수 있어 목록을 다시 받고, 서버도 ‘첫 로그인 전’일 때만 바꾼다 (리뷰 반영).
+   */
   const printWithReset = async () => {
     setBusy(true);
+    const fresh = await api<{ members: MemberInfo[] }>("/api/admin/members");
+    const stillPending = new Set((fresh.ok && fresh.data ? fresh.data.members : []).filter((m) => m.mustChangePassword && m.active).map((m) => m.id));
     const pw: Record<string, string> = {};
     const failed: string[] = [];
     for (const p of pendingChosen) {
+      if (!stillPending.has(p.user.id)) continue;
       const v = tempPassword();
-      const r = await api(`/api/admin/members/${encodeURIComponent(p.user.id)}`, { method: "PATCH", body: { password: v } });
+      const r = await api(`/api/admin/members/${encodeURIComponent(p.user.id)}`, { method: "PATCH", body: { password: v, onlyIfMustChange: true } });
       if (r.ok) pw[p.user.id] = v;
       else failed.push(p.user.name);
     }

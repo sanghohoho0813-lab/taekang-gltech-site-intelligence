@@ -530,6 +530,64 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     expect(last.photoIds).toHaveLength(1);
   });
 
+  test("통신 불량 출근: 휴대폰에 저장(누른 시각·첫 동의 포함) → 신호가 잡히면 보내기 → 기록은 받은 시각 · 본사에 ‘통신 불량 · 자동’ 확인 요청 → 승인하면 누른 시각으로", async ({ browser }) => {
+    // 새 현장 직원 (물류센터 담당)
+    const hq = await login(browser, CEO.email, CEO.password);
+    await hq.goto("/admin?tab=members");
+    await hq.getByTestId("member-new").click();
+    await hq.locator("#mf-name").fill("지하현장");
+    await hq.locator("#mf-email").fill("b1@taekang.test");
+    await pick(hq, "mf-role-field");
+    await hq.getByTestId("member-form").getByText("물류센터").click();
+    await hq.getByTestId("member-save").click();
+    await expect(hq.getByTestId("issued-password")).toContainText("b1@taekang.test");
+    const temp = /임시 비밀번호\s*(\S+)/.exec(await hq.getByTestId("issued-password").innerText())![1];
+    const page = await login(browser, "b1@taekang.test", temp, { width: 390, height: 844 });
+    await page.locator("#a-cur").fill(temp);
+    await page.locator("#a-new").fill("Basement2026");
+    await page.locator("#a-new2").fill("Basement2026");
+    await page.getByTestId("password-submit").click();
+    await expect(page).toHaveURL(/\/field/);
+    await page.context().grantPermissions(["geolocation"]);
+    await page.context().setGeolocation({ latitude: 37.5014, longitude: 127.0398, accuracy: 20 });
+
+    // 지하에서 출근을 누르고 약 10분 뒤에 신호가 잡힌 상황 (휴대폰 시계 = 10분 전)
+    const pressed = new Date(Date.now() - 10 * 60_000);
+    await page.clock.setFixedTime(pressed);
+    await page.route("**/api/commands", (r) => r.abort("internetdisconnected"));
+    await page.getByTestId("att-in").click();
+    await page.getByTestId("att-consent-yes").click();
+    await expect(page.getByTestId("att-result")).toContainText("휴대폰에 저장했어요");
+    await expect(page.getByTestId("att-queued")).toContainText("휴대폰에 저장됨");
+    await expect(page.getByTestId("att-queued").getByTestId("att-out")).toBeVisible(); // 저장된 출근 다음엔 퇴근 버튼
+    await expect(page.getByTestId("outbox-waiting")).toContainText("아직 못 보낸 기록 1건");
+    // 새로고침해도 남아 있다
+    await page.reload();
+    await expect(page.getByTestId("att-queued")).toContainText("휴대폰에 저장됨");
+    await page.unroute("**/api/commands");
+    await page.getByTestId("outbox-send").click();
+    await expect(page.getByTestId("outbox")).toHaveCount(0);
+    await expect(page.getByTestId("att-status")).toContainText("물류센터 출근");
+
+    const rec = async () =>
+      ((await (await hq.request.get("/api/state")).json()).db.attendance as { siteId: string; inAt: string; inSentLater?: { pressedAt: string; requestId?: string } }[]).find((r) => r.siteId === siteId && r.inSentLater)!;
+    const r0 = await rec();
+    // 기록은 서버가 받은 시각 (누른 시각보다 9분 넘게 늦음) · 첫 동의도 함께 기록
+    expect(Date.parse(r0.inAt) - Date.parse(r0.inSentLater!.pressedAt)).toBeGreaterThan(9 * 60_000);
+    expect(r0.inSentLater!.requestId).toBeTruthy();
+    await hq.goto("/orders?tab=fixes");
+    const row = hq.getByTestId("fix-row").filter({ hasText: "통신 불량 · 자동" });
+    await expect(row).toContainText("누른 시각 확인");
+    await expect(row).toContainText("지하현장");
+    await row.getByTestId("fix-confirm").click();
+    await expect(hq.getByTestId("fix-row").filter({ hasText: "통신 불량 · 자동" })).toHaveAttribute("data-status", "approved");
+    const r1 = await rec();
+    // 승인하면 누른 시각(분 단위)으로
+    expect(Math.abs(Date.parse(r1.inAt) - pressed.getTime())).toBeLessThan(60_000);
+    await hq.context().close();
+    await page.context().close();
+  });
+
   test("개인위치정보: 대표가 보관 기간·열람 범위를 정함 → 현장소장 ‘내 위치 기록’ → 그만두기 → 서버에서 좌표 삭제", async ({ browser }) => {
     const ceo = await login(browser, CEO.email, CEO.password);
     await ceo.goto("/admin?tab=privacy");
