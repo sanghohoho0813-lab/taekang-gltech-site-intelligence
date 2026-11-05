@@ -13,7 +13,7 @@ import type { AttendanceRequest, Site } from "@/lib/domain/types";
 import { todayIso } from "@/lib/domain/format";
 import { hhmm, shiftDate } from "@/lib/domain/attendance";
 import { uid } from "@/lib/domain/ids";
-import { Chip, Choice, EasyBar, EasyQuestion, SectionBar } from "./ui";
+import { Chip, Choice, EasyBar, EasyPageHead, EasyQuestion, SectionBar } from "./ui";
 import { easyDate } from "./words";
 
 const REASONS = ["휴대폰 배터리가 꺼짐", "위치(GPS)가 안 잡힘", "깜빡하고 못 누름", "현장 밖에서 잘못 누름", "휴대폰을 두고 옴"];
@@ -176,8 +176,9 @@ export function EasyFix() {
 
   return (
     <div className="space-y-6" data-testid="easy-fix">
-      <h1 className="text-[1.5rem] font-extrabold">근태 수정 요청</h1>
-      <SectionBar sections={["날짜", "내용", "시각", "사유", "확인"]} current={{ site: 0, date: 0, kind: 1, time: 2, reason: 3, confirm: 4 }[step]} />
+      <EasyPageHead title="근태 수정 요청">
+        <SectionBar onBand sections={["날짜", "내용", "시각", "사유", "확인"]} current={{ site: 0, date: 0, kind: 1, time: 2, reason: 3, confirm: 4 }[step]} />
+      </EasyPageHead>
       <div key={step} className="anim-fade-up">
         {body}
       </div>

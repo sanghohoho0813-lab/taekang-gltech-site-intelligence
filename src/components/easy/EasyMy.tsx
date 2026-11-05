@@ -10,7 +10,7 @@ import { logout, setPrefs, usePrefs, type FontScale } from "@/lib/data/store";
 import { IS_LIVE } from "@/lib/mode";
 import { ROLE_LABEL } from "@/lib/domain/labels";
 import { PageSkeleton } from "@/components/ui/primitives";
-import { Choice } from "./ui";
+import { Choice, EasyPageHead } from "./ui";
 import { PushCard } from "@/components/PushCard";
 import { MyRecords } from "./EasyHome";
 import { MyLocationCard } from "./MyLocation";
@@ -25,12 +25,7 @@ export function EasyMy() {
   const lastCheck = (db.deviceChecks ?? []).find((c) => c.userId === userId);
   return (
     <div className="mx-auto w-full max-w-xl space-y-6 px-4 pb-8 pt-5" data-testid="easy-my">
-      <header className="space-y-1">
-        <h1 className="text-[1.7rem] font-extrabold leading-tight">내 정보</h1>
-        <p className="text-[1.15rem] text-ink-2">
-          {user?.name} · {user?.title || ROLE_LABEL[role]}
-        </p>
-      </header>
+      <EasyPageHead title="내 정보" sub={`${user?.name ?? ""} · ${user?.title || ROLE_LABEL[role]}`} />
 
       <section className="space-y-2.5" aria-labelledby="font-title">
         <h2 id="font-title" className="flex items-center gap-2 text-[1.3rem] font-extrabold">

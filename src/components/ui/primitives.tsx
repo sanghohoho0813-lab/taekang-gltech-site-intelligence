@@ -18,14 +18,14 @@ export const Button = forwardRef<
   ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; size?: Size; loading?: boolean; icon?: ReactNode; block?: boolean }
 >(function Button({ variant = "outline", size = "md", loading, icon, block, className, children, disabled, ...rest }, ref) {
   const base =
-    "press inline-flex items-center justify-center gap-2 rounded-xl font-semibold whitespace-nowrap select-none disabled:opacity-50 disabled:pointer-events-none";
+    "press inline-flex items-center justify-center gap-2 rounded-full font-semibold whitespace-nowrap select-none disabled:opacity-50 disabled:pointer-events-none";
   const sizes: Record<Size, string> = {
     sm: "h-9 px-3 text-[0.82rem]",
     md: "h-11 px-4 text-[0.9rem]",
     lg: "h-[3.1rem] px-5 text-[1rem] font-bold",
   };
   const variants: Record<Variant, string> = {
-    cta: "bg-cta text-cta-text font-bold shadow-sm hover:brightness-[1.06] active:brightness-95",
+    cta: "bg-cta text-cta-text font-bold shadow-card hover:brightness-[1.06] active:brightness-95",
     primary: "bg-primary text-white hover:brightness-110",
     outline: "bg-surface text-ink border border-line-strong hover:bg-surface-2 hover:border-ink-3",
     ghost: "text-ink-2 hover:bg-surface-3",
@@ -48,7 +48,7 @@ export const Button = forwardRef<
 
 export function Card({ className, children, as: As = "section", ...rest }: { className?: string; children: ReactNode; as?: "section" | "div" | "article" } & React.HTMLAttributes<HTMLElement>) {
   return (
-    <As className={cx("min-w-0 rounded-2xl border border-line bg-surface shadow-card", className)} {...rest}>
+    <As className={cx("min-w-0 rounded-[1.35rem] border border-line bg-surface shadow-card", className)} {...rest}>
       {children}
     </As>
   );

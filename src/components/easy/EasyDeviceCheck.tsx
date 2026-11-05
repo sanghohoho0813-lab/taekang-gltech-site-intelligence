@@ -14,6 +14,7 @@ import { DEVICE_CHECK_KEYS, DEVICE_CHECK_LABEL, VERDICT_LABEL, deviceFix, device
 import { checkHome, checkLocation, checkNetwork, checkPush, checkStorage } from "@/lib/browser/deviceCheck";
 import { cx } from "@/components/ui/primitives";
 import { downscalePhoto } from "./photo";
+import { EasyPageHead } from "./ui";
 
 type Items = Partial<Record<DeviceCheckKey, DeviceCheckStatus>>;
 const ICON: Record<DeviceCheckStatus, React.ReactNode> = {
@@ -85,12 +86,7 @@ export function EasyDeviceCheck() {
   const verdict = deviceVerdict({ items });
   return (
     <div className="space-y-5" data-testid="device-check">
-      <header className="space-y-1">
-        <h1 className="flex items-center gap-2 text-[1.7rem] font-extrabold leading-tight">
-          <Smartphone size={28} aria-hidden /> 내 휴대폰 점검
-        </h1>
-        <p className="text-[1.1rem] text-ink-2">현장에서 쓰기 전에 한 번 눌러 보세요. 1분이면 끝나요.</p>
-      </header>
+      <EasyPageHead icon={<Smartphone size={28} aria-hidden />} title="내 휴대폰 점검" sub="현장에서 쓰기 전에 한 번 눌러 보세요. 1분이면 끝나요." />
 
       {phase === "intro" && (
         <div className="space-y-4">

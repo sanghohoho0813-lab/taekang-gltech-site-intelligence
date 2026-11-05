@@ -3,7 +3,7 @@
 /** 본사 — 출퇴근 현황 (GPS) · 의심 표시 · 보고 위치 · 월 합계(CSV) */
 import { downloadCsv } from "@/lib/browser/download";
 import { useState } from "react";
-import { AlertTriangle, Download, LocateFixed, MapPin, MapPinCheck, Pencil, QrCode, TabletSmartphone } from "lucide-react";
+import { AlertTriangle, Clock, Download, LocateFixed, MapPin, MapPinCheck, Pencil, QrCode, TabletSmartphone } from "lucide-react";
 import { useMe } from "@/lib/data/hooks";
 import { run } from "@/lib/data/store";
 import { CommandError } from "@/lib/data/commands";
@@ -19,6 +19,7 @@ import { PageBody, PageHeader } from "@/components/shell/AppShell";
 import { Badge, Button, Card, CardHeader, DemoBadge, EmptyState, Field, Notice, PageSkeleton, Segmented, cx, inputCls } from "@/components/ui/primitives";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
+import { StatCard } from "@/components/domain/Widgets";
 import { canSeeStamp, locationPolicy } from "@/lib/domain/privacy";
 
 const TONE: Record<GeoStamp["status"], string> = {
@@ -111,6 +112,11 @@ export function AttendanceBoard() {
   };
 
   const grouped = FLAG_ORDER.map((k) => ({ k, items: flags.filter((f) => f.kind === k) })).filter((g) => g.items.length);
+  // 한눈에 (D-61) — 숫자는 ‘누른 기록’ 그대로 센다. 현장 안 = 출근 위치가 현장 반경 안인 기록
+  const present = new Set(records.map((r) => r.userId)).size;
+  const notYet = new Set(flags.filter((f) => f.kind === "missing").map((f) => f.userId)).size;
+  const inside = records.filter((r) => r.inGeo.status === "inside").length;
+  const offsite = records.filter((r) => r.inGeo.status === "outside" || r.outGeo?.status === "outside").length;
 
   return (
     <PageBody>
@@ -143,6 +149,13 @@ export function AttendanceBoard() {
           </div>
         }
       />
+
+      <div className="grid grid-cols-2 gap-3 @min-[900px]:grid-cols-4" aria-label={`${date} 출퇴근 요약`} data-testid="att-stats">
+        <StatCard label="출근한 사람" value={`${present}명`} sub={`출근 기록 ${records.length}건 · 현장 ${sites.length}곳`} icon={<MapPinCheck size={20} />} group="ops" testId="att-stat-present" />
+        <StatCard label="아직 출근 기록 없음" value={date === today ? `${notYet}명` : "—"} sub={date === today ? "현장 담당으로 지정된 사람 기준" : "오늘 날짜에서만 셉니다"} icon={<Clock size={20} />} group="ops" testId="att-stat-missing" />
+        <StatCard label="현장 안에서 출근" value={`${inside}건`} sub={offsite ? `현장 밖에서 누른 기록 ${offsite}건` : "현장 밖에서 누른 기록 없음"} icon={<MapPin size={20} />} group="ops" testId="att-stat-inside" />
+        <StatCard label="확인이 필요한 항목" value={`${flags.length}건`} sub="확인할 대상일 뿐 부정 확정이 아님" icon={<AlertTriangle size={20} />} group="admin" testId="att-stat-flags" />
+      </div>
 
       <Card data-testid="att-flags">
         <CardHeader title={grouped.length ? `확인이 필요한 항목 ${flags.length}건` : "확인이 필요한 항목 없음"} sub={date === today ? "오늘 기준 + 최근 14일 (퇴근 누락·위치가 매일 똑같음)" : `${date} 기준`} />

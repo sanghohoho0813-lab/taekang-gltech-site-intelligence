@@ -41,7 +41,7 @@ import { locateOnce } from "@/lib/geo/client";
 import { todayIso } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
 import { cx } from "@/components/ui/primitives";
-import { BigNumber, Chip, Choice, EasyBar, EasyQuestion, SectionBar, Stepper, VoiceHint, easyTextareaCls } from "./ui";
+import { BigNumber, Chip, Choice, EasyBar, EasyPageHead, EasyQuestion, SectionBar, Stepper, VoiceHint, easyTextareaCls } from "./ui";
 import { DEFAULT_WORK, EASY_CATEGORY, EASY_CATEGORY_ORDER, EASY_REASON, EASY_REASON_ORDER, ISSUE_CHIPS, NO_WORK, easyDate, easyWon } from "./words";
 import { downscalePhoto } from "./photo";
 import { hasConsent } from "@/lib/domain/privacy";
@@ -500,13 +500,15 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
 
   const header = (
     <div className="space-y-3">
+      <EasyPageHead>
+        <SectionBar onBand sections={sections} current={Math.max(0, sections.indexOf(SECTION_OF[step]))} />
+        {site && step !== "site" && (
+          <p className="flex items-center gap-1.5 text-[1rem] font-semibold text-white">
+            <HardHat size={18} aria-hidden /> {site.shortName} · {site.workType}
+          </p>
+        )}
+      </EasyPageHead>
       {demoFill}
-      <SectionBar sections={sections} current={Math.max(0, sections.indexOf(SECTION_OF[step]))} />
-      {site && step !== "site" && (
-        <p className="flex items-center gap-1.5 text-[1rem] font-semibold text-ink-2">
-          <HardHat size={18} aria-hidden /> {site.shortName} · {site.workType}
-        </p>
-      )}
     </div>
   );
 

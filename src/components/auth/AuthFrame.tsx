@@ -16,7 +16,7 @@ export function AuthFrame({ title, desc, children, wide = false }: { title: stri
             </span>
             <div className="leading-tight">
               <p className="text-[0.95rem] font-extrabold tracking-[0.08em] text-white">TAEKANG GLTECH</p>
-              <p className="text-[0.66rem] font-bold tracking-[0.2em] text-white/85">SITE INTELLIGENCE</p>
+              <p className="text-[0.66rem] font-bold tracking-[0.2em] text-white">SITE INTELLIGENCE</p>
             </div>
           </div>
           <p className="mt-6 text-[1.45rem] font-extrabold leading-snug [text-wrap:balance]">현장 출퇴근·보고가 본사 손익까지 바로 이어집니다</p>

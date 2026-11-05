@@ -12,7 +12,7 @@ import { todayIso } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
 import { PageSkeleton, cx } from "@/components/ui/primitives";
 import { Modal } from "@/components/ui/Modal";
-import { Chip, Choice, VoiceHint, easyTextareaCls } from "./ui";
+import { Chip, Choice, EasyPageHead, VoiceHint, easyTextareaCls } from "./ui";
 import { EASY_ACTION_STATUS, dueText, easyDate, easyWon, resultChips } from "./words";
 import { downscalePhoto } from "./photo";
 import { EasyWorkOrderCard } from "./EasyWorkOrder";
@@ -32,10 +32,7 @@ export function EasyActions() {
   const woList = tab === "open" ? ordersOpen : ordersDone;
   return (
     <div className="mx-auto w-full max-w-xl space-y-5 px-4 pb-8 pt-5" data-testid="easy-actions">
-      <header className="space-y-1.5">
-        <h1 className="text-[1.7rem] font-extrabold leading-tight">본사 요청</h1>
-        <p className="text-[1.08rem] leading-relaxed text-ink-2">본사에서 지시하거나 확인을 부탁한 일이에요. 받으면 ‘확인했어요’, 끝나면 ‘다 했어요’를 누르세요.</p>
-      </header>
+      <EasyPageHead title="본사 요청" sub="본사에서 지시하거나 확인을 부탁한 일이에요. 받으면 ‘확인했어요’, 끝나면 ‘다 했어요’를 누르세요." />
       <div className="grid grid-cols-2 gap-2.5" role="tablist" aria-label="요청 보기">
         {(
           [

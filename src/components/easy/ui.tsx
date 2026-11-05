@@ -50,15 +50,15 @@ export function Choice({
       aria-pressed={selected}
       data-testid={testId}
       className={cx(
-        "press flex min-h-[4.25rem] w-full items-center gap-3.5 rounded-2xl border-2 px-4 py-3 text-left transition-colors",
-        selected ? "border-active bg-active-soft" : "border-line-strong bg-surface hover:bg-surface-2",
+        "press flex min-h-[4.25rem] w-full items-center gap-3.5 rounded-[1.4rem] border-2 px-4 py-3 text-left transition-colors",
+        selected ? "border-active bg-active-soft shadow-card" : "border-line bg-surface hover:bg-surface-2",
         className,
       )}
     >
       {icon && (
         <span
           className={cx(
-            "grid size-11 shrink-0 place-items-center rounded-xl",
+            "grid size-11 shrink-0 place-items-center rounded-full",
             tone === "good" ? "bg-ok-bg text-ok" : tone === "warn" ? "bg-warn-bg text-warn" : selected ? "bg-surface text-theme-ink" : "bg-surface-3 text-ink-2",
           )}
           aria-hidden
@@ -127,7 +127,7 @@ export function BigTile({
       </span>
       <span className="min-w-0 flex-1">
         <span className="block text-[1.3rem] font-extrabold leading-tight">{label}</span>
-        {sub && <span className={cx("mt-1 block text-[1rem] leading-snug", tone === "cta" ? "text-white/90" : "text-ink-2")}>{sub}</span>}
+        {sub && <span className={cx("mt-1 block text-[1rem] leading-snug", tone === "cta" ? "text-white" : "text-ink-2")}>{sub}</span>}
       </span>
       {badge}
     </>
@@ -232,16 +232,43 @@ export function Stepper({
 }
 
 /** 단계 표시 — 숫자 대신 이름으로 (작업 · 사진 · 문제 · 비용 · 확인) */
-export function SectionBar({ sections, current }: { sections: string[]; current: number }) {
+export function SectionBar({ sections, current, onBand = false }: { sections: string[]; current: number; onBand?: boolean }) {
   return (
     <ol className="flex gap-1.5" aria-label="진행 단계">
       {sections.map((s, i) => (
         <li key={s} className="min-w-0 flex-1" aria-current={i === current ? "step" : undefined}>
-          <span className={cx("block h-2 rounded-full", i < current ? "bg-active" : i === current ? "bg-active" : "bg-surface-3")} />
-          <span className={cx("mt-1 block truncate text-center text-[0.9rem] font-bold", i === current ? "text-theme-ink" : i < current ? "text-ink-2" : "text-ink-3")}>{s}</span>
+          <span className={cx("block h-2 rounded-full", onBand ? (i <= current ? "bg-white" : "bg-white/30") : i <= current ? "bg-active" : "bg-surface-3")} />
+          <span
+            className={cx(
+              "mt-1 block truncate text-center text-[0.9rem]",
+              // 띠 위에서는 글자를 모두 흰색으로 (대비 4.5:1 이상), 지금 단계는 굵게·밑줄
+              onBand ? cx("text-white", i === current ? "font-extrabold underline decoration-2 underline-offset-4" : "font-semibold") : cx("font-bold", i === current ? "text-theme-ink" : i < current ? "text-ink-2" : "text-ink-3"),
+            )}
+          >
+            {s}
+          </span>
         </li>
       ))}
     </ol>
+  );
+}
+
+/**
+ * 현장 화면 머리 띠 (D-61) — 첫 화면과 같은 브랜드 색 띠. 화면 위·양옆 끝까지 (부모의 px-4·pt-5를 상쇄).
+ * 띠 위 글자는 모두 흰색 (주 버튼 색은 테마마다 흰 글자 대비 4.5:1 이상으로 맞춰져 있음).
+ */
+export function EasyPageHead({ title, sub, icon, children, testId }: { title?: ReactNode; sub?: ReactNode; icon?: ReactNode; children?: ReactNode; testId?: string }) {
+  return (
+    <header className="brand-band -mx-4 -mt-5 space-y-2 rounded-b-[2rem] px-5 pb-6 pt-5" data-testid={testId}>
+      {title && (
+        <h1 className="flex items-center gap-2 text-[1.7rem] font-extrabold leading-tight text-white">
+          {icon}
+          {title}
+        </h1>
+      )}
+      {sub && <p className="text-[1.08rem] leading-relaxed text-white">{sub}</p>}
+      {children}
+    </header>
   );
 }
 
@@ -275,7 +302,7 @@ export function EasyBar({
       {hint && <p className="mb-2 text-center text-[0.98rem] font-semibold text-warn">{hint}</p>}
       <div className={cx("grid gap-2.5", onBack && onNext ? "grid-cols-[1fr_1.8fr]" : "grid-cols-1")}>
         {onBack && (
-          <button type="button" onClick={onBack} className="press inline-flex h-[4rem] items-center justify-center gap-1 rounded-2xl border-2 border-line-strong bg-surface text-[1.15rem] font-bold text-ink" data-testid="easy-back">
+          <button type="button" onClick={onBack} className="press inline-flex h-[4rem] items-center justify-center gap-1 rounded-full border-2 border-line-strong bg-surface text-[1.15rem] font-bold text-ink" data-testid="easy-back">
             <ChevronLeft size={24} aria-hidden /> {backLabel}
           </button>
         )}
@@ -285,7 +312,7 @@ export function EasyBar({
             onClick={onNext}
             disabled={nextDisabled || loading}
             aria-busy={loading || undefined}
-            className="press inline-flex h-[4rem] items-center justify-center gap-2 rounded-2xl bg-cta text-[1.25rem] font-extrabold text-cta-text shadow-sm disabled:opacity-40"
+            className="press inline-flex h-[4rem] items-center justify-center gap-2 rounded-full bg-cta text-[1.25rem] font-extrabold text-cta-text shadow-card disabled:opacity-40"
             data-testid={nextTestId ?? "easy-next"}
           >
             {loading && <Loader2 className="animate-spin" size={22} aria-hidden />}

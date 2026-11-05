@@ -639,3 +639,41 @@ test("사진대장: 현장 ‘사진만 보내기’ → 본사 사진대장(번
   await page.goto("/photos");
   await expect(page.getByTestId("access-denied")).toBeVisible();
 });
+
+test("합계 카드 = 아래 표 (D-61): 기성·수금 합계는 현장별 표의 합, 출퇴근 ‘확인 필요’ 숫자는 아래 목록 건수", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await freshStart(page);
+  // "30.7억 원" · "8,060만" · "1억 5,000만 원" · "—" → 원
+  const won = (t: string) => {
+    const s = t.replace(/원|\s|,/g, "");
+    if (!s || s === "—") return 0;
+    const m = /^(?:([\d.]+)억)?(?:([\d.]+)만)?$/.exec(s);
+    if (!m) throw new Error(`금액 아님: ${t}`);
+    return Number(m[1] ?? 0) * 1e8 + Number(m[2] ?? 0) * 1e4;
+  };
+  await page.goto("/finance");
+  const rows = page.getByTestId("finance-table").locator("tbody tr");
+  await expect(rows).toHaveCount(3);
+  const col = async (i: number) => {
+    let sum = 0;
+    for (const r of await rows.all()) sum += won(((await r.locator("td").nth(i).innerText()).split("\n")[0]));
+    return sum;
+  };
+  const card = (id: string) => page.getByTestId(`fin-total-${id}`);
+  const value = async (id: string) => won(await card(id).locator("p.num").innerText());
+  // 표는 억 소수 둘째 자리까지 보여 주므로 현장 3곳 반올림 차이(최대 0.015억)까지 허용
+  const near = (a: number, b: number) => expect(Math.abs(a - b)).toBeLessThanOrEqual(1_500_000);
+  expect(await value("contract")).toBeGreaterThan(1e9); // 0 = 0 으로 그냥 통과하지 않게
+  near(await value("contract"), await col(3));
+  near(await value("profit"), await col(4));
+  near(await value("billed"), await col(5));
+  near(await value("outstanding"), await col(8));
+  near(won(await card("outstanding").locator("b").innerText()), await col(7));
+
+  await page.goto("/attendance");
+  const head = await page.getByTestId("att-flags").locator("h2, h3").first().innerText();
+  const n = /(\d+)건/.exec(head)?.[1] ?? "0";
+  await expect(page.getByTestId("att-stat-flags")).toContainText(`${n}건`);
+  await page.getByTestId("att-yesterday").click();
+  await expect(page.getByTestId("att-stat-missing")).toContainText("오늘 날짜에서만 셉니다");
+});

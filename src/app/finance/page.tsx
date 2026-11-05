@@ -1,13 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { FilePlus2, BadgeCheck, Ban, Send, Wallet } from "lucide-react";
+import { FilePlus2, FileSignature, BadgeCheck, Ban, Send, TrendingUp, Wallet } from "lucide-react";
 import { useMe, useFinancials } from "@/lib/data/hooks";
 import { PageBody, PageHeader } from "@/components/shell/AppShell";
 import { Badge, Button, Card, CardHeader, DemoBadge, EmptyState, Field, Notice, PageSkeleton, cx, inputCls } from "@/components/ui/primitives";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
-import { Freshness } from "@/components/domain/Widgets";
+import { Freshness, StatCard } from "@/components/domain/Widgets";
 import { CommandError } from "@/lib/data/commands";
 import { run } from "@/lib/data/store";
 import { siteFinancials } from "@/lib/domain/calc";
@@ -24,6 +24,7 @@ export default function FinancePage() {
   const [co, setCo] = useState<{ c: ChangeOrder; to: "submitted" | "approved" | "rejected" } | null>(null);
   const [form, setForm] = useState<"billing" | "payment" | null>(null);
   if (!db) return <PageSkeleton />;
+  const sum = (pick: (f: (typeof fin)[string]) => number) => db.sites.reduce((a, s) => a + (fin[s.id] ? pick(fin[s.id]) : 0), 0);
 
   return (
     <PageBody>
@@ -41,18 +42,12 @@ export default function FinancePage() {
       />
       <Freshness />
 
-      <div className="grid gap-3 @min-[900px]:grid-cols-4" aria-label="개념 정의">
-        {[
-          ["계약금액 → 변경 반영 계약금액", "원 계약 + 원청·발주처가 승인한 변경계약. 청구 검토·승인 대기는 제외."],
-          ["예상이익", "변경 반영 계약금액 − 총예상원가(EAC). 매출·입금과 다른 ‘준공 시 예상’ 개념."],
-          ["기성청구액 (확정)", "공정 진행에 따라 발주처에 청구해 확정된 금액. 받은 돈이 아님."],
-          ["입금액 · 미수금", "실제 통장에 들어온 금액. 미수금 = 확정 기성청구 − 입금."],
-        ].map(([t, d]) => (
-          <div key={t} className="rounded-2xl border border-line bg-surface px-4 py-3">
-            <p className="text-[0.85rem] font-bold text-ink">{t}</p>
-            <p className="mt-0.5 text-[0.76rem] text-ink-3">{d}</p>
-          </div>
-        ))}
+      {/* 숫자가 먼저, 뜻은 아래 (D-61) — 네 숫자는 서로 다른 개념이라 정의를 함께 둔다 */}
+      <div className="grid grid-cols-2 gap-3 @min-[900px]:grid-cols-4" aria-label="합계와 개념 정의" data-testid="finance-totals">
+        <StatCard testId="fin-total-contract" label="변경 반영 계약금액" value={fmtEok(sum((f) => f.adjustedContract))} sub="원 계약 + 원청·발주처가 승인한 변경계약. 청구 검토·승인 대기는 제외." icon={<FileSignature size={20} />} group="growth" />
+        <StatCard testId="fin-total-profit" label="예상이익" value={fmtEok(sum((f) => f.expectedProfit))} sub="변경 반영 계약금액 − 총예상원가(EAC). 매출·입금과 다른 ‘준공 시 예상’ 개념." icon={<TrendingUp size={20} />} group="ax" />
+        <StatCard testId="fin-total-billed" label="기성청구액 (확정)" value={fmtEok(sum((f) => f.billed))} sub="공정 진행에 따라 발주처에 청구해 확정된 금액. 받은 돈이 아님." icon={<FilePlus2 size={20} />} group="growth" />
+        <StatCard testId="fin-total-outstanding" label="미수금" value={fmtEok(sum((f) => f.outstanding))} sub={<>입금 누계 <b className="num text-ink-2">{fmtEok(sum((f) => f.received))}</b> (실제 통장에 들어온 돈). 미수금 = 확정 기성청구 − 입금.</>} icon={<Wallet size={20} />} group="growth" />
       </div>
 
       <Card>
@@ -110,7 +105,7 @@ export default function FinancePage() {
               const decided = c.status === "approved" || c.status === "rejected";
               return (
                 <li key={c.id} className="flex flex-wrap items-center gap-3 py-3" data-testid="change-order" data-status={c.status}>
-                  <div className="min-w-0 flex-1">
+                  <div className="min-w-0 flex-1 basis-[16rem]">
                     <p className="flex flex-wrap items-center gap-1.5 text-[0.88rem]">
                       <b>{s?.shortName}</b> {c.title}
                       <Badge tone={c.status === "approved" ? "ok" : c.status === "rejected" ? "neutral" : "warn"}>{CO_STATUS_LABEL[c.status]}</Badge>

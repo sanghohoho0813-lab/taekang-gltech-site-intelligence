@@ -37,13 +37,13 @@ export function EasyHome() {
     <div className="mx-auto w-full max-w-xl pb-8" data-testid="easy-home">
       {/* 머리 띠 — 인사·날짜·현장별 오늘 보고 (D-60) */}
       <section className="brand-band px-4 pb-16 pt-5" aria-labelledby="easy-hello">
-        <p className="text-[1.08rem] font-semibold text-white/90">{easyDate(today)}</p>
+        <p className="text-[1.08rem] font-semibold text-white">{easyDate(today)}</p>
         <h1 id="easy-hello" className="mt-0.5 text-[1.75rem] font-extrabold leading-tight tracking-tight">
           안녕하세요, {user?.name ?? ""}님
         </h1>
         {sites.length > 0 && (
           <>
-            <p className="mt-2 text-[1.02rem] font-semibold text-white/90">
+            <p className="mt-2 text-[1.02rem] font-semibold text-white">
               오늘 보고 {sentCount}/{sites.length} 현장
             </p>
             <ul className="mt-2 flex flex-wrap gap-2" aria-label="내 현장 오늘 보고">

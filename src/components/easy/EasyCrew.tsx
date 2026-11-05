@@ -15,7 +15,7 @@ import { todayIso } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
 import { locateOnce } from "@/lib/geo/client";
 import { cx } from "@/components/ui/primitives";
-import { Choice, EasyBar, EasyQuestion, SectionBar, Stepper, VoiceHint, easyTextareaCls } from "./ui";
+import { Choice, EasyBar, EasyPageHead, EasyQuestion, SectionBar, Stepper, VoiceHint, easyTextareaCls } from "./ui";
 import { downscalePhoto } from "./photo";
 import { easyDate } from "./words";
 import { hasConsent } from "@/lib/domain/privacy";
@@ -259,12 +259,14 @@ export function EasyCrew() {
 
   return (
     <div className="space-y-6" data-testid="easy-crew">
-      <SectionBar sections={sections} current={secIdx} />
-      {site && step !== "site" && (
-        <p className="flex items-center gap-1.5 text-[1rem] font-semibold text-ink-2">
-          <HardHat size={18} aria-hidden /> {site.shortName} · 작업 인원 알리기
-        </p>
-      )}
+      <EasyPageHead>
+        <SectionBar onBand sections={sections} current={secIdx} />
+        {site && step !== "site" && (
+          <p className="flex items-center gap-1.5 text-[1rem] font-semibold text-white">
+            <HardHat size={18} aria-hidden /> {site.shortName} · 작업 인원 알리기
+          </p>
+        )}
+      </EasyPageHead>
       <div key={step} className="anim-fade-up">
         {body}
       </div>
