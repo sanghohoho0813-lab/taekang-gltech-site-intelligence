@@ -76,8 +76,8 @@ export function acceptanceItems(db: DemoDB, stage: StageNo, from: string, to: st
         key: "design",
         title: "업무분석·AX 상세설계",
         criteria: "현장 업무 흐름·화면·데이터 구조를 설계 문서로 확정",
-        how: "설계 문서(PROJECT_SPEC·결정 기록 DECISIONS) 열람, 시연 화면으로 흐름 확인",
-        evidence: [txt("설계·결정 기록", "PROJECT_SPEC.md · DECISIONS.md (D-01~)"), txt("검수 대응표", "docs/CONTRACT_ACCEPTANCE.md")],
+        how: "‘상세설계서’ 화면(관리 → 상세설계서) 인쇄본으로 업무 흐름·화면 구성 확인, 시연 화면으로 흐름 확인",
+        evidence: [txt("상세설계서", "관리 → 상세설계서 (업무 흐름 4개·화면 목록·권한표·데이터 구조·보안 설계)"), txt("결정 기록", "개발 결정 기록 D-01~ (인수인계 자료에 포함)")],
       },
       {
         key: "structure",
@@ -90,7 +90,7 @@ export function acceptanceItems(db: DemoDB, stage: StageNo, from: string, to: st
         key: "authz",
         title: "권한·DB 구조",
         criteria: "역할별 화면·데이터 권한, 서버에서 권한 검사, DB 행 보안",
-        how: "역할을 바꿔 로그인해 보이는 화면·금액 차이 확인 · 배포 전 점검(RLS) 결과",
+        how: "상세설계서 4·5장(역할별 권한표·데이터 구조) · 역할을 바꿔 로그인해 보이는 화면·금액 차이 확인 · 배포 전 점검(RLS) 결과",
         evidence: [txt("역할", "대표 · 본사 관리자 · 현장 직원 · 발주처 (4개)"), txt("자동 시험", "모든 명령 × 4개 역할 권한 표 · 현장·발주처 금액 비노출"), txt("DB", "모든 표 행 보안(RLS) 켬 · 배포 전 점검 스크립트")],
       },
       {

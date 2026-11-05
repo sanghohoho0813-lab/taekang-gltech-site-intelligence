@@ -766,7 +766,7 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
   test("로그아웃 후 데이터 접근 불가 / 화면 가로 넘침 없음", async ({ browser }) => {
     for (const w of [390, 1440]) {
       const page = await login(browser, CEO.email, CEO.password, { width: w, height: 900 });
-      for (const r of ["/dashboard", `/sites/${siteId}`, "/admin", "/admin?tab=members", "/report", "/settings", "/labor", "/attendance", "/orders", "/schedule", "/data", "/usage", "/help", "/audit", "/daily", "/quality", "/acceptance", "/launch", "/help/quick", "/admin?tab=privacy", "/field/check", "/my"]) {
+      for (const r of ["/dashboard", `/sites/${siteId}`, "/admin", "/admin?tab=members", "/report", "/settings", "/labor", "/attendance", "/orders", "/schedule", "/data", "/usage", "/help", "/audit", "/daily", "/quality", "/acceptance", "/launch", "/design", "/help/quick", "/admin?tab=privacy", "/field/check", "/my"]) {
         await page.goto(r);
         await page.waitForTimeout(300);
         const over = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
