@@ -5,6 +5,8 @@ import { errorResponse, notLive, requireMember } from "@/server/http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+/** 서버 함수 시간 한도 (Vercel 기본 10초보다 넉넉히 · 전체 자료 백업: 크다 · D-50) */
+export const maxDuration = 60;
 
 /** 전체 자료 백업 JSON (대표 전용) — 내려받기 */
 export async function GET(req: NextRequest) {

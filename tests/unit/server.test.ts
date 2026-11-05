@@ -365,6 +365,8 @@ describe("사진·이력·설정", () => {
       const log = { id: `log-old-${i}`, at, by: i % 2 ? "u-field" : "u-manager", type: i % 3 ? "attendance" : "report", siteId: i % 2 ? "site-a" : "site-b", summary: `과거 이력 ${i}${i === 7 ? " 크레인 점검" : ""}` };
       await db.query(`insert into records (company_id, collection, id, site_id, data) values ($1, 'activityLogs', $2, $3, $4)`, [ceo.companyId, log.id, log.siteId, JSON.stringify(log)]);
     }
+    // DB를 직접 고친 뒤에는 rev를 올린다 (서버가 기억한 회사 데이터를 다시 읽게 · D-50 운영 규칙)
+    await db.query(`update companies set rev = rev + 1 where id = $1`, [ceo.companyId]);
     const view = (await svc.getView(ceo)).db;
     // 화면 데이터는 300건으로 잘리지만 DB에는 전부 남아 있다
     expect(view.activityLogs.length).toBe(300);
@@ -387,7 +389,7 @@ describe("사진·이력·설정", () => {
     const backup = JSON.parse((await svc.exportCompany(ceo)).body);
     expect(backup.data.activityLogs.length).toBeGreaterThan(320);
     expect(backup.data.activityLogs.some((l: { id: string }) => l.id === "log-old-0")).toBe(true);
-  });
+  }, 30_000); // 320건을 한 건씩 넣으므로 바쁜 PC에서는 5초를 넘기기도 한다
 
   it("사진에는 휴대폰 사진 데이터만 — 다른 주소·GIF·스크립트는 거부 (본사 화면이 내부 주소를 불러오지 않게)", async () => {
     for (const dataUrl of ["/api/export", "https://evil.example/x.png", "data:image/gif;base64,R0lGODlhAQABAAAAACw=", "data:image/svg+xml;base64,PHN2Zz4=", "javascript:alert(1)"])
@@ -473,6 +475,7 @@ describe("개인위치정보 규칙 (LIVE · D-43)", () => {
     const [row] = await db.query<{ id: string }>(`select id from records where collection = 'attendance' and data->'inGeo'->>'lat' is not null order by id limit 1`);
     expect(row?.id).toBeTruthy();
     await db.query(`update records set data = jsonb_set(data, '{inAt}', to_jsonb('2026-01-05T00:00:00.000Z'::text)) where collection = 'attendance' and id = $1`, [row.id]);
+    await db.query(`update companies set rev = rev + 1 where id = $1`, [ceo.companyId]); // 직접 고친 뒤 rev 올리기 (D-50)
 
     await svc.executeCommand(ceo, "setLocationPolicy", { retentionDays: 90, viewers: "ceo" });
     // 명령이 없어도(주말 등) 화면 데이터·백업에는 보관 기간이 지난 좌표가 나가지 않는다 (DB 삭제는 다음 명령 때 · D-49)

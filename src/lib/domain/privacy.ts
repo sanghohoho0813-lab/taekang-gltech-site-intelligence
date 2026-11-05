@@ -95,6 +95,20 @@ export function stripGeo(g: GeoStamp, mark?: "purged"): GeoStamp {
   return { status: g.status, ...(g.reason ? { reason: g.reason } : {}), ...(mark || g.purged ? { purged: true as const } : {}) };
 }
 
+/** 지운 것 없이 빠르게: 기간이 지난 좌표가 하나라도 있는가 (만들지 않고 숫자만 비교 · D-50) */
+export function anyExpired(db: DemoDB, today: string, policyDays: number | null): boolean {
+  const day0 = Date.parse(`${today}T00:00:00+09:00`);
+  const check = (g: GeoStamp | undefined, iso: string | undefined) => {
+    if (!g || !iso || (g.lat === undefined && g.distanceM === undefined && g.accuracyM === undefined && g.lng === undefined)) return false;
+    const days = Math.min(policyDays ?? Infinity, g.keepDays ?? Infinity);
+    return Number.isFinite(days) && Date.parse(iso) < day0 - days * 86_400_000;
+  };
+  for (const r of db.attendance ?? []) if (check(r.inGeo, r.inAt) || check(r.outGeo, r.outAt)) return true;
+  for (const c of db.crewChecks ?? []) if (check(c.geo, c.at)) return true;
+  for (const r of db.reports) if (check(r.geo, r.createdAt)) return true;
+  return false;
+}
+
 /** 보관 기간이 지난 좌표인가 — 지금 규칙과 수집할 때 알린 기간 중 짧은 쪽 (D-49) */
 export function expiredStamp(g: GeoStamp, collectedOn: string, today: string, policyDays: number | null): boolean {
   const days = Math.min(policyDays ?? Infinity, g.keepDays ?? Infinity);

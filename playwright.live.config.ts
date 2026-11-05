@@ -30,7 +30,7 @@ export default defineConfig({
   },
   webServer: {
     // E2E_DATABASE_URL=postgres://… (빈 DB)이면 실제 Postgres로, 없으면 내장 PGlite로
-    command: `${process.env.E2E_DATABASE_URL ? "true" : `rm -rf ${DB_DIR}`} && NEXT_PUBLIC_DATA_MODE=live NEXT_DIST_DIR=.next-live DATABASE_URL=${process.env.E2E_DATABASE_URL ?? `pglite:./${DB_DIR}`} VAPID_PUBLIC_KEY=${VAPID.publicKey} VAPID_PRIVATE_KEY=${VAPID.privateKey} VAPID_SUBJECT=mailto:qa@taekang.test npx next start -p ${PORT} -H 127.0.0.1`,
+    command: `${process.env.E2E_DATABASE_URL ? "true" : `rm -rf ${DB_DIR}`} && NEXT_PUBLIC_DATA_MODE=live NEXT_DIST_DIR=.next-live DATABASE_URL=${process.env.E2E_DATABASE_URL ?? `pglite:./${DB_DIR}`} VAPID_PUBLIC_KEY=${VAPID.publicKey} VAPID_PRIVATE_KEY=${VAPID.privateKey} VAPID_SUBJECT=mailto:qa@taekang.test STATE_CACHE_FREEZE=1 npx next start -p ${PORT} -H 127.0.0.1`,
     url: `http://127.0.0.1:${PORT}/login`,
     reuseExistingServer: false,
     timeout: 120_000,

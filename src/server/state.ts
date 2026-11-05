@@ -149,7 +149,11 @@ async function extractPhoto(tx: Tx, companyId: string, item: Item, key: "dataUrl
   item[key] = `/api/photos/${encodeURIComponent(id)}`;
 }
 
-/** prev → next 차이만 저장. next를 직접 고친다(사진 주소 치환) */
+/** 저장할 때 만든 JSON을 기억 — 다음 명령에서 이 상태가 ‘이전’이 되면 다시 만들지 않는다 (D-50) */
+const JSON_MEMO = new WeakMap<object, string>();
+const jsonOf = (x: Item) => JSON_MEMO.get(x) ?? JSON.stringify(x);
+
+/** prev → next 차이만 저장. next를 직접 고친다(사진 주소 치환). 무엇이든 바뀌었으면 rev를 반드시 올린다 (메모리 재사용의 전제 · D-50) */
 export async function persistState(tx: Tx, companyId: string, prev: DemoDB | null, next: DemoDB): Promise<{ written: number; deleted: number }> {
   let written = 0;
   let deleted = 0;
@@ -157,7 +161,7 @@ export async function persistState(tx: Tx, companyId: string, prev: DemoDB | nul
   const N = next as unknown as Record<CollectionName, Item[]>;
   for (const name of NAMES) {
     const keyOf = COLLECTIONS[name];
-    const before = new Map((P[name] ?? []).map((x) => [keyOf(x), JSON.stringify(x)]));
+    const before = new Map((P[name] ?? []).map((x) => [keyOf(x), jsonOf(x)]));
     const after = N[name] ?? [];
     const seen = new Set<string>();
     // 새로 추가된 항목은 배열 순서대로 seq가 붙도록 (최신이 앞에 오는 컬렉션은 뒤에서부터)
@@ -167,6 +171,7 @@ export async function persistState(tx: Tx, companyId: string, prev: DemoDB | nul
       seen.add(key);
       if (name === "photos") await extractPhoto(tx, companyId, item, "dataUrl");
       const json = JSON.stringify(item);
+      JSON_MEMO.set(item, json);
       if (before.get(key) === json) continue;
       if (APPEND_ONLY.has(name) && before.has(key)) continue;
       await tx.query(
@@ -189,7 +194,10 @@ export async function persistState(tx: Tx, companyId: string, prev: DemoDB | nul
     ? JSON.stringify([prev.baseline, prev.thresholds, prev.settings, prev.signalStates, prev.idempotencyKeys, prev.seededAt])
     : "";
   const nextState = JSON.stringify([next.baseline, next.thresholds, next.settings, next.signalStates, next.idempotencyKeys, next.seededAt]);
-  if (prevState !== nextState) {
+  const stateChanged = prevState !== nextState;
+  // 바뀐 것이 있는데 명령이 rev를 올리지 않았으면 여기서 올린다 — 다른 서버가 기억한 데이터를 믿지 않게
+  if ((written || deleted || stateChanged) && prev && next.rev <= prev.rev) next.rev = prev.rev + 1;
+  if (stateChanged) {
     await tx.query(
       `insert into company_state (company_id, seeded_at, baseline, thresholds, settings, signal_states, idempotency_keys)
        values ($1, $2, $3::jsonb, $4::jsonb, $5::jsonb, $6::jsonb, $7::jsonb)

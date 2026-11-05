@@ -245,7 +245,7 @@ QA_BASE_URL=http://127.0.0.1:3000 npm run qa:cuesheet   # 시연 큐시트 54개
 | `npm run smoke -- https://배포주소` | **배포 후 점검** — 운영 모드·DB·보안 헤더·로그인 없이 데이터 차단·다른 사이트 요청 차단·최초 설정 코드·알림 키·앱 파일 (로그인·데이터 변경 없음, ❌ 있으면 종료 코드 1 · D-44) |
 | `npm run preflight` | 배포 전 자동 점검 — 운영 모드·DB 연결 문자열(풀러·SSL)·공개 변수 비밀값·설정 코드·DB 스키마·**RLS** 확인 (`node --env-file=.env.preflight scripts/preflight.mjs`, 값은 출력하지 않음) |
 | `GET /api/health` | 배포 후 상태 확인 (로그인 불필요, DB 연결만 확인) |
-| `npm run perf` | 1년치 데이터 성능 측정 (`PERF_DAYS=900`이면 3년치) |
+| `npm run perf` | 1년치 데이터 성능 측정 + **아침 출근 몰림**(20명 동시 출근·보고+본사 화면) (`PERF_DAYS=900`이면 3년치 · `PEAK_PEOPLE=40`처럼 인원 변경 · 실제 Postgres는 `TEST_DATABASE_URL=…` · D-50) |
 | `TEST_DATABASE_URL=postgres://… npx vitest run` | 단위·서버 테스트를 **실제 Postgres**로 — 배포 전 필수 (D-41·D-42). 테스트 파일마다 빈 임시 DB를 만들고 지우므로 아무 DB 주소나 됨(DB를 만들 권한 필요) |
 | `E2E_DATABASE_URL=postgres://… npm run e2e:live` | LIVE 화면 E2E를 **실제 Postgres**로 (빈 DB) |
 | `npm run vapid` | 휴대폰 알림(웹 푸시) 키 만들기 → Vercel 환경변수 `VAPID_PUBLIC_KEY`·`VAPID_PRIVATE_KEY`·`VAPID_SUBJECT` (한 번만, 다시 만들면 모두 알림을 다시 켜야 함) |

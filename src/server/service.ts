@@ -11,6 +11,7 @@ import { COMMANDS, isCommandName, type CommandName } from "@/lib/data/registry";
 import { CommandError } from "@/lib/data/commands";
 import { applyLocationRetention } from "@/lib/data/privacyCommands";
 import { recordError } from "./errors";
+import { cachedState, rememberState } from "./stateCache";
 import { ROLE_LABEL } from "@/lib/domain/labels";
 import { createSeed } from "@/lib/data/seed";
 import { uid } from "@/lib/domain/ids";
@@ -23,7 +24,16 @@ import { createSession, hashPassword, MEMBER_COLS, normalizeEmail, passwordProbl
 
 export async function getView(m: Member): Promise<{ rev: number; db: DemoDB }> {
   const db = await getDb();
-  const loaded = await db.transaction((tx) => loadState(tx, m.companyId));
+  // 같은 rev를 이미 읽어 두었으면 다시 읽지 않는다 (D-50). 새로 읽을 때는 한 시점 기준(repeatable read)으로 읽어 기억한다
+  const rev = await currentRev(m.companyId);
+  let loaded = cachedState(m.companyId, rev);
+  if (!loaded) {
+    loaded = await db.transaction(async (tx) => {
+      await tx.query("set transaction isolation level repeatable read");
+      return loadState(tx, m.companyId);
+    });
+    rememberState(m.companyId, loaded);
+  }
   // 명령이 없는 날(주말 등)에도 보관 기간이 지난 좌표는 보내지 않는다 — 저장은 다음 명령 때 (rev는 DB 값 그대로 · D-49)
   const state = applyLocationRetention(loaded, new Date());
   return { rev: loaded.rev, db: viewFor(m, state) };
@@ -114,11 +124,12 @@ export async function executeCommand(m: Member, name: unknown, args: unknown): P
   const db = await getDb();
   // 명령 안에서 난 예상 못 한 오류 — 사용자에게는 형식 오류로 알리고, 오류 기록에는 원래 오류를 남긴다 (D-47)
   let unexpected: unknown = null;
-  let done: { response: { result: unknown; rev: number; db: DemoDB }; notices: Awaited<ReturnType<typeof noticesFor>> };
+  let done: { response: { result: unknown; rev: number; db: DemoDB }; notices: Awaited<ReturnType<typeof noticesFor>>; saved: DemoDB };
   try {
     done = await db.transaction(async (tx) => {
-      await tx.query(`select rev from companies where id = $1 for update`, [m.companyId]);
-      const loaded = await loadState(tx, m.companyId);
+      const [lock] = await tx.query<{ rev: string | number }>(`select rev from companies where id = $1 for update`, [m.companyId]);
+      // 회사 잠금을 잡은 뒤의 rev가 기억한 것과 같으면 1년치를 다시 읽지 않는다 (D-50)
+      const loaded = cachedState(m.companyId, Number(lock?.rev)) ?? (await loadState(tx, m.companyId));
       const now = new Date();
       // 하루 한 번: 보관 기간이 지난 위치 좌표를 지운다 (명령과 같은 트랜잭션 — 명령이 실패하면 함께 되돌아감 · D-43)
       const state = applyLocationRetention(loaded, now);
@@ -137,7 +148,7 @@ export async function executeCommand(m: Member, name: unknown, args: unknown): P
       // 알림 대상은 저장 전에 계산 (실행 전·후 비교)
       const notices = noticesFor(state, out.db, m.id);
       await persistState(tx, m.companyId, loaded, out.db);
-      return { response: { result: sanitizeResult(m, out.result), rev: out.db.rev, db: viewFor(m, out.db) }, notices };
+      return { response: { result: sanitizeResult(m, out.result), rev: out.db.rev, db: viewFor(m, out.db) }, notices, saved: out.db };
     });
   } catch (e) {
     const bug = unexpected ?? (e instanceof CommandError || e instanceof ForbiddenError ? null : e);
@@ -145,6 +156,8 @@ export async function executeCommand(m: Member, name: unknown, args: unknown): P
     throw e;
   }
   const { response, notices } = done;
+  // 커밋된 뒤에만 기억한다 (다음 명령이 DB에서 다시 읽지 않게)
+  rememberState(m.companyId, done.saved);
   // 저장이 끝난 뒤에 알림 — 실패해도 명령 결과에는 영향 없음
   if (notices.length) await deliver(m.companyId, notices).catch((e) => console.error("[push]", e));
   return response;

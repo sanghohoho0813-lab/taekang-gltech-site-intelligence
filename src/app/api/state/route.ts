@@ -5,6 +5,8 @@ import { errorResponse, json, notLive, renewCookie, requireMember } from "@/serv
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+/** 서버 함수 시간 한도 (Vercel 기본 10초보다 넉넉히 · 화면 데이터: 처음 읽을 때 1년치 · D-50) */
+export const maxDuration = 30;
 
 /** 역할별로 걸러진 회사 데이터. ?rev=N 이 최신이면 204 (변경 없음) */
 export async function GET(req: NextRequest) {

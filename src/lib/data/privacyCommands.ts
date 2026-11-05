@@ -6,7 +6,7 @@
  *   판정(현장 안/밖)과 시각은 근무 기록으로 남는다.
  */
 import type { DemoDB, LocationPolicy } from "@/lib/domain/types";
-import { RETENTION_MAX, RETENTION_MIN, eraseCoordinates, kstToday, locationPolicy, retentionCutoff, retentionText, viewersText } from "@/lib/domain/privacy";
+import { RETENTION_MAX, RETENTION_MIN, anyExpired, eraseCoordinates, kstToday, locationPolicy, retentionCutoff, retentionText, viewersText } from "@/lib/domain/privacy";
 import { CommandError, clone, log, nowIso, touch, userName, type Ctx } from "./commands";
 
 const SYSTEM: Pick<Ctx, "userId"> = { userId: "system" };
@@ -86,6 +86,8 @@ export function applyLocationRetention(db: DemoDB, now: Date): DemoDB {
   const policy = locationPolicy(db);
   const today = kstToday(now);
   if (policy.purgedOn === today) return db;
+  // 대부분의 명령: 지울 것이 없음 — 복사하지 않고 바로 (D-50)
+  if (!anyExpired(db, today, policy.retentionDays)) return db;
   // 지금 규칙의 기간 또는 수집할 때 알린 기간(더 짧은 쪽)이 지난 좌표가 있을 때만 바꾼다.
   // eraseCoordinates는 바뀐 기록만 새 객체로 바꾸므로 얕은 복사로 충분하다 (명령마다 전체 복사하지 않게)
   const next: DemoDB = { ...db, activityLogs: [...db.activityLogs] };
