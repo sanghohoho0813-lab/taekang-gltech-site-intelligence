@@ -46,7 +46,7 @@ export type CollectionName = keyof typeof COLLECTIONS;
 const NAMES = Object.keys(COLLECTIONS) as CollectionName[];
 
 /** 최신 항목이 배열 앞에 오는 컬렉션 (명령이 unshift) */
-const NEWEST_FIRST = new Set<CollectionName>(["reports", "proofEvents", "activityLogs"]);
+const NEWEST_FIRST = new Set<CollectionName>(["reports", "proofEvents", "activityLogs", "actions", "partnerRequests", "importBatches"]);
 /** 지우지 않는 컬렉션 */
 const APPEND_ONLY = new Set<CollectionName>(["activityLogs"]);
 const LOG_LIMIT = 300;
@@ -195,8 +195,9 @@ export async function persistState(tx: Tx, companyId: string, prev: DemoDB | nul
     : "";
   const nextState = JSON.stringify([next.baseline, next.thresholds, next.settings, next.signalStates, next.idempotencyKeys, next.seededAt]);
   const stateChanged = prevState !== nextState;
+  const companyChanged = !!prev && JSON.stringify(prev.company) !== JSON.stringify(next.company);
   // 바뀐 것이 있는데 명령이 rev를 올리지 않았으면 여기서 올린다 — 다른 서버가 기억한 데이터를 믿지 않게
-  if ((written || deleted || stateChanged) && prev && next.rev <= prev.rev) next.rev = prev.rev + 1;
+  if ((written || deleted || stateChanged || companyChanged) && prev && next.rev <= prev.rev) next.rev = prev.rev + 1;
   if (stateChanged) {
     await tx.query(
       `insert into company_state (company_id, seeded_at, baseline, thresholds, settings, signal_states, idempotency_keys)

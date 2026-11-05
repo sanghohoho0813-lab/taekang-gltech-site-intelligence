@@ -103,4 +103,58 @@ describe("회사 데이터 메모리 재사용", () => {
     expect(cache.cachedState(ceo.companyId, r)).toBeNull();
     delete process.env.STATE_CACHE;
   });
+
+  it("명령이 계속 이어져도 DB에서 읽은 지 기억 시간이 지나면 다시 읽는다 (직접 고친 DB를 되돌리지 않게 · 2차 검토 반영)", async () => {
+    process.env.STATE_CACHE_TTL_MS = "300";
+    const db = await getDb();
+    await svc.executeCommand(field, "submitFieldReport", report("t-0"));
+    // rev를 올리지 않고 직접 고친다 (운영 규칙 위반을 흉내)
+    await db.query(`update records set data = jsonb_set(data, '{shortName}', to_jsonb('B현장(직접 고침)'::text)) where company_id = $1 and collection = 'sites' and id = 'site-b'`, [ceo.companyId]);
+    const t0 = Date.now();
+    let i = 0;
+    while (Date.now() - t0 < 900) {
+      await svc.executeCommand(field, "submitFieldReport", report(`t-${++i}`));
+      await new Promise((r) => setTimeout(r, 80));
+    }
+    const out = await svc.executeCommand(manager, "updateProgress", { siteId: "site-b", progressPct: 33 });
+    expect(out.db.sites.find((x) => x.id === "site-b")!.shortName).toBe("B현장(직접 고침)");
+    const [row] = await db.query<{ n: string }>(`select data->>'shortName' as n from records where company_id = $1 and collection = 'sites' and id = 'site-b'`, [ceo.companyId]);
+    expect(row.n).toBe("B현장(직접 고침)");
+    delete process.env.STATE_CACHE_TTL_MS;
+  });
+
+  it("기억한 데이터와 DB에서 새로 읽은 데이터가 같다 — 최신이 앞에 오는 목록(조치·고객 요청·가져오기 기록)의 순서까지", async () => {
+    const text = (d: string) => `현장,구분,날짜,금액\nC현장,기성,${d},1000000`;
+    await svc.executeCommand(manager, "importData", { kind: "billing", text: text("2026-03-01"), idempotencyKey: "eq-imp-1" });
+    await svc.executeCommand(manager, "importData", { kind: "billing", text: text("2026-03-02"), idempotencyKey: "eq-imp-2" });
+    await svc.executeCommand(ceo, "setCompanySettings", { companyName: "(주)태강지엘텍 시험", laborDayRate: 310_000 });
+    await svc.executeCommand(field, "submitFieldReport", report("eq-1"));
+    const r = await rev();
+    const cached = cache.cachedState(ceo.companyId, r)!;
+    expect(cached).not.toBeNull();
+    const fresh = await (await getDb()).transaction((tx) => loadState(tx, ceo.companyId));
+    const norm = (d: unknown) => JSON.stringify(sortKeys({ ...(d as object), updatedAt: "" }));
+    expect(norm(cached)).toBe(norm(fresh));
+    expect(fresh.importBatches![0].at >= fresh.importBatches![1].at).toBe(true); // 최신이 앞
+  });
+
+  it("회사 이름만 바뀐 저장도 rev를 올린다 · 기억 시간 설정이 잘못되면 기본 30초", async () => {
+    const db = await getDb();
+    await db.transaction(async (tx) => {
+      const prev = await loadState(tx, ceo.companyId);
+      const next = { ...prev, company: { ...prev.company, name: "이름만 바뀜" } };
+      await persistState(tx, ceo.companyId, prev, next);
+      expect(next.rev).toBe(prev.rev + 1);
+    });
+    process.env.STATE_CACHE_TTL_MS = "30s";
+    await svc.executeCommand(field, "submitFieldReport", report("ttl-nan"));
+    expect(cache.cachedState(ceo.companyId, await rev())).not.toBeNull();
+    delete process.env.STATE_CACHE_TTL_MS;
+  });
 });
+
+function sortKeys(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(sortKeys);
+  if (v && typeof v === "object") return Object.fromEntries(Object.keys(v as object).sort().map((k) => [k, sortKeys((v as Record<string, unknown>)[k])]));
+  return v;
+}

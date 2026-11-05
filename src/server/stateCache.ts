@@ -13,7 +13,8 @@ import type { DemoDB } from "@/lib/domain/types";
 
 interface Entry {
   rev: number;
-  at: number;
+  /** DB에서 마지막으로 실제로 읽은 시각 — 명령이 이어져도 늘어나지 않는다 (리뷰 반영) */
+  loadedAt: number;
   db: DemoDB;
 }
 
@@ -21,7 +22,10 @@ const g = globalThis as unknown as { __tkStateCache?: Map<string, Entry> };
 const cache: Map<string, Entry> = (g.__tkStateCache ??= new Map());
 
 const enabled = () => process.env.STATE_CACHE !== "off";
-const ttlMs = () => Math.max(0, Number(process.env.STATE_CACHE_TTL_MS ?? 30_000));
+const ttlMs = () => {
+  const v = Number(process.env.STATE_CACHE_TTL_MS ?? 30_000);
+  return Number.isFinite(v) ? Math.max(0, v) : 30_000;
+};
 const freeze = () => process.env.NODE_ENV === "test" || process.env.STATE_CACHE_FREEZE === "1";
 
 function deepFreeze<T>(o: T): T {
@@ -32,20 +36,27 @@ function deepFreeze<T>(o: T): T {
   return o;
 }
 
-/** rev가 같고 오래되지 않았으면 기억한 회사 데이터 (고치지 말 것 — 명령은 복사해서 쓴다) */
-export function cachedState(companyId: string, rev: number): DemoDB | null {
+/** rev가 같고, DB에서 읽은 지 오래되지 않았으면 기억한 회사 데이터 (고치지 말 것 — 명령은 복사해서 쓴다) */
+export function cachedEntry(companyId: string, rev: number): { db: DemoDB; loadedAt: number } | null {
   if (!enabled()) return null;
   const e = cache.get(companyId);
-  if (!e || e.rev !== rev || Date.now() - e.at > ttlMs()) return null;
-  return e.db;
+  if (!e || e.rev !== rev || Date.now() - e.loadedAt > ttlMs()) return null;
+  return { db: e.db, loadedAt: e.loadedAt };
+}
+export function cachedState(companyId: string, rev: number): DemoDB | null {
+  return cachedEntry(companyId, rev)?.db ?? null;
 }
 
-/** 커밋된 회사 데이터를 기억한다 (더 오래된 rev로 덮어쓰지 않음) */
-export function rememberState(companyId: string, db: DemoDB): void {
+/**
+ * 커밋된 회사 데이터를 기억한다 (더 오래된 rev로 덮어쓰지 않음).
+ * loadedAt: 이 데이터의 바탕을 DB에서 실제로 읽은 시각 — 기억한 데이터에서 이어진 명령이면 그 시각을 그대로 넘긴다.
+ * 그래야 명령이 계속 이어져도 30초마다 한 번은 DB에서 다시 읽는다 (DB를 직접 고친 경우 대비).
+ */
+export function rememberState(companyId: string, db: DemoDB, loadedAt: number = Date.now()): void {
   if (!enabled()) return;
   const e = cache.get(companyId);
-  if (e && e.rev > db.rev && Date.now() - e.at <= ttlMs()) return;
-  cache.set(companyId, { rev: db.rev, at: Date.now(), db: freeze() ? deepFreeze(db) : db });
+  if (e && e.rev > db.rev && Date.now() - e.loadedAt <= ttlMs()) return;
+  cache.set(companyId, { rev: db.rev, loadedAt, db: freeze() ? deepFreeze(db) : db });
 }
 
 export function forgetState(companyId?: string): void {
