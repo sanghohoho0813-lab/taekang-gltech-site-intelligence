@@ -89,7 +89,7 @@ function LoginForm() {
             <span className="mt-1 block text-[0.98rem] font-semibold text-ink-2">‘보기’를 눌러 비밀번호를 확인해 보세요.</span>
           </p>
         )}
-        <button type="submit" disabled={busy} aria-busy={busy || undefined} className="press inline-flex h-[4rem] w-full items-center justify-center gap-2 rounded-2xl bg-cta text-[1.3rem] font-extrabold text-cta-text disabled:opacity-60" data-testid="login-submit">
+        <button type="submit" disabled={busy} aria-busy={busy || undefined} className="press inline-flex h-[4rem] w-full items-center justify-center gap-2 rounded-full bg-cta text-[1.3rem] font-extrabold text-cta-text shadow-card disabled:opacity-60" data-testid="login-submit">
           {busy ? <Loader2 size={22} className="animate-spin" aria-hidden /> : <LogIn size={22} aria-hidden />}
           로그인
         </button>

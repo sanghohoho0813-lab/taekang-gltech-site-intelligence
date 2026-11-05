@@ -7,7 +7,7 @@ import { useDb, useRole } from "@/lib/data/store";
 import { useFinancials, usePortfolio, useSignals, siteHealth, userLabel } from "@/lib/data/hooks";
 import { PageBody, PageHeader } from "@/components/shell/AppShell";
 import { Button, Card, CardHeader, CountUp, DemoBadge, EmptyState, PageSkeleton, ProgressBar, SeverityBadge, cx } from "@/components/ui/primitives";
-import { AiReadyButton, Delta, Freshness, HealthPill, MethodChip, StatCard } from "@/components/domain/Widgets";
+import { AiReadyButton, Freshness, HealthPill, MethodChip, ProgressRing, StatCard } from "@/components/domain/Widgets";
 import { BillingBars, MarginBars } from "@/components/domain/Charts";
 import { fmtEok, fmtMan, fmtPct, fmtPp, fmtRelative } from "@/lib/domain/format";
 import { CATEGORY_LABEL, RULE_LABEL } from "@/lib/domain/labels";
@@ -71,48 +71,35 @@ function CeoDashboard() {
 
       {IS_LIVE && db.sites.length === 0 && <GettingStarted userCount={db.users.filter((u) => !u.inactive).length} />}
 
-      <div className="stagger grid grid-cols-2 gap-3 @min-[760px]:grid-cols-3 @min-[1080px]:grid-cols-5" data-tour="kpi-strip" data-testid="kpi-strip">
-        <StatCard label="운영 현장" value={`${total.activeCount}곳`} sub={IS_LIVE ? `전체 ${total.siteCount}곳 중 진행 중` : `가상 현장 ${total.siteCount}곳 · 진행 중`} icon={<Building2 size={21} />} href="/sites" />
-        <StatCard
-          label="총 계약 규모 (승인 변경 포함)"
-          value={<CountUp value={total.adjustedContract} format={(v) => fmtEok(v)} />}
-          sub={total.pendingChangeAmount > 0 ? `승인 대기 변경공사 ${fmtEok(total.pendingChangeAmount)} 미반영` : "부가세 별도"}
-          icon={<CircleDollarSign size={21} />}
-          group="growth"
-          href="/finance"
+      <div className="stagger grid gap-3 @min-[1080px]:grid-cols-[minmax(0,1.15fr)_minmax(0,1.6fr)]" data-tour="kpi-strip" data-testid="kpi-strip">
+        <ProfitHero
+          profit={total.expectedProfit}
+          marginPct={total.marginPct}
+          diff={total.expectedProfit - baselineProfit}
+          rows={db.sites
+            .filter((s) => s.status !== "completed" && fin[s.id])
+            .map((s) => ({ id: s.id, name: s.shortName, margin: fin[s.id].marginPct, plan: fin[s.id].plannedMarginPct }))}
         />
-        <StatCard
-          label="예상이익 합계 · 평균 이익률"
-          value={<CountUp value={total.expectedProfit} format={(v) => fmtEok(v)} />}
-          sub={
-            <span className="flex flex-wrap gap-x-2">
-              <span className="num">평균 <b className="text-ink-2">{fmtPct(total.marginPct)}</b></span>
-              <span>기준 대비 <Delta value={total.expectedProfit - baselineProfit} format={(v) => fmtMan(v)} /></span>
-            </span>
-          }
-          icon={<TrendingUp size={21} />}
-          group="ax"
-          href="/report"
-          testId="kpi-profit"
-        />
-        <StatCard
-          label="미수금 (확정 기성 − 수금)"
-          value={<CountUp value={total.outstanding} format={(v) => fmtEok(v)} />}
-          sub={longReceivable ? `장기 미수 ${longReceivable}개 현장` : "장기 미수 없음"}
-          icon={<Receipt size={21} />}
-          group="growth"
-          href="/finance"
-        />
-        <StatCard
-          className="col-span-2 @min-[760px]:col-span-1"
-          label="위험 알림 (규칙 기반)"
-          value={`${signals.length}건`}
-          sub={`경고 ${high} · 주의 ${medium} · 확인 ${low}`}
-          icon={<ShieldAlert size={21} />}
-          group="ax"
-          href="/insights"
-          testId="kpi-risk"
-        />
+        <div className="grid grid-cols-2 gap-3 @min-[760px]:grid-cols-4 @min-[1080px]:grid-cols-2">
+          <StatCard label="운영 현장" value={`${total.activeCount}곳`} sub={IS_LIVE ? `전체 ${total.siteCount}곳 중 진행 중` : `가상 현장 ${total.siteCount}곳 · 진행 중`} icon={<Building2 size={20} />} href="/sites" />
+          <StatCard
+            label="총 계약 규모"
+            value={<CountUp value={total.adjustedContract} format={(v) => fmtEok(v)} />}
+            sub={total.pendingChangeAmount > 0 ? `승인 변경 포함 · 대기 변경공사 ${fmtEok(total.pendingChangeAmount)} 미반영` : "승인 변경 포함 · 부가세 별도"}
+            icon={<CircleDollarSign size={20} />}
+            group="growth"
+            href="/finance"
+          />
+          <StatCard
+            label="미수금"
+            value={<CountUp value={total.outstanding} format={(v) => fmtEok(v)} />}
+            sub={`확정 기성 − 수금 · ${longReceivable ? `장기 미수 ${longReceivable}개 현장` : "장기 미수 없음"}`}
+            icon={<Receipt size={20} />}
+            group="growth"
+            href="/finance"
+          />
+          <StatCard label="위험 알림" value={`${signals.length}건`} sub={`규칙 기반 · 경고 ${high} · 주의 ${medium} · 확인 ${low}`} icon={<ShieldAlert size={20} />} group="ax" href="/insights" testId="kpi-risk" />
+        </div>
       </div>
 
       <div className="grid gap-5">
@@ -156,7 +143,7 @@ function CeoDashboard() {
                       </span>
                       <HealthPill health={h} />
                     </span>
-                    <span className="mt-2 grid grid-cols-3 gap-2 text-[0.75rem] text-ink-3">
+                    <span className="mt-2 grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-2 text-[0.75rem] text-ink-3">
                       <span>
                         EAC
                         <b className="block text-[0.95rem] text-ink num">
@@ -175,11 +162,9 @@ function CeoDashboard() {
                           <CountUp value={f.marginPct} format={(v) => fmtPct(v)} />
                         </b>
                       </span>
+                      <ProgressRing value={s.progressPct} label={`${s.shortName} 공정률`} size={48} />
                     </span>
-                    <span className="mt-2 flex items-center gap-2">
-                      <ProgressBar value={s.progressPct} label={`${s.shortName} 공정률`} />
-                      <span className="text-[0.75rem] font-semibold num">{s.progressPct}%</span>
-                    </span>
+
                   </Link>
                 </li>
               ))}
@@ -385,3 +370,48 @@ function GettingStarted({ userCount }: { userCount: number }) {
   );
 }
 
+
+/**
+ * 대표 카드 (D-60) — 회사 전체 예상이익을 크게, 현장별 이익률을 계획 대비 막대로.
+ * 숫자는 손익 엔진 그대로(규칙 기반 계산), 금액 단위 억 원.
+ */
+function ProfitHero({ profit, marginPct, diff, rows }: { profit: number; marginPct: number; diff: number; rows: { id: string; name: string; margin: number; plan: number }[] }) {
+  const max = Math.max(1, ...rows.flatMap((r) => [r.margin, r.plan])) * 1.15;
+  const w = (v: number) => `${Math.max(0, Math.min(100, (v / max) * 100))}%`;
+  return (
+    <Link href="/report" className="shell-band lift relative flex min-w-0 flex-col gap-3 overflow-hidden rounded-[1.6rem] p-5 shadow-pop @min-[760px]:p-6" data-testid="kpi-profit">
+      <span className="flex items-center gap-2 text-[0.84rem] font-semibold text-white/80">
+        <TrendingUp size={18} aria-hidden /> 예상이익 합계 · 평균 이익률
+      </span>
+      <span className="flex flex-wrap items-end gap-x-3 gap-y-1">
+        <span className="num text-[2.35rem] font-extrabold leading-none tracking-[-0.02em]">
+          <CountUp value={profit} format={(v) => fmtEok(v)} />
+        </span>
+        <span className="num pb-1 text-[1.05rem] font-bold text-white/90">평균 {fmtPct(marginPct)}</span>
+      </span>
+      <span className="num text-[0.84rem] text-white/80">
+        기준({BASE_LABEL}) 대비 {diff === 0 ? "변동 없음" : `${diff > 0 ? "▲" : "▼"} ${fmtMan(Math.abs(diff))}`}
+      </span>
+      {rows.length > 0 && (
+        <ul className="mt-1 space-y-2" aria-label="현장별 이익률 (계획 대비)">
+          {rows.map((r) => {
+            const low = r.margin < r.plan - 2.99;
+            return (
+              <li key={r.id} className="grid grid-cols-[3.6rem_minmax(0,1fr)_3.2rem] items-center gap-2 text-[0.8rem]">
+                <span className="truncate font-semibold text-white/90">{r.name}</span>
+                <span className="relative h-2.5 rounded-full bg-white/15">
+                  <span className="absolute inset-y-0 left-0 rounded-full" style={{ width: w(r.margin), background: low ? "#F6C15B" : "#FFFFFF" }} />
+                  <span className="absolute -inset-y-1 w-0.5 rounded bg-white/70" style={{ left: w(r.plan) }} title={`계획 ${fmtPct(r.plan)}`} />
+                </span>
+                <span className={cx("num text-right font-bold", low ? "text-[#F6C15B]" : "text-white")}>{fmtPct(r.margin)}</span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <span className="mt-auto inline-flex items-center gap-1 text-[0.8rem] font-semibold text-white/80">
+        막대 = 현재 이익률 · 세로선 = 계획 · 대표 보고서 보기 <ArrowRight size={14} aria-hidden />
+      </span>
+    </Link>
+  );
+}

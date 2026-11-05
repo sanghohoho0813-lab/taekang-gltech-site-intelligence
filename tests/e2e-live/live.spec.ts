@@ -564,9 +564,10 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     // 새로고침해도 남아 있다
     await page.reload();
     await expect(page.getByTestId("att-queued")).toContainText("휴대폰에 저장됨");
+    // 신호가 잡힘 → 휴대폰이 알아서 보낸다 (30초마다 다시 보내기와 겹쳐도 결과가 같도록 ‘연결됨’ 신호로)
     await page.unroute("**/api/commands");
-    await page.getByTestId("outbox-send").click();
-    await expect(page.getByTestId("outbox")).toHaveCount(0);
+    await page.evaluate(() => window.dispatchEvent(new Event("online")));
+    await expect(page.getByTestId("outbox")).toHaveCount(0, { timeout: 40_000 });
     await expect(page.getByTestId("att-status")).toContainText("물류센터 출근");
 
     const rec = async () =>

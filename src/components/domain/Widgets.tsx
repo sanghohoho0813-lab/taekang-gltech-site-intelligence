@@ -120,7 +120,7 @@ export function StatCard({
   const body = (
     <div className="flex h-full flex-col gap-2 p-4">
       <div className="flex items-center gap-2.5">
-        <span className="grid size-9 shrink-0 place-items-center rounded-xl" style={{ background: `color-mix(in srgb, ${color} 14%, #fff)`, color }} aria-hidden>
+        <span className="grid size-10 shrink-0 place-items-center rounded-full" style={{ background: `color-mix(in srgb, ${color} 14%, var(--n-surface, #fff))`, color }} aria-hidden>
           {icon}
         </span>
         <p className="min-w-0 text-[0.8rem] font-semibold leading-snug text-ink-3">{label}</p>
@@ -132,7 +132,7 @@ export function StatCard({
       </div>
     </div>
   );
-  const cls = cx("block min-w-0 rounded-2xl border border-line bg-surface shadow-card", className);
+  const cls = cx("block min-w-0 rounded-[1.4rem] border border-line bg-surface shadow-card", className);
   return href ? (
     <Link href={href} className={cx(cls, "lift")} data-testid={testId}>
       {body}
@@ -150,6 +150,25 @@ export function Delta({ value, format, invert = false, zeroText = "변동 없음
   return (
     <span className={cx("font-bold num", good ? "text-ok" : "text-err")}>
       {value > 0 ? "▲" : "▼"} {format(Math.abs(value))}
+    </span>
+  );
+}
+
+/** 원형 진행 표시 (공정률 등 · D-60) — 숫자를 가운데에 */
+export function ProgressRing({ value, size = 52, label, tone = "theme" }: { value: number; size?: number; label: string; tone?: "theme" | "warn" | "err" }) {
+  const v = Math.max(0, Math.min(100, value));
+  const r = (size - 8) / 2;
+  const c = 2 * Math.PI * r;
+  const color = tone === "err" ? "var(--color-err)" : tone === "warn" ? "var(--color-warn)" : "var(--t-cta)";
+  return (
+    <span className="relative inline-grid shrink-0 place-items-center" style={{ width: size, height: size }} role="img" aria-label={`${label} ${Math.round(v)}%`}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="-rotate-90" aria-hidden>
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--color-line)" strokeWidth={6} />
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={6} strokeLinecap="round" strokeDasharray={c} strokeDashoffset={c * (1 - v / 100)} />
+      </svg>
+      <span className="num absolute text-[0.78rem] font-extrabold text-ink" aria-hidden>
+        {Math.round(v)}%
+      </span>
     </span>
   );
 }

@@ -117,17 +117,17 @@ export function BigTile({
   testId?: string;
 }) {
   const cls = cx(
-    "press flex min-h-[5.5rem] w-full items-center gap-4 rounded-3xl px-5 py-4 text-left shadow-card",
-    tone === "cta" ? "bg-cta text-cta-text" : tone === "warn" ? "border-2 border-warn/50 bg-warn-bg text-ink" : "border-2 border-line bg-surface text-ink hover:bg-surface-2",
+    "press flex min-h-[5.5rem] w-full items-center gap-4 rounded-[1.75rem] px-5 py-4 text-left shadow-card",
+    tone === "cta" ? "brand-band shadow-pop" : tone === "warn" ? "border border-warn/40 bg-warn-bg text-ink" : "border border-line bg-surface text-ink hover:bg-surface-2",
   );
   const inner = (
     <>
-      <span className={cx("grid size-14 shrink-0 place-items-center rounded-2xl", tone === "cta" ? "bg-white/18" : tone === "warn" ? "bg-surface text-warn" : "bg-active-soft text-theme-ink")} aria-hidden>
+      <span className={cx("grid size-14 shrink-0 place-items-center rounded-full", tone === "cta" ? "bg-white text-[var(--t-cta)]" : tone === "warn" ? "bg-surface text-warn" : "bg-active-soft text-theme-ink")} aria-hidden>
         {icon}
       </span>
       <span className="min-w-0 flex-1">
         <span className="block text-[1.3rem] font-extrabold leading-tight">{label}</span>
-        {sub && <span className={cx("mt-1 block text-[0.98rem] leading-snug", tone === "cta" ? "text-cta-text" : "text-ink-2")}>{sub}</span>}
+        {sub && <span className={cx("mt-1 block text-[1rem] leading-snug", tone === "cta" ? "text-white/90" : "text-ink-2")}>{sub}</span>}
       </span>
       {badge}
     </>
@@ -142,6 +142,50 @@ export function BigTile({
     <button type="button" onClick={onClick} className={cls} data-testid={testId}>
       {inner}
     </button>
+  );
+}
+
+/**
+ * 2칸 타일 (D-60) — 색 원 아이콘 + 큰 이름 + 짧은 설명. 현장 첫 화면의 할 일 모음.
+ * tint: 할 일마다 다른 옅은 색 (테마 상태색 사용 — 다크 테마에서도 대비 유지)
+ */
+export function ActionTile({
+  href,
+  icon,
+  label,
+  sub,
+  badge,
+  tint = "theme",
+  highlight = false,
+  testId,
+}: {
+  href: string;
+  icon: ReactNode;
+  label: ReactNode;
+  sub?: ReactNode;
+  badge?: ReactNode;
+  tint?: "theme" | "info" | "ok" | "warn";
+  highlight?: boolean;
+  testId?: string;
+}) {
+  const chip = { theme: "bg-active-soft text-theme-ink", info: "bg-info-bg text-info", ok: "bg-ok-bg text-ok", warn: "bg-warn-bg text-warn" }[tint];
+  return (
+    <Link
+      href={href}
+      className={cx("press relative flex min-h-[9.5rem] min-w-0 flex-col justify-between gap-3 rounded-[1.6rem] p-4 text-left shadow-card", highlight ? "border-2 border-warn/50 bg-warn-bg" : "border border-line bg-surface hover:bg-surface-2")}
+      data-testid={testId}
+    >
+      <span className="flex items-start justify-between gap-2">
+        <span className={cx("grid size-12 shrink-0 place-items-center rounded-full", highlight ? "bg-surface text-warn" : chip)} aria-hidden>
+          {icon}
+        </span>
+        {badge}
+      </span>
+      <span className="min-w-0">
+        <span className="block text-[1.18rem] font-extrabold leading-tight text-ink [word-break:keep-all]">{label}</span>
+        {sub && <span className="mt-1 line-clamp-2 text-[1rem] leading-snug text-ink-2">{sub}</span>}
+      </span>
+    </Link>
   );
 }
 

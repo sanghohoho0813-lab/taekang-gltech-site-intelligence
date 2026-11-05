@@ -33,7 +33,7 @@ type Phase =
   | { k: "warn"; mode: "in" | "out"; site: Site; sample: GeoSample | null; reason?: GeoStamp["reason"]; distance?: number; consent?: boolean }
   | { k: "done"; mode: "in" | "out"; text: string; tone: "ok" | "warn" };
 
-const bigBtn = "press flex min-h-[4.6rem] w-full items-center justify-center gap-2.5 rounded-3xl text-[1.35rem] font-extrabold shadow-card disabled:opacity-50";
+const bigBtn = "press flex min-h-[4.6rem] w-full items-center justify-center gap-2.5 rounded-full text-[1.35rem] font-extrabold shadow-card disabled:opacity-50";
 
 export function EasyAttendance({ db, userId, sites, autoQr }: { db: DemoDB; userId: string; sites: Site[]; autoQr?: string }) {
   const [phase, setPhase] = useState<Phase>({ k: "idle" });
@@ -217,7 +217,7 @@ export function EasyAttendance({ db, userId, sites, autoQr }: { db: DemoDB; user
     );
 
   const box = (children: React.ReactNode, tone: "plain" | "ok" | "warn" = "plain") => (
-    <section className={cx("space-y-3 rounded-3xl border-2 p-4", tone === "ok" ? "border-ok/30 bg-ok-bg" : tone === "warn" ? "border-warn/40 bg-warn-bg" : "border-line bg-surface")} data-testid="att-card" aria-live="polite">
+    <section className={cx("space-y-3 rounded-[1.75rem] border p-5 shadow-pop", tone === "ok" ? "border-ok/30 bg-ok-bg" : tone === "warn" ? "border-warn/40 bg-warn-bg" : "border-line bg-surface")} data-testid="att-card" aria-live="polite">
       {children}
     </section>
   );
@@ -247,18 +247,18 @@ export function EasyAttendance({ db, userId, sites, autoQr }: { db: DemoDB; user
               if (p && s) void commit("in", s, null, "skipped", undefined, p.token);
               else decide("in", null, "skipped");
             }}
-            className="press min-h-[3.6rem] rounded-2xl border-2 border-line-strong bg-surface text-[1.02rem] font-bold"
+            className="press min-h-[3.6rem] rounded-full border-2 border-line-strong bg-surface text-[1.02rem] font-bold"
             data-testid="att-consent-no"
             hidden={phase.mode === "out"}
           >
             위치 없이 출근
           </button>
           {phase.mode === "out" && openSite && (
-            <button type="button" onClick={() => commit("out", openSite, null, "skipped")} className="press min-h-[3.6rem] rounded-2xl border-2 border-line-strong bg-surface text-[1.02rem] font-bold">
+            <button type="button" onClick={() => commit("out", openSite, null, "skipped")} className="press min-h-[3.6rem] rounded-full border-2 border-line-strong bg-surface text-[1.02rem] font-bold">
               위치 없이 퇴근
             </button>
           )}
-          <button type="button" onClick={() => setPhase({ k: "idle" })} className="press min-h-[3.6rem] rounded-2xl border-2 border-line-strong bg-surface text-[1.02rem] font-bold">
+          <button type="button" onClick={() => setPhase({ k: "idle" })} className="press min-h-[3.6rem] rounded-full border-2 border-line-strong bg-surface text-[1.02rem] font-bold">
             취소
           </button>
         </div>
@@ -310,7 +310,7 @@ export function EasyAttendance({ db, userId, sites, autoQr }: { db: DemoDB; user
         <button type="button" onClick={() => start(phase.mode, phase.consent)} className={cx(bigBtn, "bg-cta text-cta-text")} data-testid="att-retry">
           다시 위치 잡기
         </button>
-        <button type="button" onClick={() => commit(phase.mode, phase.site, phase.sample, phase.reason, phase.consent)} disabled={busy} className="press min-h-[3.8rem] w-full rounded-2xl border-2 border-line-strong bg-surface text-[1.08rem] font-bold" data-testid="att-anyway">
+        <button type="button" onClick={() => commit(phase.mode, phase.site, phase.sample, phase.reason, phase.consent)} disabled={busy} className="press min-h-[3.8rem] w-full rounded-full border-2 border-line-strong bg-surface text-[1.08rem] font-bold" data-testid="att-anyway">
           이대로 {phase.mode === "in" ? "출근" : "퇴근"} 기록 (본사에 표시됨)
         </button>
         {demoBtn(phase.mode, phase.site)}

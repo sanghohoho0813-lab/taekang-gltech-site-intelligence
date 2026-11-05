@@ -10,7 +10,7 @@ import { IS_LIVE } from "@/lib/mode";
 import type { DemoDB, FieldReport } from "@/lib/domain/types";
 import { todayIso } from "@/lib/domain/format";
 import { PageSkeleton, cx } from "@/components/ui/primitives";
-import { BigTile } from "./ui";
+import { ActionTile, BigTile } from "./ui";
 import { PushNudge } from "@/components/PushCard";
 import { OutboxTile } from "./Outbox";
 import { EasyAttendance, FixLink } from "./EasyAttendance";
@@ -31,80 +31,89 @@ export function EasyHome() {
   const returned = db.reports.filter((r) => r.createdBy === userId && r.status !== "voided" && r.review?.status === "returned");
   const phone = db.settings?.helpPhone;
 
+  const sentCount = sites.filter((s) => db.reports.some((r) => r.siteId === s.id && r.reportDate === today && mine(r))).length;
+
   return (
-    <div className="mx-auto w-full max-w-xl space-y-5 px-4 pb-8 pt-5" data-testid="easy-home">
-      <header className="space-y-1">
-        <h1 className="text-[1.7rem] font-extrabold leading-tight tracking-tight">
+    <div className="mx-auto w-full max-w-xl pb-8" data-testid="easy-home">
+      {/* 머리 띠 — 인사·날짜·현장별 오늘 보고 (D-60) */}
+      <section className="brand-band px-4 pb-16 pt-5" aria-labelledby="easy-hello">
+        <p className="text-[1.08rem] font-semibold text-white/90">{easyDate(today)}</p>
+        <h1 id="easy-hello" className="mt-0.5 text-[1.75rem] font-extrabold leading-tight tracking-tight">
           안녕하세요, {user?.name ?? ""}님
         </h1>
-        <p className="text-[1.15rem] font-semibold text-ink-2">{easyDate(today)}</p>
-      </header>
-
-      {sites.length > 0 && (
-        <div className="space-y-1">
-          <EasyAttendance db={db} userId={userId} sites={sites} />
-          <FixLink />
-        </div>
-      )}
-
-      <OutboxTile userId={userId} />
-
-      {sites.length === 0 ? (
-        <p className="rounded-2xl border-2 border-line bg-surface px-4 py-4 text-[1.1rem] leading-relaxed" data-testid="easy-no-site">
-          아직 맡은 현장이 없어요. 본사에 현장 지정을 요청해 주세요.
-        </p>
-      ) : (
-        <ul className="space-y-2" aria-label="내 현장 오늘 보고">
-          {sites.map((s) => {
-            const sent = db.reports.some((r) => r.siteId === s.id && r.reportDate === today && mine(r));
-            return (
-              <li key={s.id} className={cx("flex items-center gap-3 rounded-2xl border-2 px-4 py-3", sent ? "border-ok/30 bg-ok-bg" : "border-warn/40 bg-warn-bg")} data-testid="easy-site-status" data-sent={sent ? "1" : "0"}>
-                {sent ? <CircleCheck size={28} className="shrink-0 text-ok" aria-hidden /> : <Clock3 size={28} className="shrink-0 text-warn" aria-hidden />}
-                <span className="min-w-0 flex-1">
-                  <span className="block text-[1.2rem] font-extrabold">{s.shortName}</span>
-                  <span className="block text-[1.02rem] text-ink-2">{s.workType}</span>
-                </span>
-                <span className={cx("shrink-0 text-[1.08rem] font-extrabold", sent ? "text-ok" : "text-warn")}>{sent ? "오늘 보고 보냄" : "아직 안 보냄"}</span>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-
-      {sites.length > 0 && (
-        <nav className="space-y-3" aria-label="할 일">
-          <BigTile href="/field/report" tone="cta" icon={<ClipboardPen size={30} />} label="오늘 보고하기" sub="작업 · 사진 · 비용을 차례대로 물어봐요" testId="easy-go-report" />
-          <BigTile href="/field/crew" icon={<Users size={30} />} label="오늘 작업 인원 알리기" sub="팀별 인원과 단체 사진" testId="easy-go-crew" />
-          <BigTile href="/field/report?mode=photo" icon={<Camera size={30} />} label="사진만 보내기" sub="찍어서 바로 보내요" testId="easy-go-photo" />
-          <BigTile href="/field/report?mode=cost" icon={<Receipt size={30} />} label="추가 비용 알리기" sub="돈이 더 든 일이 생겼을 때" testId="easy-go-cost" />
-          <BigTile
-            href="/my-actions"
-            tone={open.length ? "warn" : "plain"}
-            icon={<ListChecks size={30} />}
-            label={open.length ? `본사 요청 ${open.length}건` : "본사 요청"}
-            sub={open.length ? open[0].title : "지금은 요청이 없어요"}
-            badge={open.length ? <span className="grid size-10 shrink-0 place-items-center rounded-full bg-err text-[1.15rem] font-extrabold text-white">{open.length}</span> : undefined}
-            testId="easy-go-actions"
-          />
-          {returned.length > 0 && (
-            <BigTile href="/my" tone="warn" icon={<AlertCircle size={30} />} label={`보완 요청 ${returned.length}건`} sub={returned[0].review?.note ?? "본사가 보고 보완을 요청했어요"} testId="easy-go-returned" />
-          )}
-          {phone && <BigTile href={`tel:${phone.replace(/[^\d+]/g, "")}`} icon={<Phone size={30} />} label="본사에 전화하기" sub={`모르는 게 있으면 · ${phone}`} testId="easy-call" />}
-          <PushNudge />
-        </nav>
-      )}
-
-      <section className="space-y-3" aria-labelledby="recent-title">
-        <div className="flex items-baseline justify-between">
-          <h2 id="recent-title" className="text-[1.3rem] font-extrabold">
-            최근 보낸 보고
-          </h2>
-          <Link href="/my" className="press inline-flex min-h-12 items-center rounded-xl px-2 text-[1.05rem] font-bold text-theme-ink underline underline-offset-4">
-            모두 보기
-          </Link>
-        </div>
-        <MyRecords db={db} userId={userId} limit={3} />
+        {sites.length > 0 && (
+          <>
+            <p className="mt-2 text-[1.02rem] font-semibold text-white/90">
+              오늘 보고 {sentCount}/{sites.length} 현장
+            </p>
+            <ul className="mt-2 flex flex-wrap gap-2" aria-label="내 현장 오늘 보고">
+              {sites.map((s) => {
+                const sent = db.reports.some((r) => r.siteId === s.id && r.reportDate === today && mine(r));
+                return (
+                  <li key={s.id} className="flex items-center gap-1.5 rounded-full bg-surface px-3 py-1.5 text-[1rem] font-bold text-ink shadow-card" data-testid="easy-site-status" data-sent={sent ? "1" : "0"}>
+                    {sent ? <CircleCheck size={19} className="shrink-0 text-ok" aria-hidden /> : <Clock3 size={19} className="shrink-0 text-warn" aria-hidden />}
+                    <span>{s.shortName}</span>
+                    <span className={sent ? "text-ok" : "text-warn"}>{sent ? "오늘 보고 보냄" : "아직 안 보냄"}</span>
+                  </li>
+                );
+              })}
+            </ul>
+          </>
+        )}
       </section>
+
+      <div className="-mt-12 space-y-5 px-4">
+        {sites.length > 0 ? (
+          <div className="space-y-1">
+            <EasyAttendance db={db} userId={userId} sites={sites} />
+            <FixLink />
+          </div>
+        ) : (
+          <p className="rounded-[1.75rem] border border-line bg-surface px-5 py-5 text-[1.1rem] leading-relaxed shadow-pop" data-testid="easy-no-site">
+            아직 맡은 현장이 없어요. 본사에 현장 지정을 요청해 주세요.
+          </p>
+        )}
+
+        <OutboxTile userId={userId} />
+
+        {sites.length > 0 && (
+          <nav className="space-y-3" aria-label="할 일">
+            <BigTile href="/field/report" tone="cta" icon={<ClipboardPen size={30} />} label="오늘 보고하기" sub="작업 · 사진 · 비용을 차례대로 물어봐요" testId="easy-go-report" />
+            <div className="grid grid-cols-2 gap-3">
+              <ActionTile href="/field/crew" tint="info" icon={<Users size={26} />} label="오늘 작업 인원 알리기" sub="팀별 인원과 단체 사진" testId="easy-go-crew" />
+              <ActionTile
+                href="/my-actions"
+                tint="theme"
+                highlight={open.length > 0}
+                icon={<ListChecks size={26} />}
+                label={open.length ? `본사 요청 ${open.length}건` : "본사 요청"}
+                sub={open.length ? open[0].title : "지금은 요청이 없어요"}
+                badge={open.length ? <span className="grid size-9 shrink-0 place-items-center rounded-full bg-err text-[1.05rem] font-extrabold text-white">{open.length}</span> : undefined}
+                testId="easy-go-actions"
+              />
+              <ActionTile href="/field/report?mode=photo" tint="ok" icon={<Camera size={26} />} label="사진만 보내기" sub="찍어서 바로 보내요" testId="easy-go-photo" />
+              <ActionTile href="/field/report?mode=cost" tint="warn" icon={<Receipt size={26} />} label="추가 비용 알리기" sub="돈이 더 든 일이 생겼을 때" testId="easy-go-cost" />
+            </div>
+            {returned.length > 0 && (
+              <BigTile href="/my" tone="warn" icon={<AlertCircle size={30} />} label={`보완 요청 ${returned.length}건`} sub={returned[0].review?.note ?? "본사가 보고 보완을 요청했어요"} testId="easy-go-returned" />
+            )}
+            {phone && <BigTile href={`tel:${phone.replace(/[^\d+]/g, "")}`} icon={<Phone size={30} />} label="본사에 전화하기" sub={`모르는 게 있으면 · ${phone}`} testId="easy-call" />}
+            <PushNudge />
+          </nav>
+        )}
+
+        <section className="space-y-3" aria-labelledby="recent-title">
+          <div className="flex items-baseline justify-between">
+            <h2 id="recent-title" className="text-[1.3rem] font-extrabold">
+              최근 보낸 보고
+            </h2>
+            <Link href="/my" className="press inline-flex min-h-12 items-center rounded-xl px-2 text-[1.05rem] font-bold text-theme-ink underline underline-offset-4">
+              모두 보기
+            </Link>
+          </div>
+          <MyRecords db={db} userId={userId} limit={3} />
+        </section>
+      </div>
     </div>
   );
 }

@@ -370,6 +370,28 @@ html.tk-scroll-lock {
   display: none;
 }
 
+/* 브랜드 머리 띠 (D-60) — 테마의 주 버튼 색(현장)·본사 셸 색(대표 카드)에서 만든 그라데이션. 글자는 흰색 */
+.brand-band {
+  background:
+    radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, #fff 14%, transparent), transparent 60%),
+    linear-gradient(160deg, var(--t-cta), color-mix(in srgb, var(--t-cta) 72%, #000));
+  color: #fff;
+}
+/* 대표 카드: 테마의 주 색(모든 테마에서 흰 글자와 대비가 충분한 진한 색) + 주 버튼 색 빛 */
+.shell-band {
+  background:
+    radial-gradient(110% 120% at 100% 0%, color-mix(in srgb, var(--t-cta) 42%, transparent), transparent 62%),
+    linear-gradient(150deg, var(--t-primary), color-mix(in srgb, var(--t-primary) 70%, #000));
+  color: #fff;
+}
+@media print {
+  .brand-band,
+  .shell-band {
+    background: none !important;
+    color: inherit !important;
+  }
+}
+
 /* 로그인 쪽지 (D-54): 화면에서는 숨김, 쪽지 인쇄 때만 이것만 */
 .slip-print-root {
   display: none;

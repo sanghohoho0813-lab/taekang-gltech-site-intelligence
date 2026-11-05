@@ -81,7 +81,7 @@ function AccountForm() {
           {errors.confirm && <p className="mt-1.5 text-[1.02rem] font-bold text-err">{errors.confirm}</p>}
         </div>
         <PasswordRules value={f.next} confirm={f.confirm} />
-        <button type="submit" disabled={busy} aria-busy={busy || undefined} className="press inline-flex h-[4rem] w-full items-center justify-center gap-2 rounded-2xl bg-cta text-[1.25rem] font-extrabold text-cta-text disabled:opacity-60" data-testid="password-submit">
+        <button type="submit" disabled={busy} aria-busy={busy || undefined} className="press inline-flex h-[4rem] w-full items-center justify-center gap-2 rounded-full bg-cta text-[1.25rem] font-extrabold text-cta-text shadow-card disabled:opacity-60" data-testid="password-submit">
           <KeyRound size={22} aria-hidden /> 비밀번호 바꾸기
         </button>
       </form>
