@@ -38,6 +38,8 @@ export function EasyMaterial() {
   const [siteId, setSiteId] = useState(sites.length === 1 ? sites[0].id : "");
   const [stack, setStack] = useState<Step[]>([sites.length === 1 ? "kind" : "site"]);
   const [kind, setKind] = useState<MaterialMoveKind>("install");
+  // 사람이 고르기 전에는 아무것도 선택돼 보이지 않게
+  const [picked, setPicked] = useState(false);
   const [itemId, setItemId] = useState("");
   const [qty, setQty] = useState("");
   const [note, setNote] = useState("");
@@ -114,6 +116,7 @@ export function EasyMaterial() {
   };
 
   const again = () => {
+    setPicked(false);
     setItemId("");
     setQty("");
     setNote("");
@@ -168,8 +171,8 @@ export function EasyMaterial() {
       body = (
         <EasyQuestion title="무엇을 남길까요?" testId="material-kind">
           <div className="space-y-2.5">
-            <Choice icon={KIND_Q.in.icon} label="자재가 들어왔어요" sub="반입 · 송장 수량 대조" selected={kind === "in" && stack.length > 1} onClick={() => (setKind("in"), go("item"))} testId="material-kind-in" />
-            <Choice icon={KIND_Q.install.icon} label="자재를 설치했어요" sub="오늘 시공한 수량" selected={kind === "install" && stack.length > 1} onClick={() => (setKind("install"), go("item"))} testId="material-kind-install" />
+            <Choice icon={KIND_Q.in.icon} label="자재가 들어왔어요" sub="반입 · 송장 수량 대조" selected={picked && kind === "in"} onClick={() => (setKind("in"), setPicked(true), go("item"))} testId="material-kind-in" />
+            <Choice icon={KIND_Q.install.icon} label="자재를 설치했어요" sub="오늘 시공한 수량" selected={picked && kind === "install"} onClick={() => (setKind("install"), setPicked(true), go("item"))} testId="material-kind-install" />
           </div>
           {mineToday.length > 0 && (
             <div className="space-y-2" data-testid="material-today">
