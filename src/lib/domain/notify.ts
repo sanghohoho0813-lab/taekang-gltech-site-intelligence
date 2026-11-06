@@ -87,15 +87,21 @@ export function noticesFor(before: DemoDB, after: DemoDB, actorId: string): Noti
   for (const r of after.partnerRequests) {
     const prev = prBefore.get(r.id);
     if (!prev) push({ to: hq, title: `고객 요청 · ${PARTNER_TYPE_LABEL[r.type]}`, body: `${site(r.siteId)} · ${clip(r.title)}`, url: "/insights#requests", tag: `pr-${r.id}` });
-    else if (prev.status !== "answered" && r.status === "answered") push({ to: [r.partnerUserId], title: "태강지엘텍 회신 도착", body: clip(r.title), url: "/partner", tag: `pr-${r.id}` });
+    else if (prev.status !== "answered" && r.status === "answered") push({ to: [r.partnerUserId], title: r.type === "defect" ? "하자보수 회신 도착" : "태강지엘텍 회신 도착", body: clip(r.title), url: "/partner#my-requests", tag: `pr-${r.id}` });
+    // 하자보수를 작업지시로 보냈을 때 발주처에게 ‘보수 작업 배정’ (D-68)
+    else if (!prev.linkedWorkOrderId && r.linkedWorkOrderId) push({ to: [r.partnerUserId], title: "하자보수 작업 배정", body: clip(r.title), url: "/partner#my-requests", tag: `pr-${r.id}` });
+    // 발주처가 회신·보수 완료를 확인 (D-68)
+    else if (!prev.confirmedAt && r.confirmedAt) push({ to: hq, title: "발주처 확인 완료", body: `${site(r.siteId)} · ${clip(r.title)}`, url: "/insights#requests", tag: `pr-${r.id}` });
   }
+  // 회신과 함께 보낸 보수 완료 사진은 ‘회신 도착’ 알림 하나로 (사진 알림을 따로 보내지 않는다 · D-68)
+  const replyPhotos = new Set(after.partnerRequests.flatMap((r) => r.replyPhotoIds ?? []));
 
   // 발주처 포털 공정 사진 새로 공개 (D-67) — 처음 공개한 사진만, 같은 현장에서 30분 안에 이미 알렸으면 묶어서 다시 보내지 않는다 (D-67 점검 반영)
   const beforeById = new Map(before.photos.map((p) => [p.id, p]));
   const newly = new Map<string, number>();
   for (const p of after.photos) {
     const prev = beforeById.get(p.id);
-    if (p.shared && !prev?.shared && !prev?.sharedOnce) newly.set(p.siteId, (newly.get(p.siteId) ?? 0) + 1);
+    if (p.shared && !prev?.shared && !prev?.sharedOnce && !replyPhotos.has(p.id)) newly.set(p.siteId, (newly.get(p.siteId) ?? 0) + 1);
   }
   for (const [siteId, n] of newly) {
     const nowShared = after.photos.filter((p) => p.siteId === siteId && p.shared);

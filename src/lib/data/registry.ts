@@ -31,6 +31,7 @@ export const COMMANDS = {
   confirmProofEvent: (db: DemoDB, a: { proofId: string }, ctx: Ctx) => C.confirmProofEvent(db, a.proofId, ctx),
   createPartnerRequest: (db: DemoDB, a: Parameters<typeof C.createPartnerRequest>[1], ctx: Ctx) => C.createPartnerRequest(db, a, ctx),
   updatePartnerRequest: (db: DemoDB, a: { requestId: string; patch: Parameters<typeof C.updatePartnerRequest>[2] }, ctx: Ctx) => C.updatePartnerRequest(db, a.requestId, a.patch, ctx),
+  confirmPartnerRequest: (db: DemoDB, a: { requestId: string; note?: string }, ctx: Ctx) => C.confirmPartnerRequest(db, a, ctx),
   setChangeOrderStatus: (db: DemoDB, a: { coId: string; status: ChangeOrderStatus; approvedAmount?: number }, ctx: Ctx) => C.setChangeOrderStatus(db, a.coId, a.status, a.approvedAmount, ctx),
   addBilling: (db: DemoDB, a: Parameters<typeof C.addBilling>[1], ctx: Ctx) => C.addBilling(db, a, ctx),
   addPayment: (db: DemoDB, a: Parameters<typeof C.addPayment>[1], ctx: Ctx) => C.addPayment(db, a, ctx),

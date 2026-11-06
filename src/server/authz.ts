@@ -5,7 +5,7 @@
  * 3) sanitizeResult: 명령 결과에서도 금액 정보 제거
  */
 import { hasMoney, stripMoney } from "@/lib/domain/redact";
-import { partnerProgressFeed, photoWithdrawn } from "@/lib/domain/partnerFeed";
+import { PARTNER_FEED_KEEP_DAYS, partnerProgressFeed, partnerRepairView, photoWithdrawn, replyPhotoIds } from "@/lib/domain/partnerFeed";
 
 import { FIELD_COST_MAX } from "@/lib/domain/limits";
 export { FIELD_COST_MAX };
@@ -154,6 +154,11 @@ export function authorize(m: Member, name: CommandName, argsIn: unknown, db: Dem
 
   if (m.role === "partner") {
     if (name === "createPartnerRequest" && m.partnerSiteIds.includes(str(args.siteId))) return args;
+    // 본인이 보낸, 지금 볼 수 있는 현장의 요청만 확인 (D-68)
+    if (name === "confirmPartnerRequest") {
+      const r = db.partnerRequests.find((x) => x.id === str(args.requestId));
+      if (r && r.partnerUserId === m.id && m.partnerSiteIds.includes(r.siteId)) return args;
+    }
     throw new ForbiddenError();
   }
   throw new ForbiddenError();
@@ -252,6 +257,8 @@ export function viewFor(m: Member, db: DemoDB, now = new Date()): DemoDB {
       ...reports.flatMap((r) => [...r.photoIds, ...(r.supplements ?? []).flatMap((s) => s.photoIds)]),
       ...crewChecks.flatMap((c) => (c.photoId ? [c.photoId] : [])),
       ...workOrders.flatMap((w) => w.donePhotoIds ?? []),
+      // 하자보수 작업지시: 발주처가 보낸 하자 사진 (D-68)
+      ...workOrders.flatMap((w) => w.refPhotoIds ?? []),
     ]);
     // 자재 반입·설치는 담당 현장 것 전부 — 휴대폰이 보여 주는 누계·현장 보관 수량이 60일 밖 기록 때문에 틀리지 않게 (수량만 · 금액·좌표 없음)
     const materialMoves = (db.materialMoves ?? []).filter((x) => sites.has(x.siteId));
@@ -292,6 +299,11 @@ export function viewFor(m: Member, db: DemoDB, now = new Date()): DemoDB {
 
   // 발주처·협력사: 허용된 현장의 공정 정보와 본인 요청만
   const sites = new Set(m.partnerSiteIds);
+  const myRequests = db.partnerRequests.filter((r) => sites.has(r.siteId) && r.partnerUserId === m.id);
+  const myRequestIds = new Set(myRequests.map((r) => r.id));
+  // 다른 발주처의 하자보수 회신 사진은 같은 현장이어도 보내지 않는다 (D-68)
+  const mine = new Set(myRequests.flatMap((r) => r.replyPhotoIds ?? []));
+  const othersReply = new Set([...replyPhotoIds(db)].filter((id) => !mine.has(id)));
   return {
     ...base,
     ...empty,
@@ -300,13 +312,24 @@ export function viewFor(m: Member, db: DemoDB, now = new Date()): DemoDB {
     // 자재 품목·설계 수량(내부 운영 정보)은 빼고 보낸다 (D-62)
     sites: db.sites.filter((s) => sites.has(s.id)).map(({ materials: _m, ...s }) => (void _m, s)),
     contracts: [...sites].map(zeroContract),
-    partnerRequests: db.partnerRequests.filter((r) => sites.has(r.siteId) && r.partnerUserId === m.id),
-    // 본사가 공개한 사진만 — 내부 설명·연결된 보고/조치·찍은 사람은 빼고 공개 설명만 (D-67)
-    photos: db.photos
-      .filter((p) => sites.has(p.siteId) && p.shared && !photoWithdrawn(db, p))
-      .map((p) => ({ id: p.id, siteId: p.siteId, dataUrl: p.dataUrl, caption: p.shared!.caption, createdAt: p.createdAt, createdBy: "", shared: { at: p.shared!.at, by: "", caption: p.shared!.caption } })),
-    // 최근 공정 변화 — 보고 원문 없이 공정·진척만 서버가 만들어 보낸다
-    partnerFeed: Object.fromEntries([...sites].map((id) => [id, partnerProgressFeed(db, id, kstDate(now.toISOString()))])),
+    // 작업지시 번호(내부)는 빼고, 보수 진행은 partnerRepairs로 단계·기한만 (D-68)
+    partnerRequests: myRequests.map(({ linkedWorkOrderId: _w, ...r }) => (void _w, r)),
+    partnerRepairs: Object.fromEntries(myRequests.flatMap((r) => {
+      const v = partnerRepairView(db, r);
+      return v ? [[r.id, v]] : [];
+    })),
+    photos: [
+      // 본사가 공개한 사진만 — 내부 설명·연결된 보고/조치·찍은 사람은 빼고 공개 설명만 (D-67)
+      ...db.photos
+        .filter((p) => sites.has(p.siteId) && p.shared && !othersReply.has(p.id) && !photoWithdrawn(db, p))
+        .map((p) => ({ id: p.id, siteId: p.siteId, dataUrl: p.dataUrl, caption: p.shared!.caption, createdAt: p.createdAt, createdBy: "", shared: { at: p.shared!.at, by: "", caption: p.shared!.caption } })),
+      // 본인이 하자보수 요청에 첨부한 사진 (D-68)
+      ...db.photos
+        .filter((p) => !p.shared && !!p.partnerRequestId && myRequestIds.has(p.partnerRequestId))
+        .map((p) => ({ id: p.id, siteId: p.siteId, dataUrl: p.dataUrl, caption: "첨부 사진", createdAt: p.createdAt, createdBy: m.id, partnerRequestId: p.partnerRequestId })),
+    ],
+    // 공정 변화 — 보고 원문 없이 공정·진척만 서버가 만들어 보낸다 (포털은 최근 14일, 월간 보고서는 지난달까지 · D-68)
+    partnerFeed: Object.fromEntries([...sites].map((id) => [id, partnerProgressFeed(db, id, kstDate(now.toISOString()), PARTNER_FEED_KEEP_DAYS)])),
     // 내부 운영 설정(일당 등)은 숨기고, 가상 데이터 회사라는 표시만 전달
     settings: db.settings?.sampleData ? { costApproval: "immediate", laborDayRate: 0, sampleData: true } : undefined,
     thresholds: hideMarginTargets(db.thresholds),

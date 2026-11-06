@@ -663,12 +663,20 @@ export function confirmProofEvent(db0: DemoDB, proofId: string, ctx: Ctx) {
 
 export function createPartnerRequest(
   db0: DemoDB,
-  input: { idempotencyKey: string; siteId: string; title: string; description: string; desiredDate?: string; type?: PartnerRequest["type"]; item?: string; qty?: string },
+  input: { idempotencyKey: string; siteId: string; title: string; description: string; desiredDate?: string; type?: PartnerRequest["type"]; item?: string; qty?: string; location?: string; photoDataUrls?: string[] },
   ctx: Ctx,
 ) {
   const errors: Record<string, string> = {};
   const type = input.type ?? "change_review";
   if (!(type in PARTNER_TYPE_LABEL)) throw new CommandError("요청 유형을 확인해주세요.", "VALIDATION", { type: "알 수 없는 유형" });
+  // 하자보수 (D-68): 위치는 꼭, 사진은 3장까지
+  const defect = type === "defect";
+  const location = defect ? String(input.location ?? "").trim() : "";
+  const photos = defect && Array.isArray(input.photoDataUrls) ? input.photoDataUrls : [];
+  if (defect && !location) errors.location = "하자가 있는 곳을 적어주세요. (예: 3층 302호 창호)";
+  if (location.length > 60) errors.location = "위치는 60자 이내";
+  if (photos.length > 3) errors.photos = "사진은 3장까지 보낼 수 있습니다.";
+  else if (photos.some((p) => !validPhoto(p))) errors.photos = "사진 형식을 확인해 주세요 (JPEG·PNG·WEBP, 2.5MB 이하)";
   const goods = type === "quote" || type === "order";
   const item = goods ? String(input.item ?? "").trim() : "";
   const qty = goods ? String(input.qty ?? "").trim() : "";
@@ -697,12 +705,20 @@ export function createPartnerRequest(
     description: input.description.trim(),
     ...(item ? { item } : {}),
     ...(qty ? { qty } : {}),
+    ...(location ? { location } : {}),
     desiredDate: input.desiredDate || undefined,
     status: "received",
     createdAt: at,
     updatedAt: at,
     history: [{ at, status: "received", by: ctx.userId }],
   };
+  if (photos.length) {
+    req.photoIds = photos.map((dataUrl) => {
+      const id = uid("ph");
+      db.photos.push({ id, siteId: input.siteId, partnerRequestId: req.id, dataUrl, caption: `발주처 첨부 · ${req.title}`.slice(0, 80), createdAt: at, createdBy: ctx.userId });
+      return id;
+    });
+  }
   db.partnerRequests.unshift(req);
   const site = requireSite(db, input.siteId);
   log(db, ctx, "partner", `발주처 ${PARTNER_TYPE_LABEL[type]} 접수: ${site.shortName} · ${req.title}`, input.siteId, "/insights");
@@ -713,12 +729,20 @@ export function createPartnerRequest(
 export function updatePartnerRequest(
   db0: DemoDB,
   requestId: string,
-  input: { status: PartnerRequestStatus; reply?: string; registerChangeOrder?: { title: string; amount: number } },
+  input: { status: PartnerRequestStatus; reply?: string; registerChangeOrder?: { title: string; amount: number }; sharePhotoIds?: string[] },
   ctx: Ctx,
 ) {
   const db = clone(db0);
   const r = db.partnerRequests.find((x) => x.id === requestId);
   if (!r) throw new CommandError("요청을 찾을 수 없습니다.", "NOT_FOUND");
+  // 보수 완료 사진 (D-68): 이 요청으로 만든 작업지시의 완료 사진만, 회신과 함께 발주처에 공개
+  const share = Array.isArray(input.sharePhotoIds) ? [...new Set(input.sharePhotoIds.map(String))] : [];
+  if (share.length) {
+    if (input.status !== "answered") throw new CommandError("보수 사진은 회신할 때 함께 보냅니다.", "STATE");
+    const wo = (db.workOrders ?? []).find((w) => w.id === r.linkedWorkOrderId);
+    const allowed = new Set(wo?.donePhotoIds ?? []);
+    if (share.length > 3 || share.some((id) => !allowed.has(id))) throw new CommandError("보수 작업지시의 완료 사진만 3장까지 보낼 수 있습니다.", "VALIDATION", { sharePhotoIds: "사진 확인" });
+  }
   const order: PartnerRequestStatus[] = ["received", "reviewing", "answered"];
   if (order.indexOf(input.status) <= order.indexOf(r.status)) throw new CommandError("이미 처리된 단계입니다.", "STATE");
   if (input.status === "answered" && !input.reply?.trim()) throw new CommandError("회신 내용을 입력해주세요.", "VALIDATION", { reply: "필수" });
@@ -750,8 +774,34 @@ export function updatePartnerRequest(
     r.repliedBy = ctx.userId;
   }
   r.history.push({ at, status: input.status, by: ctx.userId, note: input.reply?.trim() });
+  if (share.length) {
+    const caption = `보수 완료 · ${r.title}`.slice(0, 60);
+    for (const p of db.photos) if (share.includes(p.id)) Object.assign(p, { shared: { at, by: ctx.userId, caption }, sharedOnce: true as const });
+    r.replyPhotoIds = share;
+  }
   const site = requireSite(db, r.siteId);
   log(db, ctx, "partner", `발주처 요청 ${PARTNER_STATUS_LABEL[input.status]}: ${site.shortName} · ${r.title}`, r.siteId, "/partner");
+  touch(db, ctx);
+  return { db, result: {} };
+}
+
+/** 발주처: 회신(보수 완료)을 확인했다고 남긴다 — 하자 이력의 마지막 단계 (D-68) */
+export function confirmPartnerRequest(db0: DemoDB, input: { requestId: string; note?: string }, ctx: Ctx) {
+  const db = clone(db0);
+  const r = db.partnerRequests.find((x) => x.id === input.requestId);
+  if (!r) throw new CommandError("요청을 찾을 수 없습니다.", "NOT_FOUND");
+  if (r.partnerUserId !== ctx.userId) throw new CommandError("본인이 보낸 요청만 확인할 수 있습니다.", "STATE");
+  if (r.status !== "answered") throw new CommandError("회신을 받은 뒤에 확인할 수 있습니다.", "STATE");
+  if (r.confirmedAt) throw new CommandError("이미 확인한 요청입니다.", "STATE");
+  const note = typeof input.note === "string" ? input.note.trim() : "";
+  if (note.length > 200) throw new CommandError("남길 말은 200자 이내", "VALIDATION", { note: "200자 이내" });
+  const at = nowIso(ctx);
+  r.confirmedAt = at;
+  if (note) r.confirmNote = note;
+  r.updatedAt = at;
+  r.history.push({ at, status: "answered", by: ctx.userId, note: note ? `발주처 확인 · ${note}` : "발주처 확인" });
+  const site = requireSite(db, r.siteId);
+  log(db, ctx, "partner", `발주처 확인: ${site.shortName} · ${r.title}`, r.siteId, "/insights#requests");
   touch(db, ctx);
   return { db, result: {} };
 }

@@ -402,6 +402,9 @@ export interface WorkOrder {
   doneQty?: string;
   donePhotoIds?: string[];
   returnNote?: string;
+  /** 발주처 하자보수 요청에서 만든 작업지시 (D-68) — 발주처가 보낸 사진을 현장에서 본다 */
+  sourcePartnerRequestId?: string;
+  refPhotoIds?: string[];
   history: { at: string; by: string; to: WorkOrder["status"]; note?: string }[];
 }
 
@@ -414,6 +417,8 @@ export interface SitePhoto {
   crewId?: string;
   /** 자재 반입·설치 사진 (D-62) */
   materialMoveId?: string;
+  /** 발주처가 하자보수 요청에 첨부한 사진 (D-68) */
+  partnerRequestId?: string;
   dataUrl: string;
   caption: string;
   createdAt: string;
@@ -483,7 +488,7 @@ export interface PartnerRequest {
   siteId: string;
   partnerUserId: string;
   /** quote 견적 문의 · order 주문 요청 (계약 모듈 06·검수 S7) */
-  type: "quote" | "order" | "change_review" | "schedule" | "other";
+  type: "quote" | "order" | "change_review" | "schedule" | "defect" | "other";
   title: string;
   description: string;
   /** 견적·주문: 품목·사양 / 수량 (자유 입력 — 예: “12장”, “약 40㎡”) */
@@ -496,7 +501,21 @@ export interface PartnerRequest {
   reply?: string;
   repliedBy?: string;
   linkedChangeOrderId?: string;
+  /** 하자보수 (D-68): 하자 위치 · 발주처가 첨부한 사진 · 보수 작업지시 · 회신과 함께 보낸 보수 완료 사진 · 발주처 확인 */
+  location?: string;
+  photoIds?: string[];
+  linkedWorkOrderId?: string;
+  replyPhotoIds?: string[];
+  confirmedAt?: string;
+  confirmNote?: string;
   history: { at: string; status: PartnerRequestStatus; by: string; note?: string }[];
+}
+
+/** 발주처 화면 전용(서버가 만들어 보냄): 하자보수 진행 — 작업지시의 담당자·메모 없이 단계·기한만 (D-68) */
+export interface PartnerRepairView {
+  stage: "assigned" | "in_progress" | "done";
+  dueDate?: string;
+  at: string;
 }
 
 export type SignalRule =
@@ -668,6 +687,8 @@ export interface DemoDB {
   photos: SitePhoto[];
   /** 발주처 화면 전용(서버가 만들어 보냄): 현장별 최근 공정 변화 — 보고 원문 없이 공정·진척만 */
   partnerFeed?: Record<string, PartnerFeedItem[]>;
+  /** 발주처 화면 전용(서버가 만들어 보냄): 요청별 하자보수 진행 (D-68) */
+  partnerRepairs?: Record<string, PartnerRepairView>;
   changeOrders: ChangeOrder[];
   billings: ProgressBilling[];
   payments: PaymentReceived[];

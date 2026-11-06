@@ -195,6 +195,7 @@ function Orders({ db }: { db: DemoDB }) {
                     <b className="text-ink-2">{siteOf(db, w.siteId)}</b> → {nameOf(db, w.assigneeUserId)} · {fmtDate(w.createdAt.slice(0, 10))}
                     {w.dueDate && <span className={late ? "font-bold text-err" : ""}>· 기한 {fmtDate(w.dueDate)}{late ? " (지남)" : ""}</span>}
                     {w.urgent && <Badge tone="err">긴급</Badge>}
+                    {w.sourcePartnerRequestId && <Badge tone="warn">발주처 하자보수</Badge>}
                     <Badge tone={WO_TONE[w.status]}>{WO_LABEL[w.status]}</Badge>
                   </p>
                   <p className="text-[0.95rem] font-bold">{w.title}</p>

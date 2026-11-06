@@ -85,8 +85,9 @@ export const COMMAND_SPEC: Record<CommandName, { label: string; group: CmdGroup;
   purgeLocationsNow: { label: "기간 지난 좌표 지금 지우기", group: "privacy", allow: CEO_ONLY },
   purgeMemberLocations: { label: "직원 한 명의 좌표 지우기", group: "privacy", allow: CEO_ONLY },
   withdrawLocationConsent: { label: "위치 기록 동의 철회 (본인)", group: "privacy", allow: FIELD },
-  createPartnerRequest: { label: "견적 문의·주문 요청 보내기", group: "partner", allow: PARTNER },
-  updatePartnerRequest: { label: "고객 요청 검토·회신", group: "partner", allow: HQ },
+  createPartnerRequest: { label: "견적 문의·주문 요청·하자보수 요청 보내기 (사진 3장까지)", group: "partner", allow: PARTNER },
+  updatePartnerRequest: { label: "고객 요청 검토·회신 (보수 완료 사진 함께)", group: "partner", allow: HQ },
+  confirmPartnerRequest: { label: "회신·보수 완료 확인 (본인 요청만)", group: "partner", allow: PARTNER },
 };
 
 /** 화면 밖에서 하는 계정 관리 (명령 목록이 아닌 전용 서버 기능) */

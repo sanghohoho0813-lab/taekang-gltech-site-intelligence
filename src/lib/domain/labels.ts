@@ -96,6 +96,7 @@ export const PARTNER_TYPE_LABEL: Record<PartnerRequest["type"], string> = {
   order: "주문 요청",
   change_review: "설계변경·변경견적",
   schedule: "일정 문의",
+  defect: "하자보수 요청",
   other: "기타",
 };
 

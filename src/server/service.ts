@@ -175,7 +175,13 @@ export async function getPhoto(m: Member, id: string): Promise<{ mime: string; d
     const rev = await currentRev(m.companyId);
     const state = cachedState(m.companyId, rev) ?? (await db.transaction((tx) => loadState(tx, m.companyId)));
     const p = state.photos.find((x) => x.id === id);
-    if (!p || !p.shared || !m.partnerSiteIds.includes(p.siteId) || photoWithdrawn(state, p)) return null;
+    if (!p || !m.partnerSiteIds.includes(p.siteId)) return null;
+    // 본인이 하자보수 요청에 첨부한 사진은 본인이 다시 볼 수 있다 (D-68)
+    const own = !!p.partnerRequestId && state.partnerRequests.some((r) => r.id === p.partnerRequestId && r.partnerUserId === m.id);
+    if (!own && (!p.shared || photoWithdrawn(state, p))) return null;
+    // 다른 발주처의 하자보수 회신 사진은 주지 않는다
+    const reply = state.partnerRequests.find((r) => r.replyPhotoIds?.includes(p.id));
+    if (reply && reply.partnerUserId !== m.id) return null;
   }
   const [row] = await db.query<{ mime: string; data: Uint8Array; site_id: string | null }>(
     `select mime, data, site_id from photo_blobs where id = $1 and company_id = $2`,

@@ -21,6 +21,8 @@ export function setPhotoShare(db0: DemoDB, input: PhotoShareInput, ctx: Ctx) {
   const at = nowIso(ctx);
   const photos = ids.map((id) => db.photos.find((p) => p.id === id));
   if (photos.some((p) => !p)) throw new CommandError("사진을 찾을 수 없습니다.", "NOT_FOUND");
+  // 발주처가 보낸 하자 사진은 다른 발주처에게 공개하지 않는다 (D-68)
+  if (photos.some((p) => !!p?.partnerRequestId)) throw new CommandError("발주처가 보낸 하자 사진은 공개할 수 없습니다.", "STATE");
   const sites = new Set(photos.map((p) => p!.siteId));
   let changed = 0;
   for (const p of photos) {

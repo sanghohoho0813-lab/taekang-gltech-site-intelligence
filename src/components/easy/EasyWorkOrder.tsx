@@ -32,6 +32,8 @@ export function EasyWorkOrderCard({ db, wo }: { db: DemoDB; wo: WorkOrder }) {
   const [err, setErr] = useState<string | null>(null);
   const [finish, setFinish] = useState(false);
   const site = db.sites.find((s) => s.id === wo.siteId);
+  const [bigPhoto, setBigPhoto] = useState<string | null>(null);
+  const refPhotos = (wo.refPhotoIds ?? []).map((id) => db.photos.find((p) => p.id === id)).filter((p): p is NonNullable<typeof p> => !!p);
   const due = wo.dueDate && !["done", "confirmed"].includes(wo.status) ? dueText(wo.dueDate, todayIso()) : null;
   const step = async (action: "receive" | "start") => {
     setBusy(true);
@@ -48,12 +50,25 @@ export function EasyWorkOrderCard({ db, wo }: { db: DemoDB; wo: WorkOrder }) {
     <article className={cx("rounded-3xl border-2 bg-surface p-4 shadow-card", wo.status === "returned" ? "border-err/40" : wo.urgent && wo.status === "sent" ? "border-warn/50" : "border-line")} data-testid="wo-card" data-status={wo.status} data-wo={wo.id}>
       <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[1.02rem] font-semibold text-ink-2">
         <b className="text-ink">{site?.shortName}</b>
-        <span className="rounded-lg bg-active-soft px-2 py-0.5 text-[0.95rem] font-bold text-theme-ink">본사 지시</span>
+        <span className="rounded-lg bg-active-soft px-2 py-0.5 text-[0.95rem] font-bold text-theme-ink">{wo.sourcePartnerRequestId ? "하자보수" : "본사 지시"}</span>
         {wo.urgent && <span className="rounded-lg bg-err-bg px-2 py-0.5 text-[0.95rem] font-bold text-err">긴급</span>}
         <span className={cx("rounded-lg px-2 py-0.5 text-[0.98rem] font-bold", wo.status === "returned" ? "bg-err-bg text-err" : wo.status === "confirmed" || wo.status === "done" ? "bg-ok-bg text-ok" : "bg-surface-3 text-ink-2")}>{WO_STATUS[wo.status]}</span>
       </p>
       <h2 className="mt-2 text-[1.3rem] font-extrabold leading-snug">{wo.title}</h2>
       {wo.detail && <p className="mt-1.5 text-[1.05rem] leading-relaxed text-ink-2">{wo.detail}</p>}
+      {refPhotos.length > 0 && (
+        <div className="mt-2.5" data-testid="wo-ref-photos">
+          <p className="text-[0.98rem] font-bold text-ink-2">발주처가 보낸 하자 사진</p>
+          <div className="mt-1.5 flex gap-2">
+            {refPhotos.map((p) => (
+              <button key={p.id} type="button" onClick={() => setBigPhoto(p.dataUrl)} className="press overflow-hidden rounded-xl border border-line" aria-label="하자 사진 크게 보기">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={p.dataUrl} alt="" className="size-20 object-cover" />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       {due && (
         <p className={cx("mt-2 text-[1.08rem] font-bold", due.late ? "text-err" : "text-ink")}>
           {easyDate(wo.dueDate!)}까지 · {due.text}
@@ -88,6 +103,10 @@ export function EasyWorkOrderCard({ db, wo }: { db: DemoDB; wo: WorkOrder }) {
         )}
       </div>
       {finish && <FinishModal wo={wo} onClose={() => setFinish(false)} />}
+      <Modal open={!!bigPhoto} onClose={() => setBigPhoto(null)} title="발주처가 보낸 하자 사진" size="lg">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        {bigPhoto && <img src={bigPhoto} alt="하자 사진" className="w-full rounded-xl" />}
+      </Modal>
     </article>
   );
 }

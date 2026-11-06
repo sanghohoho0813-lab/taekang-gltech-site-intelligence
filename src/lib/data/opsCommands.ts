@@ -167,6 +167,8 @@ export interface WorkOrderInput {
   dueDate?: string;
   urgent?: boolean;
   idempotencyKey?: string;
+  /** 발주처 하자보수 요청에서 보내는 작업지시 (D-68) */
+  partnerRequestId?: string;
 }
 
 export function createWorkOrder(db0: DemoDB, input: WorkOrderInput, ctx: Ctx) {
@@ -183,6 +185,13 @@ export function createWorkOrder(db0: DemoDB, input: WorkOrderInput, ctx: Ctx) {
   if (input.dueDate && !/^\d{4}-\d{2}-\d{2}$/.test(input.dueDate)) errors.dueDate = "기한 날짜를 확인해 주세요.";
   // 이미 지난 날짜를 기한으로 주면 보내자마자 ‘(지남)’이 붙는다 (D-66 점검 반영)
   else if (input.dueDate && input.dueDate < todayIso(ctx.now)) errors.dueDate = "기한은 오늘이나 그 뒤로 정해 주세요.";
+  const req0 = input.partnerRequestId ? db0.partnerRequests.find((r) => r.id === input.partnerRequestId) : undefined;
+  if (input.partnerRequestId) {
+    if (!req0 || req0.siteId !== site.id) throw new CommandError("하자보수 요청을 찾을 수 없습니다.", "NOT_FOUND");
+    if (req0.type !== "defect") throw new CommandError("하자보수 요청만 작업지시로 보낼 수 있습니다.", "STATE");
+    if (req0.status === "answered") throw new CommandError("이미 회신한 요청입니다.", "STATE");
+    if (req0.linkedWorkOrderId && (db0.workOrders ?? []).some((w) => w.id === req0.linkedWorkOrderId)) throw new CommandError("이 요청으로 이미 보낸 작업지시가 있습니다.", "DUPLICATE");
+  }
   if (Object.keys(errors).length) throw new CommandError("입력값을 확인해주세요.", "VALIDATION", errors);
   const db = clone(db0);
   claimKey(db, input.idempotencyKey);
@@ -200,6 +209,15 @@ export function createWorkOrder(db0: DemoDB, input: WorkOrderInput, ctx: Ctx) {
     createdBy: ctx.userId,
     history: [{ at, by: ctx.userId, to: "sent" }],
   };
+  if (req0) {
+    wo.sourcePartnerRequestId = req0.id;
+    if (req0.photoIds?.length) wo.refPhotoIds = [...req0.photoIds];
+    const r = db.partnerRequests.find((x) => x.id === req0.id)!;
+    r.linkedWorkOrderId = wo.id;
+    r.updatedAt = at;
+    if (r.status === "received") r.status = "reviewing";
+    r.history.push({ at, status: r.status, by: ctx.userId, note: "보수 작업 배정" });
+  }
   db.workOrders = [...(db.workOrders ?? []), wo];
   log(db, ctx, "order", `${site.shortName} 작업지시 — ${title} → ${userName(db, assignee)}${input.urgent ? " (긴급)" : ""}`, site.id, "/orders");
   touch(db, ctx);

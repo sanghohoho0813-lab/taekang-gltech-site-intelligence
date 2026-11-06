@@ -54,6 +54,8 @@ export function photoLedger(db: DemoDB, siteId: string, from: string, to: string
       const isCrew = !!p.crewId || p.caption.startsWith("작업 인원");
       const kind: PhotoKind = isCrew ? "crew" : orderOf.has(p.id) ? "order" : supplementIds.has(p.id) ? "supplement" : p.actionId ? "action" : r ? "report" : "other";
       if (r?.status === "voided") return null;
+      // 발주처가 하자보수 요청에 첨부한 사진은 공사사진이 아니다 (요청함에서 본다 · D-68)
+      if (p.partnerRequestId) return null;
       if (p.materialMoveId && voidedMoves.has(p.materialMoveId)) return null;
       // 공종: 그 보고가 바꾼 공정 단계 → 그날 진행 중인 단계 → 현장 공종
       const stage = r?.stages?.[0]?.name ?? site.stages.find((s) => s.startDate <= date && s.endDate >= date)?.name ?? site.workType;

@@ -31,6 +31,7 @@ function ownArgs(db: DemoDB, name: CommandName): Record<string, unknown> {
     actionId: db.actions.find((a) => a.assigneeUserId === "u-field")!.id,
     workOrderId: (db.workOrders ?? []).find((w) => w.assigneeUserId === "u-field")!.id,
     moveId: "mm-own-today",
+    requestId: db.partnerRequests.find((r) => r.partnerUserId === "u-partner" && r.siteId === "site-a")!.id,
     to: "in_progress",
     input: {},
   };

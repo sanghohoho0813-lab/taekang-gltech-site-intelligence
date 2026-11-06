@@ -18,7 +18,7 @@ const FIELD_ALLOWED = new Set<CommandName>(["submitFieldReport", "voidReport", "
 /** 대표만 실행할 수 있는 명령 (개인위치정보 규칙·좌표 삭제 · D-43) */
 const CEO_ONLY = new Set<CommandName>(["setLocationPolicy", "purgeLocationsNow", "purgeMemberLocations"]);
 /** 발주처가 실행할 수 있는 명령 */
-const PARTNER_ALLOWED = new Set<CommandName>(["createPartnerRequest"]);
+const PARTNER_ALLOWED = new Set<CommandName>(["createPartnerRequest", "confirmPartnerRequest"]);
 
 const member = (id: string, role: Member["role"], extra: Partial<Member> = {}): Member => ({ id, companyId: "c1", email: `${id}@t.test`, name: id, title: "", role, siteIds: [], partnerSiteIds: [], active: true, mustChangePassword: false, ...extra });
 const CEO = member("u-ceo", "ceo");
@@ -28,14 +28,14 @@ const PARTNER = member("u-partner", "partner", { partnerSiteIds: ["site-a"] });
 
 function sample(db: DemoDB, name: CommandName): Record<string, unknown> {
   const sig = computeSignals(db, NOW)[0];
-  return { siteId: "site-a", signal: name === "createAction" ? sig : undefined, reportId: db.reports[0]?.id, entryId: db.costEntries[0]?.id, actionId: db.actions[0]?.id, workOrderId: db.workOrders?.[0]?.id, to: "in_progress", input: {} };
+  return { siteId: "site-a", signal: name === "createAction" ? sig : undefined, reportId: db.reports[0]?.id, entryId: db.costEntries[0]?.id, actionId: db.actions[0]?.id, workOrderId: db.workOrders?.[0]?.id, requestId: db.partnerRequests.find((r) => r.partnerUserId === "u-partner" && r.siteId === "site-a")?.id, to: "in_progress", input: {} };
 }
 
 describe("권한 매트릭스 — 모든 명령 × 역할", () => {
-  it("명령 목록이 바뀌면 이 표를 먼저 갱신한다 (50개)", () => {
+  it("명령 목록이 바뀌면 이 표를 먼저 갱신한다 (51개)", () => {
     expect(ALL).toEqual(
       [
-        "addActionNote", "addBilling", "addPayment", "assignAction", "checkIn", "checkOut", "completeAction", "confirmProofEvent", "confirmQr", "correctAttendance", "createAction", "createKiosk", "createPartnerRequest", "createWorkOrder", "editCostEntry", "importCostRows", "importData", "purgeLocationsNow", "purgeMemberLocations", "recordMaterial", "reportCrew", "reportDeviceCheck", "reviewFeedback", "requestAttendanceFix", "reviewAttendanceFix", "reviewCostEntry", "reviewReport", "reviewWorkOrder", "revokeKiosk", "saveSite", "setActionStatus", "setChangeOrderStatus", "setCompanySettings", "setLocationPolicy", "setPhotoShare", "setSiteGeo", "setSiteMaterials", "sendFeedback", "setThresholds", "submitFieldReport", "supplementReport", "undoImport", "updateForecast", "updatePartnerRequest", "updateProgress", "voidCostEntry", "voidMaterialMove", "voidReport", "withdrawLocationConsent", "workOrderStep",
+        "addActionNote", "addBilling", "addPayment", "assignAction", "checkIn", "checkOut", "completeAction", "confirmPartnerRequest", "confirmProofEvent", "confirmQr", "correctAttendance", "createAction", "createKiosk", "createPartnerRequest", "createWorkOrder", "editCostEntry", "importCostRows", "importData", "purgeLocationsNow", "purgeMemberLocations", "recordMaterial", "reportCrew", "reportDeviceCheck", "reviewFeedback", "requestAttendanceFix", "reviewAttendanceFix", "reviewCostEntry", "reviewReport", "reviewWorkOrder", "revokeKiosk", "saveSite", "setActionStatus", "setChangeOrderStatus", "setCompanySettings", "setLocationPolicy", "setPhotoShare", "setSiteGeo", "setSiteMaterials", "sendFeedback", "setThresholds", "submitFieldReport", "supplementReport", "undoImport", "updateForecast", "updatePartnerRequest", "updateProgress", "voidCostEntry", "voidMaterialMove", "voidReport", "withdrawLocationConsent", "workOrderStep",
       ].sort(),
     );
     // QR 태블릿 연결은 로그인 없는 전용 API로만 (명령 목록에 없어야 함)
