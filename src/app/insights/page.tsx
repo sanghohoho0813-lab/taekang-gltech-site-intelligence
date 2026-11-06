@@ -213,7 +213,10 @@ function PartnerInbox({ db }: { db: DemoDB }) {
                 <div className="flex flex-wrap items-center gap-1.5 text-[0.74rem] text-ink-3">
                   <Badge tone={r.status === "answered" ? "ok" : r.status === "reviewing" ? "theme" : "warn"}>{PARTNER_STATUS_LABEL[r.status]}</Badge>
                   <Badge tone={r.type === "quote" || r.type === "order" ? "info" : r.type === "defect" ? "warn" : "neutral"}>{PARTNER_TYPE_LABEL[r.type]}</Badge>
-                  <b className="text-ink-2">{site?.shortName}</b> · {userLabel(db, r.partnerUserId)} · {fmtRelative(r.createdAt)}
+                  {/* 줄이 바뀌어도 ‘·’로 시작하지 않게 조각마다 묶는다 (D-69) */}
+                  <b className="text-ink-2">{site?.shortName}</b>
+                  <span className="whitespace-nowrap">· {userLabel(db, r.partnerUserId)}</span>
+                  <span className="whitespace-nowrap">· {fmtRelative(r.createdAt)}</span>
                 </div>
                 <p className="mt-1 text-[0.9rem] font-bold text-ink">{r.title}</p>
                 {(r.item || r.qty || r.desiredDate) && (

@@ -88,12 +88,13 @@ function PartnerPortal({ db, partner, sites: mySites, preview }: { db: NonNullab
 
   return (
     <div className="min-h-[calc(100dvh-var(--demo-bar-h))] bg-[#F6F5F3]" data-testid="partner-portal">
-      <header className="sticky top-[var(--demo-bar-h)] z-30 border-b border-line bg-surface/95 backdrop-blur">
-        <div className="mx-auto flex h-16 max-w-[1240px] items-center gap-3 px-4">
+      {/* 휴대폰에서는 머리를 고정하지 않는다 — 작은 화면·아주 큰 글씨에서 머리가 화면 4분의 1을 차지하던 문제 (D-69) */}
+      <header className="top-[var(--demo-bar-h)] z-30 border-b border-line bg-surface/95 backdrop-blur lg:sticky">
+        <div className="mx-auto flex min-h-14 max-w-[1240px] items-center gap-2.5 px-4 py-1.5 sm:min-h-16">
           <LogoMark size={28} />
           <div className="min-w-0 leading-tight">
-            <p className="truncate text-[0.95rem] font-extrabold tracking-[0.04em]">TAEKANG GLTECH</p>
-            <p className="text-[0.7rem] font-semibold text-ink-3">발주처·협력사 포털</p>
+            <p className="truncate text-[0.95rem] font-extrabold tracking-[0.04em] max-[420px]:hidden">TAEKANG GLTECH</p>
+            <p className="truncate text-[0.7rem] font-semibold text-ink-3 max-[420px]:text-[0.9rem] max-[420px]:font-extrabold max-[420px]:text-ink">발주처·협력사 포털</p>
           </div>
           <nav className="ml-4 hidden items-center gap-1 lg:flex" aria-label="포털 메뉴">
             <a href="#status" className="press rounded-lg px-3 py-2 text-[0.85rem] font-bold text-ink hover:bg-surface-3">현장 현황</a>

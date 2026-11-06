@@ -215,7 +215,7 @@ export const MODULES: { no: string; name: string; routes: string[]; note: string
   { no: "03", name: "본사-현장 소통", routes: ["/orders", "/my-actions", "/audit"], note: "지시→접수→진행→완료→확인, 보완 요청, 휴대폰 알림, 활동 이력" },
   { no: "04", name: "공정·투입 원가", routes: ["/sites", "/schedule", "/labor", "/finance"], note: "현장 손익·공정 일정·투입 인건비 추정 vs 실제·기성·변경공사·자재 설치율·기성 청구 지연 표시" },
   { no: "05", name: "대표자 통합 현황판", routes: ["/dashboard", "/report", "/insights"], note: "처리 대기·현장별 손익·위험 신호(규칙 기반)·대표 보고서" },
-  { no: "06", name: "고객·협력사 초기화면", routes: ["/partner", "/partner/report"], note: "공개 현장 진행·공정 사진·견적 문의·주문 요청·하자보수(사진·보수 진행·확인)·월간 공정 보고서 (내부 금액 비노출)" },
+  { no: "06", name: "고객·협력사 초기화면", routes: ["/partner", "/partner/report", "/defects"], note: "공개 현장 진행·공정 사진·견적 문의·주문 요청·하자보수(사진·보수 진행·확인·본사 하자보수 현황·관리대장)·월간 공정 보고서 (내부 금액 비노출)" },
   { no: "07", name: "기존 프로그램 일부 기능", routes: ["/data"], note: "엑셀 가져오기 6종(기성·입금 / 변경공사 / 출력 / 팀 단가 / 원가 / 자재 반입·설치)·내려받기 — 합의 항목은 계약에 따라 확정" },
 ];
 

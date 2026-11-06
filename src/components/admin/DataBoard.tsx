@@ -120,6 +120,8 @@ function ReadyRow({ it, siteId, onImport, flat }: { it: ReadyItem; siteId?: stri
       <span className="min-w-0 flex-1">
         <span className="block text-[0.84rem] font-semibold text-ink">{it.label}</span>
         <span className={cx("block text-[0.78rem]", it.status === "ok" ? "text-ink-3" : "text-ink-2")}>{it.text}</span>
+        {/* 좁은 칸에서 설명이 5줄로 눌리던 문제 — 안내는 설명 아래에 (D-69) */}
+        {it.status !== "ok" && !importKind && !href && !IS_LIVE && (it.fix === "partner" || it.fix === "settings") && <span className="mt-0.5 block text-[0.74rem] text-ink-3">실제 운영에서 설정</span>}
       </span>
       {action &&
         (importKind && onImport ? (
@@ -131,7 +133,6 @@ function ReadyRow({ it, siteId, onImport, flat }: { it: ReadyItem; siteId?: stri
             고치기
           </Link>
         ) : null)}
-      {it.status !== "ok" && !importKind && !href && !IS_LIVE && (it.fix === "partner" || it.fix === "settings") && <span className="shrink-0 self-center text-[0.74rem] text-ink-3">실제 운영에서 설정</span>}
     </li>
   );
 }
