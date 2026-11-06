@@ -94,7 +94,8 @@ function PartnerPortal({ db, partner, sites: mySites, preview }: { db: NonNullab
           <LogoMark size={28} />
           <div className="min-w-0 leading-tight">
             <p className="truncate text-[0.95rem] font-extrabold tracking-[0.04em] max-[420px]:hidden">TAEKANG GLTECH</p>
-            <p className="truncate text-[0.7rem] font-semibold text-ink-3 max-[420px]:text-[0.9rem] max-[420px]:font-extrabold max-[420px]:text-ink">발주처·협력사 포털</p>
+            <p className="truncate text-[0.7rem] font-semibold text-ink-3 max-[420px]:hidden">발주처·협력사 포털</p>
+            <p className="hidden whitespace-nowrap text-[0.95rem] font-extrabold max-[420px]:block">발주처 포털</p>
           </div>
           <nav className="ml-4 hidden items-center gap-1 lg:flex" aria-label="포털 메뉴">
             <a href="#status" className="press rounded-lg px-3 py-2 text-[0.85rem] font-bold text-ink hover:bg-surface-3">현장 현황</a>
@@ -120,7 +121,7 @@ function PartnerPortal({ db, partner, sites: mySites, preview }: { db: NonNullab
                   <Badge tone="info">관리자 미리보기</Badge>
                 </span>
                 <Link href="/dashboard" className="press inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-line-strong bg-surface px-3 text-[0.85rem] font-bold" data-testid="partner-back-hq">
-                  <LayoutDashboard size={15} aria-hidden /> 본사 화면
+                  <LayoutDashboard size={15} aria-hidden /> <span className="whitespace-nowrap">본사 화면</span>
                 </Link>
               </>
             ) : (
@@ -279,7 +280,7 @@ function RequestForm({ siteId, disabled, draft }: { siteId: string; disabled: bo
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [sent, setSent] = useState(false);
   return (
-    <Card id="request" className="scroll-mt-40" data-testid="partner-form">
+    <Card id="request" className="scroll-mt-4 lg:scroll-mt-40" data-testid="partner-form">
       <CardHeader title="요청하기" sub="전화 없이 요청을 남기면 태강지엘텍 본사 요청함에 바로 접수됩니다" />
       {sent ? (
         <div className="anim-pop flex flex-col items-center gap-2 px-5 pb-6 pt-2 text-center" data-testid="partner-sent">
@@ -331,9 +332,11 @@ function RequestForm({ siteId, disabled, draft }: { siteId: string; disabled: bo
         >
           {disabled && <Notice tone="info">미리보기 모드에서는 요청을 등록할 수 없습니다. 위의 ‘발주처 역할로 전환’을 누르세요.</Notice>}
           {reopen && defect && (
-            <Notice tone="info" title={`‘${reopen.title}’을 다시 요청합니다`}>
-              <span data-testid="partner-redo-notice">위치·제목을 채워 두었습니다. 지금 상태를 적고 사진을 다시 올린 뒤 ‘요청 보내기’를 누르세요.</span>{" "}
-              <button type="button" className="font-bold underline" onClick={() => setReopen(null)}>다시 요청 아님</button>
+            <Notice tone="info" title={`다시 요청: ‘${reopen.title}’`}>
+              <span data-testid="partner-redo-notice">위치·제목을 채워 두었습니다. 지금 상태를 적고 사진을 다시 올린 뒤 ‘요청 보내기’를 누르세요.</span>
+              <button type="button" className="press mt-1.5 inline-flex min-h-11 items-center rounded-xl border border-line-strong bg-surface px-3 text-[0.84rem] font-bold" onClick={() => setReopen(null)} data-testid="partner-redo-cancel">
+                새 요청으로 쓰기
+              </button>
             </Notice>
           )}
           <Field label="요청 유형" htmlFor="p-type">
@@ -495,7 +498,7 @@ function MyRequests({ db, requests, preview, onRedo }: { db: DemoDB; requests: P
     );
   };
   return (
-    <Card id="my-requests" className="scroll-mt-40" data-testid="partner-requests">
+    <Card id="my-requests" className="scroll-mt-4 lg:scroll-mt-40" data-testid="partner-requests">
       <CardHeader title="내 요청" sub="처리 상태가 실시간으로 바뀝니다 · 하자보수는 보수 진행까지 보입니다" />
       {requests.length === 0 ? (
         <EmptyState icon={<Inbox size={28} />} title="요청 내역이 없습니다." />
@@ -505,7 +508,10 @@ function MyRequests({ db, requests, preview, onRedo }: { db: DemoDB; requests: P
             const idx = STEPS.indexOf(r.status);
             const repair = db.partnerRepairs?.[r.id] ?? partnerRepairView(db, r);
             // 하자보수는 한 줄 단계로: 접수 → 보수 배정 → 보수 중 → 보수 완료 → 확인 완료 (D-68 점검 반영)
-            const prog = r.type === "defect" && repair ? defectProgress(r, repair) : null;
+            // 하자보수는 접수부터 같은 5단계 (작업지시 전에 3단계 표시였다가 바뀌던 문제 · D-69 점검 반영)
+            const prog = r.type === "defect" ? defectProgress(r, repair) : null;
+            const original = r.reopenedFrom ? requests.find((x) => x.id === r.reopenedFrom) : undefined;
+            const canConfirm = r.status === "answered" && !r.confirmedAt && (repair ? repair.stage === "done" : r.type !== "defect" || !!r.closedWithoutRepair);
             const redo = requests.find((x) => x.reopenedFrom === r.id);
             return (
               <li key={r.id} className="rounded-2xl border border-line bg-surface-2 p-4" data-testid="partner-request-item" data-status={r.status} data-type={r.type}>
@@ -531,14 +537,18 @@ function MyRequests({ db, requests, preview, onRedo }: { db: DemoDB; requests: P
                     {r.desiredDate ? ` · 보수 희망 ${fmtDate(r.desiredDate)}` : ""}
                   </p>
                 )}
-                {r.reopenedFrom && <p className="mt-1 text-[0.76rem] text-ink-3">앞서 보낸 요청을 다시 요청한 건입니다.</p>}
+                {r.reopenedFrom && (
+                  <p className="mt-1 text-[0.76rem] text-ink-3" data-testid="partner-reopened-from">
+                    다시 요청 · 원래 요청: {original ? `‘${original.title}’ (${fmtDate(original.createdAt)} 접수)` : "앞서 보낸 요청"}
+                  </p>
+                )}
                 {thumbs(r.photoIds, "첨부한 하자 사진", "partner-request-photos")}
                 {prog ? (
                   <ol className="mt-3 grid grid-cols-5 gap-0.5" aria-label="하자보수 단계" data-testid="partner-defect-steps" data-step={prog.step}>
                     {DEFECT_STEPS.map((label, i) => (
                       <li key={label} className="text-center">
                         <span className={cx("mx-auto grid size-7 place-items-center rounded-full", i <= prog.step ? "bg-solid text-white" : "bg-surface-3 text-ink-3")}>
-                          {i < prog.step || prog.step === 4 ? <CircleCheck size={15} /> : <Clock3 size={15} />}
+                          {i < prog.step || (prog.step >= 3 && i <= prog.step) ? <CircleCheck size={15} /> : <Clock3 size={15} />}
                         </span>
                         <span className="mt-1 block text-[0.7rem] font-bold leading-tight [word-break:keep-all]">{label}</span>
                       </li>
@@ -563,10 +573,9 @@ function MyRequests({ db, requests, preview, onRedo }: { db: DemoDB; requests: P
                 {repair && (
                   <p className={cx("mt-3 flex flex-wrap items-center gap-1.5 rounded-xl px-3 py-2 text-[0.82rem] font-semibold", repair.stage === "done" ? "bg-ok-bg text-ok" : "bg-active-soft text-theme-ink")} data-testid="partner-repair" data-stage={repair.stage}>
                     <Wrench size={15} aria-hidden /> {defectProgress({ status: r.status }, repair).label}
-                    <span className="num font-normal text-ink-2">
-                      · {fmtRelative(repair.at)}
-                      {repair.stage !== "done" && repair.dueDate ? ` · ${fmtDate(repair.dueDate)}까지 예정` : ""}
-                    </span>
+                    {/* 줄이 바뀌어도 ‘·’로 시작하지 않게 (D-69 점검 반영) */}
+                    <span className="num font-normal text-ink-2">{fmtRelative(repair.at)}</span>
+                    {repair.stage !== "done" && repair.dueDate && <span className="num font-normal text-ink-2">· {fmtDate(repair.dueDate)}까지 예정</span>}
                   </p>
                 )}
                 {r.reply ? (
@@ -578,35 +587,35 @@ function MyRequests({ db, requests, preview, onRedo }: { db: DemoDB; requests: P
                 ) : (
                   <p className="mt-2 text-[0.76rem] text-ink-3">접수 {fmtDateTime(r.createdAt)}</p>
                 )}
-                {r.status === "answered" && repair && repair.stage !== "done" && !r.confirmedAt && (
+                {r.status === "answered" && r.type === "defect" && !canConfirm && !r.confirmedAt && !redo && (
                   <p className="mt-2 text-[0.78rem] text-ink-3" data-testid="partner-confirm-later">태강지엘텍이 보수를 마무리하면 ‘보수 확인했어요’를 누를 수 있습니다.</p>
                 )}
-                {r.status === "answered" &&
-                  (!repair || repair.stage === "done" || r.confirmedAt) &&
-                  (r.confirmedAt ? (
-                    <p className="mt-2 text-[0.78rem] font-semibold text-ok" data-testid="partner-confirmed">
-                      <CircleCheck size={14} className="mr-1 inline" aria-hidden />
-                      {fmtDateTime(r.confirmedAt)} 확인함
-                    </p>
-                  ) : (
-                    !preview && (
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <Button variant="cta" icon={<CircleCheck size={16} />} disabled={busy === r.id} onClick={() => confirm(r)} data-testid="partner-confirm">
-                          {r.type === "defect" ? "보수 확인했어요" : "회신 확인했어요"}
-                        </Button>
-                        {r.type === "defect" &&
-                          (redo ? (
-                            <span className="self-center text-[0.8rem] font-semibold text-ink-3" data-testid="partner-redone">
-                              {fmtDate(redo.createdAt)} 다시 요청함
-                            </span>
-                          ) : (
-                            <Button variant="soft" icon={<RotateCcw size={16} />} onClick={() => onRedo(r)} data-testid="partner-redo">
-                              아직 문제가 있어요
-                            </Button>
-                          ))}
-                      </div>
-                    )
-                  ))}
+                {r.confirmedAt && (
+                  <p className="mt-2 text-[0.78rem] font-semibold text-ok" data-testid="partner-confirmed">
+                    <CircleCheck size={14} className="mr-1 inline" aria-hidden />
+                    {fmtDateTime(r.confirmedAt)} 확인함
+                  </p>
+                )}
+                {/* 다시 요청했으면 원래 요청은 확인 버튼 없이 ‘이어서 처리 중’ (D-69 점검 반영) */}
+                {r.type === "defect" && redo && (
+                  <p className="mt-2 text-[0.8rem] font-semibold text-ink-2" data-testid="partner-redone">
+                    {fmtDate(redo.createdAt)} 다시 요청함 — 새 요청으로 이어서 처리합니다
+                  </p>
+                )}
+                {!preview && !redo && (canConfirm || (r.type === "defect" && !!r.confirmedAt)) && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {canConfirm && (
+                      <Button variant="cta" icon={<CircleCheck size={16} />} disabled={busy === r.id} onClick={() => confirm(r)} data-testid="partner-confirm">
+                        {r.type === "defect" ? "보수 확인했어요" : "회신 확인했어요"}
+                      </Button>
+                    )}
+                    {r.type === "defect" && (
+                      <Button variant="soft" icon={<RotateCcw size={16} />} onClick={() => onRedo(r)} data-testid="partner-redo">
+                        {r.confirmedAt ? "같은 곳에 또 문제가 생겼어요" : "아직 문제가 있어요"}
+                      </Button>
+                    )}
+                  </div>
+                )}
               </li>
             );
           })}
@@ -652,7 +661,7 @@ function SiteUpdates({ db, siteId, preview }: { db: NonNullable<ReturnType<typeo
   const feed = (db.partnerFeed?.[siteId] ?? partnerProgressFeed(db, siteId, todayIso())).filter((f) => f.date >= since);
   const big = photos.find((p) => p.id === open);
   return (
-    <section id="photos" className="grid scroll-mt-40 gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+    <section id="photos" className="grid scroll-mt-4 gap-5 lg:scroll-mt-40 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
       <Card data-testid="partner-photos">
         <CardHeader title="공정 사진" sub={photos.length ? `태강지엘텍이 공개한 사진 ${photos.length}장 · 누르면 크게 보입니다` : "아직 공개된 사진이 없습니다"} />
         {photos.length === 0 ? (

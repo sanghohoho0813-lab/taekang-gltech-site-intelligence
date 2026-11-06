@@ -16,6 +16,7 @@ import { fmtDate, fmtDateTime, fmtMan, fmtRelative, todayIso } from "@/lib/domai
 import { uid } from "@/lib/domain/ids";
 import { worksOnSite } from "@/lib/domain/types";
 import { partnerRepairView } from "@/lib/domain/partnerFeed";
+import { defectRows } from "@/lib/domain/defects";
 import { errorMessage } from "@/lib/data/commands";
 import { run } from "@/lib/data/store";
 import type { DemoDB, PartnerRequest, RiskSignal } from "@/lib/domain/types";
@@ -34,13 +35,18 @@ function Insights() {
   const [assigning, setAssigning] = useState<RiskSignal | null>(null);
 
   useEffect(() => {
-    if (window.location.hash === "#requests") setTimeout(() => document.getElementById("requests")?.scrollIntoView({ behavior: "smooth" }), 200);
+    // 하자보수 현황 등에서 특정 요청으로 오면(?req=) 그 요청으로 내려가 표시 (D-69 점검 반영)
+    const req = new URLSearchParams(window.location.search).get("req");
+    if (req) setTimeout(() => document.getElementById(`req-${req}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 250);
+    else if (window.location.hash === "#requests") setTimeout(() => document.getElementById("requests")?.scrollIntoView({ behavior: "smooth" }), 200);
   }, []);
 
   if (!db) return <PageSkeleton />;
   const open = db.actions.filter((a) => ["recommended", "assigned", "in_progress", "on_hold"].includes(a.status));
   const done = db.actions.filter((a) => a.status === "done");
-  const newReq = db.partnerRequests.filter((r) => r.status !== "answered");
+  // 처리 대기 화면과 같은 기준 — 하자보수는 ‘하자보수’ 화면에서 따로 센다 (D-69 점검 반영)
+  const newReq = db.partnerRequests.filter((r) => r.status !== "answered" && r.type !== "defect");
+  const defectTodo = defectRows(db, todayIso()).filter((r) => r.next === "assign" || r.next === "reply").length;
   const bySite = db.sites.map((s) => ({ site: s, list: signals.filter((x) => x.siteId === s.id) })).filter((g) => g.list.length);
 
   return (
@@ -58,7 +64,7 @@ function Insights() {
         <StatCard label="열린 위험 신호" value={`${signals.length}건`} sub={`경고 ${signals.filter((s) => s.severity === "high").length} · 주의 ${signals.filter((s) => s.severity === "medium").length} · 확인 ${signals.filter((s) => s.severity === "low").length}`} icon={<ShieldAlert size={21} />} group="ax" />
         <StatCard label="진행 중 조치" value={`${open.length}건`} sub={open.length ? `${ACTION_STATUS_LABEL[open[0].status]} · ${open[0].title}` : "없음"} icon={<ListChecks size={21} />} group="ops" />
         <StatCard label="완료 · 성과 기록" value={`${done.length} · ${db.proofEvents.length}건`} sub={`결과 확인 ${db.proofEvents.filter((p) => p.status === "confirmed").length}건`} icon={<BadgeCheck size={21} />} group="ax" href="/evidence" />
-        <StatCard label="발주처 요청 (미회신)" value={`${newReq.length}건`} sub="발주처 포털에서 접수" icon={<Inbox size={21} />} group="growth" />
+        <StatCard label="발주처 요청 (미회신)" value={`${newReq.length}건`} sub={defectTodo ? `하자보수 본사 할 일 ${defectTodo}건 따로` : "견적·주문·일정 등 · 발주처 포털에서 접수"} icon={<Inbox size={21} />} group="growth" href={defectTodo ? "/defects" : undefined} />
       </div>
 
       <div className="grid gap-5 @min-[1080px]:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
@@ -187,6 +193,8 @@ function PartnerInbox({ db }: { db: DemoDB }) {
   const toast = useToast();
   const [reply, setReply] = useState<PartnerRequest | null>(null);
   const [toOrder, setToOrder] = useState<PartnerRequest | null>(null);
+  const [focus, setFocus] = useState<string | null>(null);
+  useEffect(() => setFocus(new URLSearchParams(window.location.search).get("req")), []);
   const list = db.partnerRequests;
   return (
     <Card id="requests" data-testid="partner-inbox">
@@ -209,7 +217,7 @@ function PartnerInbox({ db }: { db: DemoDB }) {
             const site = db.sites.find((s) => s.id === r.siteId);
             const wo = r.linkedWorkOrderId ? (db.workOrders ?? []).find((w) => w.id === r.linkedWorkOrderId) : undefined;
             return (
-              <li key={r.id} className={cx("rounded-xl border p-3.5", r.status === "received" ? "border-warn/35 bg-warn-bg/40" : "border-line bg-surface")} data-testid="partner-request" data-status={r.status}>
+              <li key={r.id} id={`req-${r.id}`} className={cx("scroll-mt-24 rounded-xl border p-3.5", r.status === "received" ? "border-warn/35 bg-warn-bg/40" : "border-line bg-surface", focus === r.id && "ring-2 ring-active")} data-testid="partner-request" data-status={r.status}>
                 <div className="flex flex-wrap items-center gap-1.5 text-[0.74rem] text-ink-3">
                   <Badge tone={r.status === "answered" ? "ok" : r.status === "reviewing" ? "theme" : "warn"}>{PARTNER_STATUS_LABEL[r.status]}</Badge>
                   <Badge tone={r.type === "quote" || r.type === "order" ? "info" : r.type === "defect" ? "warn" : "neutral"}>{PARTNER_TYPE_LABEL[r.type]}</Badge>
@@ -276,6 +284,18 @@ function PartnerInbox({ db }: { db: DemoDB }) {
                       회신하기
                     </Button>
                   </div>
+                )}
+                {/* 일정 안내로 먼저 회신했고 아직 작업지시가 없는 하자 — 작업지시를 보낼 수 있다 (D-69 점검 반영) */}
+                {r.status === "answered" && r.type === "defect" && !wo && !r.closedWithoutRepair && !r.confirmedAt && (
+                  <div className="mt-2.5">
+                    <Button size="sm" variant="soft" icon={<Wrench size={15} />} onClick={() => setToOrder(r)} data-testid="request-to-order">
+                      작업지시로 보내기
+                    </Button>
+                  </div>
+                )}
+                {/* 작업지시는 확인했지만 발주처에 아직 회신하지 않은 하자 (D-69 점검 반영) */}
+                {r.status !== "answered" && r.type === "defect" && partnerRepairView(db, r)?.stage === "done" && (
+                  <p className="mt-2 text-[0.78rem] font-semibold text-warn" data-testid="request-reply-needed">보수는 끝났는데 발주처에 아직 회신하지 않았습니다 — ‘회신하기’로 알려 주세요.</p>
                 )}
                 {/* 일정 안내로 먼저 회신한 하자보수 — 보수가 끝나면 보수 사진을 한 번 더 보낸다 (D-68 점검 반영) */}
                 {r.status === "answered" && r.type === "defect" && partnerRepairView(db, r)?.stage === "checking" && (
@@ -392,7 +412,10 @@ function ReplyModal({ db, req, onClose }: { db: DemoDB; req: PartnerRequest; onC
   const followUp = req.status === "answered";
   const [share, setShare] = useState<string[]>(() => donePhotos.filter((p) => !(req.replyPhotoIds ?? []).includes(p.id)).map((p) => p.id));
   // 현장이 끝냈다고 보낸 작업지시는 회신하면서 완료 확인도 함께 (요청함과 작업지시 화면 상태가 어긋나던 문제 · D-68 점검 반영)
-  const [confirmWo, setConfirmWo] = useState(wo?.status === "done");
+  const partialNote = !!wo && /일부/.test(`${wo.doneNote ?? ""}`);
+  // ‘일부만 끝냈어요’면 기본으로 완료 확인하지 않는다 (D-69 점검 반영)
+  const [confirmWo, setConfirmWo] = useState(wo?.status === "done" && !partialNote);
+  const [closeNoRepair, setCloseNoRepair] = useState(false);
   const partial = !!wo && /일부/.test(`${wo.doneNote ?? ""}`);
   const [busy, setBusy] = useState(false);
   const PH: Partial<Record<PartnerRequest["type"], string>> = {
@@ -431,7 +454,7 @@ function ReplyModal({ db, req, onClose }: { db: DemoDB; req: PartnerRequest; onC
               setBusy(true);
               setErr("");
               try {
-                await run("updatePartnerRequest", { requestId: req.id, patch: { status: "answered", reply: text, registerChangeOrder: register && amount > 0 ? { title: req.title, amount } : undefined, ...(share.length ? { sharePhotoIds: share } : {}) } });
+                await run("updatePartnerRequest", { requestId: req.id, patch: { status: "answered", reply: text, registerChangeOrder: register && amount > 0 ? { title: req.title, amount } : undefined, ...(share.length ? { sharePhotoIds: share } : {}), ...(closeNoRepair ? { closeWithoutRepair: true } : {}) } });
                 if (wo && wo.status === "done" && confirmWo) await run("reviewWorkOrder", { workOrderId: wo.id, decision: "confirm" }).catch(() => {});
                 toast.push({ tone: "ok", title: "회신했습니다", desc: req.type === "defect" && woDone ? "발주처 포털에 ‘보수 완료’와 회신이 표시됩니다." : "발주처 포털에 ‘회신 완료’와 회신 내용이 표시됩니다." });
                 onClose();
@@ -461,7 +484,16 @@ function ReplyModal({ db, req, onClose }: { db: DemoDB; req: PartnerRequest; onC
           </p>
         )}
         {req.type === "defect" && !wo && (
-          <Notice tone="warn">작업지시 없이 회신합니다. 발주처에게는 ‘회신 완료’로 보이고 바로 확인할 수 있습니다 (하자가 아닌 경우·전화로 처리한 경우).</Notice>
+          <div className="rounded-xl border border-line bg-surface-2 p-3 text-[0.85rem]" data-testid="reply-no-wo">
+            <p className="text-ink-2">아직 작업지시를 보내지 않았습니다. 보통은 일정 안내로 회신하고, 요청함의 ‘작업지시로 보내기’로 현장에 보냅니다.</p>
+            <label className="mt-2 flex items-start gap-2.5">
+              <input type="checkbox" checked={closeNoRepair} onChange={(e) => setCloseNoRepair(e.target.checked)} className="mt-1 size-4 accent-[var(--t-active)]" data-testid="reply-close-no-repair" />
+              <span>
+                <b>작업지시 없이 처리 끝</b>
+                <span className="block text-[0.74rem] text-ink-3">하자가 아니거나 전화로 해결한 경우만. 발주처에 ‘처리 완료 (보수 없음)’로 보이고 확인을 받을 수 있습니다.</span>
+              </span>
+            </label>
+          </div>
         )}
         {(req.type === "quote" || req.type === "order") && (
           <p className="text-[0.76rem] text-ink-3">회신 내용은 발주처에 그대로 보입니다. 금액·내부 원가는 적지 말고, 견적서는 별도로 보내세요.</p>

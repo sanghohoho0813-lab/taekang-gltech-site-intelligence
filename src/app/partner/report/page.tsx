@@ -73,7 +73,8 @@ function Inner() {
     <>
       <SampleDataBanner />
       <div className="min-h-[calc(100dvh-var(--demo-bar-h))] bg-[#F6F5F3] print:bg-white" data-testid="partner-report">
-        <header className="no-print sticky top-[var(--demo-bar-h)] z-30 border-b border-line bg-surface/95 backdrop-blur">
+        {/* 휴대폰에서는 머리를 고정하지 않는다 — 큰 글씨에서 화면 3분의 1을 가리던 문제 (D-69 점검 반영) */}
+        <header className="no-print top-[var(--demo-bar-h)] z-30 border-b border-line bg-surface/95 backdrop-blur lg:sticky">
           <div className="mx-auto flex min-h-16 max-w-[960px] flex-wrap items-center gap-2 px-4 py-2">
             <Link href="/partner" className="press inline-flex min-h-11 items-center gap-1.5 rounded-xl px-2.5 text-[0.9rem] font-bold text-ink-2 hover:bg-surface-3" data-testid="report-back">
               <ArrowLeft size={17} aria-hidden /> 포털
@@ -162,7 +163,7 @@ function Report({ db, siteId, month, partnerUserId, preview, today }: { db: Demo
               return (
                 <tr key={st.id} className="border-b border-line/70 align-top" data-testid="report-stage-row">
                   <td className="py-2 pr-2 font-semibold [overflow-wrap:anywhere]">{st.name}</td>
-                  <td className="num hidden whitespace-nowrap py-2 pr-2 text-[0.78rem] text-ink-2 @min-[30rem]:table-cell print:table-cell">{fmtDate(st.startDate).slice(2)} ~ {fmtDate(st.endDate).slice(2)}</td>
+                  <td className="num hidden whitespace-nowrap py-2 pr-2 text-[0.78rem] text-ink-2 @min-[30rem]:table-cell print:table-cell print:text-[8.5pt]">{fmtDate(st.startDate).slice(2)} ~ {fmtDate(st.endDate).slice(2)}</td>
                   <td className="num whitespace-nowrap py-2 text-right">{ch ? <b className={ch.to >= ch.from ? "text-theme-ink" : "text-err"}>{ch.to >= ch.from ? "+" : "−"}{Math.abs(ch.to - ch.from)}%p</b> : <span className="text-ink-3">—</span>}</td>
                   <td className="py-2 pl-2">
                     <span className="num block whitespace-nowrap text-right font-bold">{st.progressPct}%</span>
@@ -218,7 +219,7 @@ function Report({ db, siteId, month, partnerUserId, preview, today }: { db: Demo
         ) : (
           <ul className="space-y-1.5 text-[0.86rem]" data-testid="report-next">
             {r.next.map((n) => (
-              <li key={n.name} className="flex flex-wrap items-baseline justify-between gap-2">
+              <li key={n.name} className="flex flex-wrap items-baseline justify-between gap-2 [break-inside:avoid]">
                 <b className="[overflow-wrap:anywhere]">{n.name}</b>
                 <span className="num text-ink-2">
                   {fmtDate(n.startDate)} ~ {fmtDate(n.endDate)} · 현재 {n.progressPct}%
@@ -239,19 +240,22 @@ function Report({ db, siteId, month, partnerUserId, preview, today }: { db: Demo
 }
 
 function RequestRow({ db, r }: { db: DemoDB; r: PartnerRequest }) {
+  const redone = db.partnerRequests.some((x) => x.reopenedFrom === r.id);
   const repair = db.partnerRepairs?.[r.id] ?? partnerRepairView(db, r);
   // 포털과 같은 말 (D-68 점검 반영)
-  const prog = r.type === "defect" && repair ? defectProgress(r, repair) : null;
+  const prog = r.type === "defect" ? defectProgress(r, repair) : null;
   const state = prog ? prog.label : r.confirmedAt ? "확인 완료" : PARTNER_STATUS_LABEL[r.status];
   const done = prog ? prog.step >= 3 : !!r.confirmedAt || r.status === "answered";
   return (
-    <li className="flex flex-wrap items-start justify-between gap-2 py-2 text-[0.85rem]" data-testid="report-request">
+    <li className="flex flex-wrap items-start justify-between gap-2 py-2 text-[0.85rem] [break-inside:avoid]" data-testid="report-request">
       <span className="min-w-0">
         <span className="mr-1.5 text-[0.74rem] font-bold text-theme-ink">{PARTNER_TYPE_LABEL[r.type]}</span>
         <b className="[overflow-wrap:anywhere]">{r.title}</b>
         <span className="num block text-[0.76rem] text-ink-3">
           접수 {fmtDate(r.createdAt)}
           {r.location ? ` · ${r.location}` : ""}
+          {r.reopenedFrom ? " · 다시 요청" : ""}
+          {redone ? " · 다시 요청함" : ""}
         </span>
       </span>
       <Badge tone={done ? "ok" : "theme"}>{state}</Badge>

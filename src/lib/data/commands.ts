@@ -737,7 +737,7 @@ export function createPartnerRequest(
 export function updatePartnerRequest(
   db0: DemoDB,
   requestId: string,
-  input: { status: PartnerRequestStatus; reply?: string; registerChangeOrder?: { title: string; amount: number }; sharePhotoIds?: string[] },
+  input: { status: PartnerRequestStatus; reply?: string; registerChangeOrder?: { title: string; amount: number }; sharePhotoIds?: string[]; closeWithoutRepair?: boolean },
   ctx: Ctx,
 ) {
   const db = clone(db0);
@@ -789,6 +789,11 @@ export function updatePartnerRequest(
   // 접수 → 바로 회신: ‘검토 중’ 단계도 같은 시각으로 남긴다 (회신 창이 두 번 나눠 보내다 막히던 문제 · D-68 점검 반영)
   if (input.status === "answered" && !r.history.some((h) => h.status === "reviewing")) r.history.push({ at, status: "reviewing", by: ctx.userId });
   r.history.push({ at, status: input.status, by: ctx.userId, note: input.reply?.trim() });
+  // 하자보수를 작업지시 없이 끝냄 — 이렇게 표시해야 ‘처리 끝’으로 본다 (일정 안내 회신만으로 ‘보수 완료’가 되던 문제 · D-69 점검 반영)
+  if (input.closeWithoutRepair === true) {
+    if (r.type !== "defect" || input.status !== "answered" || r.linkedWorkOrderId) throw new CommandError("작업지시 없이 끝내기는 작업지시를 보내지 않은 하자보수 회신에서만 됩니다.", "STATE");
+    r.closedWithoutRepair = true;
+  }
   if (share.length) {
     const caption = `보수 완료 · ${r.title}`.slice(0, 60);
     for (const p of db.photos) if (share.includes(p.id)) Object.assign(p, { shared: { at, by: ctx.userId, caption }, sharedOnce: true as const });
@@ -812,6 +817,9 @@ export function confirmPartnerRequest(db0: DemoDB, input: { requestId: string; n
   // 하자보수는 보수 작업이 끝난 뒤에 확인 (일정 안내 회신만 받고 ‘보수 확인’이 되던 문제 · D-68 점검 반영)
   const repair = partnerRepairView(db, r);
   if (repair && repair.stage !== "done") throw new CommandError("보수가 끝난 뒤에 확인할 수 있습니다.", "STATE");
+  // 작업지시 없는 하자보수는 본사가 ‘처리 끝’으로 회신했을 때만 확인 (일정 안내 회신에는 확인 버튼 없음 · D-69 점검 반영)
+  if (r.type === "defect" && !repair && !r.closedWithoutRepair) throw new CommandError("보수가 끝난 뒤에 확인할 수 있습니다.", "STATE");
+  if (db.partnerRequests.some((x) => x.reopenedFrom === r.id)) throw new CommandError("다시 요청한 건으로 이어서 처리 중입니다.", "STATE");
   const note = typeof input.note === "string" ? input.note.trim() : "";
   if (note.length > 200) throw new CommandError("남길 말은 200자 이내", "VALIDATION", { note: "200자 이내" });
   const at = nowIso(ctx);

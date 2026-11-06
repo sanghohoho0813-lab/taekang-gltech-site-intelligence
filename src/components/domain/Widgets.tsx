@@ -123,7 +123,7 @@ export function StatCard({
         <span className="grid size-10 shrink-0 place-items-center rounded-full" style={{ background: `color-mix(in srgb, ${color} 14%, var(--n-surface, #fff))`, color }} aria-hidden>
           {icon}
         </span>
-        <p className="min-w-0 text-[0.8rem] font-semibold leading-snug text-ink-3">{label}</p>
+        <p className="min-w-0 text-[0.8rem] font-semibold leading-snug text-ink-3 [word-break:keep-all]">{label}</p>
       </div>
       <div className="min-w-0">
         <p className="whitespace-nowrap text-[1.55rem] font-extrabold leading-tight tracking-[-0.01em] text-ink num">{value}</p>

@@ -368,7 +368,7 @@ function FieldSiteSummary({ db, site }: { db: DemoDB; site: Site }) {
 }
 
 function OverviewTab({ db, site, f, canSeeMoney }: { db: DemoDB; site: Site; f: SiteFinancials; canSeeMoney: boolean }) {
-  const reports = db.reports.filter((r) => r.siteId === site.id && r.status === "submitted").slice(0, 3);
+  const reports = db.reports.filter((r) => r.siteId === site.id && r.status === "submitted").sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 3);
   return (
     <div className="grid gap-5 @min-[900px]:grid-cols-2">
       <Card>
@@ -518,7 +518,7 @@ function ProgressTab({ site, f, canSeeMoney }: { site: Site; f: SiteFinancials; 
 }
 
 function ReportsTab({ db, site }: { db: DemoDB; site: Site }) {
-  const reports = db.reports.filter((r) => r.siteId === site.id);
+  const reports = db.reports.filter((r) => r.siteId === site.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   return (
     <Card>
       <CardHeader title="현장 보고·사진" sub={IS_LIVE ? "현장 보고에 첨부된 사진" : "사진은 이 브라우저 DEMO 저장소에 저장된 첨부만 표시"} />

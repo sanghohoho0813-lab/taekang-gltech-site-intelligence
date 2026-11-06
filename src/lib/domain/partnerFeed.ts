@@ -66,7 +66,11 @@ export function partnerRepairView(db: Pick<DemoDB, "workOrders">, r: Pick<Partne
   let at: string;
   if (w.status === "confirmed") {
     stage = "done";
-    at = last((h) => h.to === "confirmed") ?? w.createdAt;
+    // 보수 완료일 = 본사가 처음 완료를 확인한 때 — 회신이 먼저였으면 회신한 날 (나중에 작업지시를 확인해도 날짜가 밀리지 않게 · D-69 점검 반영)
+    const doneAt = last((h) => h.to === "done") ?? w.createdAt;
+    const confirmedAt = last((h) => h.to === "confirmed") ?? w.createdAt;
+    const answeredAfter = r.history.find((h) => h.status === "answered" && h.at >= doneAt && !(h.note ?? "").startsWith("발주처 확인"))?.at;
+    at = answeredAfter && answeredAfter < confirmedAt ? answeredAfter : confirmedAt;
   } else if (w.status === "done") {
     const doneAt = last((h) => h.to === "done") ?? w.createdAt;
     const answeredAfter = [...r.history].reverse().find((h) => h.status === "answered" && h.at >= doneAt && !(h.note ?? "").startsWith("발주처 확인"));
@@ -84,9 +88,10 @@ export function partnerRepairView(db: Pick<DemoDB, "workOrders">, r: Pick<Partne
 
 /** 발주처에게 보이는 하자보수 한 줄 상태 — 포털·월간 보고서가 같은 말을 쓴다 (D-68 점검 반영) */
 export const DEFECT_STEPS = ["접수", "보수 배정", "보수 중", "보수 완료", "확인 완료"] as const;
-export function defectProgress(r: Pick<PartnerRequest, "status" | "confirmedAt">, repair: PartnerRepairView | undefined): { step: number; label: string } {
+export function defectProgress(r: Pick<PartnerRequest, "status" | "confirmedAt"> & { closedWithoutRepair?: true }, repair: PartnerRepairView | undefined): { step: number; label: string } {
   if (r.confirmedAt) return { step: 4, label: "확인 완료" };
-  if (!repair) return { step: 0, label: r.status === "answered" ? "회신 완료" : r.status === "reviewing" ? "검토 중" : "접수" };
+  // 작업지시 전: 접수 단계 — 본사가 ‘작업지시 없이 처리 끝’으로 회신했으면 처리 완료 (D-69 점검 반영)
+  if (!repair) return r.closedWithoutRepair ? { step: 3, label: "처리 완료 (보수 없음)" } : { step: 0, label: r.status === "received" ? "접수" : r.status === "answered" ? "접수 · 회신 받음" : "접수 · 검토 중" };
   if (repair.stage === "done") return { step: 3, label: "보수 완료" };
   if (repair.stage === "checking") return { step: 2, label: "보수 중 · 마무리 확인 중" };
   if (repair.stage === "in_progress") return { step: 2, label: "보수 중" };
@@ -143,7 +148,8 @@ export function partnerMonthly(db: DemoDB, siteId: string, month: string, feed: 
     answered: requests.filter((r) => r.status === "answered" && at(r.history.find((h) => h.status === "answered")?.at)).length,
     open: requests.filter((r) => r.status !== "answered").length,
     defects: requests.filter((r) => r.type === "defect").length,
-    repaired: requests.filter((r) => r.type === "defect" && r.status === "answered").length,
+    // 포털·하자보수 현황과 같은 기준 (보수 완료·처리 완료 · D-69 점검 반영)
+    repaired: requests.filter((r) => r.type === "defect" && defectProgress(r, partnerRepairView(db, r)).step >= 3).length,
     confirmed: requests.filter((r) => at(r.confirmedAt)).length,
   };
   const [y, m] = month.split("-").map(Number);

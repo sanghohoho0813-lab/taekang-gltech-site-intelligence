@@ -510,6 +510,8 @@ export interface PartnerRequest {
   confirmNote?: string;
   /** ‘아직 문제가 있어요’로 다시 보낸 요청이면 원래 요청 (D-68 점검 반영) */
   reopenedFrom?: string;
+  /** 하자보수를 작업지시 없이 끝냄 (하자 아님·전화로 처리 등) — 본사가 회신하며 명시 (D-69 점검 반영) */
+  closedWithoutRepair?: true;
   history: { at: string; status: PartnerRequestStatus; by: string; note?: string }[];
 }
 

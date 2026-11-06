@@ -152,6 +152,8 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
   useWizardActive(stack.length > 1);
   const [discardAsk, setDiscardAsk] = useState(false);
   const [returnToConfirm, setReturnToConfirm] = useState(false);
+  const [movedNote, setMovedNote] = useState<string | null>(null);
+  const workChips = (st?: Site) => (st && st.stages.length ? [...st.stages].sort((a, b) => rank(a.progressPct) - rank(b.progressPct)).slice(0, 6).map((x) => x.name) : DEFAULT_WORK);
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [idemKey, setIdemKey] = useState(() => uid("idem"));
   const [sending, setSending] = useState(false);
@@ -598,11 +600,18 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
       break;
 
     case "work": {
-      const stageNames = site && site.stages.length ? [...site.stages].sort((a, b) => rank(a.progressPct) - rank(b.progressPct)).slice(0, 6).map((st) => st.name) : DEFAULT_WORK;
+      const stageNames = workChips(site);
+      // 목록에 없는데 골라져 있는 작업(다른 현장에서 옮겨 온 것 등)도 보여서 뺄 수 있게 (D-69 점검 반영)
+      const orphans = d.work.filter((w) => w !== NO_WORK && !stageNames.includes(w));
       const toggle = (w: string) => set({ work: d.work.includes(w) ? d.work.filter((x) => x !== w) : w === NO_WORK ? [NO_WORK] : [...d.work.filter((x) => x !== NO_WORK), w] });
       const ok = d.work.length > 0 || !!d.workText.trim() || !!linkedOrder;
       body = (
         <EasyQuestion title="오늘 무슨 작업을 했나요?" help="해당하는 것을 모두 누르세요." testId="easy-work">
+          {movedNote && (
+            <p className="rounded-2xl border-2 border-warn/45 bg-warn-bg px-4 py-3 text-[1.05rem] font-bold text-ink" data-testid="moved-site-note">
+              {movedNote}
+            </p>
+          )}
           {myOrders.length > 0 && (
             <div className="space-y-2">
               <p className="text-[1.1rem] font-bold">본사 지시와 관련 있으면 누르세요</p>
@@ -618,6 +627,11 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
           <div className="flex flex-wrap gap-2.5">
             {stageNames.map((name) => (
               <Chip key={name} selected={d.work.includes(name)} onClick={() => toggle(name)} testId="work-chip">
+                {name}
+              </Chip>
+            ))}
+            {orphans.map((name) => (
+              <Chip key={`o-${name}`} selected onClick={() => toggle(name)} testId="work-chip-orphan">
                 {name}
               </Chip>
             ))}
@@ -1058,7 +1072,17 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
                   } catch {
                     // 무시
                   }
-                  setD((x) => ({ ...x, siteId: otherSiteToday.id, stages: {}, workOrderId: undefined, progress: null }));
+                  // 현장마다 다른 작업 버튼(공정 단계 이름)·진행률·작업지시는 비우고, 적은 글·문제·비용·사진은 그대로 (D-69 점검 반영)
+                  const target = sites.find((x) => x.id === otherSiteToday.id);
+                  const chips = workChips(target);
+                  const kept = d.work.filter((w) => w === NO_WORK || chips.includes(w));
+                  const dropped = kept.length !== d.work.length || Object.keys(d.stages ?? {}).length > 0 || d.progress !== null || !!d.workOrderId;
+                  setD((x) => ({ ...x, siteId: otherSiteToday.id, work: kept, stages: {}, workOrderId: undefined, progress: null }));
+                  if (dropped) {
+                    setMovedNote(`${otherSiteToday.name}으로 옮겼어요. 작업과 진행률을 ${otherSiteToday.name} 것으로 다시 골라 주세요.`);
+                    setReturnToConfirm(false);
+                    go("work");
+                  }
                 }}
                 className="press mt-2 inline-flex min-h-12 items-center rounded-xl border-2 border-line-strong bg-surface px-3.5 text-[1rem] font-bold"
                 data-testid="confirm-move-site"

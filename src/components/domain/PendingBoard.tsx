@@ -18,7 +18,8 @@ export function PendingBoard({ db }: { db: DemoDB }) {
   const items = [
     { key: "fix", label: "근태 수정 요청", n: (db.attendanceRequests ?? []).filter((q) => q.status === "pending").length, href: "/orders?tab=fixes" },
     { key: "report", label: "확인 안 한 현장 보고", n: db.reports.filter((r) => r.status !== "voided" && !r.review).length, href: "/orders?tab=reports" },
-    { key: "wo-done", label: "완료 확인할 작업지시", n: wos.filter((w) => w.status === "done").length, href: "/orders" },
+    // 하자보수 작업지시는 ‘하자보수 — 본사 할 일’에서 센다 (두 번 세던 문제 · D-69 점검 반영)
+    { key: "wo-done", label: "완료 확인할 작업지시", n: wos.filter((w) => w.status === "done" && !w.sourcePartnerRequestId).length, href: "/orders" },
     { key: "wo-late", label: "기한 지난·미접수 작업지시", n: wos.filter((w) => !["done", "confirmed"].includes(w.status) && ((w.dueDate && w.dueDate < today) || w.status === "sent")).length, href: "/orders" },
     { key: "partner", label: "회신 안 한 고객 요청 (견적·주문 등)", n: db.partnerRequests.filter((r) => r.status !== "answered" && r.type !== "defect").length, href: "/insights#requests" },
     // 하자보수: 작업지시·회신이 필요하거나, 현장이 끝냈는데 본사 확인·회신 전인 것 (D-69)

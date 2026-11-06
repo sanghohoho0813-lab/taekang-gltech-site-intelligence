@@ -33,6 +33,8 @@ export function EasyWorkOrderCard({ db, wo }: { db: DemoDB; wo: WorkOrder }) {
   const [finish, setFinish] = useState(false);
   const site = db.sites.find((s) => s.id === wo.siteId);
   const [bigIdx, setBigIdx] = useState<number | null>(null);
+  const doneIso = [...wo.history].reverse().find((h) => h.to === "done")?.at;
+  const doneAt = doneIso ? new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul" }).format(new Date(doneIso)) : undefined;
   const refPhotos = (wo.refPhotoIds ?? []).map((id) => db.photos.find((p) => p.id === id)).filter((p): p is NonNullable<typeof p> => !!p);
   const due = wo.dueDate && !["done", "confirmed"].includes(wo.status) ? dueText(wo.dueDate, todayIso()) : null;
   const step = async (action: "receive" | "start") => {
@@ -79,9 +81,11 @@ export function EasyWorkOrderCard({ db, wo }: { db: DemoDB; wo: WorkOrder }) {
           보완 요청: {wo.returnNote}
         </p>
       )}
-      {(wo.status === "done" || wo.status === "confirmed") && (wo.doneNote || wo.doneQty) && (
-        <p className="mt-2 rounded-2xl bg-ok-bg px-3.5 py-2.5 text-[1.02rem]">
-          <b>보낸 내용:</b> {[wo.doneQty, wo.doneNote].filter(Boolean).join(" · ")}
+      {(wo.status === "done" || wo.status === "confirmed") && (
+        <p className="mt-2 rounded-2xl bg-ok-bg px-3.5 py-2.5 text-[1.02rem]" data-testid="wo-done-note">
+          {/* 끝낸 날도 함께 (D-69 점검 반영) */}
+          {doneAt && <b className="mr-1">{easyDate(doneAt)} 끝냄{wo.status === "confirmed" ? " · 본사 확인" : ""}</b>}
+          {(wo.doneNote || wo.doneQty) && <span className="block">보낸 내용: {[wo.doneQty, wo.doneNote].filter(Boolean).join(" · ")}</span>}
         </p>
       )}
       {err && <p className="mt-2 text-[1.02rem] font-semibold text-err">{err}</p>}

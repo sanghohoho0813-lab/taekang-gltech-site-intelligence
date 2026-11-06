@@ -189,7 +189,8 @@ export function createWorkOrder(db0: DemoDB, input: WorkOrderInput, ctx: Ctx) {
   if (input.partnerRequestId) {
     if (!req0 || req0.siteId !== site.id) throw new CommandError("하자보수 요청을 찾을 수 없습니다.", "NOT_FOUND");
     if (req0.type !== "defect") throw new CommandError("하자보수 요청만 작업지시로 보낼 수 있습니다.", "STATE");
-    if (req0.status === "answered") throw new CommandError("이미 회신한 요청입니다.", "STATE");
+    // 일정 안내로 먼저 회신한 하자도 작업지시는 보낼 수 있다 — ‘처리 끝’·발주처 확인이면 안 됨 (D-69 점검 반영)
+    if (req0.closedWithoutRepair || req0.confirmedAt) throw new CommandError("이미 처리가 끝난 요청입니다.", "STATE");
     if (req0.linkedWorkOrderId && (db0.workOrders ?? []).some((w) => w.id === req0.linkedWorkOrderId)) throw new CommandError("이 요청으로 이미 보낸 작업지시가 있습니다.", "DUPLICATE");
   }
   if (Object.keys(errors).length) throw new CommandError("입력값을 확인해주세요.", "VALIDATION", errors);

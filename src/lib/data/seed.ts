@@ -321,14 +321,18 @@ export function createSeed(now = new Date()): DemoDB {
       status: "submitted",
     },
     // 지난 공정 진척 기록 (D-69) — 월간 보고서·공사일보·발주처 ‘공정 변화’가 처음부터 비어 보이지 않게.
-    // 지금 공정률까지 차례로 오른 기록이며 모두 본사 확인을 마쳤다 (처리 대기·금액에는 영향 없음)
+    // 지금 공정률까지 차례로 오른 기록이며 모두 본사 확인을 마쳤다 (처리 대기·금액에는 영향 없음).
+    // 앱 도입 전 공무가 정리해 넣은 기록으로 둔다 — 현장 직원의 출근·정착 지표·출근 공백 계산에 섞이지 않게 (D-69 점검 반영)
     ...([
-      [-38, "site-a", "3층 북측 커튼월 유닛 8개 설치.", [["site-a-stage-3", "커튼월 유닛 설치", 25, 30]], [52, 54]],
-      [-30, "site-a", "유닛 제작분 2차 입고 확인, 3층 서측 유닛 설치.", [["site-a-stage-2", "커튼월 유닛 제작", 80, 85], ["site-a-stage-3", "커튼월 유닛 설치", 30, 35]], [54, 55]],
-      [-23, "site-a", "2층 창호 프레임 설치 시작, 3층 유닛 설치 계속.", [["site-a-stage-3", "커튼월 유닛 설치", 35, 40], ["site-a-stage-4", "창호·유리 시공", 10, 15]], [55, 57]],
-      [-16, "site-a", "3층 남측 유닛 설치, 2층 창호 유리 끼움.", [["site-a-stage-3", "커튼월 유닛 설치", 40, 45], ["site-a-stage-4", "창호·유리 시공", 15, 20]], [57, 58]],
+      // 최근 것부터 (목록이 새것부터 쌓이는 순서) · 단계 진척은 계획 시작일 뒤에만 (D-69 점검 반영)
+      [-3, "site-a", "2층 창호 유리 끼움 계속, 3층 남측 실링 사전 점검.", [["site-a-stage-4", "창호·유리 시공", 12, 20]], [57, 58]],
+      [-9, "site-a", "2층 창호 프레임 설치 시작.", [["site-a-stage-4", "창호·유리 시공", 0, 12]], [56, 57]],
+      [-16, "site-a", "3층 남측 유닛 설치.", [["site-a-stage-3", "커튼월 유닛 설치", 40, 45]], [55, 56]],
+      [-18, "site-b", "7~8층 단열유리 교체, 코킹 사전 점검.", [["site-b-stage-3", "단열유리 시공", 52, 60]], [69, 72]],
+      [-23, "site-a", "3층 서측 유닛 설치 계속.", [["site-a-stage-3", "커튼월 유닛 설치", 35, 40]], [54, 55]],
       [-27, "site-b", "5~7층 단열유리 교체 38매.", [["site-b-stage-3", "단열유리 시공", 45, 52]], [66, 69]],
-      [-18, "site-b", "7~8층 단열유리 교체, 코킹 사전 점검.", [["site-b-stage-3", "단열유리 시공", 52, 60], ["site-b-stage-4", "코킹·마감", 5, 10]], [69, 72]],
+      [-30, "site-a", "유닛 제작분 2차 입고 확인, 3층 서측 유닛 설치.", [["site-a-stage-2", "커튼월 유닛 제작", 80, 85], ["site-a-stage-3", "커튼월 유닛 설치", 30, 35]], [53, 54]],
+      [-38, "site-a", "3층 북측 커튼월 유닛 8개 설치.", [["site-a-stage-3", "커튼월 유닛 설치", 25, 30]], [52, 53]],
     ] as [number, string, string, [string, string, number, number][], [number, number]][]).map(([d, siteId, work, st, pg], i) => ({
       id: `rpt-seed-hist-${i + 1}`,
       siteId,
@@ -338,7 +342,7 @@ export function createSeed(now = new Date()): DemoDB {
       tomorrowPlan: "",
       photoIds: [],
       costEntryIds: [],
-      createdBy: "u-field",
+      createdBy: "u-manager",
       createdAt: dayOffset(now, d),
       status: "submitted" as const,
       stages: st.map(([stageId, name, from, to]) => ({ stageId, name, from, to })),
@@ -402,6 +406,7 @@ export function createSeed(now = new Date()): DemoDB {
       history: [
         { at: dayOffset(now, -20), status: "received", by: "u-partner" },
         { at: dayOffset(now, -19.8), status: "reviewing", by: "u-manager", note: "보수 작업 배정" },
+        { at: dayOffset(now, -19.7), status: "answered", by: "u-manager", note: "접수했습니다. 10월 19~20일 중 방문해 보수하겠습니다. (DEMO 회신)" },
         { at: dayOffset(now, -16), status: "answered", by: "u-manager", note: "창 하부 롤러와 손잡이 기어를 교체했습니다. 개폐·잠금 정상 확인했습니다. (DEMO 회신)" },
         { at: dayOffset(now, -15), status: "answered", by: "u-partner", note: "발주처 확인" },
       ],

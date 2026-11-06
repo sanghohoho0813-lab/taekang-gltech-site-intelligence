@@ -30,7 +30,9 @@ export function EasyActions() {
   // 긴급 → 새로 온 지시(확인 전)·보완 요청 → 기한 순 — 새 지시가 하는 중인 일 뒤에 묻히던 문제 (D-68 점검 반영)
   const fresh = (w: { status: string }) => Number(w.status === "sent" || w.status === "returned");
   const ordersOpen = orders.filter((w) => !["done", "confirmed"].includes(w.status)).sort((a, b) => Number(!!b.urgent) - Number(!!a.urgent) || fresh(b) - fresh(a) || (a.dueDate ?? "9").localeCompare(b.dueDate ?? "9"));
-  const ordersDone = orders.filter((w) => ["done", "confirmed"].includes(w.status));
+  // 끝낸 일은 최근에 끝낸 것부터 (오래된 시연 지시가 맨 위에 오던 문제 · D-69 점검 반영)
+  const lastAt = (w: (typeof orders)[number]) => w.history.at(-1)?.at ?? w.createdAt;
+  const ordersDone = orders.filter((w) => ["done", "confirmed"].includes(w.status)).sort((a, b) => lastAt(b).localeCompare(lastAt(a)));
   const woList = tab === "open" ? ordersOpen : ordersDone;
   return (
     <div className="mx-auto w-full max-w-xl space-y-5 px-4 pb-8 pt-5" data-testid="easy-actions">

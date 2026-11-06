@@ -11,14 +11,20 @@ const kst = (iso: string) => new Date(new Date(iso).getTime() + 9 * 3_600_000).t
 const dayDiff = (from: string, to: string) => Math.max(0, Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000));
 
 /** 본사가 다음에 할 일 */
-export type DefectNext = "assign" | "repairing" | "reply" | "client" | "closed";
+export type DefectNext = "assign" | "repairing" | "reply" | "client" | "closed" | "reopened";
 export const DEFECT_NEXT_LABEL: Record<DefectNext, string> = {
-  assign: "작업지시·회신 필요",
+  assign: "작업지시 보내기 필요",
   repairing: "현장 보수 중",
-  reply: "완료 확인·회신 필요",
+  reply: "발주처 회신 필요",
   client: "발주처 확인 대기",
   closed: "끝남",
+  reopened: "다시 요청됨",
 };
+/** 현장 보수 중의 실제 단계 — ‘현장 미확인’을 ‘보수 중’으로 부풀리지 않는다 (D-69 점검 반영) */
+export function repairingLabel(wo?: WorkOrder): string {
+  if (!wo) return DEFECT_NEXT_LABEL.repairing;
+  return wo.status === "sent" ? "현장 미확인" : wo.status === "received" ? "현장 확인함" : wo.status === "returned" ? "보완 요청 — 다시 보수" : "현장 보수 중";
+}
 
 export interface DefectRow {
   req: PartnerRequest;
@@ -42,29 +48,37 @@ export interface DefectRow {
 }
 
 export function defectRows(db: DemoDB, today: string): DefectRow[] {
+  const reopened = new Set(db.partnerRequests.map((r) => r.reopenedFrom).filter(Boolean));
+  const rank = (r: DefectRow) => (r.overdue ? 0 : r.next === "assign" || r.next === "reply" ? 1 : r.next === "repairing" ? 2 : r.next === "client" ? 3 : 4);
   return db.partnerRequests
     .filter((r) => r.type === "defect")
-    .map((r) => {
+    .map((r): DefectRow => {
       const wo = r.linkedWorkOrderId ? (db.workOrders ?? []).find((w) => w.id === r.linkedWorkOrderId) : undefined;
       const repair = partnerRepairView(db, r);
       const stage = defectProgress(r, repair);
       const firstAnswer = r.history.find((h) => h.status === "answered")?.at;
-      const repairedAt = repair ? (repair.stage === "done" ? repair.at : undefined) : r.status === "answered" ? firstAnswer : undefined;
+      // 보수 완료일: 본사가 확인한 날 · 작업지시 없이 ‘처리 끝’으로 회신했으면 그 회신일 (일정 안내 회신은 아님 · D-69 점검 반영)
+      const repairedAt = repair ? (repair.stage === "done" ? repair.at : undefined) : r.closedWithoutRepair ? firstAnswer : undefined;
       const next: DefectNext = r.confirmedAt
         ? "closed"
-        : repair
-          ? repair.stage === "done"
-            ? "client"
-            : repair.stage === "checking"
-              ? "reply"
-              : "repairing"
-          : r.status === "answered"
-            ? "client"
-            : "assign";
+        : reopened.has(r.id)
+          ? "reopened"
+          : repair
+            ? repair.stage === "done"
+              ? r.status === "answered"
+                ? "client"
+                : "reply" // 작업지시는 확인했는데 발주처에 아직 회신 안 함 (D-69 점검 반영)
+              : repair.stage === "checking"
+                ? "reply"
+                : "repairing"
+            : r.closedWithoutRepair
+              ? "client"
+              : "assign";
       const open = next === "assign" || next === "repairing" || next === "reply";
       const receivedDate = kst(r.createdAt);
       const repairedDate = repairedAt ? kst(repairedAt) : undefined;
       const limit = [r.desiredDate, wo && !["done", "confirmed"].includes(wo.status) ? wo.dueDate : undefined].filter((x): x is string => !!x).sort()[0];
+      const woDone = !!wo && (wo.status === "done" || wo.status === "confirmed");
       return {
         req: r,
         site: db.sites.find((s) => s.id === r.siteId),
@@ -77,34 +91,46 @@ export function defectRows(db: DemoDB, today: string): DefectRow[] {
         repairedDate,
         confirmedDate: r.confirmedAt ? kst(r.confirmedAt) : undefined,
         days: dayDiff(receivedDate, repairedDate ?? today),
-        overdue: open && !!limit && limit < today,
+        // 보수가 끝난 뒤(회신만 남음)에는 기한 지남으로 보지 않는다
+        overdue: open && !repairedDate && !!limit && limit < today,
         beforePhotoId: r.photoIds?.[0],
-        afterPhotoId: r.replyPhotoIds?.[0] ?? wo?.donePhotoIds?.[0],
+        // 보수 후 사진: 가장 최근에 회신으로 보낸 사진, 없으면 지금 끝난 작업지시의 사진 (되돌린 첫 시도 사진이 남던 문제 · D-69 점검 반영)
+        afterPhotoId: r.replyPhotoIds?.at(-1) ?? (woDone ? wo!.donePhotoIds?.[0] : undefined),
       };
     })
-    .sort((a, b) => b.req.createdAt.localeCompare(a.req.createdAt));
+    // 급한 것부터: 기한 지남 → 본사 할 일 → 현장 보수 중 → 발주처 확인 대기 → 끝남, 같은 무리는 오래된 것부터 (D-69 점검 반영)
+    .sort((a, b) => rank(a) - rank(b) || (rank(a) >= 3 ? b.req.createdAt.localeCompare(a.req.createdAt) : a.req.createdAt.localeCompare(b.req.createdAt)));
 }
 
 export interface DefectStats {
   total: number;
   open: number;
   overdue: number;
-  /** 본사가 지금 손댈 것: 작업지시·회신 필요 + 완료 확인·회신 필요 */
+  /** 본사가 지금 손댈 것: 작업지시 보내기 + 발주처 회신 */
   hqTodo: number;
-  /** 보수 완료까지 평균 일수 (완료된 것만) */
+  assign: number;
+  reply: number;
+  /** 발주처 확인 대기 */
+  waiting: number;
+  /** 보수 완료까지 평균 일수 — 실제 보수한 것만 (작업지시 없이 끝낸 것·다시 요청된 것 제외) */
   avgDays: number | null;
   repaired: number;
   confirmed: number;
 }
 
 export function defectStats(rows: DefectRow[]): DefectStats {
-  const repaired = rows.filter((r) => r.repairedDate);
+  const repaired = rows.filter((r) => r.repairedDate && r.repair && r.next !== "reopened");
+  const assign = rows.filter((r) => r.next === "assign").length;
+  const reply = rows.filter((r) => r.next === "reply").length;
   return {
     total: rows.length,
     open: rows.filter((r) => r.next === "assign" || r.next === "repairing" || r.next === "reply").length,
     overdue: rows.filter((r) => r.overdue).length,
-    hqTodo: rows.filter((r) => r.next === "assign" || r.next === "reply").length,
-    avgDays: repaired.length ? Math.round((repaired.reduce((a, r) => a + r.days, 0) / repaired.length) * 10) / 10 : null,
+    hqTodo: assign + reply,
+    assign,
+    reply,
+    waiting: rows.filter((r) => r.next === "client").length,
+    avgDays: repaired.length ? Math.round(repaired.reduce((a, r) => a + r.days, 0) / repaired.length) : null,
     repaired: repaired.length,
     confirmed: rows.filter((r) => r.next === "closed").length,
   };

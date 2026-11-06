@@ -23,7 +23,7 @@ export function FieldHome() {
   const siteId = selected ?? mySites[0]?.id;
   const site = db.sites.find((s) => s.id === siteId);
   const myActions = db.actions.filter((a) => a.assigneeUserId === userId && ["assigned", "in_progress"].includes(a.status));
-  const reports = db.reports.filter((r) => (role === "field" ? r.createdBy === userId : true)).slice(0, 8);
+  const reports = db.reports.filter((r) => (role === "field" ? r.createdBy === userId : true)).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 8);
   const myEntries = db.costEntries
     .filter((e) => e.source !== "SEED" && (role === "field" ? e.createdBy === userId : true))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))

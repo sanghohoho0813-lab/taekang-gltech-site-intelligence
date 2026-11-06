@@ -213,7 +213,7 @@ function Orders({ db }: { db: DemoDB }) {
                   )}
                   {photos.length > 0 && <PhotoThumbs urls={photos.map((p) => p!.dataUrl)} label="완료 사진" />}
                   {w.sourcePartnerRequestId && (
-                    <Link href="/insights#requests" className="inline-flex min-h-10 items-center text-[0.82rem] font-bold text-theme-ink underline" data-testid="wo-to-request">
+                    <Link href={`/insights?req=${w.sourcePartnerRequestId}#requests`} className="inline-flex min-h-11 items-center text-[0.82rem] font-bold text-theme-ink underline" data-testid="wo-to-request">
                       발주처 요청 보기 · {w.status === "done" || w.status === "confirmed" ? "보수 완료 회신하기" : "회신하기"} →
                     </Link>
                   )}
@@ -222,7 +222,13 @@ function Orders({ db }: { db: DemoDB }) {
                     <Decide
                       testPrefix="wo"
                       confirmLabel="완료 확인"
-                      onConfirm={() => go(() => run("reviewWorkOrder", { workOrderId: w.id, decision: "confirm" }), "작업지시 완료를 확인했습니다")}
+                      onConfirm={() =>
+                        go(
+                          () => run("reviewWorkOrder", { workOrderId: w.id, decision: "confirm" }),
+                          // 하자보수는 발주처에 회신해야 끝난다 — 확인만 하고 잊지 않게 (D-69 점검 반영)
+                          w.sourcePartnerRequestId && db.partnerRequests.find((r) => r.id === w.sourcePartnerRequestId)?.status !== "answered" ? "완료를 확인했습니다 — 발주처에 보수 완료 회신을 보내세요 (아래 ‘발주처 요청 보기’)" : "작업지시 완료를 확인했습니다",
+                        )
+                      }
                       onReturn={(note) => go(() => run("reviewWorkOrder", { workOrderId: w.id, decision: "return", note }), "보완을 요청했습니다")}
                     />
                   )}

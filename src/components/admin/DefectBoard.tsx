@@ -8,7 +8,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { AlarmClock, CircleCheck, Hourglass, Printer, Wrench } from "lucide-react";
 import { useMe } from "@/lib/data/hooks";
-import { DEFECT_NEXT_LABEL, defectLedger, defectRows, defectStats, type DefectRow } from "@/lib/domain/defects";
+import { DEFECT_NEXT_LABEL, defectLedger, defectRows, defectStats, repairingLabel, type DefectRow } from "@/lib/domain/defects";
 import { fmtDate, todayIso } from "@/lib/domain/format";
 import { shiftDate } from "@/lib/domain/attendance";
 import { IS_LIVE } from "@/lib/mode";
@@ -18,7 +18,11 @@ import { Badge, Button, Card, CardHeader, EmptyState, PageSkeleton, Segmented, c
 import { Modal } from "@/components/ui/Modal";
 
 type View = "open" | "all" | "ledger";
-const NEXT_TONE = { assign: "err", repairing: "theme", reply: "warn", client: "info", closed: "ok" } as const;
+// 본사가 손댈 것만 진한 색 — ‘현장 보수 중’은 기다리는 상태라 중립 (D-69 점검 반영)
+const NEXT_TONE = { assign: "err", reply: "warn", repairing: "neutral", client: "info", closed: "ok", reopened: "neutral" } as const;
+const nextLabel = (r: DefectRow) => (r.next === "repairing" ? repairingLabel(r.wo) : DEFECT_NEXT_LABEL[r.next]);
+const daysText = (r: DefectRow) => (r.repairedDate ? (r.days === 0 ? "접수 당일 보수" : `보수까지 ${r.days}일`) : r.days === 0 ? "오늘 접수" : `${r.days}일째`);
+const reqHref = (r: DefectRow) => (r.next === "repairing" && r.wo ? `/orders?wo=${r.wo.id}` : `/insights?req=${r.req.id}#requests`);
 
 export function DefectBoard() {
   const { db } = useMe();
@@ -45,10 +49,10 @@ export function DefectBoard() {
         }
       />
       <div className="no-print grid grid-cols-2 gap-3 @min-[900px]:grid-cols-4" data-testid="defect-kpis">
-        <StatCard testId="defect-kpi-open" label="진행 중" value={`${st.open}건`} sub={`전체 ${st.total}건`} icon={<Hourglass size={20} />} group="growth" />
-        <StatCard testId="defect-kpi-todo" label="본사 할 일" value={`${st.hqTodo}건`} sub="작업지시·회신 / 완료 확인·회신" icon={<Wrench size={20} />} group="ops" />
+        <StatCard testId="defect-kpi-open" label="진행 중" value={`${st.open}건`} sub={`발주처 확인 대기 ${st.waiting} · 끝남 ${st.confirmed}`} icon={<Hourglass size={20} />} group="growth" />
+        <StatCard testId="defect-kpi-todo" label="본사 할 일" value={`${st.hqTodo}건`} sub={`작업지시 보낼 것 ${st.assign} · 회신할 것 ${st.reply}`} icon={<Wrench size={20} />} group="ops" />
         <StatCard testId="defect-kpi-overdue" label="기한 지남" value={`${st.overdue}건`} sub="발주처 희망일·작업지시 기한 기준" icon={<AlarmClock size={20} />} group="ops" />
-        <StatCard testId="defect-kpi-days" label="보수까지 평균" value={st.avgDays === null ? "—" : `${st.avgDays}일`} sub={`보수 완료 ${st.repaired}건 · 발주처 확인 ${st.confirmed}건`} icon={<CircleCheck size={20} />} group="ax" />
+        <StatCard testId="defect-kpi-days" label="보수 완료까지" value={st.avgDays === null ? "—" : `평균 ${st.avgDays}일`} sub={st.repaired ? `보수한 ${st.repaired}건 기준 (접수 → 본사 확인)` : "아직 보수한 건 없음"} icon={<CircleCheck size={20} />} group="ax" />
       </div>
       <div className="no-print flex flex-wrap items-center gap-2">
         <Segmented
@@ -78,20 +82,25 @@ export function DefectBoard() {
       {view === "ledger" ? (
         <Ledger rows={rows} siteId={siteId === "all" ? (sites[0]?.id ?? "") : siteId} today={today} />
       ) : (
-        <DefectList rows={view === "open" ? scoped.filter((r) => r.next !== "client" && r.next !== "closed") : scoped} today={today} empty={view === "open" ? "진행 중인 하자보수가 없습니다" : "하자보수 요청이 없습니다"} />
+        <DefectList
+          rows={view === "open" ? scoped.filter((r) => r.next === "assign" || r.next === "reply" || r.next === "repairing") : scoped}
+          today={today}
+          empty={view === "open" ? "진행 중인 하자보수가 없습니다" : "하자보수 요청이 없습니다"}
+          emptyHint={view === "open" && st.total > 0 ? `끝났거나 발주처 확인을 기다리는 ${st.total}건은 ‘전체’에서 볼 수 있습니다.` : undefined}
+        />
       )}
     </PageBody>
   );
 }
 
-function DefectList({ rows, today, empty }: { rows: DefectRow[]; today: string; empty: string }) {
+function DefectList({ rows, today, empty, emptyHint }: { rows: DefectRow[]; today: string; empty: string; emptyHint?: string }) {
   const [big, setBig] = useState<{ src: string; title: string } | null>(null);
   const { db } = useMe();
   const photo = (id?: string) => (id ? db?.photos.find((p) => p.id === id)?.dataUrl : undefined);
   return (
     <Card data-testid="defect-list">
       {rows.length === 0 ? (
-        <EmptyState icon={<Wrench size={26} />} title={empty} desc="발주처가 포털 ‘요청하기’에서 하자보수 요청을 보내면 여기에 모입니다." />
+        <EmptyState icon={<Wrench size={26} />} title={empty} desc={emptyHint ?? "발주처가 포털 ‘요청하기’에서 하자보수 요청을 보내면 여기에 모입니다."} />
       ) : (
         <ul className="divide-y divide-line">
           {rows.map((r) => {
@@ -110,10 +119,10 @@ function DefectList({ rows, today, empty }: { rows: DefectRow[]; today: string; 
                   <p className="mt-0.5 text-[0.98rem] font-bold [overflow-wrap:anywhere]">{r.req.title}</p>
                   {r.req.location && <p className="text-[0.84rem] font-semibold text-ink-2">위치: {r.req.location}</p>}
                   <p className="mt-1 flex flex-wrap items-center gap-1.5 text-[0.8rem]">
-                    <Badge tone={NEXT_TONE[r.next]} data-testid="defect-next">{DEFECT_NEXT_LABEL[r.next]}</Badge>
+                    <Badge tone={NEXT_TONE[r.next]} data-testid="defect-next">{nextLabel(r)}</Badge>
                     <span className="text-ink-3">발주처 화면: {r.stage.label}</span>
-                    <span className={cx("num font-semibold", r.next === "closed" || r.next === "client" ? "text-ink-2" : r.days >= 7 ? "text-err" : "text-ink-2")} data-testid="defect-days">
-                      {r.repairedDate ? `보수까지 ${r.days}일` : `${r.days}일째`}
+                    <span className={cx("num font-semibold", r.repairedDate || r.next === "reopened" ? "text-ink-2" : r.days >= 7 ? "text-err" : "text-ink-2")} data-testid="defect-days">
+                      {daysText(r)}
                     </span>
                     {r.overdue && <b className="text-err" data-testid="defect-overdue">기한 지남</b>}
                     {limit && !r.repairedDate && <span className="num text-ink-3">희망 {fmtDate(limit)}{limit < today ? " (지남)" : ""}</span>}
@@ -121,17 +130,20 @@ function DefectList({ rows, today, empty }: { rows: DefectRow[]; today: string; 
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
+                  {/* 사진 칸은 늘 두 자리 — 줄마다 버튼 위치가 흔들리지 않게 (D-69 점검 반영) */}
                   {[["전", before], ["후", after]].map(([k, src]) =>
                     src ? (
-                      <button key={k} type="button" onClick={() => setBig({ src: src as string, title: `${r.req.title} — 보수 ${k}` })} className="press relative overflow-hidden rounded-lg border border-line" aria-label={`보수 ${k} 사진 크게 보기`}>
+                      <button key={k} type="button" onClick={() => setBig({ src: src as string, title: `${r.req.title} — 보수 ${k}` })} className="press relative size-14 overflow-hidden rounded-lg border border-line" aria-label={`보수 ${k} 사진 크게 보기`}>
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={src as string} alt="" className="size-14 object-cover" />
+                        <img src={src as string} alt="" className="size-full object-cover" />
                         <span className="absolute left-0 top-0 rounded-br-md bg-black/60 px-1 text-[0.66rem] font-bold text-white">{k}</span>
                       </button>
-                    ) : null,
+                    ) : (
+                      <span key={k} className="hidden size-14 @min-[760px]:block" aria-hidden />
+                    ),
                   )}
-                  <Link href={r.next === "repairing" && r.wo ? `/orders?wo=${r.wo.id}` : "/insights#requests"} className="press inline-flex min-h-11 items-center rounded-xl border border-line-strong px-3 text-[0.84rem] font-bold" data-testid="defect-open">
-                    {r.next === "assign" ? "작업지시·회신" : r.next === "reply" ? "회신하기" : r.next === "repairing" ? "작업지시 보기" : "요청 보기"}
+                  <Link href={reqHref(r)} className="press inline-flex min-h-11 min-w-[7.5rem] items-center justify-center rounded-xl border border-line-strong px-3 text-[0.84rem] font-bold" data-testid="defect-open">
+                    {r.next === "assign" ? "작업지시 보내기" : r.next === "reply" ? "회신하기" : r.next === "repairing" ? "작업지시 보기" : "요청 보기"}
                   </Link>
                 </div>
               </li>
@@ -190,53 +202,75 @@ function Ledger({ rows, siteId, today }: { rows: DefectRow[]; siteId: string; to
             이 기간에 접수된 하자보수가 없습니다.
           </p>
         ) : (
-          <ol className="space-y-3">
-            {list.map((r) => {
-              const before = photo(r.beforePhotoId);
-              const after = photo(r.afterPhotoId);
-              return (
-                <li key={r.req.id} className="break-inside-avoid rounded-xl border border-line p-3 text-[0.84rem]" data-testid="defect-ledger-row">
-                  <div className="flex flex-wrap items-baseline justify-between gap-2">
-                    <p className="font-bold [overflow-wrap:anywhere]">
-                      <span className="num mr-1.5 text-ink-3">{r.no}.</span>
-                      {r.req.title}
-                    </p>
-                    <span className="text-[0.78rem] font-bold text-theme-ink">{r.stage.label}</span>
-                  </div>
-                  <dl className="mt-1.5 grid gap-x-4 gap-y-1 @min-[560px]:grid-cols-2 print:grid-cols-2">
-                    {[
-                      ["위치", r.req.location ?? "—"],
-                      ["요청", `${r.partnerName} · 접수 ${fmtDate(r.req.createdAt)}`],
-                      ["하자 내용", r.req.description],
-                      ["조치 내용", r.req.reply ?? (r.wo?.doneNote ? `현장 보고: ${r.wo.doneNote}` : "—")],
-                      ["보수 완료", r.repairedDate ? `${fmtDate(r.repairedDate)} (접수 후 ${r.days}일)` : `진행 중 (${r.days}일째)`],
-                      ["발주처 확인", r.confirmedDate ? fmtDate(r.confirmedDate) : "—"],
-                    ].map(([k, v]) => (
-                      <div key={k} className="flex gap-2">
-                        <dt className="w-[4.6rem] shrink-0 text-ink-3">{k}</dt>
-                        <dd className="min-w-0 [overflow-wrap:anywhere]">{v}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                  {(before || after) && (
-                    <div className="mt-2 grid max-w-[26rem] grid-cols-2 gap-2">
-                      {[["보수 전", before], ["보수 후", after]].map(([k, src]) => (
-                        <figure key={k} className="overflow-hidden rounded-lg border border-line">
-                          {src ? (
-                            /* eslint-disable-next-line @next/next/no-img-element */
-                            <img src={src} alt={`${k} 사진`} className="aspect-[4/3] w-full bg-surface-2 object-cover print:object-contain" />
-                          ) : (
-                            <div className="grid aspect-[4/3] place-items-center bg-surface-2 text-[0.76rem] text-ink-3">사진 없음</div>
+          <div tabIndex={0} role="region" aria-label="하자보수 관리대장 표 (가로 스크롤)" className="overflow-x-auto scroll-thin">
+            {/* 표: 인쇄하면 쪽마다 머리(현장·기간)가 다시 찍힌다 · 휴대폰에서는 옆으로 밀어 본다 (D-69 점검 반영) */}
+            <table className="w-full min-w-[46rem] border-collapse text-[0.8rem]" data-testid="defect-ledger-table">
+              <thead>
+                <tr className="hidden print:table-row">
+                  <th colSpan={7} className="pb-1 text-left text-[0.72rem] font-semibold text-ink-3">
+                    하자보수 관리대장 · {site?.shortName} · 접수 {fmtDate(from)} ~ {fmtDate(to)}
+                    {!IS_LIVE ? " · DEMO 가상 데이터" : ""}
+                  </th>
+                </tr>
+                <tr className="border-y border-line bg-surface-2 text-left text-[0.72rem] text-ink-3 print:bg-white">
+                  <th className="w-[2.2rem] px-1.5 py-1.5 font-semibold">번호</th>
+                  <th className="w-[5.2rem] px-1.5 py-1.5 font-semibold">접수</th>
+                  <th className="px-1.5 py-1.5 font-semibold">위치 · 하자 내용</th>
+                  <th className="px-1.5 py-1.5 font-semibold">조치 내용</th>
+                  <th className="w-[6.4rem] px-1.5 py-1.5 font-semibold">보수 완료</th>
+                  <th className="w-[5.2rem] px-1.5 py-1.5 font-semibold">발주처 확인</th>
+                  <th className="w-[8rem] px-1.5 py-1.5 font-semibold">사진 (전·후)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {list.map((r) => {
+                  const before = photo(r.beforePhotoId);
+                  const after = photo(r.afterPhotoId);
+                  return (
+                    <tr key={r.req.id} className="break-inside-avoid border-b border-line align-top" data-testid="defect-ledger-row">
+                      <td className="num px-1.5 py-1.5 font-bold" data-label="번호">{r.no}</td>
+                      <td className="num px-1.5 py-1.5" data-label="접수">
+                        {fmtDate(r.req.createdAt)}
+                        <span className="block text-[0.72rem] text-ink-3">{r.partnerName}</span>
+                      </td>
+                      <td className="px-1.5 py-1.5 [overflow-wrap:anywhere]" data-label="위치 · 하자 내용">
+                        <b className="block">{r.req.title}</b>
+                        {r.req.location && <span className="block text-ink-2">{r.req.location}</span>}
+                        <span className="block text-ink-2">{r.req.description}</span>
+                      </td>
+                      {/* 조치 내용은 발주처에 보낸 회신만 — 현장 메모(내부)는 넣지 않는다 (D-69 점검 반영) */}
+                      <td className="px-1.5 py-1.5 [overflow-wrap:anywhere]" data-label="조치 내용">{r.req.reply ?? "— (회신 전)"}</td>
+                      <td className="num px-1.5 py-1.5" data-label="보수 완료">
+                        {r.repairedDate ? (
+                          <>
+                            {fmtDate(r.repairedDate)}
+                            <span className="block text-[0.72rem] text-ink-3">{r.days === 0 ? "접수 당일" : `접수 후 ${r.days}일`}</span>
+                          </>
+                        ) : (
+                          <span className="text-ink-2">진행 중 · {r.days === 0 ? "오늘 접수" : `${r.days}일째`}</span>
+                        )}
+                      </td>
+                      <td className="num px-1.5 py-1.5" data-label="발주처 확인">{r.confirmedDate ? fmtDate(r.confirmedDate) : r.next === "reopened" ? "다시 요청됨" : "—"}</td>
+                      <td className="px-1.5 py-1.5" data-label="사진 (전·후)">
+                        <span className="flex gap-1">
+                          {[["전", before], ["후", after]].map(([k, src]) =>
+                            src ? (
+                              <figure key={k} className="w-[3.6rem] overflow-hidden rounded border border-line">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={src} alt={`보수 ${k} 사진`} className="aspect-square w-full object-cover" />
+                                <figcaption className="text-center text-[0.66rem] text-ink-3">{k}</figcaption>
+                              </figure>
+                            ) : null,
                           )}
-                          <figcaption className="px-1.5 py-0.5 text-[0.72rem] text-ink-3">{k}</figcaption>
-                        </figure>
-                      ))}
-                    </div>
-                  )}
-                </li>
-              );
-            })}
-          </ol>
+                          {!before && !after && <span className="text-[0.74rem] text-ink-3">없음</span>}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
         <footer className="mt-4 border-t border-line pt-2 text-[0.72rem] text-ink-3 [break-inside:avoid]">
           발주처 포털 하자보수 요청·본사 작업지시·회신 기록으로 자동 작성했습니다. 금액은 들어가지 않습니다. 보수 완료일은 태강지엘텍이 완료를 확인(작업지시 확인 또는 회신)한 날입니다.
