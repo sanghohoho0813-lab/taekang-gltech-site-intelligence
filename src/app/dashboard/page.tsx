@@ -133,7 +133,7 @@ function CeoDashboard() {
             db.sites.length === 0 ? <EmptyState title="등록된 현장이 없습니다." desc="운영 관리에서 첫 현장을 등록하면 손익이 계산됩니다." /> : <EmptyState title="해당 조건의 현장이 없습니다." desc="필터를 '전체'로 바꿔보세요." />
           ) : (
             <>
-            <ul className="divide-y divide-line border-t border-line @min-[46rem]:hidden" data-testid="site-list-mobile">
+            <ul className="divide-y divide-line border-t border-line @min-[44rem]:hidden" data-testid="site-list-mobile">
               {sites.map(({ s, f, h }) => (
                 <li key={s.id}>
                   <Link href={`/sites/${s.id}`} className="row-hover block px-5 py-3.5">
@@ -169,7 +169,7 @@ function CeoDashboard() {
                 </li>
               ))}
             </ul>
-            <div className="hidden overflow-x-auto scroll-thin @min-[46rem]:block">
+            <div className="hidden overflow-x-auto scroll-thin @min-[44rem]:block">
               <table className="w-full min-w-[44rem] text-[0.86rem]" data-testid="site-table">
                 <thead>
                   <tr className="border-y border-line bg-surface-2 text-left text-[0.75rem] font-semibold text-ink-3">

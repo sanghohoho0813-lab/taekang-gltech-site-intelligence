@@ -99,7 +99,7 @@ export default function ReportPage() {
       <Card className="print-card @container">
         <CardHeader title="2. 현장별 변경 전후 손익" sub={`시작 = ${BASE_LABEL} · 단위 억 원 · 부가세 별도 · 승인 전 변경공사는 이익 미반영`} />
         {/* 휴대폰: 현장마다 카드 (7칸 표는 이익·미수가 화면 밖으로 밀려 안 보였다 · D-66) */}
-        <ul className="divide-y divide-line border-t border-line @min-[52rem]:hidden print:hidden" data-testid="report-compare-cards">
+        <ul className="divide-y divide-line border-t border-line @min-[50rem]:hidden print:hidden" data-testid="report-compare-cards">
           {db.sites.map((s) => {
             const f = fin[s.id];
             const b = db.baseline[s.id];
@@ -130,7 +130,7 @@ export default function ReportPage() {
             );
           })}
         </ul>
-        <div tabIndex={0} role="region" aria-label="현장별 변경 전후 손익 표 (가로 스크롤)" className="hidden overflow-x-auto scroll-thin @min-[52rem]:block print:block">
+        <div tabIndex={0} role="region" aria-label="현장별 변경 전후 손익 표 (가로 스크롤)" className="hidden overflow-x-auto scroll-thin @min-[50rem]:block print:block">
           <table className="w-full min-w-[50rem] text-[0.84rem]" data-testid="report-compare">
             <thead>
               <tr className="border-y border-line bg-surface-2 text-left text-[0.74rem] font-semibold text-ink-3">
@@ -249,7 +249,7 @@ export default function ReportPage() {
           <EmptyState title="조치가 없습니다." />
         ) : (
           <>
-          <ul className="divide-y divide-line border-t border-line @min-[50rem]:hidden print:hidden" data-testid="report-actions-cards">
+          <ul className="divide-y divide-line border-t border-line @min-[48rem]:hidden print:hidden" data-testid="report-actions-cards">
             {db.actions.map((a) => {
               const p = db.proofEvents.find((x) => x.proof_event_id === a.proofEventId);
               return (
@@ -276,7 +276,7 @@ export default function ReportPage() {
               );
             })}
           </ul>
-          <div tabIndex={0} role="region" aria-label="조치 상태 표 (가로 스크롤)" className="hidden overflow-x-auto scroll-thin @min-[50rem]:block print:block">
+          <div tabIndex={0} role="region" aria-label="조치 상태 표 (가로 스크롤)" className="hidden overflow-x-auto scroll-thin @min-[48rem]:block print:block">
             <table className="w-full min-w-[48rem] text-[0.83rem]" data-testid="report-actions">
               <thead>
                 <tr className="border-y border-line bg-surface-2 text-left text-[0.74rem] font-semibold text-ink-3">

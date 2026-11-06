@@ -548,7 +548,6 @@ html[data-wizard="1"] .brand-band .band-sub {
   display: none;
 }
 html[data-wizard="1"] .brand-band ol span.mt-1 {
-  font-size: 0.78rem;
   margin-top: 0.15rem;
 }
 html[data-wizard="1"] .brand-band ol span.h-2 {

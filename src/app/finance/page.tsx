@@ -52,7 +52,7 @@ export default function FinancePage() {
       <Card className="@container">
         <CardHeader title="현장별 정산 현황" sub={IS_LIVE ? "단위 억 원 · 부가세 별도" : "단위 억 원 · 부가세 별도 · DEMO"} />
         {/* 휴대폰: 현장마다 카드 (넓은 표는 미수금이 화면 밖으로 밀려 안 보였다 · D-65) */}
-        <ul className="divide-y divide-line border-t border-line @min-[58rem]:hidden" data-testid="finance-cards">
+        <ul className="divide-y divide-line border-t border-line @min-[56rem]:hidden" data-testid="finance-cards">
           {db.sites.map((s) => {
             const f = fin[s.id];
             const aging = receivableAging(db, s.id);
@@ -84,7 +84,7 @@ export default function FinancePage() {
             );
           })}
         </ul>
-        <div tabIndex={0} role="region" aria-label="현장별 정산 현황 표 (가로 스크롤)" className="hidden overflow-x-auto scroll-thin @min-[58rem]:block">
+        <div tabIndex={0} role="region" aria-label="현장별 정산 현황 표 (가로 스크롤)" className="hidden overflow-x-auto scroll-thin @min-[56rem]:block">
           <table className="w-full min-w-[56rem] text-[0.85rem]" data-testid="finance-table">
             <thead>
               <tr className="border-y border-line bg-surface-2 text-left text-[0.74rem] font-semibold text-ink-3">

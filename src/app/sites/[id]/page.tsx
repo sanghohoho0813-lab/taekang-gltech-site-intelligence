@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import { isFrameContext } from "@/lib/data/store";
 import { useEffect, useState } from "react";
 import { ClipboardPen, ChevronLeft, MapPin, CalendarDays, Info, Handshake, ShieldAlert, Image as ImageIcon } from "lucide-react";
 import { useMe, useSignals, siteHealth, useFinancials, userLabel } from "@/lib/data/hooks";
@@ -212,8 +213,8 @@ export default function SiteDetailPage() {
       {/* 모바일 하단 고정 CTA — 같은 Route에서 Sheet로 입력 (PC+Mobile 시연 시 PC 화면은 그대로 유지) */}
       {role !== "partner" && (
         <div className={cx("fixed inset-x-0 z-30 border-t border-line bg-surface/95 px-4 py-2.5 backdrop-blur lg:hidden", role === "field" ? "bottom-[calc(4.9rem+env(safe-area-inset-bottom))]" : "bottom-[calc(3.9rem+env(safe-area-inset-bottom))]")}>
-          {/* 휴대폰 현장 직원은 창(시트)이 아니라 보고 화면으로 — 휴대폰 ‘뒤로’가 이전 단계로 가게 (D-67 점검 반영) */}
-          <Button variant="cta" size="lg" block icon={<ClipboardPen size={19} />} onClick={() => (role === "field" ? router.push(`/field/report?site=${site.id}`) : setSheet(true))} data-testid="open-report-sheet">
+          {/* 휴대폰 현장 직원은 창(시트)이 아니라 보고 화면으로 — 휴대폰 ‘뒤로’가 이전 단계로 가게 (D-67 점검 반영). 시연의 PC+Mobile 휴대폰 틀 안에서는 PC 화면이 함께 따라가므로 창 그대로 */}
+          <Button variant="cta" size="lg" block icon={<ClipboardPen size={19} />} onClick={() => (role === "field" && !isFrameContext() ? router.push(`/field/report?site=${site.id}`) : setSheet(true))} data-testid="open-report-sheet">
             현장 보고 · 비용 입력
           </Button>
         </div>

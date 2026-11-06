@@ -349,7 +349,7 @@ export function EasyAttendance({ db, userId, sites, autoQr }: { db: DemoDB; user
         {phase.reason === "denied" && <DeniedHelp />}
         <div className="space-y-2.5">
           {(avail.length ? avail : sites).map((s) => (
-            <Choice key={s.id} icon={<MapPin size={24} />} label={s.shortName} sub={phase.reason === "denied" ? `${s.workType} · 위치 없이 기록돼요` : s.workType} onClick={() => armed && decide("in", phase.sample, phase.reason, phase.consent, s)} testId={`att-site-${s.id}`} />
+            <Choice key={s.id} icon={<MapPin size={24} />} label={s.shortName} sub={phase.reason === "denied" ? `${s.workType} · 위치 없이 기록돼요` : s.workType} onClick={() => decide("in", phase.sample, phase.reason, phase.consent, s)} testId={`att-site-${s.id}`} />
           ))}
         </div>
         {demoBtn("in")}
