@@ -54,18 +54,19 @@ function LoginForm() {
     }
     setBusy(true);
     setError(null);
-    // 다른 사람으로 바꿔 로그인: 앞 사람의 이 휴대폰 알림 구독·보관 중인 출퇴근 좌표를 지우고 로그아웃한 뒤 로그인 (로그아웃 버튼과 같은 정리)
-    if (current && current.email.toLowerCase() !== email.trim().toLowerCase()) {
-      await import("@/lib/browser/outbox").then((m) => m.scrubQueuedLocation(current.id)).catch(() => {});
-      await import("@/lib/browser/push").then((m) => m.unsubscribeThisDevice()).catch(() => {});
-      await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" }).catch(() => {});
-      setCurrent(null);
-    }
-    const r = await api<{ me: { role: RoleId; mustChangePassword: boolean } }>("/api/auth/login", { body: { email: email.trim(), password } });
+    // 다른 사람으로 바꿔 로그인: 로그인에 성공한 뒤에만 앞 사람 정리 — 서버가 앞 사람 세션·이 기기 알림을 지우고, 휴대폰은 보관 중인 출퇴근 좌표를 지운다 (D-68 점검 반영: 비밀번호를 틀리면 앞 사람은 그대로)
+    const switching = !!current && current.email.toLowerCase() !== email.trim().toLowerCase();
+    const endpoint = switching ? await import("@/lib/browser/push").then((m) => m.deviceEndpoint()).catch(() => undefined) : undefined;
+    const r = await api<{ me: { role: RoleId; mustChangePassword: boolean }; replaced?: string }>("/api/auth/login", { body: { email: email.trim(), password, ...(endpoint ? { deviceEndpoint: endpoint } : {}) } });
     if (!r.ok || !r.data) {
       setError(r.error);
       setBusy(false);
       return;
+    }
+    if (r.data.replaced) {
+      const prevId = r.data.replaced;
+      await import("@/lib/browser/outbox").then((m) => m.scrubQueuedLocation(prevId)).catch(() => {});
+      await import("@/lib/browser/push").then((m) => m.dropBrowserSubscription()).catch(() => {});
     }
     try {
       localStorage.setItem(LAST_ID, email.trim().toLowerCase());
@@ -98,7 +99,7 @@ function LoginForm() {
           >
             {current.name}님으로 계속하기
           </button>
-          <p className="mt-2 text-[0.98rem] text-ink-2">다른 분이면 아래에 아이디·비밀번호를 넣으세요. 앞 사람은 이 휴대폰에서 로그아웃됩니다.</p>
+          <p className="mt-2 text-[0.98rem] text-ink-2">다른 분이면 아래에 아이디·비밀번호를 넣으세요. 로그인되면 앞 사람은 이 휴대폰에서 로그아웃됩니다.</p>
         </div>
       )}
       <form onSubmit={submit} className="mt-3 space-y-5" noValidate data-testid="login-form">

@@ -668,7 +668,8 @@ export function createPartnerRequest(
 ) {
   const errors: Record<string, string> = {};
   const type = input.type ?? "change_review";
-  if (!(type in PARTNER_TYPE_LABEL)) throw new CommandError("요청 유형을 확인해주세요.", "VALIDATION", { type: "알 수 없는 유형" });
+  // ‘toString’ 같은 이름이 유형으로 들어가지 않게 (D-68 점검 반영)
+  if (typeof type !== "string" || !Object.hasOwn(PARTNER_TYPE_LABEL, type)) throw new CommandError("요청 유형을 확인해주세요.", "VALIDATION", { type: "알 수 없는 유형" });
   // 하자보수 (D-68): 위치는 꼭, 사진은 3장까지
   const defect = type === "defect";
   const location = defect ? String(input.location ?? "").trim() : "";
@@ -740,11 +741,15 @@ export function updatePartnerRequest(
   if (share.length) {
     if (input.status !== "answered") throw new CommandError("보수 사진은 회신할 때 함께 보냅니다.", "STATE");
     const wo = (db.workOrders ?? []).find((w) => w.id === r.linkedWorkOrderId);
-    const allowed = new Set(wo?.donePhotoIds ?? []);
+    // 보완 요청으로 되돌린 작업지시의 예전 사진은 보내지 않는다 (D-68 점검 반영)
+    if (!wo || (wo.status !== "done" && wo.status !== "confirmed")) throw new CommandError("보수 작업지시가 끝난 뒤에 보수 사진을 보낼 수 있습니다.", "STATE");
+    const allowed = new Set(wo.donePhotoIds ?? []);
     if (share.length > 3 || share.some((id) => !allowed.has(id))) throw new CommandError("보수 작업지시의 완료 사진만 3장까지 보낼 수 있습니다.", "VALIDATION", { sharePhotoIds: "사진 확인" });
   }
+  // 하자보수: 보수 전에 일정 안내로 회신했어도, 보수가 끝나면 보수 사진과 함께 한 번 더 회신할 수 있다 (D-68 점검 반영)
+  const followUp = r.status === "answered" && input.status === "answered" && r.type === "defect" && share.length > 0;
   const order: PartnerRequestStatus[] = ["received", "reviewing", "answered"];
-  if (order.indexOf(input.status) <= order.indexOf(r.status)) throw new CommandError("이미 처리된 단계입니다.", "STATE");
+  if (!followUp && order.indexOf(input.status) <= order.indexOf(r.status)) throw new CommandError("이미 처리된 단계입니다.", "STATE");
   if (input.status === "answered" && !input.reply?.trim()) throw new CommandError("회신 내용을 입력해주세요.", "VALIDATION", { reply: "필수" });
   const at = nowIso(ctx);
   if (input.registerChangeOrder) {
@@ -793,6 +798,9 @@ export function confirmPartnerRequest(db0: DemoDB, input: { requestId: string; n
   if (r.partnerUserId !== ctx.userId) throw new CommandError("본인이 보낸 요청만 확인할 수 있습니다.", "STATE");
   if (r.status !== "answered") throw new CommandError("회신을 받은 뒤에 확인할 수 있습니다.", "STATE");
   if (r.confirmedAt) throw new CommandError("이미 확인한 요청입니다.", "STATE");
+  // 하자보수는 보수 작업이 끝난 뒤에 확인 (일정 안내 회신만 받고 ‘보수 확인’이 되던 문제 · D-68 점검 반영)
+  const wo = r.linkedWorkOrderId ? (db.workOrders ?? []).find((w) => w.id === r.linkedWorkOrderId) : undefined;
+  if (wo && wo.status !== "done" && wo.status !== "confirmed") throw new CommandError("보수가 끝난 뒤에 확인할 수 있습니다.", "STATE");
   const note = typeof input.note === "string" ? input.note.trim() : "";
   if (note.length > 200) throw new CommandError("남길 말은 200자 이내", "VALIDATION", { note: "200자 이내" });
   const at = nowIso(ctx);

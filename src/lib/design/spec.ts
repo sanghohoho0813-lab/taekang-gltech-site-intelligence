@@ -118,7 +118,7 @@ export const COLLECTION_SPEC: Record<CollectionName, CollectionSpec> = {
   changeOrders: { label: "변경공사", holds: "변경 내용·요청 금액·승인 금액·상태", field: DATA_NONE, partner: DATA_NONE, keep: "보관" },
   billings: { label: "기성 청구", holds: "회차·청구일·금액", field: DATA_NONE, partner: DATA_NONE, keep: "보관" },
   payments: { label: "입금", holds: "입금일·금액", field: DATA_NONE, partner: DATA_NONE, keep: "보관" },
-  partnerRequests: { label: "발주처 요청", holds: "견적 문의·주문 요청(품목·수량·희망일)·하자보수(위치·사진·보수 작업지시)·회신·발주처 확인", field: "담당 현장 것", partner: "본인이 보낸 것만 (작업지시 번호 없이 보수 단계·기한만)", keep: "보관" },
+  partnerRequests: { label: "발주처 요청", holds: "견적 문의·주문 요청(품목·수량·희망일)·하자보수(위치·사진·보수 작업지시)·회신·발주처 확인", field: DATA_NONE, partner: "본인이 보낸 것만 (작업지시 번호 없이 보수 단계·기한만)", keep: "보관" },
   actions: { label: "위험 조치 (본사 요청)", holds: "위험 신호에서 만든 할 일·담당·기한·진행·결과", field: "본인 배정분 (금액이 든 근거 문구는 빼고)", partner: DATA_NONE, keep: "보관" },
   proofEvents: { label: "조치 성과 기록", holds: "조치 전후 지표·확인 여부", field: "확인 여부만", partner: DATA_NONE, keep: "보관" },
   activityLogs: { label: "활동 이력", holds: "누가·언제·무엇을 했는지 (지워지지 않음)", field: "본인 것만", partner: DATA_NONE, keep: "지우지 않음 (화면에는 최근 300건, 전체는 검색)" },

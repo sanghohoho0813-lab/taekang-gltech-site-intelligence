@@ -114,6 +114,8 @@ export function companyReadiness(db: DemoDB): ReadyItem[] {
 
 export function readinessAll(db: DemoDB, today: string) {
   const sites = db.sites.filter((s) => s.status !== "completed").map((s) => siteReadiness(db, s, today));
-  const missing = sites.reduce((a, s) => a + s.items.filter((i) => i.status === "missing").length, 0);
-  return { sites, company: companyReadiness(db), missing };
+  const company = companyReadiness(db);
+  // 회사 항목(본사 전화번호 등)의 ‘빠짐’도 센다 — 빨간 항목이 있는데 ‘모두 들어왔습니다’가 나오던 문제 (D-68 점검 반영)
+  const missing = sites.reduce((a, s) => a + s.items.filter((i) => i.status === "missing").length, 0) + company.filter((i) => i.status === "missing").length;
+  return { sites, company, missing };
 }

@@ -90,6 +90,8 @@ export function noticesFor(before: DemoDB, after: DemoDB, actorId: string): Noti
     else if (prev.status !== "answered" && r.status === "answered") push({ to: [r.partnerUserId], title: r.type === "defect" ? "하자보수 회신 도착" : "태강지엘텍 회신 도착", body: clip(r.title), url: "/partner#my-requests", tag: `pr-${r.id}` });
     // 하자보수를 작업지시로 보냈을 때 발주처에게 ‘보수 작업 배정’ (D-68)
     else if (!prev.linkedWorkOrderId && r.linkedWorkOrderId) push({ to: [r.partnerUserId], title: "하자보수 작업 배정", body: clip(r.title), url: "/partner#my-requests", tag: `pr-${r.id}` });
+    // 일정 안내로 먼저 회신한 하자보수에 보수 사진을 더 보냄 (D-68 점검 반영)
+    else if (prev.status === "answered" && (r.replyPhotoIds ?? []).some((id) => !(prev.replyPhotoIds ?? []).includes(id))) push({ to: [r.partnerUserId], title: "보수 완료 사진 도착", body: clip(r.title), url: "/partner#my-requests", tag: `pr-${r.id}` });
     // 발주처가 회신·보수 완료를 확인 (D-68)
     else if (!prev.confirmedAt && r.confirmedAt) push({ to: hq, title: "발주처 확인 완료", body: `${site(r.siteId)} · ${clip(r.title)}`, url: "/insights#requests", tag: `pr-${r.id}` });
   }
@@ -104,9 +106,10 @@ export function noticesFor(before: DemoDB, after: DemoDB, actorId: string): Noti
     if (p.shared && !prev?.shared && !prev?.sharedOnce && !replyPhotos.has(p.id)) newly.set(p.siteId, (newly.get(p.siteId) ?? 0) + 1);
   }
   for (const [siteId, n] of newly) {
-    const nowShared = after.photos.filter((p) => p.siteId === siteId && p.shared);
+    // 회신으로 보낸 보수 사진은 ‘30분 안에 이미 알림’ 판단에 넣지 않는다 (D-68 점검 반영)
+    const nowShared = after.photos.filter((p) => p.siteId === siteId && p.shared && !replyPhotos.has(p.id));
     const latest = nowShared.reduce((a, p) => (p.shared!.at > a ? p.shared!.at : a), "");
-    const recentlyNotified = before.photos.some((p) => p.siteId === siteId && p.shared && new Date(latest).getTime() - new Date(p.shared.at).getTime() < 30 * 60_000);
+    const recentlyNotified = before.photos.some((p) => p.siteId === siteId && p.shared && !replyPhotos.has(p.id) && new Date(latest).getTime() - new Date(p.shared.at).getTime() < 30 * 60_000);
     if (recentlyNotified) continue;
     const partners = after.users.filter((u) => u.role === "partner" && !u.inactive && (u.partnerSiteIds ?? []).includes(siteId)).map((u) => u.id);
     push({ to: partners, title: "새 공정 사진", body: `${site(siteId)} · 사진 ${n}장이 공개되었습니다`, url: "/partner#photos", tag: `ph-${siteId}` });

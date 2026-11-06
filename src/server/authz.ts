@@ -273,7 +273,8 @@ export function viewFor(m: Member, db: DemoDB, now = new Date()): DemoDB {
       costEntries: db.costEntries.filter((e) => e.createdBy === m.id && sites.has(e.siteId) && (e.date >= since || e.status === "pending")),
       reports,
       photos: db.photos.filter((p) => sites.has(p.siteId) && (photoRefs.has(p.id) || (!!p.actionId && actionIds.has(p.actionId)) || kstDate(p.createdAt) >= since)),
-      partnerRequests: db.partnerRequests.filter((r) => sites.has(r.siteId)),
+      // 발주처 요청은 현장 휴대폰에 보내지 않는다 — 회신 글에 금액이 들어갈 수 있고, 보수에 필요한 위치·사진은 작업지시에 담겨 간다 (D-68 점검 반영)
+      partnerRequests: [],
       actions,
       // 실증 기록은 확인 여부만 (근거·결과 문구에 금액이 들어감)
       proofEvents: db.proofEvents

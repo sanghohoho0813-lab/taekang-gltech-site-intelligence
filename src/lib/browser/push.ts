@@ -74,6 +74,17 @@ export async function unsubscribeThisDevice(): Promise<void> {
   await sub.unsubscribe().catch(() => {});
 }
 
+/** 이 기기의 알림 구독 주소 (로그인 때 앞 사람 알림을 서버에서 지우는 데 씀 · D-68) */
+export async function deviceEndpoint(): Promise<string | undefined> {
+  return (await currentSub().catch(() => null))?.endpoint ?? undefined;
+}
+
+/** 서버 기록은 이미 지운 경우 — 이 기기의 브라우저 구독만 끈다 */
+export async function dropBrowserSubscription(): Promise<void> {
+  const sub = await currentSub().catch(() => null);
+  await sub?.unsubscribe().catch(() => {});
+}
+
 export async function testPush(): Promise<number> {
   const r = await fetch("/api/push/test", { method: "POST", credentials: "same-origin" });
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "시험 알림을 보내지 못했습니다.");

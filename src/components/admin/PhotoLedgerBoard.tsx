@@ -10,6 +10,7 @@ import { errorMessage } from "@/lib/data/commands";
 import { useToast } from "@/components/ui/Toast";
 import { useMe } from "@/lib/data/hooks";
 import { PHOTO_KIND_LABEL, photoLedger, type LedgerEntry } from "@/lib/domain/photoLedger";
+import { repairPhotoIds } from "@/lib/domain/partnerFeed";
 import { shiftDate } from "@/lib/domain/attendance";
 import { fmtDate, todayIso } from "@/lib/domain/format";
 import { IS_LIVE } from "@/lib/mode";
@@ -44,6 +45,8 @@ export function PhotoLedgerBoard() {
       </PageBody>
     );
   const shown = entries.slice(0, SCREEN_LIMIT);
+  // 하자보수 사진은 요청한 발주처에게 회신으로만 — 여기서 전체 공개하지 않는다 (D-68 점검 반영)
+  const repair = db ? repairPhotoIds(db) : new Set<string>();
   const chosen = shown.filter((e) => !off.has(e.photo.id)).map((e, i) => ({ ...e, no: i + 1 }));
   const pages = Array.from({ length: Math.ceil(chosen.length / PER_PAGE) }, (_, i) => chosen.slice(i * PER_PAGE, (i + 1) * PER_PAGE));
   const stages = [...new Set([...site.stages.map((s) => s.name), site.workType])];
@@ -140,7 +143,7 @@ export function PhotoLedgerBoard() {
           </p>
           {/* 발주처 공개 (D-67): 고른 사진만 발주처 포털 ‘공정 사진’에 보인다 — 내부 설명·찍은 사람은 보내지 않음 */}
           <p className="px-5 pt-1 text-[0.8rem] text-ink-3" data-testid="ledger-shared-count">
-            발주처 공개 <b className="text-ink">{shown.filter((e) => e.photo.shared).length}</b>장 · 사진 아래 ‘발주처 공개’를 누르면 고객 화면에 보입니다 ·{" "}
+            발주처 공개 <b className="text-ink">{shown.filter((e) => e.photo.shared && !repair.has(e.photo.id)).length}</b>장 · 사진 아래 ‘발주처 공개’를 누르면 고객 화면에 보입니다 ·{" "}
             <Link href="/partner#photos" className="font-bold text-theme-ink underline">
               발주처 포털에서 보기
             </Link>
@@ -157,6 +160,11 @@ export function PhotoLedgerBoard() {
                       <span className="num">{e.date.slice(5).replace("-", "/")}</span> · {PHOTO_KIND_LABEL[e.kind]}
                     </span>
                   </button>
+                  {repair.has(e.photo.id) ? (
+                    <p className="mt-1 flex min-h-10 items-center justify-center rounded-lg bg-surface-2 px-1 text-center text-[0.72rem] font-semibold leading-tight text-ink-3" data-testid="ledger-share-repair">
+                      하자보수 사진 · 요청 발주처에게만
+                    </p>
+                  ) : (
                   <button
                     type="button"
                     disabled={sharing === e.photo.id}
@@ -178,6 +186,7 @@ export function PhotoLedgerBoard() {
                     {e.photo.shared ? <Eye size={14} aria-hidden /> : <EyeOff size={14} aria-hidden />}
                     {e.photo.shared ? "발주처 공개 중" : "발주처 공개"}
                   </button>
+                  )}
                 </li>
               );
             })}

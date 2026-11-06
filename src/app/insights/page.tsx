@@ -268,6 +268,14 @@ function PartnerInbox({ db }: { db: DemoDB }) {
                     </Button>
                   </div>
                 )}
+                {/* 일정 안내로 먼저 회신한 하자보수 — 보수가 끝나면 보수 사진을 한 번 더 보낸다 (D-68 점검 반영) */}
+                {r.status === "answered" && r.type === "defect" && wo && (wo.status === "done" || wo.status === "confirmed") && (wo.donePhotoIds?.length ?? 0) > 0 && !(r.replyPhotoIds?.length) && (
+                  <div className="mt-2.5">
+                    <Button size="sm" variant="cta" icon={<Send size={15} />} onClick={() => setReply(r)} data-testid="request-send-photos">
+                      보수 완료 사진 보내기
+                    </Button>
+                  </div>
+                )}
               </li>
             );
           })}
@@ -362,7 +370,10 @@ function ReplyModal({ db, req, onClose }: { db: DemoDB; req: PartnerRequest; onC
   const [text, setText] = useState("");
   // 하자보수: 작업지시 완료 사진을 회신과 함께 보낼 수 있다 (D-68)
   const wo = req.linkedWorkOrderId ? (db.workOrders ?? []).find((w) => w.id === req.linkedWorkOrderId) : undefined;
-  const donePhotos = (wo?.donePhotoIds ?? []).map((id) => db.photos.find((p) => p.id === id)).filter((p): p is NonNullable<typeof p> => !!p).slice(0, 3);
+  // 끝난 작업지시의 사진만 (보완 요청으로 되돌린 작업지시의 예전 사진은 고르지 않는다 · D-68 점검 반영)
+  const woDone = !!wo && (wo.status === "done" || wo.status === "confirmed");
+  const donePhotos = woDone ? (wo!.donePhotoIds ?? []).map((id) => db.photos.find((p) => p.id === id)).filter((p): p is NonNullable<typeof p> => !!p).slice(0, 3) : [];
+  const followUp = req.status === "answered";
   const [share, setShare] = useState<string[]>(() => donePhotos.map((p) => p.id));
   const [register, setRegister] = useState(req.type === "change_review");
   const [amountText, setAmountText] = useState("");
@@ -372,7 +383,7 @@ function ReplyModal({ db, req, onClose }: { db: DemoDB; req: PartnerRequest; onC
     <Modal
       open
       onClose={onClose}
-      title="발주처 요청 회신"
+      title={followUp ? "보수 완료 사진 보내기" : "발주처 요청 회신"}
       description={req.title}
       size="md"
       testId="reply-modal"
@@ -385,6 +396,10 @@ function ReplyModal({ db, req, onClose }: { db: DemoDB; req: PartnerRequest; onC
             data-testid="reply-confirm"
             onClick={async () => {
               try {
+                if (followUp && !share.length) {
+                  setErr("보낼 보수 사진을 골라 주세요.");
+                  return;
+                }
                 if (req.status === "received") await run("updatePartnerRequest", { requestId: req.id, patch: { status: "reviewing" } });
                 await run("updatePartnerRequest", { requestId: req.id, patch: { status: "answered", reply: text, registerChangeOrder: register && amount > 0 ? { title: req.title, amount } : undefined, ...(share.length ? { sharePhotoIds: share } : {}) } });
                 toast.push({ tone: "ok", title: "회신했습니다", desc: "발주처 포털에 ‘회신 완료’와 회신 내용이 표시됩니다." });
@@ -431,7 +446,7 @@ function ReplyModal({ db, req, onClose }: { db: DemoDB; req: PartnerRequest; onC
         </button>
         )}
         {req.type === "defect" && wo && wo.status !== "done" && wo.status !== "confirmed" && (
-          <Notice tone="warn">보수 작업지시가 아직 끝나지 않았습니다 ({WO_STATE[wo.status]}). 보수 전이라면 일정 안내로 회신하세요.</Notice>
+          <Notice tone="warn">보수 작업지시가 아직 끝나지 않았습니다 ({WO_STATE[wo.status]}). 지금은 일정 안내로 회신하고, 현장이 ‘다 했어요’로 사진을 보내면 요청함의 ‘보수 완료 사진 보내기’로 한 번 더 보내세요.</Notice>
         )}
         {donePhotos.length > 0 && (
           <fieldset className="rounded-xl border border-line bg-surface-2 p-3" data-testid="reply-share-photos">

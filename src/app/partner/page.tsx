@@ -541,7 +541,11 @@ function MyRequests({ db, requests, preview, onRedo }: { db: DemoDB; requests: P
                 ) : (
                   <p className="mt-2 text-[0.76rem] text-ink-3">접수 {fmtDateTime(r.createdAt)}</p>
                 )}
+                {r.status === "answered" && repair && repair.stage !== "done" && !r.confirmedAt && (
+                  <p className="mt-2 text-[0.78rem] text-ink-3" data-testid="partner-confirm-later">보수가 끝나면 ‘보수 확인했어요’를 누를 수 있습니다.</p>
+                )}
                 {r.status === "answered" &&
+                  (!repair || repair.stage === "done" || r.confirmedAt) &&
                   (r.confirmedAt ? (
                     <p className="mt-2 text-[0.78rem] font-semibold text-ok" data-testid="partner-confirmed">
                       <CircleCheck size={14} className="mr-1 inline" aria-hidden />

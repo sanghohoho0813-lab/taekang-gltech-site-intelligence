@@ -1,6 +1,7 @@
 /** 발주처 포털 공개 — 본사가 고른 현장 사진만 발주처에 보인다 (D-67) */
 import type { DemoDB } from "@/lib/domain/types";
 import { CommandError, clone, log, nowIso, touch, type Ctx } from "./commands";
+import { repairPhotoIds } from "@/lib/domain/partnerFeed";
 
 export interface PhotoShareInput {
   photoIds: string[];
@@ -23,6 +24,9 @@ export function setPhotoShare(db0: DemoDB, input: PhotoShareInput, ctx: Ctx) {
   if (photos.some((p) => !p)) throw new CommandError("사진을 찾을 수 없습니다.", "NOT_FOUND");
   // 발주처가 보낸 하자 사진은 다른 발주처에게 공개하지 않는다 (D-68)
   if (photos.some((p) => !!p?.partnerRequestId)) throw new CommandError("발주처가 보낸 하자 사진은 공개할 수 없습니다.", "STATE");
+  // 하자보수 작업지시의 완료 사진은 요청한 발주처에게 회신으로만 — 같은 현장 다른 발주처에게 공개되지 않게 (D-68 점검 반영)
+  const repair = repairPhotoIds(db0);
+  if (input.shared && photos.some((p) => repair.has(p!.id))) throw new CommandError("하자보수 사진은 요청한 발주처에게 회신으로만 보냅니다.", "STATE");
   const sites = new Set(photos.map((p) => p!.siteId));
   let changed = 0;
   for (const p of photos) {

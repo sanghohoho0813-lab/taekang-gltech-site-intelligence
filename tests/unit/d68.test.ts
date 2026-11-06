@@ -171,3 +171,58 @@ describe("발주처 월간 공정 보고서", () => {
     expect(monthRange("2026-12").to).toBe("2026-12-31");
   });
 });
+
+describe("D-68 점검 반영", () => {
+  it("보수 전에 일정 안내로 회신했어도, 보수가 끝나면 보수 사진을 한 번 더 보낼 수 있다 — 확인은 보수가 끝난 뒤에만", () => {
+    const d = defect();
+    const reqId = d.result.requestId;
+    const wo = createWorkOrder(d.db, { siteId: "site-a", title: "하자보수", assigneeUserId: "u-field", partnerRequestId: reqId }, ctx("u-manager"));
+    const early = updatePartnerRequest(wo.db, reqId, { status: "answered", reply: "화요일에 방문합니다." }, ctx("u-manager")).db;
+    // 보수 전에는 발주처가 ‘보수 확인’을 할 수 없다
+    expect(() => confirmPartnerRequest(early, { requestId: reqId }, ctx("u-partner"))).toThrow(/보수가 끝난 뒤/);
+    const done = workOrderStep(early, { workOrderId: wo.result.workOrderId, action: "complete", note: "재시공", photoDataUrls: [JPG] }, ctx("u-field")).db;
+    const photo = done.workOrders!.find((w) => w.id === wo.result.workOrderId)!.donePhotoIds![0];
+    // 사진 없이 같은 단계를 다시 보내는 것은 여전히 막는다
+    expect(() => updatePartnerRequest(done, reqId, { status: "answered", reply: "다시" }, ctx("u-manager"))).toThrow(/이미 처리된/);
+    const follow = updatePartnerRequest(done, reqId, { status: "answered", reply: "보수 완료했습니다.", sharePhotoIds: [photo] }, ctx("u-manager")).db;
+    const r = follow.partnerRequests.find((x) => x.id === reqId)!;
+    expect(r).toMatchObject({ reply: "보수 완료했습니다.", replyPhotoIds: [photo] });
+    expect(noticesFor(done, follow, "u-manager").map((n) => n.title)).toEqual(["보수 완료 사진 도착"]);
+    expect(() => confirmPartnerRequest(follow, { requestId: reqId }, ctx("u-partner"))).not.toThrow();
+    // 월간 보고서: 회신은 처음 회신한 한 번만 센다
+    const m = partnerMonthly(follow, "site-a", "2026-11", [], "u-partner");
+    expect(m.counts.answered).toBe(1 + createSeed(NOW).partnerRequests.filter((x) => x.partnerUserId === "u-partner" && x.history.find((h) => h.status === "answered")?.at.startsWith("2026-11")).length);
+  });
+  it("보완 요청으로 되돌린 작업지시의 예전 사진은 보낼 수 없다", async () => {
+    const { reviewWorkOrder } = await import("@/lib/data/opsCommands");
+    const { done, woId, reqId, donePhoto } = fullLoop();
+    const back = reviewWorkOrder(done.db, { workOrderId: woId, decision: "return", note: "실리콘 다시" }, ctx("u-manager")).db;
+    expect(() => updatePartnerRequest(back, reqId, { status: "answered", reply: "완료", sharePhotoIds: [donePhoto] }, ctx("u-manager"))).toThrow(/끝난 뒤/);
+  });
+  it("하자보수 사진은 사진대장의 ‘발주처 공개’로 전체 공개할 수 없다 (끄는 것은 된다)", () => {
+    const { done, donePhoto, answered } = fullLoop();
+    expect(() => setPhotoShare(done.db, { photoIds: [donePhoto], shared: true }, ctx("u-manager"))).toThrow(/회신으로만/);
+    expect(() => setPhotoShare(answered.db, { photoIds: [donePhoto], shared: false }, ctx("u-manager"))).not.toThrow();
+  });
+  it("회신으로 보낸 보수 사진 뒤 10분 만에 공개한 공정 사진도 알림이 간다", () => {
+    const { answered } = fullLoop();
+    let db = submitFieldReport(answered.db, { idempotencyKey: "n1", siteId: "site-a", reportDate: "2026-11-04", workDone: "작업", photos: [{ dataUrl: JPG }] }, ctx("u-field")).db;
+    const ph = db.photos.find((p) => p.reportId)!;
+    const before = db;
+    db = setPhotoShare(db, { photoIds: [ph.id], shared: true }, ctx("u-manager", new Date(NOW.getTime() + 10 * 60_000))).db;
+    expect(noticesFor(before, db, "u-manager").map((n) => n.title)).toEqual(["새 공정 사진"]);
+  });
+  it("유형 이름 검사 — ‘toString’ 같은 값은 받지 않는다 · 현장 휴대폰에는 발주처 요청을 보내지 않는다", () => {
+    const db = createSeed(NOW);
+    expect(() => createPartnerRequest(db, { idempotencyKey: "t", siteId: "site-a", type: "toString" as never, title: "x", description: "y" }, ctx("u-partner"))).toThrow(CommandError);
+    expect(viewFor(FIELD, defect(db).db, NOW).partnerRequests).toEqual([]);
+  });
+  it("본사 전화번호가 없으면 자료 점검의 ‘빠진 자료’ 수에도 들어간다", async () => {
+    const { readinessAll } = await import("@/lib/domain/readiness");
+    const db = createSeed(NOW);
+    const without = { ...db, settings: { ...db.settings!, helpPhone: "  " } };
+    const withPhone = { ...db, settings: { ...db.settings!, helpPhone: "02-000-0000" } };
+    expect(readinessAll(without, "2026-11-04").missing - readinessAll(withPhone, "2026-11-04").missing).toBe(1);
+    expect(readinessAll(without, "2026-11-04").company.find((i) => i.key === "help-phone")?.status).toBe("missing");
+  });
+});

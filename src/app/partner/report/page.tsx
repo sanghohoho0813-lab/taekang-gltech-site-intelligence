@@ -184,7 +184,7 @@ function Report({ db, siteId, month, partnerUserId, preview, today }: { db: Demo
         )}
       </Section>
 
-      <Section title="3. 요청·하자보수 처리" sub={r.counts.defects ? `하자보수 ${r.counts.defects}건 · 보수 회신 ${r.counts.repaired}건 · 확인 ${r.counts.confirmed}건` : undefined}>
+      <Section title="3. 요청·하자보수 처리" sub={`${r.counts.defects ? `하자보수 ${r.counts.defects}건 · 보수 회신 ${r.counts.repaired}건 · 확인 ${r.counts.confirmed}건 · ` : ""}처리 상태는 작성일 기준`}>
         {r.requests.length === 0 ? (
           <p className="text-[0.85rem] text-ink-3">이 달에 주고받은 요청이 없습니다.</p>
         ) : (

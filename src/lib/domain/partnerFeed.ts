@@ -39,6 +39,13 @@ export function replyPhotoIds(db: Pick<DemoDB, "partnerRequests">): Set<string> 
   return new Set(db.partnerRequests.flatMap((r) => r.replyPhotoIds ?? []));
 }
 
+/** 하자보수 사진 전체 — 하자보수 작업지시의 완료 사진 + 회신 사진. 사진대장에서 전체 공개하지 않는다 (D-68 점검 반영) */
+export function repairPhotoIds(db: Pick<DemoDB, "partnerRequests" | "workOrders">): Set<string> {
+  const ids = replyPhotoIds(db);
+  for (const w of db.workOrders ?? []) if (w.sourcePartnerRequestId) for (const id of w.donePhotoIds ?? []) ids.add(id);
+  return ids;
+}
+
 /** 발주처에 공개한 공정 사진 (최근 것부터) */
 export function sharedPhotos(db: DemoDB, siteId: string) {
   const reply = replyPhotoIds(db);
@@ -101,7 +108,8 @@ export function partnerMonthly(db: DemoDB, siteId: string, month: string, feed: 
   const at = (iso?: string) => !!iso && kst(iso) >= from && kst(iso) <= to;
   const counts = {
     received: requests.filter((r) => at(r.createdAt)).length,
-    answered: requests.filter((r) => r.status === "answered" && r.history.some((h) => h.status === "answered" && at(h.at))).length,
+    // 처음 회신한 날 기준 — 발주처 확인·보수 사진 추가 회신은 회신 건수로 세지 않는다 (D-68 점검 반영)
+    answered: requests.filter((r) => r.status === "answered" && at(r.history.find((h) => h.status === "answered")?.at)).length,
     open: requests.filter((r) => r.status !== "answered").length,
     defects: requests.filter((r) => r.type === "defect").length,
     repaired: requests.filter((r) => r.type === "defect" && r.status === "answered").length,
