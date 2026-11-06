@@ -64,7 +64,7 @@ export const NAV: NavItem[] = [
   { href: "/audit", label: "활동 이력", icon: "History", group: "admin", roles: INTERNAL, desc: "누가·언제·무엇을 바꿨는지 회사 전체 검색·CSV (지워지지 않음)" },
   { href: "/help", label: "사용 안내", icon: "BookOpen", group: "admin", roles: ["ceo", "manager", "partner"], alsoAccess: ["field"], desc: "역할별 운영 매뉴얼 (인쇄용)" },
   { href: "/settings", label: "설정", icon: "Settings", group: "admin", roles: ["ceo", "manager", "field", "partner"], desc: IS_LIVE ? "화면·위험 기준·데이터 가져오기" : "테마·글자·역할·데모·데이터" },
-  { href: "/presentation", label: "시연 모드", icon: "Presentation", group: "admin", roles: INTERNAL, desc: "실제 화면 Guided Demo", only: "demo" },
+  { href: "/presentation", label: "시연 모드", icon: "Presentation", group: "admin", roles: INTERNAL, desc: "실제 화면으로 따라 하는 시연", only: "demo" },
 ];
 
 const visible = (n: NavItem) => !n.only || n.only === (IS_LIVE ? "live" : "demo");

@@ -266,7 +266,7 @@ export function EasyPageHead({ title, sub, icon, children, testId }: { title?: R
           {title}
         </h1>
       )}
-      {sub && <p className="text-[1.08rem] leading-relaxed text-white">{sub}</p>}
+      {sub && <p className="band-sub text-[1.08rem] leading-relaxed text-white">{sub}</p>}
       {children}
     </header>
   );
@@ -371,7 +371,7 @@ export function EasyBar({
   className?: string;
 }) {
   return (
-    <div className={cx("z-20 -mx-4 border-t border-line bg-surface/97 px-4 pb-3 pt-3 backdrop-blur", sticky && (embedded ? "sticky bottom-0" : "sticky bottom-[var(--fieldnav-h)] lg:bottom-0"), className)}>
+    <div className={cx("easy-bar z-20 -mx-4 border-t border-line bg-surface/97 px-4 pb-3 pt-3 backdrop-blur", sticky && (embedded ? "sticky bottom-0" : "sticky bottom-[var(--fieldnav-h)] lg:bottom-0"), className)}>
       {hint && <p className="mb-2 text-center text-[0.98rem] font-semibold text-warn">{hint}</p>}
       <div className={cx("grid gap-2.5", onBack && onNext ? "grid-cols-[1fr_1.8fr]" : "grid-cols-1")}>
         {onBack && (

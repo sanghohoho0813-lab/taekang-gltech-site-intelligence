@@ -531,3 +531,50 @@ html[data-font="xl"] .tile-grid {
     display: table-header-group !important;
   }
 }
+
+/* 입력 2단계부터 머리 띠를 얇게 — 작은 휴대폰·큰 글씨에서 답 버튼이 가려지던 문제 (D-67 점검 반영) */
+html[data-wizard="1"] .brand-band {
+  padding-top: 0.7rem;
+  padding-bottom: 0.9rem;
+  row-gap: 0.35rem;
+}
+html[data-wizard="1"] .brand-band > * + * {
+  margin-top: 0.35rem;
+}
+html[data-wizard="1"] .brand-band h1 {
+  font-size: 1.2rem;
+}
+html[data-wizard="1"] .brand-band .band-sub {
+  display: none;
+}
+html[data-wizard="1"] .brand-band ol span.mt-1 {
+  font-size: 0.78rem;
+  margin-top: 0.15rem;
+}
+html[data-wizard="1"] .brand-band ol span.h-2 {
+  height: 0.35rem;
+}
+
+/* 가로 화면처럼 세로가 짧으면 아래 고정 버튼을 붙이지 않고 하단 메뉴를 숨긴다 — 내용이 75px만 보이던 문제 (D-67 점검 반영) */
+@media (max-height: 500px) and (orientation: landscape) {
+  .easy-bar {
+    position: static !important;
+  }
+  .field-bottom-nav {
+    display: none;
+  }
+  html {
+    --fieldnav-h: 0px;
+  }
+}
+
+/* ‘아주 크게’: 홈 타일을 가로형으로 — 세로형 타일 1열이면 아래 타일이 세 화면 밑으로 밀렸다 (D-67 점검 반영) */
+html[data-font="xl"] .tile-grid > * {
+  min-height: 0;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+}
+html[data-font="xl"] .tile-grid > * > span:first-child {
+  flex: none;
+}

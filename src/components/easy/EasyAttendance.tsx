@@ -57,6 +57,14 @@ export function EasyAttendance({ db, userId, sites, autoQr }: { db: DemoDB; user
   const commitLock = useRef(false);
   // 기록 직후 카드가 줄어들며 두 번째 손가락이 아래 링크를 누르지 않게 잠깐 높이를 유지
   const [holdH, setHoldH] = useState<number | undefined>(undefined);
+  // 새 카드(동의·퇴근 확인·현장 밖)가 뜬 직후 0.5초는 버튼을 받지 않는다 — 두 번 톡 한 번에 확인 화면이 그냥 통과되던 문제 (D-67 점검 반영)
+  const [armed, setArmed] = useState(true);
+  useEffect(() => {
+    if (phase.k === "idle" || phase.k === "done" || phase.k === "locating") return;
+    setArmed(false);
+    const t = window.setTimeout(() => setArmed(true), 500);
+    return () => window.clearTimeout(t);
+  }, [phase.k]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const today = todayIso();
@@ -169,6 +177,8 @@ export function EasyAttendance({ db, userId, sites, autoQr }: { db: DemoDB; user
     if (!site) return;
     // 동의하지 않고 '위치 없이'를 고른 경우 → 묻지 않고 바로 기록 (본사에 '위치 없음' 표시)
     if (!sample && reason === "skipped") return void commit(mode, site, null, "skipped");
+    // 휴대폰이 위치를 막아 둔 상태에서 현장을 직접 골랐으면 다시 묻지 않고 ‘위치 없이’ 기록 (D-67 점검 반영: 4번 누르고 스크롤해야 했음)
+    if (!sample && reason === "denied" && chosen) return void commit(mode, site, null, "denied", consent);
     const d = sample && site.geo ? distanceM(site.geo, sample) : undefined;
     const inside = !!sample && !!site.geo && d! <= site.geo.radiusM && sample.accuracy <= 150;
     if (inside) return void commit(mode, site, sample, undefined, consent);
@@ -271,7 +281,7 @@ export function EasyAttendance({ db, userId, sites, autoQr }: { db: DemoDB; user
           <button type="button" onClick={() => setPhase({ k: "idle" })} className="press min-h-[4rem] rounded-full border-2 border-line-strong bg-surface text-[1.12rem] font-bold" data-testid="att-out-no">
             아니요
           </button>
-          <button type="button" onClick={() => go("out")} className="press min-h-[4rem] rounded-full bg-primary text-[1.2rem] font-extrabold text-white shadow-card" data-testid="att-out-yes">
+          <button type="button" disabled={!armed} onClick={() => go("out")} className="press min-h-[4rem] rounded-full bg-primary text-[1.2rem] font-extrabold text-white shadow-card disabled:opacity-60" data-testid="att-out-yes">
             네, 퇴근할게요
           </button>
         </div>
@@ -285,8 +295,8 @@ export function EasyAttendance({ db, userId, sites, autoQr }: { db: DemoDB; user
           <ShieldCheck size={26} className="text-theme-ink" aria-hidden /> 위치 기록 동의
         </p>
         {reasked && <p className="rounded-xl bg-warn-bg px-3 py-2 text-[1.02rem] font-semibold">회사가 위치 기록 조건을 바꿔서 다시 여쭤봐요.</p>}
-        <p className="text-[1.05rem] text-ink-2">출퇴근을 누를 때만 위치를 한 번 기록해요. 아래 내용을 읽고 동의하면 눌러 주세요.</p>
-        <button type="button" onClick={() => (phase.qr ? void startQr(phase.qr, true) : void start(phase.mode, true))} className={cx(bigBtn, "bg-cta text-cta-text")} data-testid="att-consent-yes">
+        <p className="text-[1.05rem] text-ink-2">출퇴근을 누를 때만 위치를 한 번 기록해요. 동의하면 아래 버튼을 눌러 주세요. 자세한 내용은 버튼 밑에 있어요.</p>
+        <button type="button" disabled={!armed} onClick={() => (phase.qr ? void startQr(phase.qr, true) : void start(phase.mode, true))} className={cx(bigBtn, "bg-cta text-cta-text")} data-testid="att-consent-yes">
           동의하고 {phase.mode === "in" ? "출근" : "퇴근"}하기
         </button>
         <ul className="list-disc space-y-1.5 pl-5 text-[1.05rem] leading-relaxed text-ink" data-testid="att-consent-notice">
@@ -339,10 +349,13 @@ export function EasyAttendance({ db, userId, sites, autoQr }: { db: DemoDB; user
         {phase.reason === "denied" && <DeniedHelp />}
         <div className="space-y-2.5">
           {(avail.length ? avail : sites).map((s) => (
-            <Choice key={s.id} icon={<MapPin size={24} />} label={s.shortName} sub={s.workType} onClick={() => decide("in", phase.sample, phase.reason, phase.consent, s)} testId={`att-site-${s.id}`} />
+            <Choice key={s.id} icon={<MapPin size={24} />} label={s.shortName} sub={phase.reason === "denied" ? `${s.workType} · 위치 없이 기록돼요` : s.workType} onClick={() => armed && decide("in", phase.sample, phase.reason, phase.consent, s)} testId={`att-site-${s.id}`} />
           ))}
         </div>
         {demoBtn("in")}
+        <button type="button" onClick={() => setPhase({ k: "idle" })} className="press min-h-12 w-full rounded-xl text-[1.02rem] font-bold text-ink-2" data-testid="att-pick-cancel">
+          취소
+        </button>
       </>,
       "warn",
     );
@@ -489,16 +502,17 @@ export function FixLink() {
   );
 }
 
+/** 위치가 막혔을 때 고치는 방법 — 접어 두어 현장 버튼이 화면 밖으로 밀리지 않게 (D-67 점검 반영) */
 function DeniedHelp() {
   return (
-    <div className="rounded-2xl bg-surface px-4 py-3 text-[1rem] leading-relaxed text-ink">
-      <p className="font-bold">휴대폰이 위치를 막고 있어요</p>
-      <p>
+    <details className="rounded-2xl bg-surface px-4 py-3 text-[1rem] leading-relaxed text-ink">
+      <summary className="cursor-pointer font-bold">휴대폰이 위치를 막고 있어요 · 허용하는 방법</summary>
+      <p className="mt-1">
         <b>아이폰</b>: 설정 → 앱(Safari) → 위치 → ‘허용’
       </p>
       <p>
         <b>갤럭시</b>: 주소창 왼쪽 자물쇠 → 권한 → 위치 ‘허용’
       </p>
-    </div>
+    </details>
   );
 }

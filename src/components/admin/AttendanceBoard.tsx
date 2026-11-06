@@ -48,7 +48,7 @@ function MapA({ g }: { g?: GeoStamp }) {
   if (g?.purged) return <span className="text-[0.72rem] text-ink-3">좌표 지움</span>;
   if (g?.lat === undefined || g.lng === undefined) return null;
   return (
-    <a href={mapLink(g.lat, g.lng, "누른 위치")} target="_blank" rel="noreferrer noopener" className="text-[0.74rem] font-semibold text-theme-ink underline underline-offset-2">
+    <a href={mapLink(g.lat, g.lng, "누른 위치")} target="_blank" rel="noreferrer noopener" className="inline-flex min-h-10 items-center px-1.5 text-[0.76rem] font-semibold text-theme-ink underline underline-offset-2">
       지도
     </a>
   );
@@ -188,7 +188,7 @@ export function AttendanceBoard() {
         {sites.map((s) => {
           const crew = siteCrew(db, s, date);
           return (
-            <Card key={s.id} data-testid="att-site" data-site={s.id}>
+            <Card key={s.id} className="@container" data-testid="att-site" data-site={s.id}>
               <CardHeader
                 title={s.shortName}
                 sub={
@@ -307,7 +307,7 @@ export function AttendanceBoard() {
         )}
       </Card>
 
-      <Card data-testid="att-month">
+      <Card className="@container" data-testid="att-month">
         <CardHeader
           title={`${date.slice(0, 7).replace("-", "년 ")}월 합계`}
           sub="급여·공수 정산 근거 — 퇴근 누락·현장 밖·위치 없음은 사람에게 확인 후 정산하세요"
@@ -517,7 +517,7 @@ function KioskList({ kiosks, onAdd, onRevoke, qrMode }: { kiosks: Kiosk[]; onAdd
                 <Badge>코드 만료 — 해제 후 다시 추가</Badge>
               )}
               {k.lastUsedAt && <span className="text-ink-3">마지막 출근 확인 {hhmm(k.lastUsedAt)}</span>}
-              <button type="button" onClick={() => onRevoke(k)} className="press rounded-md px-1.5 py-0.5 text-[0.76rem] font-semibold text-err hover:bg-err-bg">
+              <button type="button" onClick={() => onRevoke(k)} className="press inline-flex min-h-10 items-center rounded-md px-2.5 text-[0.78rem] font-semibold text-err hover:bg-err-bg">
                 해제
               </button>
             </li>

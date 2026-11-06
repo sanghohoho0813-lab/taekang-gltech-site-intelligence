@@ -91,7 +91,7 @@ export function DemoBar({ active }: { active: boolean }) {
           data-testid="surface-switch"
         >
           {onPartner ? <LayoutDashboard size={15} aria-hidden /> : <Handshake size={15} aria-hidden />}
-          {onPartner ? "Business AX 보기" : "발주처 포털 보기"}
+          {onPartner ? "본사 화면 보기" : "발주처 포털 보기"}
         </button>
         <label className="inline-flex shrink-0 items-center gap-1.5">
           <span className="whitespace-nowrap text-white/60">역할</span>

@@ -122,6 +122,8 @@ export function PhotoLedgerBoard() {
                       return { db: { ...d, photos: [...d.photos, ...add], updatedAt: new Date().toISOString(), rev: d.rev + 1 }, result: add.length };
                     });
                     setRange("30");
+                    setStage("");
+                    toast.push({ tone: "ok", title: "시연용 예시 사진 6장을 넣었습니다", desc: "사진 아래 ‘발주처 공개’를 눌러 고객 화면에 보여 줄 수 있어요." });
                   }}
                   data-testid="ledger-sample"
                 >
@@ -191,7 +193,7 @@ export function PhotoLedgerBoard() {
               {site.name} · <span className="num">{fmtDate(from)} ~ {fmtDate(to)}</span> · {i + 1}/{pages.length}
             </p>
           </header>
-          <div className="grid grid-cols-2 gap-3 print:gap-2">
+          <div className="grid grid-cols-1 gap-3 @min-[560px]:grid-cols-2 print:grid-cols-2 print:gap-2">
             {p.map((e) => (
               <LedgerCell key={e.photo.id} e={e} />
             ))}
@@ -209,8 +211,8 @@ function LedgerCell({ e }: { e: LedgerEntry }) {
   return (
     <figure className="break-inside-avoid" data-testid="ledger-cell">
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={e.photo.dataUrl} alt={e.text} className="aspect-[4/3] w-full border border-line-strong object-cover print:aspect-auto print:h-[56mm]" />
-      <table className="w-full border-collapse text-[0.74rem]">
+      <img src={e.photo.dataUrl} alt={e.text} className="aspect-[4/3] w-full border border-line-strong bg-white object-cover print:aspect-auto print:h-[56mm] print:object-contain" />
+      <table className="w-full table-fixed border-collapse text-[0.74rem] [overflow-wrap:anywhere]">
         <tbody>
           <tr>
             <th className={th}>번호</th>

@@ -70,7 +70,7 @@ export function TodayReports({ db }: { db: DemoDB }) {
                   </span>
                 </span>
                 <span className={cx("shrink-0 text-right text-[0.8rem] font-semibold", ok ? "text-ok" : "text-warn")}>
-                  {ok ? `보고 ${todays.length}건${photos ? ` · 사진 ${photos}` : ""}${costs ? ` · 비용 ${costs}` : ""}` : gap === null ? "보고 기록 없음" : gap === 1 ? "어제가 마지막" : `${gap}일째 없음`}
+                  {ok ? `보고 ${todays.length}건${photos ? ` · 사진 ${photos}` : ""}${costs ? ` · 비용 ${costs}` : ""}` : gap === null ? "보고 기록 없음" : gap === 1 ? "보고는 어제가 마지막" : `보고 ${gap}일째 없음`}
                 </span>
               </Link>
             </li>

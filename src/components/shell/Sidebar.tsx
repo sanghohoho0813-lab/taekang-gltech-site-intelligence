@@ -10,8 +10,10 @@ import { currentUserId, useDb, useRole, usePrefs, useLiveStatus } from "@/lib/da
 import { THEMES } from "@/lib/theme/themes";
 import { fmtTime } from "@/lib/domain/format";
 import { computeSignals } from "@/lib/domain/risk";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { IS_LIVE } from "@/lib/mode";
+
+const ADMIN_KEY = "tk-site-intel:nav-admin";
 
 export function isActivePath(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(href + "/");
@@ -42,6 +44,23 @@ export function Sidebar({ compact }: { compact: boolean }) {
   }, [pathname]);
   const role = useRole();
   const db = useDb();
+  // 기본은 접어 둔다 (지금 보는 화면이 안에 있으면 펼쳐 보임) — 펼치면 이 브라우저가 기억
+  const [adminOpen, setAdminOpen] = useState(false);
+  useEffect(() => {
+    try {
+      setAdminOpen(localStorage.getItem(ADMIN_KEY) === "1");
+    } catch {
+      // 무시
+    }
+  }, []);
+  const toggleAdmin = (open: boolean) => {
+    setAdminOpen(open);
+    try {
+      localStorage.setItem(ADMIN_KEY, open ? "1" : "0");
+    } catch {
+      // 무시
+    }
+  };
   const prefs = usePrefs();
   const items = navFor(role);
   const theme = THEMES.find((t) => t.id === prefs.theme);
@@ -76,14 +95,25 @@ export function Sidebar({ compact }: { compact: boolean }) {
         {GROUPS.map((g) => {
           const list = items.filter((i) => i.group === g.id);
           if (!list.length) return null;
+          // ‘관리’ 묶음은 접을 수 있다 — 메뉴가 길어 ‘위험 분석·조치’ 등이 화면 아래로 숨던 문제 (D-67 점검 반영). 지금 보는 화면이 안에 있으면 펼친다
+          const collapsible = g.id === "admin" && !compact;
+          const hasActive = list.some((i) => isActivePath(pathname, i.href));
+          const collapsed = collapsible && !adminOpen && !hasActive;
           return (
             <div key={g.id}>
               {!compact ? (
-                <p className="px-2.5 pb-1 text-[0.68rem] font-bold tracking-[0.14em] text-shell-muted">{g.label}</p>
+                collapsible ? (
+                  <button type="button" onClick={() => toggleAdmin(!adminOpen)} aria-expanded={!collapsed} className="press flex w-full items-center justify-between rounded-lg px-2.5 pb-1 text-left text-[0.68rem] font-bold tracking-[0.14em] text-shell-muted hover:text-shell-text" data-testid="nav-admin-toggle">
+                    <span>{g.label}</span>
+                    <span className="tracking-normal">{collapsed ? `${list.length}개 펼치기 ▾` : "접기 ▴"}</span>
+                  </button>
+                ) : (
+                  <p className="px-2.5 pb-1 text-[0.68rem] font-bold tracking-[0.14em] text-shell-muted">{g.label}</p>
+                )
               ) : (
                 <div className="mx-3 mb-2 h-px bg-shell-line" aria-hidden />
               )}
-              <ul className={cx("space-y-0.5", g.id === "portal" && !compact && "rounded-xl border border-shell-line bg-shell-card p-1")}>
+              <ul className={cx("space-y-0.5", g.id === "portal" && !compact && "rounded-xl border border-shell-line bg-shell-card p-1", collapsed && "hidden")}>
                 {list.map((item) => {
                   const active = isActivePath(pathname, item.href);
                   const badge = badgeFor(item.href);

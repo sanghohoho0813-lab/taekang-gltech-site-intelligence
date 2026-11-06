@@ -109,18 +109,17 @@ function PartnerPortal({ db, partner, sites: mySites, preview }: { db: NonNullab
             <DemoBadge compact />
             {preview ? (
               <>
-                <Badge tone="info" className="hidden sm:inline-flex">관리자 미리보기</Badge>
-                <Link href="/dashboard">
-                  <Button size="sm" icon={<LayoutDashboard size={15} />}>
-                    <span className="hidden sm:inline">Business AX</span>
-                  </Button>
+                {/* 휴대폰에서는 감춘다 — Badge 기본 inline-flex가 hidden을 덮어 로고가 잘리던 문제 (D-67 점검 반영) */}
+                <span className="hidden sm:inline-flex">
+                  <Badge tone="info">관리자 미리보기</Badge>
+                </span>
+                <Link href="/dashboard" className="press inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-line-strong bg-surface px-3 text-[0.85rem] font-bold" data-testid="partner-back-hq">
+                  <LayoutDashboard size={15} aria-hidden /> 본사 화면
                 </Link>
               </>
             ) : (
-              <Link href="/settings" aria-label="설정 · 역할 전환">
-                <Button size="sm" variant="ghost" icon={<Settings size={15} />} aria-label="역할 전환">
-                  <span className="hidden sm:inline">역할 전환</span>
-                </Button>
+              <Link href="/settings" className="press inline-flex min-h-11 items-center gap-1.5 rounded-xl px-3 text-[0.85rem] font-bold text-ink-2 hover:bg-surface-3" aria-label={IS_LIVE ? "설정" : "설정 · 역할 전환"}>
+                <Settings size={16} aria-hidden /> <span className="hidden sm:inline">{IS_LIVE ? "설정" : "역할 전환"}</span>
               </Link>
             )}
           </div>
@@ -213,7 +212,7 @@ function PartnerPortal({ db, partner, sites: mySites, preview }: { db: NonNullab
         {showFuture && (
           <section id="next" aria-labelledby="next-title">
             <h2 id="next-title" className="mb-3 flex items-center gap-2 text-[1.05rem] font-bold">
-              <Sparkles size={18} aria-hidden /> 향후 확장 예정 <Badge tone="neutral">NEXT · 현재 미구현</Badge>
+              <Sparkles size={18} aria-hidden /> 향후 확장 예정 <Badge tone="neutral">아직 없는 기능 · 미리보기</Badge>
             </h2>
             <FutureCards />
           </section>
@@ -363,7 +362,7 @@ const PLACEHOLDER: Record<PartnerRequest["type"], { title: string; desc: string 
 
 function MyRequests({ requests }: { requests: PartnerRequest[] }) {
   return (
-    <Card id="my-requests" data-testid="partner-requests">
+    <Card id="my-requests" className="scroll-mt-40" data-testid="partner-requests">
       <CardHeader title="내 요청" sub="처리 상태가 실시간으로 바뀝니다" />
       {requests.length === 0 ? (
         <EmptyState icon={<Inbox size={28} />} title="요청 내역이 없습니다." />
@@ -396,7 +395,7 @@ function MyRequests({ requests }: { requests: PartnerRequest[] }) {
                           {i < idx || r.status === "answered" ? <CircleCheck size={15} /> : <Clock3 size={15} />}
                         </span>
                         <span className="mt-1 block text-[0.72rem] font-bold">{PARTNER_STATUS_LABEL[s]}</span>
-                        <span className="block text-[0.65rem] text-ink-3 num">{h ? fmtRelative(h.at) : "—"}</span>
+                        <span className="block text-[0.78rem] text-ink-3 num">{h ? fmtRelative(h.at) : "—"}</span>
                       </li>
                     );
                   })}
@@ -460,9 +459,9 @@ function SiteUpdates({ db, siteId, preview }: { db: NonNullable<ReturnType<typeo
                 <button type="button" onClick={() => setOpen(p.id)} className="press block w-full overflow-hidden rounded-xl border border-line bg-surface-2 text-left" data-testid="partner-photo">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={p.dataUrl} alt={p.shared?.caption || "공정 사진"} loading="lazy" className="aspect-[4/3] w-full object-cover" />
-                  <span className="block truncate px-2 py-1.5 text-[0.76rem] text-ink-2">
-                    <span className="num">{fmtDate(p.createdAt)}</span>
-                    {p.shared?.caption ? ` · ${p.shared.caption}` : ""}
+                  <span className="block px-2 py-1.5 text-[0.8rem] text-ink-2">
+                    <span className="num block">{fmtDate(p.createdAt)}</span>
+                    {p.shared?.caption && <span className="line-clamp-2 [overflow-wrap:anywhere]">{p.shared.caption}</span>}
                   </span>
                 </button>
               </li>
@@ -473,7 +472,7 @@ function SiteUpdates({ db, siteId, preview }: { db: NonNullable<ReturnType<typeo
       <Card data-testid="partner-feed">
         <CardHeader title="최근 공정 변화" sub={`최근 ${PARTNER_FEED_DAYS}일 · 현장 보고로 바뀐 공정 진행률`} />
         {feed.length === 0 ? (
-          <EmptyState title={`최근 ${PARTNER_FEED_DAYS}일 동안 바뀐 공정이 없습니다`} />
+          <EmptyState title={`최근 ${PARTNER_FEED_DAYS}일 동안 바뀐 공정이 없습니다`} desc={preview ? "현장 보고에서 공정 단계 진척을 바꾸면 이곳에 날짜별로 보입니다." : undefined} />
         ) : (
           <ul className="divide-y divide-line border-t border-line">
             {feed.slice(0, 12).map((f) => (

@@ -109,7 +109,7 @@ function SignalItem({ db, s, onAssign }: { db: DemoDB; s: RiskSignal; onAssign: 
   const [why, setWhy] = useState(s.rule === "UNBILLED_CHANGE" || s.rule === "MARGIN_DROP");
   const actions = db.actions.filter((a) => a.signalKey === s.key && a.status !== "dismissed");
   return (
-    <li id={s.key} className={cx("rounded-xl border bg-surface p-3.5", s.severity === "high" ? "border-err/30" : "border-line")} data-testid="signal-item" data-rule={s.rule} data-site={s.siteId}>
+    <li id={s.key} className={cx("scroll-mt-[calc(var(--demo-bar-h)+5rem)] rounded-xl border bg-surface p-3.5", s.severity === "high" ? "border-err/30" : "border-line")} data-testid="signal-item" data-rule={s.rule} data-site={s.siteId}>
       <div className="flex flex-wrap items-center gap-1.5">
         <SeverityBadge severity={s.severity} />
         <span className="text-[0.74rem] font-bold text-ink-3">{RULE_LABEL[s.rule]}</span>
@@ -117,7 +117,7 @@ function SignalItem({ db, s, onAssign }: { db: DemoDB; s: RiskSignal; onAssign: 
       </div>
       <p className="mt-1 text-[0.93rem] font-bold leading-snug text-ink">{s.title}</p>
       <p className="text-[0.8rem] text-ink-2">{s.summary}</p>
-      <button type="button" onClick={() => setWhy((v) => !v)} className="press mt-1.5 inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-[0.76rem] font-bold text-theme-ink hover:bg-active-soft" aria-expanded={why}>
+      <button type="button" onClick={() => setWhy((v) => !v)} className="press mt-1.5 inline-flex min-h-10 items-center gap-1 rounded-md px-2 text-[0.78rem] font-bold text-theme-ink hover:bg-active-soft" aria-expanded={why}>
         왜? 근거 {why ? "접기" : "보기"} <ChevronDown size={14} className={cx("transition-transform", why && "rotate-180")} />
       </button>
       {why && (

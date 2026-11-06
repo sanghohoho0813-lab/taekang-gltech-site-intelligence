@@ -9,7 +9,9 @@ import { useMe } from "@/lib/data/hooks";
 import { logout, setPrefs, usePrefs, type FontScale } from "@/lib/data/store";
 import { IS_LIVE } from "@/lib/mode";
 import { ROLE_LABEL } from "@/lib/domain/labels";
-import { PageSkeleton } from "@/components/ui/primitives";
+import { PageSkeleton, cx } from "@/components/ui/primitives";
+import { FIX_KIND_LABEL } from "@/lib/data/opsCommands";
+import { easyDate } from "./words";
 import { Choice, EasyPageHead } from "./ui";
 import { PushCard } from "@/components/PushCard";
 import { MyRecords } from "./EasyHome";
@@ -35,6 +37,9 @@ export function EasyMy() {
         <p className="text-[1.02rem] text-ink-2">비용은 ‘본사 확인 중 → 반영됨’ 순서로 바뀌어요. 반려되면 이유가 보여요.</p>
         <MyRecords db={db} userId={userId} />
       </section>
+
+      {/* 출퇴근 수정 요청 결과 — 수정 요청 완료 화면이 ‘내 정보에서 결과를 볼 수 있어요’라고 안내하는 곳 (D-67 점검 반영) */}
+      <MyFixRequests db={db} userId={userId} />
 
       <section className="space-y-2.5" aria-labelledby="font-title">
         <h2 id="font-title" className="flex items-center gap-2 text-[1.3rem] font-extrabold">
@@ -101,5 +106,31 @@ export function EasyMy() {
         <p className="rounded-2xl bg-surface-2 px-4 py-3 text-[1rem] text-ink-2">DEMO에서는 로그인이 없습니다. 실제 운영에서는 여기서 비밀번호 변경·로그아웃을 합니다.</p>
       )}
     </div>
+  );
+}
+
+function MyFixRequests({ db, userId }: { db: NonNullable<ReturnType<typeof useMe>["db"]>; userId: string }) {
+  const list = (db.attendanceRequests ?? []).filter((q) => q.userId === userId).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 8);
+  if (!list.length) return null;
+  const tone = { pending: "text-warn", approved: "text-ok", rejected: "text-err" } as const;
+  const word = { pending: "본사 확인 중", approved: "승인됨", rejected: "반려됨" } as const;
+  return (
+    <section id="my-fixes" className="scroll-mt-24 space-y-3" aria-labelledby="fixes-title" data-testid="my-fixes">
+      <h2 id="fixes-title" className="text-[1.3rem] font-extrabold">
+        출퇴근 수정 요청
+      </h2>
+      <ul className="space-y-2.5">
+        {list.map((q) => (
+          <li key={q.id} className="rounded-2xl border-2 border-line bg-surface p-4" data-testid="my-fix-item" data-status={q.status}>
+            <p className="flex flex-wrap items-center gap-x-2 text-[1.05rem] font-semibold text-ink-2">
+              <b className="text-[1.12rem] text-ink">{db.sites.find((s) => s.id === q.siteId)?.shortName}</b>
+              {easyDate(q.workDate)} · {FIX_KIND_LABEL[q.kind]}
+            </p>
+            <p className={cx("mt-1 text-[1.05rem] font-bold", tone[q.status])}>{word[q.status]}</p>
+            {q.reviewNote && <p className="mt-0.5 text-[1rem] text-ink-2">본사: {q.reviewNote}</p>}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

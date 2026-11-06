@@ -90,7 +90,7 @@ export function EasyFix() {
       <div className="space-y-5 pt-4 text-center" data-testid="fix-done">
         <CircleCheck size={64} className="mx-auto text-ok" aria-hidden />
         <p className="text-[1.6rem] font-extrabold">수정 요청을 보냈어요</p>
-        <p className="text-[1.05rem] text-ink-2">본사가 확인하면 ‘내 정보’에서 결과를 볼 수 있어요.</p>
+        <p className="text-[1.05rem] text-ink-2">본사가 확인하면 알림이 오고, ‘내 정보 → 출퇴근 수정 요청’에서 결과를 볼 수 있어요.</p>
         <Link href="/field" className="press flex h-[4rem] w-full items-center justify-center rounded-2xl bg-cta text-[1.2rem] font-extrabold text-cta-text">
           처음 화면으로
         </Link>
@@ -141,7 +141,10 @@ export function EasyFix() {
             {/* 본사가 받는 범위(7일)만큼 — 월요일에 지난 금요일 건도 요청할 수 있게 (D-66) */}
             {(moreDays ? [0, 1, 2, 3, 4, 5, 6, 7] : [0, 1, 2]).map((d) => {
               const v = shiftDate(today, -d);
-              return <Choice key={v} label={d === 0 ? `오늘 · ${easyDate(v)}` : d === 1 ? `어제 · ${easyDate(v)}` : d === 2 ? `그제 · ${easyDate(v)}` : easyDate(v)} onClick={() => (setDate(v), go("kind"))} selected={date === v} testId={`fix-date-${d}`} />;
+              // 그날 이미 본사 확인을 기다리는 요청이 있으면 처음부터 알려 준다 — 다섯 번 누른 뒤에야 거절되던 문제 (D-67 점검 반영)
+              const waiting = (db.attendanceRequests ?? []).some((q) => q.userId === userId && q.siteId === siteId && q.workDate === v && q.status === "pending");
+              const label = d === 0 ? `오늘 · ${easyDate(v)}` : d === 1 ? `어제 · ${easyDate(v)}` : d === 2 ? `그제 · ${easyDate(v)}` : easyDate(v);
+              return <Choice key={v} label={label} sub={waiting ? "본사 확인 중인 요청이 있어요 — 더 고칠 것은 본사에 전화해 주세요" : undefined} onClick={() => !waiting && (setDate(v), go("kind"))} selected={date === v} testId={`fix-date-${d}`} />;
             })}
             {!moreDays && (
               <button type="button" onClick={() => setMoreDays(true)} className="press min-h-[3.4rem] w-full rounded-2xl border-2 border-dashed border-line-strong text-[1.05rem] font-bold text-ink-2" data-testid="fix-date-more">

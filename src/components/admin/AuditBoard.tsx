@@ -110,7 +110,7 @@ export function AuditBoard() {
                 {l.siteId && <span className="text-[0.78rem] font-bold text-ink-2">{site(l.siteId)}</span>}
                 <span className="min-w-0 flex-1 basis-64 text-ink">{l.summary}</span>
                 {l.link && (
-                  <Link href={l.link} className="press shrink-0 rounded-lg px-1.5 py-0.5 text-[0.78rem] font-bold text-theme-ink hover:bg-active-soft" aria-label="해당 화면 열기">
+                  <Link href={l.link} className="press inline-flex min-h-10 shrink-0 items-center rounded-lg px-2.5 text-[0.78rem] font-bold text-theme-ink hover:bg-active-soft" aria-label="해당 화면 열기">
                     <ChevronRight size={16} />
                   </Link>
                 )}

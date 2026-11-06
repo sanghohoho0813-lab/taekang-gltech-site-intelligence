@@ -48,10 +48,11 @@ export default function FinancePage() {
         <StatCard testId="fin-total-outstanding" label="미수금" value={fmtEok(sum((f) => f.outstanding))} sub={<>입금 누계 <b className="num text-ink-2">{fmtEok(sum((f) => f.received))}</b> (실제 통장에 들어온 돈). 미수금 = 확정 기성청구 − 입금.</>} icon={<Wallet size={20} />} group="growth" />
       </div>
 
-      <Card>
+      {/* 표/카드 전환은 카드 폭 기준 — 1280px 화면(150% 배율)에서 표 오른쪽 열이 잘리던 문제 (D-67 점검 반영) */}
+      <Card className="@container">
         <CardHeader title="현장별 정산 현황" sub={IS_LIVE ? "단위 억 원 · 부가세 별도" : "단위 억 원 · 부가세 별도 · DEMO"} />
         {/* 휴대폰: 현장마다 카드 (넓은 표는 미수금이 화면 밖으로 밀려 안 보였다 · D-65) */}
-        <ul className="divide-y divide-line border-t border-line @min-[760px]:hidden" data-testid="finance-cards">
+        <ul className="divide-y divide-line border-t border-line @min-[58rem]:hidden" data-testid="finance-cards">
           {db.sites.map((s) => {
             const f = fin[s.id];
             const aging = receivableAging(db, s.id);
@@ -83,7 +84,7 @@ export default function FinancePage() {
             );
           })}
         </ul>
-        <div tabIndex={0} role="region" aria-label="현장별 정산 현황 표 (가로 스크롤)" className="hidden overflow-x-auto scroll-thin @min-[760px]:block">
+        <div tabIndex={0} role="region" aria-label="현장별 정산 현황 표 (가로 스크롤)" className="hidden overflow-x-auto scroll-thin @min-[58rem]:block">
           <table className="w-full min-w-[56rem] text-[0.85rem]" data-testid="finance-table">
             <thead>
               <tr className="border-y border-line bg-surface-2 text-left text-[0.74rem] font-semibold text-ink-3">

@@ -178,7 +178,7 @@ export default function SettingsPage() {
             </Button>
           )}
         </div>
-        <p className="px-5 pb-5 text-[0.78rem] text-ink-3">데이터 시드 생성: {fmtDateTime(db.seededAt)} · 저장 버전 rev {db.rev}</p>
+        <p className="px-5 pb-5 text-[0.78rem] text-ink-3">시연 데이터 만든 시각: {fmtDateTime(db.seededAt)} · 저장 {db.rev}번째</p>
       </Card>)}
 
       {isManager && <DataSection />}

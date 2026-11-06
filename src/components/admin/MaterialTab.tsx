@@ -79,7 +79,7 @@ export function MaterialTab({ db, site }: { db: DemoDB; site: Site }) {
               </p>
             )}
             <div tabIndex={0} role="region" aria-label="자재 수량 표 (가로 스크롤)" className="overflow-x-auto scroll-thin">
-              <table className="w-full min-w-[44rem] text-[0.85rem]" data-testid="material-table">
+              <table className="stack-table w-full min-w-[44rem] text-[0.85rem]" data-testid="material-table">
                 <thead>
                   <tr className="border-y border-line bg-surface-2 text-left text-[0.74rem] font-semibold text-ink-3">
                     <th className="px-5 py-2.5">품목</th>
@@ -93,7 +93,7 @@ export function MaterialTab({ db, site }: { db: DemoDB; site: Site }) {
                 <tbody>
                   {rows.map((r) => (
                     <tr key={r.item.id} className={cx("border-b border-line align-top", r.item.archived && "opacity-60")} data-testid="material-row" data-item={r.item.id}>
-                      <td className="px-5 py-2.5">
+                      <td className="stack-full px-5 py-2.5">
                         <p className="font-bold">
                           {r.item.name} {r.item.archived && <Badge>숨김</Badge>}
                         </p>
@@ -103,11 +103,11 @@ export function MaterialTab({ db, site }: { db: DemoDB; site: Site }) {
                           </p>
                         ))}
                       </td>
-                      <td className="px-3 py-2.5 text-right num">{r.item.plannedQty ? fmtQty(r.item.plannedQty, r.item.unit) : "—"}</td>
-                      <td className="px-3 py-2.5 text-right num">{fmtQty(r.inQty, r.item.unit)}</td>
-                      <td className="px-3 py-2.5 text-right num font-semibold">{fmtQty(r.installQty, r.item.unit)}</td>
-                      <td className="px-3 py-2.5 text-right num">{fmtQty(r.onSite, r.item.unit)}</td>
-                      <td className="px-5 py-2.5">
+                      <td className="px-3 py-2.5 text-right num" data-label="설계 수량">{r.item.plannedQty ? fmtQty(r.item.plannedQty, r.item.unit) : "—"}</td>
+                      <td className="px-3 py-2.5 text-right num" data-label="반입 누계">{fmtQty(r.inQty, r.item.unit)}</td>
+                      <td className="px-3 py-2.5 text-right num font-semibold" data-label="설치 누계">{fmtQty(r.installQty, r.item.unit)}</td>
+                      <td className="px-3 py-2.5 text-right num" data-label="현장 보관">{fmtQty(r.onSite, r.item.unit)}</td>
+                      <td className="stack-full px-5 py-2.5" data-label="설치율">
                         {r.installPct === null ? (
                           <span className="text-[0.78rem] text-ink-3">설계 수량 없음</span>
                         ) : (

@@ -73,7 +73,7 @@ export default function ReportPage() {
         desc={IS_LIVE ? "모든 수치는 저장된 원가·계약·기성 데이터에서 자동 계산됩니다. 기준 = 각 현장 등록 시점." : "모든 수치는 저장된 원가·계약·기성 데이터에서 자동 계산됩니다. 기준 = 데모 초기 상태 (가상 시연 데이터 · 실제 실적 아님)."}
         right={
           <Button icon={<Printer size={17} />} onClick={() => window.print()} className="no-print">
-            인쇄 / PDF
+            인쇄·PDF
           </Button>
         }
       />
@@ -96,10 +96,10 @@ export default function ReportPage() {
         </ul>
       </Card>
 
-      <Card className="print-card">
+      <Card className="print-card @container">
         <CardHeader title="2. 현장별 변경 전후 손익" sub={`시작 = ${BASE_LABEL} · 단위 억 원 · 부가세 별도 · 승인 전 변경공사는 이익 미반영`} />
         {/* 휴대폰: 현장마다 카드 (7칸 표는 이익·미수가 화면 밖으로 밀려 안 보였다 · D-66) */}
-        <ul className="divide-y divide-line border-t border-line @min-[760px]:hidden print:hidden" data-testid="report-compare-cards">
+        <ul className="divide-y divide-line border-t border-line @min-[52rem]:hidden print:hidden" data-testid="report-compare-cards">
           {db.sites.map((s) => {
             const f = fin[s.id];
             const b = db.baseline[s.id];
@@ -130,7 +130,7 @@ export default function ReportPage() {
             );
           })}
         </ul>
-        <div tabIndex={0} role="region" aria-label="현장별 변경 전후 손익 표 (가로 스크롤)" className="hidden overflow-x-auto scroll-thin @min-[760px]:block print:block">
+        <div tabIndex={0} role="region" aria-label="현장별 변경 전후 손익 표 (가로 스크롤)" className="hidden overflow-x-auto scroll-thin @min-[52rem]:block print:block">
           <table className="w-full min-w-[50rem] text-[0.84rem]" data-testid="report-compare">
             <thead>
               <tr className="border-y border-line bg-surface-2 text-left text-[0.74rem] font-semibold text-ink-3">
@@ -243,13 +243,13 @@ export default function ReportPage() {
         </Card>
       </div>
 
-      <Card className="print-card">
+      <Card className="print-card @container">
         <CardHeader title="5. 조치 상태 · 조치 성과 기록" sub="위험 감지 → 판단 → 사람 승인 → 조치 → 결과 → 지표 전·후" right={<Link href="/evidence" className="no-print"><Button size="sm">실증 기록 전체</Button></Link>} />
         {db.actions.length === 0 ? (
           <EmptyState title="조치가 없습니다." />
         ) : (
           <>
-          <ul className="divide-y divide-line border-t border-line @min-[760px]:hidden print:hidden" data-testid="report-actions-cards">
+          <ul className="divide-y divide-line border-t border-line @min-[50rem]:hidden print:hidden" data-testid="report-actions-cards">
             {db.actions.map((a) => {
               const p = db.proofEvents.find((x) => x.proof_event_id === a.proofEventId);
               return (
@@ -276,7 +276,7 @@ export default function ReportPage() {
               );
             })}
           </ul>
-          <div tabIndex={0} role="region" aria-label="조치 상태 표 (가로 스크롤)" className="hidden overflow-x-auto scroll-thin @min-[760px]:block print:block">
+          <div tabIndex={0} role="region" aria-label="조치 상태 표 (가로 스크롤)" className="hidden overflow-x-auto scroll-thin @min-[50rem]:block print:block">
             <table className="w-full min-w-[48rem] text-[0.83rem]" data-testid="report-actions">
               <thead>
                 <tr className="border-y border-line bg-surface-2 text-left text-[0.74rem] font-semibold text-ink-3">

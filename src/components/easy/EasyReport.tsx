@@ -5,6 +5,7 @@
  * 저장 경로는 기존 현장 보고와 같다 (submitFieldReport 명령) → 본사 손익·위험 분석에 그대로 반영.
  * mode: full = 오늘 보고 / photo = 사진만 보내기 / cost = 추가 비용만 알리기
  */
+import { FIELD_COST_MAX } from "@/lib/domain/limits";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -577,7 +578,8 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
           </div>
         </EasyQuestion>
       );
-      footer = onExit ? bar({ onBack: onExit, backLabel: "닫기" }) : null;
+      // 첫 단계는 하단 메뉴로 나갈 수 있어 ‘닫기’ 바를 두지 않는다 (창 안에서만 · D-67 점검 반영)
+      footer = onExit && embedded ? bar({ onBack: onExit, backLabel: "닫기" }) : null;
       break;
 
     case "work": {
@@ -797,7 +799,8 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
       if (!editing) break;
       const won = costWon(editing);
       const labor = editing.category === "labor";
-      const bigAmount = !(labor && editing.byPeople) && won >= 10_000_000 && bigOk !== editing.key + ":" + editing.amountMan;
+      const overCap = won > FIELD_COST_MAX;
+      const bigAmount = overCap || (!(labor && editing.byPeople) && won >= 10_000_000 && bigOk !== editing.key + ":" + editing.amountMan);
       body = (
         <EasyQuestion kicker={EASY_CATEGORY[editing.category].label} title={labor && editing.byPeople ? "몇 명이 며칠 일했나요?" : "대략 얼마 들었나요?"} help={labor && editing.byPeople ? "추가로 투입된 인원만 넣으세요." : "만 원 단위로 넣어요. 아래 버튼을 눌러 더해도 돼요."} testId="easy-cost-amt">
           {labor && (
@@ -840,7 +843,8 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
                   autoComplete="off"
                   value={editing.amountMan ? editing.amountMan.toLocaleString("ko-KR") : ""}
                   onChange={(e) => {
-                    const n = Number(e.target.value.replace(/[^\d]/g, "").slice(0, 7));
+                    // 원 단위로 넣은 큰 숫자도 잘리지 않게 받아서 아래에서 ‘원 단위로 고치기’를 제안한다 (7자리에서 잘려 엉뚱한 금액이 되던 문제 · D-67)
+                    const n = Number(e.target.value.replace(/[^\d]/g, "").slice(0, 10));
                     setCost({ amountMan: Number.isFinite(n) ? n : 0 });
                   }}
                   className="num h-[4.2rem] min-w-0 flex-1 bg-transparent text-right text-[2rem] font-extrabold outline-none"
@@ -852,23 +856,46 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
               {won > 0 && <BigNumber testId="cost-readback">{easyWon(won)}</BigNumber>}
               {/* 원 단위로 넣으면(350000 → 35억) 1만 배가 된다 — 1천만 원 넘으면 한 번 더 확인 (D-66 점검 반영) */}
               {bigAmount && (
-                <div className="space-y-2.5 rounded-2xl border-2 border-warn/50 bg-warn-bg p-4" role="alert" data-testid="cost-big-ask">
-                  <p className="text-[1.12rem] font-bold">{easyWon(won)}이 맞나요? 이 칸은 ‘만 원’ 단위예요.</p>
+                <div
+                  ref={(el) => {
+                    // 확인 상자가 아래 고정 버튼·키보드 뒤에 숨지 않게 (D-67 점검 반영)
+                    if (!el) return;
+                    (document.activeElement as HTMLElement | null)?.blur?.();
+                    el.scrollIntoView({ block: "center", behavior: "smooth" });
+                  }}
+                  className="space-y-2.5 rounded-2xl border-2 border-warn/50 bg-warn-bg p-4"
+                  role="alert"
+                  data-testid="cost-big-ask"
+                >
+                  <p className="text-[1.12rem] font-bold">{overCap ? `${easyWon(won)} — 현장에서는 1건에 1억 원까지 넣을 수 있어요. 금액을 확인해 주세요.` : `${easyWon(won)}이 맞나요? 이 칸은 ‘만 원’ 단위예요.`}</p>
                   <div className="grid gap-2">
-                    {editing.amountMan >= 1_000 && (
+                    {editing.amountMan >= 10_000 && (
                       <button type="button" onClick={() => setCost({ amountMan: Math.max(1, Math.round(editing.amountMan / 10_000)) })} className="press min-h-[3.4rem] rounded-full border-2 border-line-strong bg-surface text-[1.05rem] font-bold" data-testid="cost-big-fix">
                         원 단위로 넣었어요 → {easyWon(Math.max(1, Math.round(editing.amountMan / 10_000)) * 10_000)}으로 고치기
                       </button>
                     )}
-                    <button type="button" onClick={() => setBigOk(editing.key + ":" + editing.amountMan)} className="press min-h-[3.4rem] rounded-full bg-surface text-[1.05rem] font-bold text-ink" data-testid="cost-big-ok">
-                      네, {easyWon(won)}이 맞아요
-                    </button>
+                    {!overCap && (
+                      <button type="button" onClick={() => setBigOk(editing.key + ":" + editing.amountMan)} className="press min-h-[3.4rem] rounded-full bg-surface text-[1.05rem] font-bold text-ink" data-testid="cost-big-ok">
+                        네, {easyWon(won)}이 맞아요
+                      </button>
+                    )}
                   </div>
                 </div>
               )}
               <div className="grid grid-cols-3 gap-2">
                 {[10, 50, 100, 500, 1000].map((m) => (
-                  <button key={m} type="button" onClick={() => setCost({ amountMan: editing.amountMan + m })} className="press h-[3.6rem] rounded-2xl bg-surface-3 text-[1.15rem] font-extrabold text-ink" data-testid={`amt-plus-${m}`}>
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => {
+                      // 버튼으로 더한 금액은 단위 실수가 아니므로 다시 묻지 않는다
+                      const v = editing.amountMan + m;
+                      setCost({ amountMan: v });
+                      setBigOk(editing.key + ":" + v);
+                    }}
+                    className="press h-[3.6rem] rounded-2xl bg-surface-3 text-[1.15rem] font-extrabold text-ink"
+                    data-testid={`amt-plus-${m}`}
+                  >
                     +{m.toLocaleString("ko-KR")}만
                   </button>
                 ))}

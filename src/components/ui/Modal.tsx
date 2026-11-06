@@ -45,6 +45,9 @@ export function Modal({
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
+  const dismissRef = useRef(dismissible);
+  dismissRef.current = dismissible;
+
   useEffect(() => {
     const d = ref.current;
     if (!d) return;
@@ -52,7 +55,24 @@ export function Modal({
       returnFocus.current = document.activeElement as HTMLElement | null;
       d.showModal();
       lock();
+      // 휴대폰 ‘뒤로’ = 창 닫기 (D-67 점검 반영) — 창을 열 때 같은 주소로 기록을 하나 쌓고, 뒤로가 오면 창만 닫는다.
+      // 버튼·Esc로 닫으면 쌓은 기록을 되돌린다(그 사이 다른 화면으로 이동했으면 건드리지 않음).
+      const id = `m${Math.random().toString(36).slice(2, 9)}`;
+      let popped = false;
+      window.history.pushState({ __modal: id }, "", window.location.href);
+      const onPop = () => {
+        if (popped) return;
+        popped = true;
+        if (dismissRef.current) onCloseRef.current();
+        else {
+          popped = false;
+          window.history.pushState({ __modal: id }, "", window.location.href);
+        }
+      };
+      window.addEventListener("popstate", onPop);
       return () => {
+        window.removeEventListener("popstate", onPop);
+        if (!popped && (window.history.state as { __modal?: string } | null)?.__modal === id) window.history.back();
         if (d.open) d.close();
         unlock();
         const el = returnFocus.current;

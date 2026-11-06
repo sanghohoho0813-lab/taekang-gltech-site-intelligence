@@ -103,7 +103,8 @@ export default function SiteDetailPage() {
           <div className="relative">
             <Facade kind={site.illustration} className="h-44 @min-[520px]:h-52" />
             <span className="absolute right-3 top-3">
-              <Badge tone="ok">진행 중</Badge>
+              {/* 현장 상태 그대로 (보류·준공도 ‘진행 중’으로 보이던 문제 · D-67 점검 반영) */}
+              <Badge tone={site.status === "active" ? "ok" : site.status === "hold" ? "warn" : "neutral"} data-testid="site-status">{site.status === "active" ? "진행 중" : site.status === "hold" ? "보류" : "준공"}</Badge>
             </span>
           </div>
           <div className="space-y-3 p-4">
@@ -173,7 +174,8 @@ export default function SiteDetailPage() {
         </Card>
       )}
 
-      <div className="sticky top-[calc(var(--demo-bar-h)+3.6rem)] z-20 -mx-4 border-b border-line bg-canvas/95 px-4 backdrop-blur lg:top-[calc(var(--demo-bar-h)+4rem)] @min-[760px]:-mx-7 @min-[760px]:px-7">
+      {/* 휴대폰에서는 탭 줄을 붙이지 않는다 — 고정 요소가 화면의 절반을 차지하던 문제 (D-67 점검 반영) */}
+      <div className="z-20 -mx-4 border-b border-line bg-canvas/95 px-4 backdrop-blur @min-[760px]:sticky @min-[760px]:top-[calc(var(--demo-bar-h)+3.6rem)] lg:top-[calc(var(--demo-bar-h)+4rem)] @min-[760px]:-mx-7 @min-[760px]:px-7">
         {/* 휴대폰: 9개 탭이 화면 밖으로 숨던 문제 → 두 줄로 줄바꿈 (D-66) */}
         <div className="flex flex-wrap gap-x-1 @min-[760px]:flex-nowrap @min-[760px]:overflow-x-auto no-scrollbar" role="tablist" aria-label="현장 상세 탭">
           {visibleTabs.map((t) => (
@@ -471,7 +473,7 @@ function CostTab({ db, site, f, canSeeMoney }: { db: DemoDB; site: Site; f: Site
               </tbody>
             </table>
           </div>
-          <p className="px-5 py-2.5 text-[0.72rem] text-ink-3">단위: 만 원 · 부가세 별도{IS_LIVE ? "" : " · DEMO"}</p>
+          <p className="px-5 py-2.5 text-[0.72rem] text-ink-3">표 단위: 만 원 · 부가세 별도{IS_LIVE ? "" : " · DEMO"}</p>
         </Card>
       )}
       <Card>

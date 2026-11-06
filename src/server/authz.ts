@@ -7,8 +7,8 @@
 import { hasMoney, stripMoney } from "@/lib/domain/redact";
 import { partnerProgressFeed, photoWithdrawn } from "@/lib/domain/partnerFeed";
 
-/** 현장 직원이 한 번에 넣을 수 있는 비용 1건 상한 */
-export const FIELD_COST_MAX = 100_000_000;
+import { FIELD_COST_MAX } from "@/lib/domain/limits";
+export { FIELD_COST_MAX };
 import type { ActionItem, DemoDB, GeoStamp, SiteContract } from "@/lib/domain/types";
 import { canSeeStamp, hasCoords, locationPolicy, stripGeo } from "@/lib/domain/privacy";
 import { computeSignals } from "@/lib/domain/risk";

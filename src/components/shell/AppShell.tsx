@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Lock, Menu, MoreHorizontal, Phone, X } from "lucide-react";
 import { GROUPS, NAV, bottomNavFor, canAccess, homeFor, navFor, navLabel } from "@/lib/nav";
 import { useDb, usePrefs, useRole, currentUserId, setPrefs, type FontScale } from "@/lib/data/store";
@@ -10,6 +10,7 @@ import { ROLE_LABEL } from "@/lib/domain/labels";
 import { NavIcon } from "@/components/ui/Icon";
 import { Button, cx, DemoBadge, PageSkeleton } from "@/components/ui/primitives";
 import { IS_LIVE } from "@/lib/mode";
+import { useToast } from "@/components/ui/Toast";
 import { Sidebar, GroupIcon, isActivePath } from "./Sidebar";
 import { Clock } from "./Clock";
 import { GlobalSearch, NotificationBell, UserMenu } from "./HeaderTools";
@@ -48,8 +49,16 @@ export function AppShell({ children, compactSidebar }: { children: ReactNode; co
 /** 인터넷이 끊기면 화면 맨 위에 알린다 — 끊긴 줄 모르고 계속 누르다 실패하던 문제 (D-67) */
 export function OfflineBanner() {
   const [offline, setOffline] = useState(false);
+  const toast = useToast();
   useEffect(() => {
-    const sync = () => setOffline(!navigator.onLine);
+    let was = !navigator.onLine;
+    const sync = () => {
+      const now = !navigator.onLine;
+      // 스크롤한 상태에서 끊겨도 알 수 있게, 끊기는 순간 한 번 알림도 띄운다 (D-67 점검 반영)
+      if (now && !was) toast.push({ tone: "err", title: "인터넷이 끊겼어요", desc: IS_LIVE ? "보고·출퇴근·자재 기록은 휴대폰에 보관했다가 연결되면 자동으로 보내요." : "시연판은 이 기기에 저장되어 계속 쓸 수 있어요." });
+      was = now;
+      setOffline(now);
+    };
     sync();
     window.addEventListener("online", sync);
     window.addEventListener("offline", sync);
@@ -62,7 +71,7 @@ export function OfflineBanner() {
   return (
     <div role="status" aria-live="polite" className="no-print border-b border-warn/40 bg-warn-bg px-4 py-2.5 text-center text-[0.95rem] font-bold text-ink" data-testid="offline-banner">
       인터넷이 끊겼어요 —{" "}
-      {IS_LIVE ? "보고·출퇴근·자재 기록은 휴대폰에 보관했다가 연결되면 자동으로 보내요." : "시연판은 이 기기에 저장되어 계속 쓸 수 있어요."}
+      {IS_LIVE ? "보고·출퇴근·자재 기록은 휴대폰에 보관했다가 연결되면 자동으로 보내요. 작업 인원·수정 요청은 연결된 뒤 다시 보내 주세요." : "시연판은 이 기기에 저장되어 계속 쓸 수 있어요."}
     </div>
   );
 }
@@ -213,19 +222,39 @@ export function MobileDrawer({ open, onClose }: { open: boolean; onClose: () => 
   const db = useDb();
   const items = navFor(role);
   const user = db?.users.find((u) => u.id === currentUserId());
+  const panelRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
     document.documentElement.classList.add("tk-scroll-lock");
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    // 열면 메뉴 안으로 초점, Tab은 메뉴 안에서만 돌고, 닫으면 연 버튼으로 돌아간다 (D-67 점검 반영)
+    const back = document.activeElement as HTMLElement | null;
+    const focusables = () => Array.from(panelRef.current?.querySelectorAll<HTMLElement>("a[href], button:not([disabled])") ?? []);
+    window.setTimeout(() => focusables()[0]?.focus(), 0);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") return onClose();
+      if (e.key !== "Tab") return;
+      const f = focusables();
+      if (!f.length) return;
+      const first = f[0];
+      const last = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
     document.addEventListener("keydown", onKey);
     return () => {
       document.documentElement.classList.remove("tk-scroll-lock");
       document.removeEventListener("keydown", onKey);
+      if (back && document.contains(back)) back.focus({ preventScroll: true });
     };
   }, [open, onClose]);
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-[60] lg:hidden" role="dialog" aria-modal="true" aria-label="전체 메뉴" data-testid="mobile-drawer">
+    <div ref={panelRef} className="fixed inset-0 z-[60] lg:hidden" role="dialog" aria-modal="true" aria-label="전체 메뉴" data-testid="mobile-drawer">
       <button type="button" className="absolute inset-0 bg-black/45 anim-fade-up" onClick={onClose} aria-label="메뉴 닫기" />
       <div className="absolute inset-y-0 left-0 flex w-[min(20rem,86vw)] flex-col bg-shell text-shell-text shadow-pop [animation:tk-fade-up_200ms_ease-out_both]">
         <div className="flex h-[3.6rem] items-center justify-between border-b border-shell-line px-4 pt-[env(safe-area-inset-top)]">
@@ -388,7 +417,7 @@ export function PageHeader({ eyebrow, title, desc, right, className, group = tru
       <div className="min-w-0">
         {hasLine && (
           <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.82rem] font-semibold text-ink-3" data-testid="page-eyebrow">
-            {groupLabel && <span>{groupLabel}</span>}
+            {groupLabel && <span className="print:hidden">{groupLabel}</span>}
             <DemoBadge compact />
             {eyebrow}
           </p>
