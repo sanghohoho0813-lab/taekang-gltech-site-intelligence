@@ -10,6 +10,7 @@ import { fmtQty, materialRows, MOVE_LABEL, roundQty } from "@/lib/domain/materia
 import { todayIso } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
 import { CommandError, claimKey, clone, log, nowIso, requireSite, touch, validPhoto, type Ctx } from "./commands";
+import { sentLaterAt } from "./attendanceCommands";
 
 export const MATERIAL_LIMITS = { items: 30, name: 40, unit: 10, note: 200, reason: 100, qty: 1_000_000, planned: 10_000_000 } as const;
 
@@ -31,7 +32,10 @@ export function setSiteMaterials(db0: DemoDB, input: { siteId: string; items: Ma
   const errors: Record<string, string> = {};
   if (items.length > MATERIAL_LIMITS.items) errors.items = `품목은 ${MATERIAL_LIMITS.items}개까지`;
   const seen = new Set<string>();
+  const seenIds = new Set<string>();
   const known = new Map((site0.materials ?? []).map((i) => [i.id, i]));
+  // 기록이 있는 품목은 단위를 바꿀 수 없다 — 바꾸면 지난 ‘144 EA’가 ‘144 kg’으로 보인다 (리뷰 반영 D-63)
+  const used = new Set((db0.materialMoves ?? []).filter((m) => m.siteId === site0.id).map((m) => m.itemId));
   items.forEach((it, i) => {
     const name = typeof it?.name === "string" ? it.name.trim() : "";
     const unit = typeof it?.unit === "string" ? it.unit.trim() : "";
@@ -39,12 +43,15 @@ export function setSiteMaterials(db0: DemoDB, input: { siteId: string; items: Ma
     if (!unit || unit.length > MATERIAL_LIMITS.unit) errors[`items.${i}.unit`] = `단위는 1~${MATERIAL_LIMITS.unit}자 (예: EA·장·m)`;
     if (!qtyOk(it?.plannedQty, MATERIAL_LIMITS.planned, true)) errors[`items.${i}.plannedQty`] = "설계 수량은 0 이상 숫자 (소수 둘째 자리까지)";
     if (it?.id !== undefined && !known.has(it.id)) errors[`items.${i}.id`] = "없는 품목입니다. 새로고침 후 다시 해주세요.";
+    if (it?.id !== undefined && seenIds.has(it.id)) errors[`items.${i}.id`] = "같은 품목이 두 번 들어 있습니다. 새로고침 후 다시 해주세요.";
+    if (it?.id !== undefined) seenIds.add(it.id);
+    const prev = it?.id !== undefined ? known.get(it.id) : undefined;
+    if (prev && used.has(prev.id) && unit && unit !== prev.unit) errors[`items.${i}.unit`] = `기록이 있는 품목은 단위를 바꿀 수 없습니다 (지금 ${prev.unit}) — 다른 단위면 새 품목으로 넣어 주세요`;
     const key = name.toLowerCase();
     if (name && !it?.archived && seen.has(key)) errors[`items.${i}.name`] = "같은 이름의 품목이 있습니다";
     if (name && !it?.archived) seen.add(key);
   });
   // 기록이 있는 품목은 목록에서 빼지 못한다 (숨기기만) — 지난 반입·설치 기록이 이름 없이 남지 않게
-  const used = new Set((db0.materialMoves ?? []).filter((m) => m.siteId === site0.id).map((m) => m.itemId));
   const kept = new Set(items.map((it) => it?.id).filter(Boolean));
   const dropped = [...known.values()].filter((i) => !kept.has(i.id) && used.has(i.id));
   if (dropped.length) errors.items = `기록이 있는 품목은 지울 수 없습니다 — ‘숨기기’를 써 주세요 (${dropped.map((i) => i.name).join(", ")})`;
@@ -61,7 +68,26 @@ export function setSiteMaterials(db0: DemoDB, input: { siteId: string; items: Ma
   }));
   site.materials = next;
   const added = next.filter((i) => !known.has(i.id)).length;
-  log(db, ctx, "material", `${site.shortName} 주요 자재 품목 ${next.filter((i) => !i.archived).length}개로 정리${added ? ` (새 품목 ${added})` : ""}`, site.id, `/sites/${site.id}?tab=material`);
+  // 바뀐 내용(이전 → 새 값)을 이력에 남긴다 — 설계 수량을 바꾸면 설치율이 달라지므로 (리뷰 반영 D-63)
+  const changes = next.flatMap((i) => {
+    const p = known.get(i.id);
+    if (!p) return [];
+    const c: string[] = [];
+    if (p.name !== i.name) c.push(`이름 ${p.name} → ${i.name}`);
+    if (p.unit !== i.unit) c.push(`단위 ${p.unit} → ${i.unit}`);
+    if (p.plannedQty !== i.plannedQty) c.push(`${i.name} 설계 수량 ${fmtQty(p.plannedQty, p.unit)} → ${fmtQty(i.plannedQty, i.unit)}`);
+    if (!!p.archived !== !!i.archived) c.push(`${i.name} ${i.archived ? "숨김" : "다시 씀"}`);
+    return c;
+  });
+  const removed = [...known.values()].filter((p) => !next.some((i) => i.id === p.id)).map((p) => p.name);
+  log(
+    db,
+    ctx,
+    "material",
+    `${site.shortName} 주요 자재 품목 ${next.filter((i) => !i.archived).length}개로 정리${added ? ` (새 품목 ${added})` : ""}${changes.length ? ` · ${changes.join(" · ")}` : ""}${removed.length ? ` · 뺀 품목 ${removed.join(", ")}` : ""}`.slice(0, 500),
+    site.id,
+    `/sites/${site.id}?tab=material`,
+  );
   touch(db, ctx);
   return { db, result: { count: next.length } };
 }
@@ -74,6 +100,8 @@ export interface MaterialMoveInput {
   note?: string;
   photoDataUrl?: string;
   idempotencyKey?: string;
+  /** 통신이 끊겨 휴대폰에 보관했던 기록 — 누른 시각 (휴대폰 시계 · D-63) */
+  pressedAt?: string;
 }
 
 export function recordMaterial(db0: DemoDB, input: MaterialMoveInput, ctx: Ctx) {
@@ -99,7 +127,21 @@ export function recordMaterial(db0: DemoDB, input: MaterialMoveInput, ctx: Ctx) 
     photoId = uid("ph");
     db.photos.push({ id: photoId, siteId: site.id, materialMoveId: id, dataUrl: input.photoDataUrl, caption: `자재 ${MOVE_LABEL[input.kind]} · ${item!.name} ${fmtQty(qty, item!.unit)}`, createdAt: at, createdBy: ctx.userId });
   }
-  const move: MaterialMove = { id, siteId: site.id, itemId: item!.id, kind: input.kind, qty, workDate: todayIso(new Date(at)), ...(photoId ? { photoId } : {}), ...(note ? { note } : {}), at, by: ctx.userId };
+  // 늦게 도착한 기록: 누른 시각이 2분~12시간 전이면 그 날짜로 (출퇴근과 같은 범위 · 그 밖이면 받은 날짜) — 금액·근태와 무관한 수량이라 날짜만 맞춘다
+  const pressed = sentLaterAt(input.pressedAt, at);
+  const move: MaterialMove = {
+    id,
+    siteId: site.id,
+    itemId: item!.id,
+    kind: input.kind,
+    qty,
+    workDate: todayIso(new Date(pressed ?? at)),
+    ...(photoId ? { photoId } : {}),
+    ...(note ? { note } : {}),
+    at,
+    by: ctx.userId,
+    ...(pressed ? { sentLater: { pressedAt: pressed } } : {}),
+  };
   db.materialMoves = [...(db.materialMoves ?? []), move];
   const row = materialRows(db, site.id).find((r) => r.item.id === item!.id)!;
   log(db, ctx, "material", `${site.shortName} 자재 ${MOVE_LABEL[input.kind]} — ${item!.name} ${fmtQty(qty, item!.unit)}${photoId ? " · 사진" : ""}`, site.id, `/sites/${site.id}?tab=material`);

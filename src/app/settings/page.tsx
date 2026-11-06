@@ -383,7 +383,7 @@ function ThresholdCard({ thresholds }: { thresholds: RiskThresholds }) {
       <div className="grid grid-cols-2 gap-3 px-5">
         {fields.map((f) => (
           <Field key={f.k} label={`${f.label} (${f.unit})`} htmlFor={`th-${f.k}`}>
-            <input id={`th-${f.k}`} type="number" min={0} max={365} step={0.5} className={cx(inputCls, "num")} value={t[f.k]} onChange={(e) => setT({ ...t, [f.k]: Number(e.target.value) })} />
+            <input id={`th-${f.k}`} type="number" min={f.k === "billingLagPp" ? 1 : 0} max={365} step={0.5} className={cx(inputCls, "num")} value={t[f.k]} onChange={(e) => setT({ ...t, [f.k]: Number(e.target.value) })} />
           </Field>
         ))}
       </div>

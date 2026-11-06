@@ -6,7 +6,7 @@
  */
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { Boxes, Camera, CircleCheck, HardHat, PackageCheck, Truck, Undo2, X } from "lucide-react";
+import { Boxes, Camera, CircleCheck, HardHat, PackageCheck, Truck, Undo2, WifiOff, X } from "lucide-react";
 import { run } from "@/lib/data/store";
 import { useMe } from "@/lib/data/hooks";
 import { IS_LIVE } from "@/lib/mode";
@@ -16,6 +16,7 @@ import { activeItems, fmtQty, liveMoves, materialRows, MATERIAL_FLAG_LABEL, MOVE
 import { todayIso } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
 import { cx } from "@/components/ui/primitives";
+import { outboxAdd } from "@/lib/browser/outbox";
 import { Choice, EasyBar, EasyPageHead, EasyQuestion, SectionBar, easyTextareaCls } from "./ui";
 import { downscalePhoto } from "./photo";
 import { easyDate } from "./words";
@@ -48,8 +49,10 @@ export function EasyMaterial() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [voiding, setVoiding] = useState<string | null>(null);
-  const [done, setDone] = useState<{ name: string; unit: string; qty: number; kind: MaterialMoveKind; inQty: number; installQty: number; onSite: number; flags: string[] } | null>(null);
+  const [done, setDone] = useState<{ name: string; unit: string; qty: number; kind: MaterialMoveKind; inQty?: number; installQty?: number; onSite?: number; flags?: string[]; queued?: boolean; already?: boolean } | null>(null);
   const step = stack[stack.length - 1];
+  // 내용(종류·자재·수량·사진·메모)이 바뀌면 새 기록 — 중복 방지 키도 새로 (같은 내용을 다시 누르면 같은 키 → 한 번만 들어감 · 리뷰 반영 D-63)
+  useEffect(() => setKey(uid("idem")), [kind, itemId, qty, photo, note]);
 
   useEffect(() => {
     if (!siteId && sites.length === 1) {
@@ -95,11 +98,22 @@ export function EasyMaterial() {
     if (!site || !item || !qtyOk || busy) return;
     setBusy(true);
     setErr(null);
+    const args = { siteId: site.id, itemId: item.id, kind, qty: n, ...(note.trim() ? { note: note.trim() } : {}), ...(photo ? { photoDataUrl: photo } : {}), idempotencyKey: key };
     try {
-      const r = await run("recordMaterial", { siteId: site.id, itemId: item.id, kind, qty: n, ...(note.trim() ? { note: note.trim() } : {}), ...(photo ? { photoDataUrl: photo } : {}), idempotencyKey: key });
+      const r = await run("recordMaterial", args);
       setDone({ name: item.name, unit: item.unit, qty: n, kind, inQty: r.inQty, installQty: r.installQty, onSite: r.onSite, flags: r.flags });
     } catch (e) {
-      setErr(e instanceof CommandError || e instanceof Error ? e.message : "보내지 못했어요. 다시 눌러 주세요.");
+      if (e instanceof CommandError && e.code === "NETWORK" && IS_LIVE && userId) {
+        // 지하·고층에서 신호가 없을 때: 사진까지 휴대폰에 보관 → 신호가 잡히면 자동으로 보낸다 (누른 시각으로 날짜를 정함 · D-63)
+        const saved = await outboxAdd({ id: key, userId, name: "recordMaterial", args: { ...args, pressedAt: new Date().toISOString() }, label: `${site.shortName} · 자재 ${MOVE_LABEL[kind]} ${item.name} ${fmtQty(n, item.unit)}${photo ? " · 사진" : ""}` });
+        if (saved) setDone({ name: item.name, unit: item.unit, qty: n, kind, queued: true });
+        else setErr("인터넷이 연결되지 않아 보내지 못했어요. 신호가 잡히는 곳에서 다시 눌러 주세요.");
+      } else if (e instanceof CommandError && e.code === "DUPLICATE") {
+        // 끊기기 직전에 이미 저장된 기록
+        setDone({ name: item.name, unit: item.unit, qty: n, kind, queued: false, already: true });
+      } else {
+        setErr(e instanceof CommandError || e instanceof Error ? e.message : "보내지 못했어요. 다시 눌러 주세요.");
+      }
     } finally {
       setBusy(false);
     }
@@ -129,19 +143,27 @@ export function EasyMaterial() {
   if (done)
     return (
       <div className="anim-pop space-y-5 pt-4 text-center" data-testid="material-done">
-        <CircleCheck size={64} className="mx-auto text-ok" aria-hidden />
+        {done.queued ? <WifiOff size={64} className="mx-auto text-warn" aria-hidden /> : <CircleCheck size={64} className="mx-auto text-ok" aria-hidden />}
         <p className="text-[1.6rem] font-extrabold leading-snug">
-          {done.name} {fmtQty(done.qty, done.unit)} {MOVE_LABEL[done.kind]} 남겼어요
+          {done.name} {fmtQty(done.qty, done.unit)} {MOVE_LABEL[done.kind]} {done.queued ? "휴대폰에 보관했어요" : "남겼어요"}
         </p>
-        <div className="space-y-1 rounded-2xl bg-surface-2 px-4 py-3 text-[1.1rem]" data-testid="material-done-totals">
-          <p>
-            들어온 누계 <b className="num">{fmtQty(done.inQty, done.unit)}</b> · 설치 누계 <b className="num">{fmtQty(done.installQty, done.unit)}</b>
+        {done.queued && (
+          <p className="rounded-2xl bg-warn-bg px-4 py-3 text-[1.08rem] font-semibold text-ink" data-testid="material-queued">
+            인터넷이 안 돼서 휴대폰에 그대로 보관했어요. 신호가 잡히면 자동으로 본사에 보내요. 날짜는 지금 누른 날로 들어가요.
           </p>
-          <p>
-            현장에 남은 것 <b className="num">{fmtQty(done.onSite, done.unit)}</b>
-          </p>
-        </div>
-        {done.flags.includes("install_over_in") && (
+        )}
+        {done.already && <p className="text-[1.05rem] text-ink-2">이미 본사에 도착해 있던 기록이에요.</p>}
+        {done.inQty !== undefined && (
+          <div className="space-y-1 rounded-2xl bg-surface-2 px-4 py-3 text-[1.1rem]" data-testid="material-done-totals">
+            <p>
+              들어온 누계 <b className="num">{fmtQty(done.inQty, done.unit)}</b> · 설치 누계 <b className="num">{fmtQty(done.installQty ?? 0, done.unit)}</b>
+            </p>
+            <p>
+              현장에 남은 것 <b className="num">{fmtQty(done.onSite ?? 0, done.unit)}</b>
+            </p>
+          </div>
+        )}
+        {done.flags?.includes("install_over_in") && (
           <p className="rounded-2xl bg-warn-bg px-4 py-3 text-[1.05rem] font-semibold text-warn">설치가 들어온 수량보다 많아요. 빠진 반입 기록이 있으면 ‘들어온 자재’로 남겨 주세요.</p>
         )}
         <button type="button" onClick={again} className="press h-[4rem] w-full rounded-full bg-cta text-[1.2rem] font-extrabold text-cta-text shadow-card" data-testid="material-again">

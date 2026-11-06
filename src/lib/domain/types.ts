@@ -93,6 +93,11 @@ export interface MaterialMove {
   by: string;
   /** 잘못 넣은 기록 — 지우지 않고 취소 표시 (사유·누가·언제) */
   voided?: { at: string; by: string; reason: string };
+  /** 통신이 끊겨 휴대폰에 보관했다가 늦게 도착 — 누른 시각(휴대폰 시계)으로 날짜를 정함 (D-63) */
+  sentLater?: { pressedAt: string };
+  /** 본사가 지난 자재 기록을 엑셀로 가져온 것 (D-63) */
+  imported?: boolean;
+  importBatchId?: string;
 }
 
 /** 현장 위치 + 인정 반경 */
@@ -212,7 +217,7 @@ export interface CrewCheck {
   importBatchId?: string;
 }
 
-export type ImportKind = "billing" | "change" | "crew" | "rates" | "cost";
+export type ImportKind = "billing" | "change" | "crew" | "rates" | "cost" | "material";
 
 /** 자료 가져오기 1회 — 7일 안에는 통째로 취소할 수 있도록 이전 값을 함께 남긴다 */
 export interface ImportBatch {

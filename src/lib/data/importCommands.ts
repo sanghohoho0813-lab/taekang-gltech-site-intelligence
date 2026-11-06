@@ -7,7 +7,7 @@ import { DEFAULT_SETTINGS } from "@/lib/domain/types";
 import { siteFinancials, snapshotOf } from "@/lib/domain/calc";
 import { fmtMan, todayIso } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
-import { IMPORT_SPECS, planImport, type BillingRow, type ChangeRow, type CostRow, type CrewRow, type ImportKind, type RateRow } from "@/lib/domain/importers";
+import { IMPORT_SPECS, planImport, type BillingRow, type ChangeRow, type CostRow, type CrewRow, type ImportKind, type MaterialRow, type RateRow } from "@/lib/domain/importers";
 import { CommandError, claimKey, clone, log, nowIso, touch, type Ctx } from "./commands";
 
 export interface ImportDataInput {
@@ -74,6 +74,13 @@ export function importData(db0: DemoDB, input: ImportDataInput, ctx: Ctx) {
     const map = new Map((prev.teamRates ?? []).map((t) => [t.team.toLowerCase(), t]));
     for (const r of plan.rows as RateRow[]) map.set(r.team.toLowerCase(), { team: r.team, dayRate: r.dayRate });
     db.settings = { ...prev, teamRates: [...map.values()] };
+  } else if (plan.kind === "material") {
+    // 지난 자재 기록 — 날짜는 엑셀 그대로, 시각은 그날 오전 9시 (한국 시간)
+    db.materialMoves = [...(db.materialMoves ?? [])];
+    for (const r of plan.rows as MaterialRow[]) {
+      sites.add(r.siteId);
+      db.materialMoves.push({ id: uid("mm"), siteId: r.siteId, itemId: r.itemId, kind: r.kind, qty: r.qty, workDate: r.date, note: r.note || "자료 가져오기", at: isoOf(r.date), by: ctx.userId, imported: true, importBatchId: batchId });
+    }
   } else if (plan.kind === "cost") {
     for (const r of plan.rows as CostRow[]) {
       sites.add(r.siteId);
@@ -119,7 +126,7 @@ export function importData(db0: DemoDB, input: ImportDataInput, ctx: Ctx) {
   db.importBatches = [batch, ...(db.importBatches ?? [])].slice(0, 100);
 
   const names = [...sites].map((id) => db.sites.find((s) => s.id === id)?.shortName ?? id);
-  const amountNote = plan.summary.some((s) => s.amount) && plan.kind !== "crew" ? ` · 합계 ${fmtMan(plan.summary.reduce((a, s) => a + (s.amount ?? 0), 0))}` : "";
+  const amountNote = plan.summary.some((s) => s.amount) && plan.kind !== "crew" && plan.kind !== "material" ? ` · 합계 ${fmtMan(plan.summary.reduce((a, s) => a + (s.amount ?? 0), 0))}` : "";
   log(
     db,
     ctx,
@@ -175,6 +182,10 @@ export function undoImport(db0: DemoDB, input: { batchId: string }, ctx: Ctx) {
     removed = list.length;
     const ids = new Set(list.map((c) => c.id));
     db.crewChecks = (db.crewChecks ?? []).filter((c) => !ids.has(c.id));
+  } else if (b0.kind === "material") {
+    const list = (db.materialMoves ?? []).filter(mine);
+    removed = list.filter((m) => !m.voided).length;
+    db.materialMoves = (db.materialMoves ?? []).filter((m) => !mine(m));
   } else if (b0.kind === "rates") {
     removed = b0.count;
     db.settings = { ...(db.settings ?? DEFAULT_SETTINGS), teamRates: (b0.prevTeamRates ?? []).map((t) => ({ ...t })) };

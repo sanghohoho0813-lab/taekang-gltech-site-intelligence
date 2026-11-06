@@ -583,6 +583,36 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     expect(last.photoIds).toHaveLength(1);
   });
 
+  test("통신이 끊겨도 자재 기록이 사라지지 않음 (D-63): 휴대폰에 보관 → 첫 화면 안내 → 연결되면 보내기 → 본사에 1건만", async ({ browser }) => {
+    const hq = await login(browser, CEO.email, CEO.password);
+    const moves = async () => ((await (await hq.request.get("/api/state")).json()).db.materialMoves as { siteId: string; qty: number }[]).filter((m) => m.siteId === siteId);
+    const before = (await moves()).length;
+    const page = await login(browser, FIELD.email, FIELD.password, { width: 390, height: 844 });
+    await page.goto("/field");
+    await page.getByTestId("easy-go-material").click();
+    await page.getByTestId("material-kind-install").click();
+    await page.locator('[data-testid^="material-item-"]').filter({ hasText: "커튼월 유닛" }).click();
+    await page.getByTestId("material-qty-input").fill("7");
+    await page.getByTestId("easy-next").click();
+    await page.getByTestId("easy-next").click();
+    await page.route("**/api/commands", (r) => r.abort("internetdisconnected"));
+    await page.getByTestId("material-send").click();
+    await expect(page.getByTestId("material-queued")).toBeVisible();
+    await page.goto("/field");
+    await expect(page.getByTestId("outbox-waiting")).toContainText("아직 못 보낸 기록 1건");
+    await expect(page.getByTestId("outbox-waiting")).toContainText("자재 설치 커튼월 유닛 7 EA");
+    expect((await moves()).length).toBe(before);
+    await page.unroute("**/api/commands");
+    await page.getByTestId("outbox-send").click();
+    await expect(page.getByTestId("outbox")).toHaveCount(0);
+    expect((await moves()).length).toBe(before + 1);
+    await page.reload();
+    await expect(page.getByTestId("easy-go-material")).toBeVisible();
+    expect((await moves()).length).toBe(before + 1);
+    await hq.context().close();
+    await page.context().close();
+  });
+
   test("통신 불량 출근: 휴대폰에 저장(누른 시각·첫 동의 포함) → 신호가 잡히면 보내기 → 기록은 받은 시각 · 본사에 ‘통신 불량 · 자동’ 확인 요청 → 승인하면 누른 시각으로", async ({ browser }) => {
     // 새 현장 직원 (물류센터 담당)
     const hq = await login(browser, CEO.email, CEO.password);

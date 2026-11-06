@@ -115,10 +115,14 @@ export function authorize(m: Member, name: CommandName, argsIn: unknown, db: Dem
         return args;
       case "recordMaterial":
         if (!sites.has(str(args.siteId))) throw new ForbiddenError("담당 현장의 자재만 기록할 수 있습니다.");
+        // 끝난·멈춘 현장에는 현장에서 새로 넣지 않는다 (본사는 정리용으로 넣을 수 있음 · 리뷰 반영 D-63)
+        if (db.sites.find((s) => s.id === args.siteId)?.status !== "active") throw new ForbiddenError("진행 중인 현장에만 자재를 기록할 수 있습니다.");
         return args;
       case "voidMaterialMove": {
         const mv = (db.materialMoves ?? []).find((x) => x.id === args.moveId);
         if (!mv || mv.by !== m.id || !sites.has(mv.siteId)) throw new ForbiddenError("본인이 남긴 자재 기록만 취소할 수 있습니다.");
+        // 현장에서는 오늘 남긴 것만 — 지난 기록(이미 인쇄한 공사일보·설치율 근거)은 본사가 사유를 남기고 취소 (리뷰 반영 D-63)
+        if (mv.workDate !== kstDate(now.toISOString())) throw new ForbiddenError("지난 날 기록은 현장에서 취소할 수 없습니다. 본사에 취소를 요청해 주세요.");
         return args;
       }
       case "checkIn":

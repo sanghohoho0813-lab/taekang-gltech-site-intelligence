@@ -4,6 +4,7 @@
  * - 같은 중복 방지 키로 다시 보내므로, 사실 서버에 이미 저장됐다면 ‘중복’ 응답 → 보낸 것으로 처리
  * - 출근·퇴근도 보관한다 (D-55). 서버는 받은 시각으로 기록하고, 휴대폰이 적어 보낸 ‘누른 시각’은
  *   근태 수정 요청(본사 승인)으로만 반영한다 — 휴대폰 시계를 바꿔도 출퇴근 시각이 바뀌지 않는다.
+ * - 자재 반입·설치도 보관한다 (D-63). 누른 시각(휴대폰 시계)은 날짜를 정하는 데만 쓰고, 24시간이 지나면 받은 날짜로 넣는다
  * - 작업 인원은 보관하지 않는다 (그날 사진·위치가 기준)
  */
 import { CommandError } from "@/lib/data/commands";
@@ -11,7 +12,7 @@ import { CommandError } from "@/lib/data/commands";
 export interface OutboxItem {
   id: string;
   userId: string;
-  name: "submitFieldReport" | "checkIn" | "checkOut";
+  name: "submitFieldReport" | "checkIn" | "checkOut" | "recordMaterial";
   args: Record<string, unknown>;
   /** 화면에 보일 설명 (예: A현장 · 11월 4일 보고 · 사진 2장) */
   label: string;

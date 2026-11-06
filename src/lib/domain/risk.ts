@@ -249,7 +249,10 @@ export function computeSignals(db: DemoDB, now = new Date()): RiskSignal[] {
             actionTitle: "기성 청구 준비",
             description: "공정 사진·공사일보·자재 설치 수량으로 기성 내역을 정리해 원청(발주처)에 청구합니다. 공정률 산정이 과하면 공정률을 먼저 바로잡습니다.",
           },
-          detectedAt: bills[0] ? new Date(bills[0].billedDate).toISOString() : db.seededAt,
+          // 공정률이 마지막으로 바뀐 때(그 뒤로 기성이 따라오지 않음) — 없으면 마지막 기성일 (리뷰 반영 D-63)
+          detectedAt:
+            db.activityLogs.filter((l) => l.siteId === site.id && l.type === "progress").reduce<string | undefined>((a, l) => (!a || l.at > a ? l.at : a), undefined) ??
+            (bills[0] ? new Date(bills[0].billedDate).toISOString() : db.seededAt),
           causeEntryIds: [],
           amountAtRisk: claimable,
         });

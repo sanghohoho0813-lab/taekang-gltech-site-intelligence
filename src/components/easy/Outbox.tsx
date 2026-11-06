@@ -8,6 +8,7 @@ import { IS_LIVE } from "@/lib/mode";
 import { flushOutbox, onOutboxChange, outboxFor, outboxRemove, type OutboxItem, type Runner } from "@/lib/browser/outbox";
 
 const runner: Runner = (name, args) => run(name, args as never);
+const WHAT: Record<OutboxItem["name"], string> = { submitFieldReport: "보고", checkIn: "출퇴근", checkOut: "출퇴근", recordMaterial: "자재 기록" };
 
 export function useOutbox(userId: string | undefined) {
   const [items, setItems] = useState<OutboxItem[]>([]);
@@ -62,7 +63,11 @@ export function OutboxTile({ userId }: { userId: string | undefined }) {
           <p className="flex items-center gap-2 text-[1.2rem] font-extrabold">
             <WifiOff size={24} aria-hidden /> 아직 못 보낸 {what} {waiting.length}건
           </p>
-          <p className="mt-1 text-[1.05rem] text-ink-2">{what === "보고" ? "휴대폰에 사진까지 그대로 보관하고 있어요." : "휴대폰에 그대로 보관하고 있어요. 출퇴근은 누른 시각을 본사가 확인해요."} 신호가 잡히면 자동으로 보내요.</p>
+          <p className="mt-1 text-[1.05rem] text-ink-2">
+            {what === "보고" ? "휴대폰에 사진까지 그대로 보관하고 있어요." : "휴대폰에 그대로 보관하고 있어요."}
+            {waiting.some((i) => i.name === "checkIn" || i.name === "checkOut") && " 출퇴근은 누른 시각을 본사가 확인해요."}
+            {waiting.some((i) => i.name === "recordMaterial") && " 자재 기록은 누른 날짜로 들어가요."} 신호가 잡히면 자동으로 보내요.
+          </p>
           <ul className="mt-2 space-y-1 text-[1rem] text-ink-2">
             {waiting.map((i) => (
               <li key={i.id}>· {i.label}</li>
@@ -86,9 +91,9 @@ export function OutboxTile({ userId }: { userId: string | undefined }) {
       )}
       {failed.map((i) => (
         <div key={i.id} className="rounded-2xl border-2 border-err/40 bg-err-bg p-4" data-testid="outbox-failed">
-          <p className="text-[1.12rem] font-extrabold">보내지 못한 {i.name === "submitFieldReport" ? "보고" : "출퇴근"} — {i.label}</p>
+          <p className="text-[1.12rem] font-extrabold">보내지 못한 {WHAT[i.name]} — {i.label}</p>
           <p className="mt-1 text-[1.02rem] text-ink-2">본사 서버가 받지 않았어요: {i.failed}</p>
-          <p className="text-[1.02rem] text-ink-2">{i.name === "submitFieldReport" ? "본사에 전화해 확인한 뒤 지우세요." : "출퇴근이 빠졌으면 ‘출퇴근이 잘못 찍혔나요? 수정 요청하기’로 알린 뒤 지우세요."}</p>
+          <p className="text-[1.02rem] text-ink-2">{i.name === "submitFieldReport" || i.name === "recordMaterial" ? "본사에 전화해 확인한 뒤 지우세요." : "출퇴근이 빠졌으면 ‘출퇴근이 잘못 찍혔나요? 수정 요청하기’로 알린 뒤 지우세요."}</p>
           {ask === i.id ? (
             <div className="mt-2 grid grid-cols-2 gap-2">
               <button type="button" onClick={() => setAsk(null)} className="press h-[3.4rem] rounded-2xl border-2 border-line-strong bg-surface text-[1.05rem] font-bold">

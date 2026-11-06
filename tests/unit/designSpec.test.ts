@@ -30,7 +30,7 @@ function ownArgs(db: DemoDB, name: CommandName): Record<string, unknown> {
     entryId: mineEntry.id,
     actionId: db.actions.find((a) => a.assigneeUserId === "u-field")!.id,
     workOrderId: (db.workOrders ?? []).find((w) => w.assigneeUserId === "u-field")!.id,
-    moveId: (db.materialMoves ?? []).find((x) => x.by === "u-field" && x.siteId === "site-a")!.id,
+    moveId: "mm-own-today",
     to: "in_progress",
     input: {},
   };
@@ -41,6 +41,8 @@ function seedWithOwn(): DemoDB {
   // 현장 직원 본인이 올린, 본사 확인 전 비용이 하나는 있게
   const base = db.costEntries[0];
   db.costEntries = [...db.costEntries, { ...base, id: "ce-own-pending", siteId: "site-a", createdBy: "u-field", reviewedAt: undefined, reviewedBy: undefined, status: "pending" } as DemoDB["costEntries"][number]];
+  // 현장 직원이 오늘 남긴 자재 기록도 하나 (현장은 오늘 것만 취소 · D-63)
+  db.materialMoves = [...(db.materialMoves ?? []), { id: "mm-own-today", siteId: "site-a", itemId: "mat-a-unit", kind: "install", qty: 1, workDate: "2026-11-04", at: NOW.toISOString(), by: "u-field" }];
   // 현장 직원에게 배정된 조치도 하나
   db.actions = [...db.actions, { ...db.actions[0], id: "act-own", assigneeUserId: "u-field", status: "assigned" } as DemoDB["actions"][number]];
   return db;

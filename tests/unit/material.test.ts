@@ -10,6 +10,8 @@ import { computeSignals } from "@/lib/domain/risk";
 import { siteFinancials } from "@/lib/domain/calc";
 import { dailyLog } from "@/lib/domain/dailylog";
 import { photoLedger } from "@/lib/domain/photoLedger";
+import { importTemplate, planImport } from "@/lib/domain/importers";
+import { flushWith, type OutboxItem } from "@/lib/browser/outbox";
 import { viewFor } from "@/server/authz";
 import type { Member } from "@/server/auth";
 import type { DemoDB } from "@/lib/domain/types";
@@ -172,5 +174,134 @@ describe("기성 청구 지연 신호 (BILLING_LAG)", () => {
     db = COMMANDS.updateProgress(db, { siteId: "site-a", progressPct: 90 }, hq).db;
     const field = viewFor(member("u-field", "field"), db, NOW);
     expect(computeSignals(field, NOW).some((x) => x.rule === "BILLING_LAG")).toBe(false);
+  });
+});
+
+describe("자재 반입·설치 이력 가져오기 (D-63)", () => {
+  const head = "현장,날짜,구분,품목,수량,메모";
+  it("품목 이름으로 찾아 넣고(띄어쓰기·대소문자 무시), 누계에 더해지고, 금액 요약은 없다", () => {
+    const db0 = createSeed(NOW);
+    const text = [head, "A현장,2026.09.10,입고,커튼월유닛,\"1,000\",수불부 9월", "A현장,2026-09-11,시공,삼중 로이유리,12.5,"].join("\n");
+    const plan = planImport(db0, "material", text, "2026-11-04");
+    expect(plan.errors).toEqual([]);
+    expect(plan.rows).toHaveLength(2);
+    expect(plan.summary[0]).toMatchObject({ siteId: "site-a", count: 2 });
+    expect(plan.summary[0].amount).toBeUndefined();
+    const { db, result } = COMMANDS.importData(db0, { kind: "material", text, idempotencyKey: "k1" }, hq);
+    expect(result.added).toBe(2);
+    const u = row(db, "site-a", "mat-a-unit");
+    expect(u.inQty).toBe(144 + 1000);
+    const added = db.materialMoves!.filter((m) => m.imported);
+    expect(added.map((m) => m.workDate)).toEqual(["2026-09-10", "2026-09-11"]);
+    expect(added.every((m) => m.importBatchId === result.batchId && m.by === "u-manager")).toBe(true);
+    expect(db.activityLogs[0].summary).not.toMatch(/합계/);
+    // 같은 파일을 다시 올리면 모두 중복 → 넣지 않음
+    const again = planImport(db, "material", text, "2026-11-04");
+    expect(again.rows).toHaveLength(0);
+    expect(again.duplicates).toHaveLength(2);
+    // 7일 안 취소 → 통째로 빠짐
+    const undone = COMMANDS.undoImport(db, { batchId: result.batchId }, hq).db;
+    expect(row(undone, "site-a", "mat-a-unit").inQty).toBe(144);
+    expect(undone.materialMoves!.some((m) => m.imported)).toBe(false);
+  });
+
+  it("오류는 행 번호와 함께, 한 줄이라도 있으면 아무것도 넣지 않는다", () => {
+    const db = createSeed(NOW);
+    const text = [head, "A현장,2026-09-10,반입,없는 자재,3,", "C현장,2026-09-10,반입,커튼월 유닛,3,", "A현장,2026-12-01,설치,커튼월 유닛,3,", "A현장,2026-09-10,빌림,커튼월 유닛,3,", "A현장,2026-09-10,반입,커튼월 유닛,0,", "A현장,2026-09-10,반입,커튼월 유닛,1.234,"].join("\n");
+    const plan = planImport(db, "material", text, "2026-11-04");
+    const by = (line: number) => plan.errors.filter((e) => e.line === line).map((e) => e.field);
+    expect(by(2)).toContain("품목");
+    expect(plan.errors.find((e) => e.line === 2)!.message).toMatch(/품목 정하기/);
+    expect(by(3)).toContain("품목"); // C현장에는 품목이 없음
+    expect(by(4)).toContain("날짜"); // 미래
+    expect(by(5)).toContain("구분");
+    expect(by(6)).toContain("수량");
+    expect(by(7)).toContain("수량");
+    expect(() => COMMANDS.importData(db, { kind: "material", text, idempotencyKey: "k2" }, hq)).toThrow(/오류가 있어 아무것도 넣지 않았습니다/);
+  });
+
+  it("양식의 예시 줄은 넣지 않는다", () => {
+    const db = createSeed(NOW);
+    const plan = planImport(db, "material", importTemplate("material"), "2026-11-04");
+    expect(plan.rows).toHaveLength(0);
+    expect(plan.skippedExamples).toHaveLength(2);
+  });
+});
+
+describe("통신이 끊겨 늦게 도착한 자재 기록 (D-63)", () => {
+  it("누른 시각이 2분~12시간 전이면 그 날짜로, 표시를 남긴다 · 그 밖(미래·너무 오래됨·형식 아님)은 받은 날짜", () => {
+    const db = createSeed(NOW); // 받은 시각 2026-11-04 12:00 KST
+    const base = { siteId: "site-a", itemId: "mat-a-unit", kind: "install" as const, qty: 3 };
+    const at = (pressedAt: string, key: string) => COMMANDS.recordMaterial(db, { ...base, pressedAt, idempotencyKey: key }, ctx);
+    // 어젯밤 22:00 KST에 눌렀는데 오늘 아침 08:00 KST에 도착(10시간 뒤) → 어제 날짜
+    const morning = { userId: "u-field", now: new Date("2026-11-03T23:00:00Z") };
+    const late = COMMANDS.recordMaterial(db, { ...base, pressedAt: "2026-11-03T13:00:00Z", idempotencyKey: "a1" }, morning);
+    const m1 = late.db.materialMoves!.find((m) => m.id === late.result.moveId)!;
+    expect(m1.workDate).toBe("2026-11-03");
+    expect(m1.sentLater).toEqual({ pressedAt: "2026-11-03T13:00:00.000Z" });
+    // 같은 날 지하에서 09:00 KST에 눌렀고 12:00 KST에 도착 → 날짜는 같고 늦게 도착 표시
+    const same = at("2026-11-04T00:00:00Z", "a0");
+    expect(same.db.materialMoves!.find((m) => m.id === same.result.moveId)!.sentLater).toBeTruthy();
+    // 1분 전(보통 전송) · 12.5시간 전 · 2일 전 · 미래 · 이상한 값 → 받은 날짜, 표시 없음
+    for (const [p, k] of [["2026-11-04T02:59:30Z", "a2"], ["2026-11-03T14:30:00Z", "a6"], ["2026-11-02T03:00:00Z", "a3"], ["2026-11-05T03:00:00Z", "a4"], ["어제", "a5"]] as const) {
+      const r = at(p, k);
+      const m = r.db.materialMoves!.find((x) => x.id === r.result.moveId)!;
+      expect(m.workDate, p).toBe("2026-11-04");
+      expect(m.sentLater, p).toBeUndefined();
+    }
+  });
+
+  it("휴대폰 보관함이 자재 기록을 보내고, 같은 키로 다시 보내면 중복으로 처리해 한 번만 들어간다", async () => {
+    let db = createSeed(NOW);
+    const items: OutboxItem[] = [{ id: "idem-m1", userId: "u-field", name: "recordMaterial", args: { siteId: "site-a", itemId: "mat-a-glass", kind: "in", qty: 10, idempotencyKey: "idem-m1", pressedAt: "2026-11-04T01:00:00Z" }, label: "A현장 · 자재 반입", createdAt: "2026-11-04T01:00:00Z", tries: 0 }];
+    const store = { all: async () => items.map((i) => ({ ...i })), put: async (i: OutboxItem) => void items.splice(items.findIndex((x) => x.id === i.id), 1, i), remove: async (id: string) => void items.splice(items.findIndex((x) => x.id === id), 1) };
+    const runner = async (name: string, args: Record<string, unknown>) => {
+      const r = (COMMANDS as unknown as Record<string, (d: DemoDB, a: unknown, c: typeof ctx) => { db: DemoDB }>)[name](db, args, ctx);
+      db = r.db;
+    };
+    const first = await flushWith(store, "u-field", runner);
+    expect(first).toMatchObject({ sent: 1, waiting: 0 });
+    expect(row(db, "site-a", "mat-a-glass").inQty).toBe(190);
+    // 서버에는 저장됐는데 휴대폰이 응답을 못 받은 경우 — 다시 보내면 DUPLICATE → 지움
+    items.push({ id: "idem-m1", userId: "u-field", name: "recordMaterial", args: { siteId: "site-a", itemId: "mat-a-glass", kind: "in", qty: 10, idempotencyKey: "idem-m1" }, label: "", createdAt: "2026-11-04T01:00:00Z", tries: 1 });
+    const again = await flushWith(store, "u-field", runner);
+    expect(again).toMatchObject({ sent: 1, waiting: 0, failed: 0 });
+    expect(row(db, "site-a", "mat-a-glass").inQty).toBe(190);
+  });
+});
+
+describe("독립 검토 반영 (D-63)", () => {
+  const items = (db: DemoDB) => db.sites.find((s) => s.id === "site-a")!.materials!.map((i) => ({ ...i }));
+  it("기록이 있는 품목은 단위를 바꿀 수 없다 (이름·설계 수량은 바꾸되 이전 → 새 값을 이력에)", () => {
+    const db0 = createSeed(NOW);
+    const unitChanged = items(db0).map((i, k) => (k === 0 ? { ...i, unit: "kg" } : i));
+    expect(() => COMMANDS.setSiteMaterials(db0, { siteId: "site-a", items: unitChanged }, hq)).toThrow(CommandError);
+    const renamed = items(db0).map((i, k) => (k === 0 ? { ...i, name: "커튼월 유닛 (A동)", plannedQty: 250 } : i));
+    const db = COMMANDS.setSiteMaterials(db0, { siteId: "site-a", items: renamed }, hq).db;
+    expect(db.activityLogs[0].summary).toContain("이름 커튼월 유닛 → 커튼월 유닛 (A동)");
+    expect(db.activityLogs[0].summary).toContain("설계 수량 240 EA → 250 EA");
+    // 기록이 없는 새 품목은 단위를 바꿔도 된다
+    const withNew = COMMANDS.setSiteMaterials(db0, { siteId: "site-a", items: [...items(db0), { name: "실링재", unit: "박스", plannedQty: 0 }] }, hq).db;
+    const fresh = items(withNew).map((i) => (i.name === "실링재" ? { ...i, unit: "통" } : i));
+    expect(() => COMMANDS.setSiteMaterials(withNew, { siteId: "site-a", items: fresh }, hq)).not.toThrow();
+  });
+
+  it("같은 품목 id가 두 번 들어오면 거부 (표에 두 줄·설치율 두 번 세기 방지)", () => {
+    const db = createSeed(NOW);
+    const a = items(db);
+    expect(() => COMMANDS.setSiteMaterials(db, { siteId: "site-a", items: [...a, { ...a[0], archived: true }] }, hq)).toThrow(CommandError);
+  });
+
+  it("공정 대비 기성 청구 지연 기준은 1%p 이상 (0이면 모든 현장이 ‘경고’)", () => {
+    const db = createSeed(NOW);
+    expect(() => COMMANDS.setThresholds(db, { ...db.thresholds, billingLagPp: 0 }, hq)).toThrow(/1%p 이상/);
+    expect(() => COMMANDS.setThresholds(db, { ...db.thresholds, billingLagPp: 1 }, hq)).not.toThrow();
+  });
+
+  it("기성 청구 지연이 언제 생겼는지 = 공정률이 마지막으로 바뀐 때 (오래된 기성일·시연 시작일이 아님)", () => {
+    let db = createSeed(NOW);
+    db = COMMANDS.updateProgress(db, { siteId: "site-a", progressPct: 75 }, hq).db;
+    const s = computeSignals(db, NOW).find((x) => x.rule === "BILLING_LAG")!;
+    expect(s.detectedAt).toBe(NOW.toISOString());
   });
 });

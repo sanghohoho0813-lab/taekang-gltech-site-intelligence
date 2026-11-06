@@ -96,7 +96,7 @@ export function EasyHome() {
               <ActionTile href="/field/report?mode=cost" tint="warn" icon={<Receipt size={26} />} label="추가 비용 알리기" sub="돈이 더 든 일이 생겼을 때" testId="easy-go-cost" />
             </div>
             {/* 본사가 자재 품목을 정한 현장이 있을 때만 (D-62) */}
-            {sites.some((s) => activeItems(db, s.id).length > 0) && <BigTile href="/field/material" icon={<Boxes size={30} />} label="자재 반입·설치 남기기" sub="들어온 수량 · 설치한 수량" testId="easy-go-material" />}
+            {sites.some((s) => s.status === "active" && activeItems(db, s.id).length > 0) && <BigTile href="/field/material" icon={<Boxes size={30} />} label="자재 반입·설치 남기기" sub="들어온 수량 · 설치한 수량" testId="easy-go-material" />}
             {returned.length > 0 && (
               <BigTile href="/my" tone="warn" icon={<AlertCircle size={30} />} label={`보완 요청 ${returned.length}건`} sub={returned[0].review?.note ?? "본사가 보고 보완을 요청했어요"} testId="easy-go-returned" />
             )}

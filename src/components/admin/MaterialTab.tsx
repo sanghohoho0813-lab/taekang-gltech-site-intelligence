@@ -12,7 +12,7 @@ import { CommandError } from "@/lib/data/commands";
 import { downloadCsv } from "@/lib/browser/download";
 import type { DemoDB, MaterialMoveKind, Site } from "@/lib/domain/types";
 import { activeItems, fmtQty, materialRows, MATERIAL_FLAG_LABEL, MOVE_LABEL, siteInstallPct } from "@/lib/domain/material";
-import { fmtDateTime, fmtPct } from "@/lib/domain/format";
+import { fmtDate, fmtDateTime, fmtPct, todayIso } from "@/lib/domain/format";
 import { Badge, Button, Card, CardHeader, EmptyState, Field, Notice, ProgressBar, cx, inputCls } from "@/components/ui/primitives";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
@@ -36,8 +36,12 @@ export function MaterialTab({ db, site }: { db: DemoDB; site: Site }) {
     const head = "날짜,구분,품목,수량,단위,메모,남긴 사람,상태,취소 사유";
     const lines = [...moves].reverse().map((m) => {
       const it = itemOf(m.itemId);
-      const cell = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
-      return [m.workDate, MOVE_LABEL[m.kind], cell(it?.name ?? ""), m.qty, it?.unit ?? "", cell(m.note ?? ""), cell(userLabel(db, m.by)), m.voided ? "취소" : "", cell(m.voided?.reason ?? "")].join(",");
+      // 엑셀 수식으로 읽히지 않게(=·+·-·@로 시작) 앞에 ' 를 붙이고, 쉼표·따옴표·줄바꿈은 따옴표로 감싼다 (리뷰 반영 D-63)
+      const cell = (v0: string) => {
+        const v = /^[=+\-@\t\r]/.test(v0) ? `'${v0}` : v0;
+        return /[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+      };
+      return [m.workDate, MOVE_LABEL[m.kind], cell(it?.name ?? ""), m.qty, cell(it?.unit ?? ""), cell(m.note ?? ""), cell(userLabel(db, m.by)), m.voided ? "취소" : "", cell(m.voided?.reason ?? "")].join(",");
     });
     downloadCsv(`자재_${site.shortName}.csv`, [head, ...lines].join("\n"));
   };
@@ -142,7 +146,8 @@ export function MaterialTab({ db, site }: { db: DemoDB; site: Site }) {
             {moves.slice(0, 40).map((m) => {
               const it = itemOf(m.itemId);
               const photo = m.photoId ? db.photos.find((p) => p.id === m.photoId) : undefined;
-              const canVoid = !m.voided && (isHq || m.by === userId);
+              // 현장 직원은 오늘 남긴 본인 기록만 (서버도 같은 규칙)
+              const canVoid = !m.voided && (isHq || (m.by === userId && m.workDate === todayIso()));
               return (
                 <li key={m.id} className={cx("flex flex-wrap items-center gap-3 py-2.5", m.voided && "opacity-60")} data-testid="material-move" data-voided={m.voided ? "1" : "0"}>
                   {photo && (
@@ -152,9 +157,20 @@ export function MaterialTab({ db, site }: { db: DemoDB; site: Site }) {
                   <div className="min-w-0 flex-1 basis-[14rem]">
                     <p className={cx("text-[0.88rem]", m.voided && "line-through")}>
                       <Badge tone={m.kind === "in" ? "neutral" : "ok"}>{MOVE_LABEL[m.kind]}</Badge> <b>{it?.name}</b> <span className="num font-semibold">{fmtQty(m.qty, it?.unit)}</span>
+                      {m.imported && (
+                        <Badge tone="info" className="ml-1.5">
+                          엑셀 가져옴
+                        </Badge>
+                      )}
+                      {m.sentLater && (
+                        <Badge tone="warn" className="ml-1.5">
+                          통신 불량 · 늦게 도착
+                        </Badge>
+                      )}
                     </p>
                     <p className="text-[0.75rem] text-ink-3">
-                      {fmtDateTime(m.at)} · {userLabel(db, m.by)}
+                      {m.imported ? fmtDate(m.workDate) : fmtDateTime(m.sentLater?.pressedAt ?? m.at)} · {userLabel(db, m.by)}
+                      {m.sentLater && ` · 받은 시각 ${fmtDateTime(m.at)}`}
                       {m.note && ` · ${m.note}`}
                     </p>
                     {m.voided && <p className="text-[0.75rem] font-semibold text-ink-2">취소 — {m.voided.reason} ({userLabel(db, m.voided.by)})</p>}
@@ -191,8 +207,16 @@ function SetupModal({ site, db, onClose, onSaved }: { site: Site; db: DemoDB; on
     setBusy(true);
     setErrs({});
     try {
-      const items = rows.filter((r) => r.id || r.name.trim()).map((r) => ({ ...(r.id ? { id: r.id } : {}), name: r.name, unit: r.unit, plannedQty: r.planned.trim() ? Number(r.planned.replace(/,/g, "")) : 0, ...(r.archived ? { archived: true } : {}) }));
-      await run("setSiteMaterials", { siteId: site.id, items });
+      // 비워 둔 새 줄은 보내지 않는다 — 서버 오류(items.N.…)는 화면의 원래 줄 번호로 되돌려 표시 (리뷰 반영 D-63)
+      const sent = rows.map((r, i) => ({ r, i })).filter(({ r }) => r.id || r.name.trim());
+      const items = sent.map(({ r }) => ({ ...(r.id ? { id: r.id } : {}), name: r.name, unit: r.unit, plannedQty: r.planned.trim() ? Number(r.planned.replace(/,/g, "")) : 0, ...(r.archived ? { archived: true } : {}) }));
+      try {
+        await run("setSiteMaterials", { siteId: site.id, items });
+      } catch (e) {
+        if (!(e instanceof CommandError)) throw e;
+        const mapped = Object.fromEntries(Object.entries(e.fieldErrors).map(([k, v]) => [k.replace(/^items\.(\d+)\./, (_, n) => `items.${sent[Number(n)]?.i ?? n}.`), v]));
+        throw new CommandError(e.message, e.code, mapped);
+      }
       onSaved();
     } catch (e) {
       if (e instanceof CommandError) setErrs({ _: e.message, ...e.fieldErrors });

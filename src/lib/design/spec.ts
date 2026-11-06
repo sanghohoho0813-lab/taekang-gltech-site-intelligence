@@ -76,7 +76,7 @@ export const COMMAND_SPEC: Record<CommandName, { label: string; group: CmdGroup;
   setSiteMaterials: { label: "현장 주요 자재 품목·설계 수량 정하기", group: "ops", allow: HQ },
   setCompanySettings: { label: "운영 설정 (본사 전화·기본 일당·반영 방식)", group: "ops", allow: HQ },
   setThresholds: { label: "위험 기준 (목표 이익률 등)", group: "ops", allow: HQ },
-  importData: { label: "지난 자료 엑셀 가져오기 (기성·변경공사·출력·팀 단가)", group: "ops", allow: HQ },
+  importData: { label: "지난 자료 엑셀 가져오기 (기성·변경공사·출력·팀 단가·원가·자재 수량)", group: "ops", allow: HQ },
   undoImport: { label: "가져오기 취소 (7일 안)", group: "ops", allow: HQ },
   createKiosk: { label: "현장 QR 태블릿 등록", group: "ops", allow: HQ },
   revokeKiosk: { label: "현장 QR 태블릿 해제", group: "ops", allow: HQ },
@@ -214,7 +214,7 @@ export const MODULES: { no: string; name: string; routes: string[]; note: string
   { no: "04", name: "공정·투입 원가", routes: ["/sites", "/schedule", "/labor", "/finance"], note: "현장 손익·공정 일정·투입 인건비 추정 vs 실제·기성·변경공사·자재 설치율·기성 청구 지연 표시" },
   { no: "05", name: "대표자 통합 현황판", routes: ["/dashboard", "/report", "/insights"], note: "처리 대기·현장별 손익·위험 신호(규칙 기반)·대표 보고서" },
   { no: "06", name: "고객·협력사 초기화면", routes: ["/partner"], note: "공개 현장 진행·견적 문의·주문 요청·회신 (내부 금액 비노출)" },
-  { no: "07", name: "기존 프로그램 일부 기능", routes: ["/data"], note: "엑셀 가져오기 5종·내려받기 — 합의 항목은 계약에 따라 확정" },
+  { no: "07", name: "기존 프로그램 일부 기능", routes: ["/data"], note: "엑셀 가져오기 6종(기성·입금 / 변경공사 / 출력 / 팀 단가 / 원가 / 자재 반입·설치)·내려받기 — 합의 항목은 계약에 따라 확정" },
 ];
 
 /** 보안·개인정보 설계 */

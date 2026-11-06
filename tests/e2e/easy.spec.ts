@@ -471,6 +471,26 @@ test("자재 반입·설치 (D-62): 반입 → 수량 → 사진 → 보내기 �
   await expect(page.getByTestId("material-flag")).toContainText("반입 기록이 빠졌는지 확인");
 });
 
+test("자재 이력 가져오기 (D-63): 자료 이관에서 자재 수불부 붙여넣기 → 없는 품목은 행 번호로 안내 → 고쳐서 넣기 → 현장 자재 표에 ‘엑셀 가져옴’", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/settings");
+  await page.evaluate(([pk]) => { localStorage.clear(); localStorage.setItem(pk, JSON.stringify({ theme: "onyx-gold", fontScale: "md", reduceMotion: true, role: "manager", deviceView: "pc", mobilePersona: "same", tutorialDone: true, viewRev: 2 })); }, [PREFS] as const);
+  await page.goto("/data");
+  await page.getByTestId("import-kind-material").click();
+  await page.getByTestId("import-text").fill(["현장,날짜,구분,품목,수량,메모", "A현장,2026-09-01,반입,커튼월 유닛,30,9월 수불부", "A현장,2026-09-02,설치,AL 프레임,10,"].join("\n"));
+  await expect(page.getByTestId("import-preview")).toContainText("3행");
+  await expect(page.getByTestId("import-preview")).toContainText("품목 정하기");
+  await expect(page.getByTestId("import-apply")).toHaveCount(0);
+  await page.getByTestId("import-text").fill(["현장,날짜,구분,품목,수량,메모", "A현장,2026-09-01,반입,커튼월 유닛,30,9월 수불부", "A현장,2026-09-02,설치,커튼월 유닛,10,"].join("\n"));
+  await expect(page.getByTestId("import-summary")).toContainText("A현장 — 반입 1건 · 설치 1건");
+  await expect(page.getByTestId("import-summary")).not.toContainText("원");
+  await page.getByTestId("import-apply").click();
+  await expect(page.getByTestId("import-done")).toBeVisible();
+  await page.goto("/sites/site-a?tab=material");
+  await expect(page.getByTestId("material-row").filter({ hasText: "커튼월 유닛" })).toContainText("174 EA"); // 반입 144 + 30
+  await expect(page.getByTestId("material-move").filter({ hasText: "엑셀 가져옴" })).toHaveCount(2);
+});
+
 test("기성 청구 지연 (D-62): 위험 기준에서 기준을 낮추면 공정보다 기성이 늦은 현장에 신호 — 근거·청구 가능 추정", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/settings");

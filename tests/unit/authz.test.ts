@@ -61,12 +61,18 @@ describe("권한 매트릭스 — 모든 명령 × 역할", () => {
     const db = createSeed(NOW);
     const other = "site-c"; // 정우진 담당
     for (const name of ["submitFieldReport", "updateProgress", "requestAttendanceFix", "checkIn", "checkOut", "confirmQr", "reportCrew", "recordMaterial"] as CommandName[]) expect(() => authorize(FIELD, name, { siteId: other }, db, NOW), name).toThrow(ForbiddenError);
-    // 자재 기록 취소는 본인 기록만 (D-62)
-    expect(() => authorize(FIELD, "voidMaterialMove", { moveId: "mm-seed-a1" }, db, NOW)).not.toThrow();
-    const othersMove = { ...db.materialMoves![0], id: "mm-other", by: "u-manager" };
-    const db2 = { ...db, materialMoves: [...db.materialMoves!, othersMove] };
+    // 자재 기록 취소는 본인 기록·오늘 것만 (D-62 · 지난 날 기록은 본사 · D-63)
+    const today = { ...db.materialMoves![0], id: "mm-today", workDate: "2026-11-04", by: "u-field" };
+    const othersMove = { ...today, id: "mm-other", by: "u-manager" };
+    const db2 = { ...db, materialMoves: [...db.materialMoves!, today, othersMove] };
+    expect(() => authorize(FIELD, "voidMaterialMove", { moveId: "mm-today" }, db2, NOW)).not.toThrow();
+    expect(() => authorize(FIELD, "voidMaterialMove", { moveId: "mm-seed-a1" }, db2, NOW)).toThrow(/지난 날 기록/); // 40일 전 본인 기록
     expect(() => authorize(FIELD, "voidMaterialMove", { moveId: "mm-other" }, db2, NOW)).toThrow(ForbiddenError);
     expect(() => authorize(FIELD, "voidMaterialMove", { moveId: "nope" }, db, NOW)).toThrow(ForbiddenError);
+    // 끝난 현장에는 현장에서 새 자재 기록을 넣지 못한다
+    const db3 = { ...db, sites: db.sites.map((s) => (s.id === "site-a" ? { ...s, status: "completed" as const } : s)) };
+    expect(() => authorize(FIELD, "recordMaterial", { siteId: "site-a" }, db3, NOW)).toThrow(/진행 중인 현장/);
+    expect(() => authorize(MANAGER, "recordMaterial", { siteId: "site-a" }, db3, NOW)).not.toThrow();
     const othersReport = db.reports.find((r) => r.createdBy !== "u-field")!;
     expect(() => authorize(FIELD, "voidReport", { reportId: othersReport.id }, db, NOW)).toThrow(ForbiddenError);
     expect(() => authorize(FIELD, "supplementReport", { reportId: othersReport.id }, db, NOW)).toThrow(ForbiddenError);

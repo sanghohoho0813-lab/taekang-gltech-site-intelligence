@@ -19,7 +19,7 @@ import { PageBody, PageHeader } from "@/components/shell/AppShell";
 import { Badge, Button, Card, CardHeader, DemoBadge, Notice, PageSkeleton, Segmented, cx, inputCls } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/Toast";
 
-const KINDS: ImportKind[] = ["billing", "change", "crew", "rates", "cost"];
+const KINDS: ImportKind[] = ["billing", "change", "crew", "rates", "cost", "material"];
 const IMPORT_FIX: Partial<Record<ReadyFix, ImportKind>> = { billing: "billing", change: "change", crew: "crew", rates: "rates", cost: "cost" };
 const STATUS_ICON: Record<ReadyStatus, React.ReactNode> = {
   ok: <CircleCheck size={16} className="text-ok" aria-label="준비됨" />,
@@ -179,6 +179,7 @@ function ImportCard({ kind, setKind }: { kind: ImportKind; setKind: (k: ImportKi
     crew: { href: "/labor", label: "투입·인건비에서 확인" },
     rates: { href: "/labor", label: "투입·인건비에서 확인" },
     cost: { href: "/sites", label: "현장 관리 → 원가에서 확인" },
+    material: { href: "/sites", label: "현장 관리 → 현장 상세 ‘자재’에서 확인" },
   };
   return (
     <Card data-testid="import-card">

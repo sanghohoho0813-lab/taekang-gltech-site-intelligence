@@ -738,6 +738,8 @@ export function addPayment(db0: DemoDB, input: { siteId: string; amount: number;
 export function setThresholds(db0: DemoDB, t: RiskThresholds, ctx: Ctx) {
   const vals = Object.values(t);
   if (vals.some((v) => typeof v !== "number" || !Number.isFinite(v) || v < 0 || v > 365)) throw new CommandError("기준값은 0~365 범위 숫자");
+  // 0이면 차이가 조금만 있어도 모든 현장이 ‘경고’가 된다 (리뷰 반영 D-63)
+  if (t.billingLagPp !== undefined && t.billingLagPp < 1) throw new CommandError("공정 대비 기성 청구 지연 기준은 1%p 이상");
   const db = clone(db0);
   db.thresholds = { ...t };
   log(db, ctx, "settings", "위험 판단 기준(DEMO) 변경");

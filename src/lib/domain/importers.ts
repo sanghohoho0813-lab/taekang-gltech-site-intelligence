@@ -2,12 +2,12 @@
  * 실제 자료 이관 (계약 3단계 ‘실제 자료 연결’) — 엑셀에서 저장한 CSV를 검증·미리보기·반영하는 순수 함수.
  * 브라우저(미리보기)와 서버(반영 직전 재검증)가 같은 함수를 쓴다. 서버는 브라우저가 보낸 행을 믿지 않고 원문을 다시 검사한다.
  *
- * 종류: 기성·입금 / 변경공사 / 작업 인원(출력) 이력 / 팀 단가 / 원가
+ * 종류: 기성·입금 / 변경공사 / 작업 인원(출력) 이력 / 팀 단가 / 원가 / 자재 반입·설치 이력(D-63 · 수량만)
  * - 열 이름은 한글·영문 모두 받는다 (예: 현장 = site = site_code)
  * - 현장은 현장코드·약칭·현장명 중 하나로 찾는다
  * - DB에 이미 같은 기록이 있으면 ‘중복’으로 건너뛴다 (같은 파일을 두 번 올려도 두 번 들어가지 않게)
  */
-import type { ChangeOrderStatus, CostCategory, CostReason, CrewCheck, DemoDB, ForecastImpact, ImportKind, Site } from "./types";
+import type { ChangeOrderStatus, CostCategory, CostReason, CrewCheck, DemoDB, ForecastImpact, ImportKind, MaterialMoveKind, Site } from "./types";
 import { COST_CATEGORIES } from "./labels";
 import { parseCsvRecords } from "./csv";
 import { writeXlsx } from "./xlsx";
@@ -24,9 +24,10 @@ export interface BillingRow { line: number; siteId: string; kind: "billing" | "p
 export interface ChangeRow { line: number; siteId: string; title: string; amount: number; status: ChangeOrderStatus; requestedDate: string; approvedAmount?: number; decidedDate?: string; note: string }
 export interface CrewRow { line: number; siteId: string; date: string; team: string; kind: CrewCheck["kind"]; headcount: number }
 export interface RateRow { line: number; team: string; dayRate: number; before?: number }
+export interface MaterialRow { line: number; siteId: string; date: string; kind: MaterialMoveKind; itemId: string; itemName: string; unit: string; qty: number; note: string }
 export interface CostRow { line: number; siteId: string; date: string; category: CostCategory; amount: number; impact: Exclude<ForecastImpact, "baseline">; reason: CostReason; note: string }
 
-export type ImportRow = BillingRow | ChangeRow | CrewRow | RateRow | CostRow;
+export type ImportRow = BillingRow | ChangeRow | CrewRow | RateRow | CostRow | MaterialRow;
 
 export interface ImportPlan {
   kind: ImportKind;
@@ -143,7 +144,25 @@ export const IMPORT_SPECS: Record<ImportKind, { title: string; desc: string; col
       ["A현장", "2026-10-21", "노무", "3500000", "계획 내", "계획", "유리 시공 인력 (예시)"],
     ],
   },
+  material: {
+    title: "자재 반입·설치 이력",
+    desc: "자재 수불부의 날짜·반입/설치·품목·수량 (금액 없음). 품목은 먼저 현장 상세 ‘자재’ → ‘품목 정하기’에서 넣어 두세요.",
+    columns: [
+      SITE_COL,
+      { key: "date", label: "날짜", aliases: ["날짜", "일자", "반입일", "설치일", "date"], required: true, desc: "YYYY-MM-DD (오늘 이전)", example: "2026-10-20" },
+      { key: "kind", label: "구분", aliases: ["구분", "종류", "입출", "kind", "type"], required: true, desc: "반입 또는 설치 (입고·시공도 받음)", example: "반입" },
+      { key: "item", label: "품목", aliases: ["품목", "자재", "자재명", "품명", "item"], required: true, desc: "현장에 정해 둔 품목 이름 그대로", example: "커튼월 유닛" },
+      { key: "qty", label: "수량", aliases: ["수량", "qty", "quantity"], required: true, desc: "0보다 큰 수 (소수 둘째 자리까지, 쉼표 허용)", example: "24" },
+      { key: "note", label: "메모", aliases: ["메모", "비고", "note"], required: false, desc: "200자 이내", example: "송장 대조" },
+    ],
+    sample: [
+      ["현장", "날짜", "구분", "품목", "수량", "메모"],
+      ["A현장", "2026-10-20", "반입", "커튼월 유닛 (예시)", "24", "송장 대조 (예시)"],
+      ["A현장", "2026-10-21", "설치", "커튼월 유닛 (예시)", "12", ""],
+    ],
+  },
 };
+const MATERIAL_KIND_IN: Record<string, MaterialMoveKind> = { 반입: "in", 입고: "in", 들어옴: "in", in: "in", 설치: "install", 시공: "install", 사용: "install", install: "install" };
 
 const norm = (s: string) => s.replace(/^﻿/, "").trim().toLowerCase().replace(/\s+/g, "");
 
@@ -317,6 +336,21 @@ export function planImport(db: DemoDB, kind: ImportKind, text: string, today: st
         const prev = (db.settings?.teamRates ?? []).find((t) => t.team.toLowerCase() === team.toLowerCase());
         plan.rows.push({ line, team, dayRate: rate, ...(prev ? { before: prev.dayRate } : {}) });
       }
+    } else if (kind === "material") {
+      const site = siteOf();
+      const date = dateOf("date", "날짜");
+      if (date && validDate(date) && date > today) err("날짜", "오늘 이후 날짜는 넣을 수 없습니다");
+      const mk = MATERIAL_KIND_IN[norm(get("kind"))];
+      if (!mk) err("구분", "구분은 ‘반입’ 또는 ‘설치’");
+      const itemRef = get("item");
+      const item = site ? (site.materials ?? []).find((i) => !i.archived && norm(i.name) === norm(itemRef)) : undefined;
+      if (!itemRef) err("품목", "품목을 적어주세요");
+      else if (site && !item) err("품목", `‘${itemRef}’ 품목이 ${site.shortName}에 없습니다 — 현장 상세 ‘자재’ → ‘품목 정하기’에서 먼저 넣어 주세요`);
+      const qRaw = get("qty").replace(/[,\s]/g, "");
+      const qty = /^\d+(\.\d{1,2})?$/.test(qRaw) ? Number(qRaw) : NaN;
+      if (!(qty > 0) || qty > 1_000_000) err("수량", "수량은 0보다 큰 숫자 (소수 둘째 자리까지 · 100만 이하)");
+      const note = noteOf();
+      if (plan.errors.length === before && site && date && mk && item) plan.rows.push({ line, siteId: site.id, date, kind: mk, itemId: item.id, itemName: item.name, unit: item.unit, qty, note });
     } else if (kind === "cost") {
       const site = siteOf();
       const date = dateOf("date", "날짜");
@@ -390,6 +424,11 @@ function duplicateOf(db: DemoDB, kind: ImportKind, r: ImportRow): string | null 
     const c = r as CrewRow;
     if ((db.crewChecks ?? []).some((x) => x.siteId === c.siteId && x.workDate === c.date && x.team.toLowerCase() === c.team.toLowerCase())) return `${c.date} ${c.team} — 이미 있음 (현장에서 보낸 기록 유지)`;
   }
+  if (kind === "material") {
+    const m = r as MaterialRow;
+    if ((db.materialMoves ?? []).some((x) => !x.voided && x.siteId === m.siteId && x.itemId === m.itemId && x.kind === m.kind && x.workDate === m.date && x.qty === m.qty))
+      return `${m.date} ${m.itemName} ${m.kind === "in" ? "반입" : "설치"} ${m.qty} ${m.unit} — 이미 있음`;
+  }
   if (kind === "cost") {
     const c = r as CostRow;
     if (db.costEntries.some((x) => x.siteId === c.siteId && x.date === c.date && x.category === c.category && x.amount === c.amount && x.status !== "voided" && (x.note ?? "") === (c.note || "자료 가져오기"))) return `${c.date} ${won(c.amount)} — 이미 있음`;
@@ -420,6 +459,11 @@ function summarize(db: DemoDB, kind: ImportKind, rows: ImportRow[]): ImportPlan[
     if (kind === "crew") {
       const c = list as CrewRow[];
       return { siteId, label: `${name} — ${new Set(c.map((x) => x.date)).size}일 · ${new Set(c.map((x) => x.team.toLowerCase())).size}팀`, count: c.length, amount: c.reduce((a, x) => a + x.headcount, 0) };
+    }
+    if (kind === "material") {
+      const m = list as MaterialRow[];
+      // 수량만 — 금액(amount)은 넣지 않는다
+      return { siteId, label: `${name} — 반입 ${m.filter((x) => x.kind === "in").length}건 · 설치 ${m.filter((x) => x.kind === "install").length}건 (품목 ${new Set(m.map((x) => x.itemId)).size}개)`, count: m.length };
     }
     const c = list as CostRow[];
     return { siteId, label: `${name} — 원가 ${c.length}건`, count: c.length, amount: c.reduce((a, x) => a + x.amount, 0) };
