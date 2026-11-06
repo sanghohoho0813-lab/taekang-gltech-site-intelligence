@@ -15,7 +15,7 @@ import { todayIso } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
 import { locateOnce } from "@/lib/geo/client";
 import { cx } from "@/components/ui/primitives";
-import { Choice, EasyBar, EasyPageHead, EasyQuestion, SectionBar, Stepper, VoiceHint, easyTextareaCls } from "./ui";
+import { Choice, EasyBar, EasyPageHead, EasyQuestion, SectionBar, Stepper, VoiceHint, easyTextareaCls, AtBottom } from "./ui";
 import { downscalePhoto } from "./photo";
 import { easyDate } from "./words";
 import { hasConsent } from "@/lib/domain/privacy";
@@ -38,6 +38,10 @@ export function EasyCrew() {
   const [err, setErr] = useState<string | null>(null);
   const [done, setDone] = useState<{ team: string; count: number; updated: boolean } | null>(null);
   const step = stack[stack.length - 1];
+  // 단계가 바뀌면 화면 맨 위(머리 띠)부터 보이게 (D-65)
+  useEffect(() => {
+    window.scrollTo({ top: 0 });
+  }, [step]);
   const consented = !!db && hasConsent(db, userId);
 
   useEffect(() => {
@@ -66,8 +70,10 @@ export function EasyCrew() {
     setStack((x) => [...x, s]);
   };
   const back = () => (stack.length > 1 ? setStack((x) => x.slice(0, -1)) : undefined);
-  const sections = ["팀", "인원", "사진", "확인"];
-  const secIdx = step === "site" || step === "team" ? 0 : step === "count" ? 1 : step === "photo" ? 2 : 3;
+  // 현장을 먼저 물으면 첫 칸은 ‘현장’ (D-65)
+  const withSite = stack[0] === "site";
+  const sections = [...(withSite ? ["현장"] : []), "팀", "인원", "사진", "확인"];
+  const secIdx = (withSite ? 1 : 0) + (step === "site" ? -1 : step === "team" ? 0 : step === "count" ? 1 : step === "photo" ? 2 : 3);
 
   const send = async () => {
     if (!site || busy) return;
@@ -258,19 +264,19 @@ export function EasyCrew() {
   }
 
   return (
-    <div className="space-y-6" data-testid="easy-crew">
-      <EasyPageHead>
+    <div className="flex min-h-[calc(100dvh-12.5rem)] flex-col gap-6 lg:min-h-0" data-testid="easy-crew">
+      <EasyPageHead title="작업 인원 알리기">
         <SectionBar onBand sections={sections} current={secIdx} />
         {site && step !== "site" && (
           <p className="flex items-center gap-1.5 text-[1rem] font-semibold text-white">
-            <HardHat size={18} aria-hidden /> {site.shortName} · 작업 인원 알리기
+            <HardHat size={18} aria-hidden /> {site.shortName}
           </p>
         )}
       </EasyPageHead>
       <div key={step} className="anim-fade-up">
         {body}
       </div>
-      {footer}
+      <AtBottom bar={footer} />
     </div>
   );
 }

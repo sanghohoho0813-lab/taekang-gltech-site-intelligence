@@ -145,7 +145,7 @@ function CeoDashboard() {
                     </span>
                     <span className="mt-2 grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-2 text-[0.75rem] text-ink-3">
                       <span>
-                        EAC
+                        예상 총원가
                         <b className="block text-[0.95rem] text-ink num">
                           <CountUp value={f.eac} format={(v) => fmtEok(v, { unit: false })} />
                         </b>
@@ -319,7 +319,7 @@ function CeoDashboard() {
                             {CATEGORY_LABEL[e.category]} {fmtMan(e.amount)}
                           </span>
                         ))}
-                        {sum > 0 && <span className="rounded-md bg-err-bg px-1.5 py-0.5 text-[0.7rem] font-bold text-err">EAC +{fmtMan(sum)}</span>}
+                        {sum > 0 && <span className="rounded-md bg-err-bg px-1.5 py-0.5 text-[0.7rem] font-bold text-err">예상 총원가 +{fmtMan(sum)}</span>}
                       </span>
                     )}
                   </Link>

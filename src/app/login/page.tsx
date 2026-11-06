@@ -86,7 +86,8 @@ function LoginForm() {
         {error && (
           <p className="rounded-2xl bg-err-bg px-4 py-3 text-[1.08rem] font-bold leading-relaxed text-err" role="alert" data-testid="login-error">
             {error}
-            <span className="mt-1 block text-[0.98rem] font-semibold text-ink-2">‘보기’를 눌러 비밀번호를 확인해 보세요.</span>
+            {/* 비밀번호가 틀렸을 때만 — 인터넷·서버 오류에는 엉뚱한 안내가 되지 않게 (D-65) */}
+            {/비밀번호가 맞지/.test(error) && <span className="mt-1 block text-[0.98rem] font-semibold text-ink-2">‘보기’를 눌러 비밀번호를 확인해 보세요.</span>}
           </p>
         )}
         <button type="submit" disabled={busy} aria-busy={busy || undefined} className="press inline-flex h-[4rem] w-full items-center justify-center gap-2 rounded-full bg-cta text-[1.3rem] font-extrabold text-cta-text shadow-card disabled:opacity-60" data-testid="login-submit">

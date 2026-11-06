@@ -52,7 +52,40 @@ export default function FinancePage() {
 
       <Card>
         <CardHeader title="현장별 정산 현황" sub={IS_LIVE ? "단위 억 원 · 부가세 별도" : "단위 억 원 · 부가세 별도 · DEMO"} />
-        <div tabIndex={0} role="region" aria-label="현장별 정산 현황 표 (가로 스크롤)" className="overflow-x-auto scroll-thin">
+        {/* 휴대폰: 현장마다 카드 (넓은 표는 미수금이 화면 밖으로 밀려 안 보였다 · D-65) */}
+        <ul className="divide-y divide-line border-t border-line @min-[760px]:hidden" data-testid="finance-cards">
+          {db.sites.map((s) => {
+            const f = fin[s.id];
+            const aging = receivableAging(db, s.id);
+            const longOver = aging.filter((a) => a.ageDays > db.thresholds.receivableDays).reduce((x, a) => x + a.unpaid, 0);
+            const kv = (k: string, v: string, strong?: boolean) => (
+              <div className="flex items-baseline justify-between gap-2">
+                <dt className="text-[0.78rem] text-ink-3">{k}</dt>
+                <dd className={cx("num text-[0.88rem]", strong && "font-bold")}>{v}</dd>
+              </div>
+            );
+            return (
+              <li key={s.id} className="space-y-2 px-5 py-3.5" data-testid="finance-card">
+                <div className="flex items-baseline justify-between gap-2">
+                  <p className="font-bold">{s.shortName}</p>
+                  <p className={cx("num text-[0.95rem] font-extrabold", longOver ? "text-err" : "text-ink")}>
+                    미수금 {fmtEok(f.outstanding, { unit: false })}
+                  </p>
+                </div>
+                {longOver > 0 && <p className="text-[0.76rem] font-semibold text-err">{db.thresholds.receivableDays}일 넘은 미수 {fmtMan(longOver)}</p>}
+                <dl className="grid grid-cols-2 gap-x-4 gap-y-1">
+                  {kv("계약금액", fmtEok(f.adjustedContract, { unit: false }), true)}
+                  {kv("예상이익", fmtEok(f.expectedProfit, { unit: false }))}
+                  {kv("확정 기성", fmtEok(f.billed, { unit: false }))}
+                  {kv("기성률", fmtPct((f.billed / f.adjustedContract) * 100))}
+                  {kv("입금", fmtEok(f.received, { unit: false }))}
+                  {kv("승인 변경", f.approvedChange ? fmtEok(f.approvedChange, { unit: false }) : "—")}
+                </dl>
+              </li>
+            );
+          })}
+        </ul>
+        <div tabIndex={0} role="region" aria-label="현장별 정산 현황 표 (가로 스크롤)" className="hidden overflow-x-auto scroll-thin @min-[760px]:block">
           <table className="w-full min-w-[56rem] text-[0.85rem]" data-testid="finance-table">
             <thead>
               <tr className="border-y border-line bg-surface-2 text-left text-[0.74rem] font-semibold text-ink-3">

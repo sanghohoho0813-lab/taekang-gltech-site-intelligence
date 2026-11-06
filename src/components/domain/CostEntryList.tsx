@@ -53,8 +53,8 @@ export function CostEntryList({ db, entries, showSite = false, emptyText = "입�
               </div>
               <div className="flex items-center gap-2">
                 {e.status === "active" && canSeeMoney && (
-                  <span className={cx("rounded-md px-1.5 py-0.5 text-[0.72rem] font-bold num", impact > 0 ? "bg-err-bg text-err" : "bg-surface-3 text-ink-3")} title="이 원가가 총예상원가(EAC)에 준 영향">
-                    EAC {impact > 0 ? `+${fmtMan(impact)}` : "변동 없음"}
+                  <span className={cx("rounded-md px-1.5 py-0.5 text-[0.72rem] font-bold num", impact > 0 ? "bg-err-bg text-err" : "bg-surface-3 text-ink-3")} title="이 원가가 예상 총원가에 준 영향">
+                    총원가 {impact > 0 ? `+${fmtMan(impact)}` : "변동 없음"}
                   </span>
                 )}
                 {canModify(e) && (
@@ -98,7 +98,7 @@ export function CostEntryList({ db, entries, showSite = false, emptyText = "입�
                 if (!voiding) return;
                 try {
                   const r = await run("voidCostEntry", { entryId: voiding.id, reason: reason.trim() || "오입력 되돌리기" });
-                  toast.push({ tone: "info", title: "원가를 무효 처리했습니다", desc: canSeeMoney ? `EAC ${fmtEok(r.before.eac)} → ${fmtEok(r.after.eac)} · 이익률 ${fmtPct(r.before.marginPct)} → ${fmtPct(r.after.marginPct)}` : "손익 계산에서 제외됩니다." });
+                  toast.push({ tone: "info", title: "원가를 무효 처리했습니다", desc: canSeeMoney ? `예상 총원가 ${fmtEok(r.before.eac)} → ${fmtEok(r.after.eac)} · 이익률 ${fmtPct(r.before.marginPct)} → ${fmtPct(r.after.marginPct)}` : "손익 계산에서 제외됩니다." });
                   setVoiding(null);
                 } catch (err) {
                   toast.push({ tone: "err", title: err instanceof Error ? err.message : "실패" });
@@ -149,7 +149,7 @@ function EditCostModal({ entry, onClose, canSeeMoney }: { entry: CostEntry; onCl
             onClick={async () => {
               try {
                 const r = await run("editCostEntry", { entryId: entry.id, patch: { amount, category, note, forecastImpact: impact as "additional" | "within_forecast" } });
-                toast.push({ tone: "ok", title: "원가를 수정했습니다", desc: canSeeMoney ? `EAC ${fmtEok(r.before.eac)} → ${fmtEok(r.after.eac)}` : undefined });
+                toast.push({ tone: "ok", title: "원가를 수정했습니다", desc: canSeeMoney ? `예상 총원가 ${fmtEok(r.before.eac)} → ${fmtEok(r.after.eac)}` : undefined });
                 onClose();
               } catch (e) {
                 setError(e instanceof CommandError ? e.message : "수정 실패");

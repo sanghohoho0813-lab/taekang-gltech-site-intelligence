@@ -7,6 +7,7 @@
  * - 앱 오류 기록 (운영 모드): 화면·서버, 횟수, 화면 주소, 내용(개인정보 지움), 브라우저
  * - CSV: 검수 자료로 첨부
  */
+import { MetricTile } from "@/components/domain/Widgets";
 import { useEffect, useState } from "react";
 import { Download, RefreshCw } from "lucide-react";
 import { useMe, userLabel } from "@/lib/data/hooks";
@@ -224,11 +225,5 @@ function FeedbackRow({ f, name, reviewer }: { f: Feedback; name: string; reviewe
 }
 
 function Stat({ label, value, sub, tone, testId }: { label: string; value: string; sub?: string; tone?: "ok" | "warn" | "err"; testId?: string }) {
-  return (
-    <div className={cx("rounded-xl border px-3.5 py-2.5", tone === "err" ? "border-err/30 bg-err-bg" : tone === "warn" ? "border-warn/30 bg-warn-bg" : "border-line bg-surface-2")} data-testid={testId}>
-      <p className="text-[0.76rem] font-semibold text-ink-2">{label}</p>
-      <p className="num text-[1.15rem] font-extrabold">{value}</p>
-      {sub && <p className="text-[0.74rem] text-ink-3">{sub}</p>}
-    </div>
-  );
+  return <MetricTile label={label} value={value} sub={sub} tone={tone === "ok" ? undefined : tone} testId={testId} compact />;
 }

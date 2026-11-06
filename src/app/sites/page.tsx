@@ -57,7 +57,7 @@ export default function SitesPage() {
                       <dd className="text-[0.88rem] font-bold num">{fmtEok(f.adjustedContract)}</dd>
                     </div>
                     <div>
-                      <dt className="text-[0.7rem] text-ink-3">EAC</dt>
+                      <dt className="text-[0.7rem] text-ink-3">예상 총원가</dt>
                       <dd className="text-[0.88rem] font-bold num">{fmtEok(f.eac)}</dd>
                     </div>
                     <div>

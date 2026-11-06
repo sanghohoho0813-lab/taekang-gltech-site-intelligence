@@ -1,6 +1,7 @@
 "use client";
 
 /** 대표·관리자 — 사용 현황 (계약 4단계 ‘실사용 검증’): 현장 직원 정착도 + 본사 응답 시간 */
+import { MetricTile } from "@/components/domain/Widgets";
 import { useState } from "react";
 import { Download } from "lucide-react";
 import { useMe } from "@/lib/data/hooks";
@@ -170,11 +171,5 @@ function Kv({ k, v }: { k: string; v: string }) {
 }
 
 function Tile({ label, value, sub, tone, testId }: { label: string; value: string; sub?: string; tone?: "err"; testId?: string }) {
-  return (
-    <div className={cx("rounded-2xl border px-4 py-3", tone === "err" ? "border-err/30 bg-err-bg" : "border-line bg-surface")} data-testid={testId}>
-      <p className="text-[0.78rem] font-semibold text-ink-2">{label}</p>
-      <p className="num text-[1.35rem] font-extrabold">{value}</p>
-      {sub && <p className="text-[0.74rem] text-ink-3">{sub}</p>}
-    </div>
-  );
+  return <MetricTile label={label} value={value} sub={sub} tone={tone} testId={testId} />;
 }

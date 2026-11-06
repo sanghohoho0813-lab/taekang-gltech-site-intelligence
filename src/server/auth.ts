@@ -160,7 +160,7 @@ export type LoginResult = { ok: true; token: string; expires: Date; member: Memb
 
 export async function login(emailIn: unknown, password: unknown): Promise<LoginResult> {
   const email = normalizeEmail(emailIn);
-  const generic = "이메일 또는 비밀번호가 맞지 않습니다.";
+  const generic = "아이디(이메일) 또는 비밀번호가 맞지 않습니다.";
   if (!email || typeof password !== "string" || !password) return { ok: false, error: generic };
   const db = await getDb();
   return db.transaction(async (tx) => {

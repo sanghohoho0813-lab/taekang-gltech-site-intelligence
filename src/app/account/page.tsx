@@ -93,7 +93,14 @@ function AccountForm() {
         ) : (
           <span />
         )}
-        <button type="button" onClick={() => void logout()} className="press inline-flex h-12 items-center gap-1.5 rounded-xl px-2 font-bold text-ink-2 hover:text-err">
+        <button
+          type="button"
+          onClick={() => {
+            // 한 번에 로그아웃되면 다시 아이디·비밀번호를 넣어야 해서 한 번 더 묻는다 (D-65)
+            if (window.confirm("로그아웃할까요? 다음에 다시 아이디·비밀번호를 넣어야 해요.")) void logout();
+          }}
+          className="press inline-flex h-12 items-center gap-1.5 rounded-xl px-2 font-bold text-ink-2 hover:text-err"
+        >
           <LogOut size={18} /> 로그아웃
         </button>
       </div>

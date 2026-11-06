@@ -1,6 +1,7 @@
 "use client";
 
 /** 본사 — 투입·인건비 (계약 모듈 04 · 검수 S4): 출력 인원 × 팀 단가 = 추정 vs 실제 노무비, 누락·불일치 표시 */
+import { MetricTile } from "@/components/domain/Widgets";
 import { useState } from "react";
 import { AlertTriangle, Download, Save } from "lucide-react";
 import { useMe } from "@/lib/data/hooks";
@@ -192,11 +193,5 @@ function SiteLabor({ r }: { r: LaborSite }) {
 }
 
 function Stat({ label, value, sub, tone, testId }: { label: string; value: string; sub?: string; tone?: "ok" | "err"; testId?: string }) {
-  return (
-    <div className={cx("rounded-xl border px-3.5 py-2.5", tone === "err" ? "border-err/30 bg-err-bg" : "border-line bg-surface-2")} data-testid={testId}>
-      <p className="text-[0.76rem] font-semibold text-ink-2">{label}</p>
-      <p className="num text-[1.2rem] font-extrabold">{value}</p>
-      {sub && <p className="text-[0.74rem] text-ink-3">{sub}</p>}
-    </div>
-  );
+  return <MetricTile label={label} value={value} sub={sub} tone={tone === "ok" ? undefined : tone} testId={testId} compact />;
 }

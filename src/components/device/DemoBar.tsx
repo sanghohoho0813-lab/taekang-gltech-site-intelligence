@@ -158,7 +158,7 @@ export function ResetDialog({ open, onClose, onConfirm }: { open: boolean; onClo
       }
     >
       <p className="text-[0.92rem] text-ink-2">
-        시연 중 입력한 현장보고·원가·조치·Proof Event·발주처 요청이 모두 지워지고 가상 시드 데이터(현장 3개)로 돌아갑니다.
+        시연 중 입력한 현장보고·원가·조치·조치 성과 기록·발주처 요청이 모두 지워지고 가상 시드 데이터(현장 3개)로 돌아갑니다.
       </p>
       <p className="mt-2 text-[0.82rem] text-ink-3">테마·글자 크기·화면 모드 설정은 유지됩니다. 이 작업은 이 브라우저의 DEMO 저장소에만 적용됩니다.</p>
     </Modal>

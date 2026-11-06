@@ -120,17 +120,20 @@ function FinishModal({ wo, onClose }: { wo: WorkOrder; onClose: () => void }) {
     <Modal
       open
       onClose={onClose}
-      title="다 했어요 · 본사에 알리기"
+      title="다 했어요 · 본사로 보내기"
       size="md"
       testId="wo-finish"
       footer={
+        <div className="w-full space-y-2">
+        {!ok && <p className="text-center text-[0.98rem] font-semibold text-warn" data-testid="wo-finish-hint">한 일·수량·사진 중 하나는 넣어 주세요</p>}
         <div className="grid w-full grid-cols-[1fr_1.8fr] gap-2.5">
-          <button type="button" onClick={onClose} className="press h-[3.8rem] rounded-2xl border-2 border-line-strong bg-surface text-[1.1rem] font-bold">
+          <button type="button" onClick={onClose} className="press h-[3.8rem] rounded-full border-2 border-line-strong bg-surface text-[1.1rem] font-bold">
             닫기
           </button>
-          <button type="button" onClick={save} disabled={!ok || busy} className="press h-[3.8rem] rounded-2xl bg-cta text-[1.15rem] font-extrabold text-cta-text disabled:opacity-40" data-testid="wo-finish-send">
-            본사에 알리기
+          <button type="button" onClick={save} disabled={!ok || busy} className="press h-[3.8rem] rounded-full bg-cta text-[1.15rem] font-extrabold text-cta-text disabled:bg-surface-3 disabled:text-ink-2" data-testid="wo-finish-send">
+            본사로 보내기
           </button>
+        </div>
         </div>
       }
     >

@@ -63,11 +63,10 @@ export function TodayReports({ db }: { db: DemoDB }) {
                 {ok ? <CircleCheck size={20} className="shrink-0 text-ok" aria-hidden /> : <Clock3 size={20} className="shrink-0 text-warn" aria-hidden />}
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[0.92rem] font-bold">{s.shortName}</span>
-                  <span className="block truncate text-[0.78rem] text-ink-3">
-                    현장 담당 {userLabel(db, s.fieldUserId)} ·{" "}
-                    <span className={cx("font-semibold", att.length === 0 ? "text-warn" : attIssue ? "text-err" : "text-ok")} data-testid="today-att">
-                      {att.length === 0 ? "출근 기록 없음" : attIssue ? `출근 ${att.length}명 · 위치 확인 필요` : `출근 ${att.length}명 · 현장 안`}
-                    </span>
+                  <span className="block truncate text-[0.78rem] text-ink-3">현장 담당 {userLabel(db, s.fieldUserId)}</span>
+                  {/* 출근 상태는 따로 한 줄 — 휴대폰에서 이름 뒤로 잘려 안 보이던 문제 (D-65) */}
+                  <span className={cx("block text-[0.78rem] font-semibold", att.length === 0 ? "text-warn" : attIssue ? "text-err" : "text-ok")} data-testid="today-att">
+                    {att.length === 0 ? "출근 기록 없음" : attIssue ? `출근 ${att.length}명 · 위치 확인 필요` : `출근 ${att.length}명 · 현장 안`}
                   </span>
                 </span>
                 <span className={cx("shrink-0 text-right text-[0.8rem] font-semibold", ok ? "text-ok" : "text-warn")}>

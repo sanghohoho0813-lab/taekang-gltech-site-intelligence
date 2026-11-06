@@ -27,6 +27,15 @@ export function EasyMy() {
     <div className="mx-auto w-full max-w-xl space-y-6 px-4 pb-8 pt-5" data-testid="easy-my">
       <EasyPageHead title="내 정보" sub={`${user?.name ?? ""} · ${user?.title || ROLE_LABEL[role]}`} />
 
+      {/* 가장 자주 찾는 ‘내가 보낸 보고’를 맨 위로 (홈 ‘모두 보기’·‘보완 요청’이 바로 여기로 · D-65) */}
+      <section id="my-reports" className="scroll-mt-24 space-y-3" aria-labelledby="records-title">
+        <h2 id="records-title" className="text-[1.3rem] font-extrabold">
+          내가 보낸 보고
+        </h2>
+        <p className="text-[1.02rem] text-ink-2">비용은 ‘본사 확인 중 → 반영됨’ 순서로 바뀌어요. 반려되면 이유가 보여요.</p>
+        <MyRecords db={db} userId={userId} />
+      </section>
+
       <section className="space-y-2.5" aria-labelledby="font-title">
         <h2 id="font-title" className="flex items-center gap-2 text-[1.3rem] font-extrabold">
           <Type size={22} aria-hidden /> 글자 크기
@@ -63,14 +72,6 @@ export function EasyMy() {
       {(role === "field" || (db.attendance ?? []).some((r) => r.userId === userId)) && <MyLocationCard />}
 
       <MyFeedback />
-
-      <section className="space-y-3" aria-labelledby="records-title">
-        <h2 id="records-title" className="text-[1.3rem] font-extrabold">
-          내가 보낸 보고
-        </h2>
-        <p className="text-[1.02rem] text-ink-2">비용은 ‘본사 확인 중 → 반영됨’ 순서로 바뀌어요. 반려되면 이유가 보여요.</p>
-        <MyRecords db={db} userId={userId} />
-      </section>
 
       {IS_LIVE ? (
         <section className="space-y-2.5">

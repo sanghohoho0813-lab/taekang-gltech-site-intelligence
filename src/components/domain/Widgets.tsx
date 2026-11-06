@@ -26,8 +26,8 @@ export function HealthPill({ health }: { health: Health }) {
 
 export function MethodChip({ className }: { className?: string }) {
   return (
-    <span className={cx("inline-flex items-center gap-1 rounded-md border border-line bg-surface-2 px-1.5 py-0.5 text-[0.68rem] font-bold text-ink-2", className)}>
-      규칙 기반 진단 · RULE v1
+    <span className={cx("inline-flex items-center gap-1 rounded-full border border-line bg-surface-2 px-2 py-0.5 text-[0.7rem] font-bold text-ink-2", className)}>
+      규칙 기반 진단 (AI 아님)
     </span>
   );
 }
@@ -50,7 +50,7 @@ export function AiReadyButton({ context = "risk" }: { context?: "risk" | "report
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="press inline-flex items-center gap-1.5 rounded-lg border border-dashed border-line-strong bg-surface px-2.5 py-1 text-[0.75rem] font-bold text-ink-2 hover:border-active hover:text-theme-ink"
+        className="press inline-flex items-center gap-1.5 rounded-full border border-dashed border-line-strong bg-surface px-2.5 py-1 text-[0.75rem] font-bold text-ink-2 hover:border-active hover:text-theme-ink"
         data-testid="ai-ready"
       >
         <Sparkles size={14} aria-hidden /> AI 요약 · 연결 예정
@@ -170,5 +170,27 @@ export function ProgressRing({ value, size = 52, label, tone = "theme" }: { valu
         {Math.round(v)}%
       </span>
     </span>
+  );
+}
+
+/**
+ * 숫자 칸 하나 (D-65) — 화면마다 따로 만들던 Stat·Tile을 하나로. 숫자는 크게, 설명은 작게.
+ * 값이 비어 있으면(—) 큰 ‘—’ 대신 작은 ‘아직 없음’ (고장 난 숫자처럼 보이지 않게).
+ */
+export function MetricTile({ label, value, sub, tone, testId, compact }: { label: ReactNode; value: ReactNode; sub?: ReactNode; tone?: "ok" | "warn" | "err"; testId?: string; compact?: boolean }) {
+  const empty = value === "—" || value === "" || value === null || value === undefined;
+  return (
+    <div
+      className={cx(
+        "min-w-0 rounded-[1.4rem] border shadow-card",
+        compact ? "px-4 py-3" : "p-4",
+        tone === "err" ? "border-err/30 bg-err-bg" : tone === "warn" ? "border-warn/30 bg-warn-bg" : "border-line bg-surface",
+      )}
+      data-testid={testId}
+    >
+      <p className="text-[0.8rem] font-semibold leading-snug text-ink-3">{label}</p>
+      {empty ? <p className="mt-1 text-[0.95rem] font-bold text-ink-3">아직 없음</p> : <p className={cx("num mt-0.5 font-extrabold leading-tight tracking-[-0.01em] text-ink", compact ? "text-[1.3rem]" : "text-[1.55rem]")}>{value}</p>}
+      {sub && <div className="mt-1 text-[0.76rem] leading-snug text-ink-3">{sub}</div>}
+    </div>
   );
 }

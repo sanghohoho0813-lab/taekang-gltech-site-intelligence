@@ -18,7 +18,7 @@ import { uid } from "@/lib/domain/ids";
 import { cx } from "@/components/ui/primitives";
 import { outboxAdd } from "@/lib/browser/outbox";
 import { useOutbox } from "./Outbox";
-import { Choice, EasyBar, EasyPageHead, EasyQuestion, SectionBar, easyTextareaCls } from "./ui";
+import { Choice, EasyBar, EasyPageHead, EasyQuestion, SectionBar, easyTextareaCls, AtBottom } from "./ui";
 import { downscalePhoto } from "./photo";
 import { easyDate } from "./words";
 
@@ -52,6 +52,10 @@ export function EasyMaterial() {
   const [voiding, setVoiding] = useState<string | null>(null);
   const [done, setDone] = useState<{ name: string; unit: string; qty: number; kind: MaterialMoveKind; inQty?: number; installQty?: number; onSite?: number; flags?: string[]; queued?: boolean; already?: boolean } | null>(null);
   const step = stack[stack.length - 1];
+  // 단계가 바뀌면 화면 맨 위(머리 띠)부터 보이게 (D-65)
+  useEffect(() => {
+    window.scrollTo({ top: 0 });
+  }, [step]);
   // 휴대폰에 보관 중(아직 못 보낸) 자재 기록 — ‘오늘 내가 남긴 기록’에 ‘보내는 중’으로 함께 보여 준다 (D-64)
   const queued = useOutbox(userId);
   // 내용(종류·자재·수량·사진·메모)이 바뀌면 새 기록 — 중복 방지 키도 새로 (같은 내용을 다시 누르면 같은 키 → 한 번만 들어감 · 리뷰 반영 D-63)
@@ -95,8 +99,10 @@ export function EasyMaterial() {
     setStack((x) => [...x, s]);
   };
   const back = () => (stack.length > 1 ? setStack((x) => x.slice(0, -1)) : undefined);
-  const sections = ["종류", "자재", "수량", "사진", "확인"];
-  const secIdx = step === "site" || step === "kind" ? 0 : step === "item" ? 1 : step === "qty" ? 2 : step === "photo" ? 3 : 4;
+  // 현장을 먼저 물으면 첫 칸은 ‘현장’ (D-65)
+  const withSite = stack[0] === "site";
+  const sections = [...(withSite ? ["현장"] : []), "종류", "자재", "수량", "사진", "확인"];
+  const secIdx = (withSite ? 1 : 0) + (step === "site" ? -1 : step === "kind" ? 0 : step === "item" ? 1 : step === "qty" ? 2 : step === "photo" ? 3 : 4);
 
   const send = async () => {
     if (!site || !item || !qtyOk || busy) return;
@@ -149,7 +155,7 @@ export function EasyMaterial() {
       <div className="anim-pop space-y-5 pt-4 text-center" data-testid="material-done">
         {done.queued ? <WifiOff size={64} className="mx-auto text-warn" aria-hidden /> : <CircleCheck size={64} className="mx-auto text-ok" aria-hidden />}
         <p className="text-[1.6rem] font-extrabold leading-snug">
-          {done.name} {fmtQty(done.qty, done.unit)} {MOVE_LABEL[done.kind]} {done.queued ? "휴대폰에 보관했어요" : "남겼어요"}
+          {done.name} {fmtQty(done.qty, done.unit)} {MOVE_LABEL[done.kind]} {done.queued ? "휴대폰에 보관했어요" : "보냈어요"}
         </p>
         {done.queued && (
           <p className="rounded-2xl bg-warn-bg px-4 py-3 text-[1.08rem] font-semibold text-ink" data-testid="material-queued">
@@ -197,7 +203,7 @@ export function EasyMaterial() {
       body = (
         <EasyQuestion title="무엇을 남길까요?" testId="material-kind">
           <div className="space-y-2.5">
-            <Choice icon={KIND_Q.in.icon} label="자재가 들어왔어요" sub="반입 · 송장 수량 대조" selected={picked && kind === "in"} onClick={() => (setKind("in"), setPicked(true), go("item"))} testId="material-kind-in" />
+            <Choice icon={KIND_Q.in.icon} label="자재가 들어왔어요" sub="들어온 수량 · 송장과 맞춰 보기" selected={picked && kind === "in"} onClick={() => (setKind("in"), setPicked(true), go("item"))} testId="material-kind-in" />
             <Choice icon={KIND_Q.install.icon} label="자재를 설치했어요" sub="오늘 시공한 수량" selected={picked && kind === "install"} onClick={() => (setKind("install"), setPicked(true), go("item"))} testId="material-kind-install" />
           </div>
           {(mineToday.length > 0 || waitingHere.length > 0) && (
@@ -380,7 +386,7 @@ export function EasyMaterial() {
   }
 
   return (
-    <div className="space-y-6" data-testid="easy-material">
+    <div className="flex min-h-[calc(100dvh-12.5rem)] flex-col gap-6 lg:min-h-0" data-testid="easy-material">
       <EasyPageHead title="자재 반입·설치">
         <SectionBar onBand sections={sections} current={secIdx} />
         {site && step !== "site" && (
@@ -392,7 +398,7 @@ export function EasyMaterial() {
       <div key={step} className="anim-fade-up">
         {body}
       </div>
-      {footer}
+      <AtBottom bar={footer} />
     </div>
   );
 }

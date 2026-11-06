@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { Lock, Menu, MoreHorizontal, Phone, X } from "lucide-react";
-import { GROUPS, bottomNavFor, canAccess, homeFor, navFor, navLabel } from "@/lib/nav";
+import { GROUPS, NAV, bottomNavFor, canAccess, homeFor, navFor, navLabel } from "@/lib/nav";
 import { useDb, usePrefs, useRole, currentUserId, setPrefs, type FontScale } from "@/lib/data/store";
 import { ROLE_LABEL } from "@/lib/domain/labels";
 import { NavIcon } from "@/components/ui/Icon";
@@ -309,6 +309,26 @@ function AccessGate({ children }: { children: ReactNode }) {
   if (IS_LIVE && !db) return <PageSkeleton />;
   if (canAccess(role, pathname)) return <>{children}</>;
   const home = homeFor(role);
+  // 역할 때문이 아니라 ‘실제 운영(LIVE)에서만 / 시연(DEMO)에서만’ 쓰는 화면이면 그렇게 알린다 (D-65)
+  const item = NAV.find((n) => pathname === n.href || pathname.startsWith(n.href + "/"));
+  const modeOnly = item?.only && (item.only === "live") !== IS_LIVE;
+  if (modeOnly)
+    return (
+      <div className="mx-auto max-w-xl px-5 py-16 text-center" data-testid="mode-only">
+        <div className="mx-auto mb-4 grid size-14 place-items-center rounded-full bg-surface-3 text-ink-2">
+          <Lock size={26} />
+        </div>
+        <h1 className="text-[1.3rem] font-bold">{item.only === "live" ? "실제 운영에서만 쓰는 화면입니다" : "시연(DEMO)에서만 쓰는 화면입니다"}</h1>
+        <p className="mt-2 text-[0.9rem] text-ink-3">
+          {item.only === "live"
+            ? `‘${item.label}’은(는) 로그인한 회사 데이터로만 동작합니다. 시연에서는 비슷한 내용을 ‘설정’ 화면에서 볼 수 있습니다.`
+            : `‘${item.label}’은(는) 시연용 화면이라 실제 운영에서는 보이지 않습니다.`}
+        </p>
+        <Button variant="cta" size="lg" className="mt-6" onClick={() => router.push(IS_LIVE ? home : "/settings")}>
+          {IS_LIVE ? `${ROLE_LABEL[role]} 화면으로 이동` : "설정으로 이동"}
+        </Button>
+      </div>
+    );
   return (
     <div className="mx-auto max-w-xl px-5 py-16 text-center" data-testid="access-denied">
       <div className="mx-auto mb-4 grid size-14 place-items-center rounded-2xl bg-surface-3 text-ink-2">

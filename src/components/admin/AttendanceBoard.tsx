@@ -66,6 +66,9 @@ export function AttendanceBoard() {
   if (!db) return <PageSkeleton />;
   const qrMode = db.settings?.attendanceMode === "qr";
   const setAttMode = async (m: "gps" | "qr") => {
+    // 회사 전체 출근 방식이 바뀌는 설정 — 날짜 고르기와 헷갈려 한 번에 바뀌지 않게 묻는다 (D-65)
+    if ((m === "qr") === qrMode) return;
+    if (!window.confirm(m === "qr" ? "회사 전체 출근 방식을 ‘현장 QR + GPS’로 바꿀까요? 모든 현장 직원이 현장 태블릿 QR을 찍어야 출근이 인정됩니다." : "회사 전체 출근 방식을 ‘GPS만’으로 바꿀까요?")) return;
     try {
       await run("setCompanySettings", { attendanceMode: m });
       toast.push({ tone: "ok", title: m === "qr" ? "출근 방식: 현장 QR + GPS" : "출근 방식: GPS만" });
@@ -128,8 +131,9 @@ export function AttendanceBoard() {
         desc="현장 직원이 출근·퇴근 버튼을 누른 시각(서버 시각)과 그때의 위치입니다. 의심 표시는 ‘확인할 대상’이지 부정 확정이 아닙니다."
         right={
           <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[0.78rem] font-semibold text-ink-3">출근 방식 (회사 설정)</span>
             <Segmented
-              label="출근 방식"
+              label="출근 방식 (회사 설정)"
               value={qrMode ? "qr" : "gps"}
               onChange={(v) => void setAttMode(v as "gps" | "qr")}
               options={[

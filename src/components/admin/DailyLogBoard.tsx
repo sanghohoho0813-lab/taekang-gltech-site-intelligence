@@ -81,6 +81,26 @@ export function DailyLogBoard() {
           </Button>
         </span>
       </div>
+      {mode === "day" &&
+        (() => {
+          // 오늘 아직 기록이 없으면 가장 최근에 기록이 있는 날로 바로 가는 버튼 (빈 일보만 보이던 문제 · D-65)
+          const d0 = dailyLog(db, site, date);
+          if (d0.reports.length || d0.crew.length || d0.staff.length || d0.materialQty.length) return null;
+          const dates = [
+            ...db.reports.filter((r) => r.siteId === site.id && r.status !== "voided").map((r) => r.reportDate),
+            ...(db.crewChecks ?? []).filter((c) => c.siteId === site.id).map((c) => c.workDate),
+            ...(db.attendance ?? []).filter((a) => a.siteId === site.id).map((a) => a.workDate),
+          ].filter((x) => x < date);
+          const last = dates.sort().at(-1);
+          return last ? (
+            <Notice tone="info" className="no-print">
+              이 날은 아직 기록이 없습니다.{" "}
+              <button type="button" className="font-bold text-theme-ink underline underline-offset-2" onClick={() => setDate(last)} data-testid="daily-last">
+                가장 최근 기록 {fmtDate(last)} 보기
+              </button>
+            </Notice>
+          ) : null;
+        })()}
       {mode === "day" ? <DayDoc d={dailyLog(db, site, date)} /> : <WeekDoc w={weeklyLog(db, site, weekStart(date))} today={today} />}
     </PageBody>
   );

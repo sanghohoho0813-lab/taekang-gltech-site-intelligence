@@ -41,7 +41,7 @@ import { locateOnce } from "@/lib/geo/client";
 import { todayIso } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
 import { cx } from "@/components/ui/primitives";
-import { BigNumber, Chip, Choice, EasyBar, EasyPageHead, EasyQuestion, SectionBar, Stepper, VoiceHint, easyTextareaCls } from "./ui";
+import { BigNumber, Chip, Choice, EasyBar, EasyPageHead, EasyQuestion, SectionBar, Stepper, VoiceHint, easyTextareaCls, AtBottom } from "./ui";
 import { DEFAULT_WORK, EASY_CATEGORY, EASY_CATEGORY_ORDER, EASY_REASON, EASY_REASON_ORDER, ISSUE_CHIPS, NO_WORK, easyDate, easyWon } from "./words";
 import { downscalePhoto } from "./photo";
 import { hasConsent } from "@/lib/domain/privacy";
@@ -141,6 +141,7 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
   const [photos, setPhotos] = useState<string[]>([]);
   const [memo, setMemo] = useState("");
   const [stack, setStack] = useState<StepId[]>(() => [firstStep(mode, !initialSite)]);
+  const [discardAsk, setDiscardAsk] = useState(false);
   const [returnToConfirm, setReturnToConfirm] = useState(false);
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [idemKey, setIdemKey] = useState(() => uid("idem"));
@@ -212,6 +213,7 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
 
   // 단계가 바뀌면 맨 위로
   useEffect(() => {
+    // 머리글(고정) 아래로 — scroll-mt가 머리글 높이만큼 띄운다 (D-65: 단계 표시가 머리글 뒤로 숨던 문제)
     topRef.current?.scrollIntoView({ block: "start" });
   }, [rawStep, done]);
 
@@ -298,6 +300,7 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
         reason: costLines.length ? d.reason || "other" : undefined,
         reasonNote: unknownImpact ? "예산 포함 여부: 현장에서 모름 — 본사 확인 필요" : "",
         source: "FIELD" as const,
+        ...(mode === "photo" || mode === "cost" ? { kind: mode } : {}),
         ...(d.workOrderId && linkedOrder ? { workOrderId: d.workOrderId } : {}),
         geo: geo ?? { noLocation: consented ? "timeout" : "skipped" },
         ...(d.progress !== null && d.progress !== site.progressPct ? { progressPct: d.progress } : {}),
@@ -396,13 +399,13 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
   // ───────── 보낸 뒤 ─────────
   if (done) {
     return (
-      <div ref={topRef} className="anim-pop space-y-5 pb-4" data-testid="report-done">
+      <div ref={topRef} className="anim-pop scroll-mt-24 space-y-5 pb-4" data-testid="report-done">
         <div className="flex flex-col items-center gap-3 pt-4 text-center">
           <span className={cx("grid size-24 place-items-center rounded-full", undone ? "bg-surface-3 text-ink-2" : done.queued ? "bg-warn-bg text-warn" : "bg-ok-bg text-ok")}>
             {undone ? <Undo2 size={46} /> : done.queued ? <WifiOff size={48} /> : <CircleCheck size={52} />}
           </span>
           <p className="text-[1.7rem] font-extrabold leading-tight" data-testid={done.queued ? "report-queued" : undefined}>
-            {undone ? "보낸 보고를 취소했어요" : done.queued ? "휴대폰에 보관했어요" : done.already ? "이미 보낸 보고예요" : "본사로 보냈습니다"}
+            {undone ? "보낸 보고를 취소했어요" : done.queued ? "휴대폰에 보관했어요" : done.already ? "이미 보낸 보고예요" : "본사로 보냈어요"}
           </p>
           {done.queued && <p className="text-[1.12rem] leading-relaxed text-ink-2">인터넷이 약해서 아직 본사에 못 갔어요. 사진까지 그대로 보관했고, 신호가 잡히면 자동으로 보내요. 앱을 닫아도 괜찮아요.</p>}
           <p className="text-[1.1rem] text-ink-2">
@@ -412,45 +415,46 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
         {!undone && !done.queued && done.costSum > 0 && (
           <div className="rounded-2xl border-2 border-line bg-surface-2 p-4 text-[1.1rem] leading-relaxed" data-testid="report-impact" data-pending={done.pendingReview ? "1" : undefined}>
             추가 비용 <b className="num">{easyWon(done.costSum)}</b>
-            {done.pendingReview ? " — 본사 공무가 확인한 뒤 회사 손익에 반영돼요." : " — 회사 손익에 바로 반영됐어요."}
+            {done.pendingReview ? " — 본사가 확인한 뒤 반영돼요." : " — 본사에 바로 전달됐어요."}
           </div>
         )}
         {!undone && !done.queued && (
           <p className="text-center text-[1.05rem] text-ink-2">
-            잘못 보냈다면 아래 <b>‘보낸 것 취소하기’</b>를 누르세요.
+            잘못 보냈다면 맨 아래 <b>‘보낸 것 취소하기’</b>를 누르세요.
           </p>
         )}
         {error && <p className="rounded-2xl bg-err-bg px-4 py-3 text-[1.05rem] font-semibold text-err">{error}</p>}
+        {/* 순서: 처음 화면으로(주 버튼) → 하나 더 → 맨 아래 작은 ‘취소’ (취소가 맨 위에 있어 잘못 누르던 문제 · D-65) */}
         <div className="space-y-2.5">
+          {embedded && onExit ? (
+            <button type="button" onClick={onExit} className="press flex h-[4rem] w-full items-center justify-center rounded-full bg-cta text-[1.2rem] font-extrabold text-cta-text shadow-card">
+              닫기
+            </button>
+          ) : (
+            <Link href="/field" className="press flex h-[4rem] w-full items-center justify-center rounded-full bg-cta text-[1.2rem] font-extrabold text-cta-text shadow-card" data-testid="report-home">
+              처음 화면으로
+            </Link>
+          )}
+          <button type="button" onClick={restart} className="press flex h-[3.8rem] w-full items-center justify-center rounded-full border-2 border-line-strong bg-surface text-[1.12rem] font-bold" data-testid="report-again">
+            보고 하나 더 하기
+          </button>
           {!undone && done.reportId && !undoAsk && (
-            <button type="button" onClick={() => setUndoAsk(true)} className="press flex h-[3.8rem] w-full items-center justify-center gap-2 rounded-2xl border-2 border-line-strong bg-surface text-[1.12rem] font-bold" data-testid="report-undo-ask">
-              <Undo2 size={22} aria-hidden /> 보낸 것 취소하기
+            <button type="button" onClick={() => setUndoAsk(true)} className="press mx-auto flex min-h-[3.2rem] items-center justify-center gap-2 rounded-full px-5 text-[1.05rem] font-bold text-ink-2 underline underline-offset-4" data-testid="report-undo-ask">
+              <Undo2 size={20} aria-hidden /> 보낸 것 취소하기
             </button>
           )}
           {undoAsk && (
             <div className="rounded-2xl border-2 border-err/40 bg-err-bg p-4" role="alertdialog" aria-label="보고 취소 확인">
               <p className="text-[1.15rem] font-bold text-ink">정말 취소할까요? 본사 화면에서도 빠집니다.</p>
               <div className="mt-3 grid grid-cols-2 gap-2.5">
-                <button type="button" onClick={() => setUndoAsk(false)} className="press h-[3.6rem] rounded-2xl border-2 border-line-strong bg-surface text-[1.1rem] font-bold">
+                <button type="button" onClick={() => setUndoAsk(false)} className="press h-[3.6rem] rounded-full border-2 border-line-strong bg-surface text-[1.1rem] font-bold">
                   아니요
                 </button>
-                <button type="button" onClick={undo} className="press h-[3.6rem] rounded-2xl bg-err text-[1.1rem] font-bold text-white" data-testid="report-undo">
+                <button type="button" onClick={undo} className="press h-[3.6rem] rounded-full bg-err text-[1.1rem] font-bold text-white" data-testid="report-undo">
                   네, 취소할게요
                 </button>
               </div>
             </div>
-          )}
-          <button type="button" onClick={restart} className="press flex h-[4rem] w-full items-center justify-center rounded-2xl bg-cta text-[1.2rem] font-extrabold text-cta-text" data-testid="report-again">
-            보고 하나 더 하기
-          </button>
-          {embedded && onExit ? (
-            <button type="button" onClick={onExit} className="press flex h-[3.8rem] w-full items-center justify-center rounded-2xl border-2 border-line-strong bg-surface text-[1.12rem] font-bold">
-              닫기
-            </button>
-          ) : (
-            <Link href="/field" className="press flex h-[3.8rem] w-full items-center justify-center rounded-2xl border-2 border-line-strong bg-surface text-[1.12rem] font-bold" data-testid="report-home">
-              처음 화면으로
-            </Link>
           )}
         </div>
       </div>
@@ -469,7 +473,7 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
   // ───────── 쓰던 보고 이어서 ─────────
   if (resume) {
     return (
-      <div ref={topRef} className="space-y-5 pb-4">
+      <div ref={topRef} className="scroll-mt-24 space-y-5 pb-4">
         {demoFill}
         <EasyQuestion title="쓰다 만 보고가 있어요" help="이어서 쓸까요? (사진은 다시 찍어야 해요)" testId="easy-resume">
           <div className="space-y-2.5">
@@ -483,15 +487,31 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
               }}
               testId="resume-yes"
             />
-            <Choice
-              icon={<Trash2 size={24} />}
-              label="지우고 새로 쓰기"
-              onClick={() => {
-                clearDraft();
-                setResume(null);
-              }}
-              testId="resume-no"
-            />
+            {!discardAsk ? (
+              <Choice icon={<Trash2 size={24} />} label="지우고 새로 쓰기" onClick={() => setDiscardAsk(true)} testId="resume-no" />
+            ) : (
+              // 쓰던 내용이 한 번에 지워지지 않게 한 번 더 묻는다 (D-65)
+              <div className="rounded-2xl border-2 border-err/40 bg-err-bg p-4" role="alertdialog" aria-label="쓰던 보고 지우기 확인">
+                <p className="text-[1.12rem] font-bold">쓰던 내용을 지울까요? 되돌릴 수 없어요.</p>
+                <div className="mt-3 grid grid-cols-2 gap-2.5">
+                  <button type="button" onClick={() => setDiscardAsk(false)} className="press h-[3.6rem] rounded-full border-2 border-line-strong bg-surface text-[1.1rem] font-bold">
+                    아니요
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      clearDraft();
+                      setResume(null);
+                      setDiscardAsk(false);
+                    }}
+                    className="press h-[3.6rem] rounded-full bg-err text-[1.1rem] font-bold text-white"
+                    data-testid="resume-no-yes"
+                  >
+                    네, 지울게요
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </EasyQuestion>
       </div>
@@ -500,7 +520,7 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
 
   const header = (
     <div className="space-y-3">
-      <EasyPageHead>
+      <EasyPageHead title={mode === "photo" ? "사진 보내기" : mode === "cost" ? "추가 비용 알리기" : "오늘 보고하기"}>
         <SectionBar onBand sections={sections} current={Math.max(0, sections.indexOf(SECTION_OF[step]))} />
         {site && step !== "site" && (
           <p className="flex items-center gap-1.5 text-[1rem] font-semibold text-white">
@@ -508,7 +528,8 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
           </p>
         )}
       </EasyPageHead>
-      {demoFill}
+      {/* 시연 값 채우기는 첫 화면에만 — 단계마다 보이면 큰 글씨에서 화면이 좁아진다 (D-65) */}
+      {stack.length === 1 && demoFill}
     </div>
   );
 
@@ -608,7 +629,7 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
 
     case "photo":
       body = (
-        <EasyQuestion title={mode === "photo" ? "보낼 사진을 찍어 주세요" : "작업 사진을 찍어 주세요"} help="3장까지 보낼 수 있어요. 없으면 ‘사진 없이 다음’을 누르세요." testId="easy-photo">
+        <EasyQuestion title={mode === "photo" ? "보낼 사진을 찍어 주세요" : "작업 사진을 찍어 주세요"} help={mode === "photo" ? "3장까지 보낼 수 있어요. 한 장 이상 찍어 주세요." : "3장까지 보낼 수 있어요. 없으면 ‘사진 없이 다음’을 누르세요."} testId="easy-photo">
           <div className="grid grid-cols-2 gap-2.5">
             <label className={cx("press flex min-h-[6.5rem] cursor-pointer flex-col items-center justify-center gap-1.5 rounded-2xl bg-cta text-[1.15rem] font-extrabold text-cta-text", photos.length >= 3 && "pointer-events-none opacity-40")}>
               <Camera size={34} aria-hidden />
@@ -680,7 +701,10 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
           )}
         </EasyQuestion>
       );
-      footer = bar({ onBack: back, onNext: d.issueYes ? () => proceed(nextAfter("issue")) : undefined, nextDisabled: d.issueYes === true && d.issueChips.length === 0 && !d.issueText.trim() });
+      {
+        const empty = d.issueYes === true && d.issueChips.length === 0 && !d.issueText.trim();
+        footer = bar({ onBack: back, onNext: d.issueYes ? () => proceed(nextAfter("issue")) : undefined, nextDisabled: empty, hint: empty ? "어떤 문제였는지 하나 이상 눌러 주세요" : undefined });
+      }
       break;
 
     case "cost":
@@ -1039,7 +1063,7 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
   }
 
   return (
-    <div ref={topRef} className="space-y-6" data-testid="easy-report" data-step={step}>
+    <div ref={topRef} className={cx("scroll-mt-24", embedded ? "space-y-6" : "flex min-h-[calc(100dvh-12.5rem)] flex-col gap-6 lg:min-h-0")} data-testid="easy-report" data-step={step}>
       {header}
       <div key={step + (editingKey ?? "")} className="anim-fade-up">
         {body}
@@ -1049,7 +1073,7 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
           <Clock3 size={18} aria-hidden /> 보내는 중이에요…
         </p>
       )}
-      {footer}
+      {embedded ? footer : <AtBottom bar={footer} />}
     </div>
   );
 }

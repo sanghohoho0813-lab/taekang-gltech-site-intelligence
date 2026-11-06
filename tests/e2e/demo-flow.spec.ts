@@ -82,7 +82,7 @@ test("P0: 모바일 원가 입력 → PC 손익 재계산 → 위험 → 조치 
   await expect(page.getByTestId("complete-modal")).toHaveCount(0);
   const doneCard = page.getByTestId("action-board").getByTestId("action-card").filter({ hasText: "추가공사 청구가능성 검토" });
   await expect(doneCard).toHaveAttribute("data-status", "done");
-  await expect(doneCard).toContainText("Proof Event 결과 확인");
+  await expect(doneCard).toContainText("조치 성과 기록 결과 확인");
   // 청구 검토 신호는 해소, 이익률은 승인 전이므로 그대로 11%
   await expect(board.locator('[data-rule="UNBILLED_CHANGE"]')).toHaveCount(0);
 

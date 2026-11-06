@@ -69,7 +69,7 @@ export default function ReportPage() {
             <DemoBadge /> 생성 시각 <Clock />
           </span>
         }
-        title="대표자 보고서 · 현장 수익 현황"
+        title="대표 보고서 · 현장 수익 현황"
         desc={IS_LIVE ? "모든 수치는 저장된 원가·계약·기성 데이터에서 자동 계산됩니다. 기준 = 각 현장 등록 시점." : "모든 수치는 저장된 원가·계약·기성 데이터에서 자동 계산됩니다. 기준 = 데모 초기 상태 (가상 시연 데이터 · 실제 실적 아님)."}
         right={
           <Button icon={<Printer size={17} />} onClick={() => window.print()} className="no-print">
@@ -84,7 +84,7 @@ export default function ReportPage() {
           <Tile label="예상이익 합계" before={fmtEok(base.profit)} after={fmtEok(total.expectedProfit)} delta={<Delta value={total.expectedProfit - base.profit} format={(v) => fmtMan(v)} />} />
           <Tile label="평균 예상이익률" before={fmtPct(base.margin)} after={fmtPct(total.marginPct)} delta={<span className={cx("font-bold num", total.marginPct < base.margin - 0.05 ? "text-err" : "text-ink-3")}>{fmtPp(total.marginPct - base.margin)}</span>} />
           <Tile label="위험 신호" after={`${signals.length}건`} delta={<span className="text-ink-3">경고 {signals.filter((s) => s.severity === "high").length} · 주의 {signals.filter((s) => s.severity === "medium").length} · 확인 {signals.filter((s) => s.severity === "low").length}</span>} />
-          <Tile label="조치 · Proof Event" after={`${doneActions.length}/${doneActions.length + openActions.length} 완료`} delta={<span className="text-ink-3">Proof {db.proofEvents.length}건 (확인 {db.proofEvents.filter((p) => p.status === "confirmed").length})</span>} />
+          <Tile label="조치 · 성과 기록" after={`${doneActions.length}/${doneActions.length + openActions.length} 완료`} delta={<span className="text-ink-3">성과 기록 {db.proofEvents.length}건 (확인 {db.proofEvents.filter((p) => p.status === "confirmed").length})</span>} />
         </div>
         <ul className="space-y-1.5 px-5 py-4" data-testid="report-bullets">
           {bullets.map((b, i) => (
@@ -212,7 +212,7 @@ export default function ReportPage() {
       </div>
 
       <Card className="print-card">
-        <CardHeader title="5. 조치 상태 · Proof Event" sub="Trigger → Decision → 사람 승인 → Action → Result → KPI 전후" right={<Link href="/evidence" className="no-print"><Button size="sm">Evidence 전체</Button></Link>} />
+        <CardHeader title="5. 조치 상태 · 조치 성과 기록" sub="위험 감지 → 판단 → 사람 승인 → 조치 → 결과 → 지표 전·후" right={<Link href="/evidence" className="no-print"><Button size="sm">실증 기록 전체</Button></Link>} />
         {db.actions.length === 0 ? (
           <EmptyState title="조치가 없습니다." />
         ) : (
@@ -225,7 +225,7 @@ export default function ReportPage() {
                   <th className="px-3 py-2.5">담당</th>
                   <th className="px-3 py-2.5">상태</th>
                   <th className="px-3 py-2.5">결과</th>
-                  <th className="px-5 py-2.5">Proof Event</th>
+                  <th className="px-5 py-2.5">성과 기록</th>
                 </tr>
               </thead>
               <tbody>

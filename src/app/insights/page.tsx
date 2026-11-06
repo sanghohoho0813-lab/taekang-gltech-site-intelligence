@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ChevronDown, UserPlus, Handshake, BadgeCheck, Send, Eye } from "lucide-react";
+import { ChevronDown, UserPlus, Handshake, BadgeCheck, Send, Eye, Plus } from "lucide-react";
 import { useMe, useSignals, userLabel } from "@/lib/data/hooks";
 import { PageBody, PageHeader } from "@/components/shell/AppShell";
 import { Badge, Button, Card, CardHeader, DemoBadge, EmptyState, Field, Notice, PageSkeleton, SeverityBadge, cx, inputCls } from "@/components/ui/primitives";
@@ -44,7 +44,7 @@ function Insights() {
       <PageHeader
         eyebrow="AX·성과"
         title="위험 분석 · 조치"
-        desc="데이터에서 위험을 규칙으로 감지 → 사람이 승인해 담당자 배정 → 진행 → 결과 확인 → Proof Event로 기록합니다."
+        desc="데이터에서 위험을 규칙으로 감지 → 사람이 승인해 담당자 배정 → 진행 → 결과 확인 → 조치 성과 기록으로 남깁니다."
         right={
           <>
             <DemoBadge />
@@ -57,8 +57,8 @@ function Insights() {
       <div className="grid grid-cols-2 gap-3 @min-[900px]:grid-cols-4">
         <StatCard label="열린 위험 신호" value={`${signals.length}건`} sub={`경고 ${signals.filter((s) => s.severity === "high").length} · 주의 ${signals.filter((s) => s.severity === "medium").length} · 확인 ${signals.filter((s) => s.severity === "low").length}`} icon={<ShieldAlert size={21} />} group="ax" />
         <StatCard label="진행 중 조치" value={`${open.length}건`} sub={open.length ? `${ACTION_STATUS_LABEL[open[0].status]} · ${open[0].title}` : "없음"} icon={<ListChecks size={21} />} group="ops" />
-        <StatCard label="완료 · Proof Event" value={`${done.length} · ${db.proofEvents.length}건`} sub={`결과 확인 ${db.proofEvents.filter((p) => p.status === "confirmed").length}건`} icon={<BadgeCheck size={21} />} group="ax" href="/evidence" />
-        <StatCard label="발주처 요청 (미회신)" value={`${newReq.length}건`} sub="파트너 포털에서 접수" icon={<Inbox size={21} />} group="growth" />
+        <StatCard label="완료 · 성과 기록" value={`${done.length} · ${db.proofEvents.length}건`} sub={`결과 확인 ${db.proofEvents.filter((p) => p.status === "confirmed").length}건`} icon={<BadgeCheck size={21} />} group="ax" href="/evidence" />
+        <StatCard label="발주처 요청 (미회신)" value={`${newReq.length}건`} sub="발주처 포털에서 접수" icon={<Inbox size={21} />} group="growth" />
       </div>
 
       <div className="grid gap-5 @min-[1080px]:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
@@ -150,7 +150,7 @@ function SignalItem({ db, s, onAssign }: { db: DemoDB; s: RiskSignal; onAssign: 
                 {ACTION_STATUS_LABEL[a.status]} · {userLabel(db, a.assigneeUserId)}
               </Badge>
             ))}
-            <Button size="sm" variant="ghost" onClick={onAssign}>
+            <Button size="sm" variant="soft" icon={<Plus size={14} />} onClick={onAssign}>
               추가 조치
             </Button>
           </span>
@@ -168,7 +168,7 @@ function PartnerInbox({ db }: { db: DemoDB }) {
     <Card id="requests" data-testid="partner-inbox">
       <CardHeader
         title="발주처·협력사 요청함"
-        sub="파트너 포털 → 본사 검토 → 회신 → 포털 상태 갱신"
+        sub="발주처 포털 → 본사 검토 → 회신 → 포털 상태 갱신"
         right={
           <Link href="/partner">
             <Button size="sm" variant="ghost" icon={<Eye size={15} />}>

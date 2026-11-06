@@ -75,6 +75,8 @@ export default function PartnerPage() {
 function PartnerPortal({ db, partner, sites: mySites, preview }: { db: NonNullable<ReturnType<typeof useMe>["db"]>; partner: NonNullable<ReturnType<typeof useMe>["db"]>["users"][number]; sites: NonNullable<ReturnType<typeof useMe>["db"]>["sites"]; preview: boolean }) {
   const [siteId, setSiteId] = useState(mySites[0].id);
   const site = mySites.find((s) => s.id === siteId) ?? mySites[0];
+  // 아직 만들지 않은 기능 소개는 시연·본사 미리보기에서만 (실제 고객 화면에는 숨김 · D-65)
+  const showFuture = !IS_LIVE || preview;
   const requests = db.partnerRequests.filter((r) => r.siteId === site.id && r.partnerUserId === partner.id);
   const nextStage = site.stages.find((s) => s.progressPct < 100);
 
@@ -91,9 +93,11 @@ function PartnerPortal({ db, partner, sites: mySites, preview }: { db: NonNullab
             <a href="#status" className="press rounded-lg px-3 py-2 text-[0.85rem] font-bold text-ink hover:bg-surface-3">현장 현황</a>
             <a href="#request" className="press rounded-lg px-3 py-2 text-[0.85rem] font-bold text-ink hover:bg-surface-3">요청하기</a>
             <a href="#my-requests" className="press rounded-lg px-3 py-2 text-[0.85rem] font-bold text-ink hover:bg-surface-3">내 요청</a>
-            <a href="#next" className="press rounded-lg px-3 py-2 text-[0.85rem] font-semibold text-ink-3 hover:bg-surface-3">
-              확장 예정 <Badge tone="neutral">NEXT</Badge>
-            </a>
+            {showFuture && (
+              <a href="#next" className="press rounded-lg px-3 py-2 text-[0.85rem] font-semibold text-ink-3 hover:bg-surface-3">
+                확장 예정 <Badge tone="neutral">NEXT</Badge>
+              </a>
+            )}
             <Link href="/help" className="press hidden rounded-lg px-3 py-2 text-[0.85rem] font-bold text-ink hover:bg-surface-3 lg:inline-flex" data-testid="partner-help">
               사용 안내
             </Link>
@@ -118,15 +122,16 @@ function PartnerPortal({ db, partner, sites: mySites, preview }: { db: NonNullab
             )}
           </div>
         </div>
-        <nav className="no-scrollbar flex gap-1 overflow-x-auto border-t border-line px-3 py-1.5 lg:hidden" aria-label="포털 메뉴 (모바일)">
+        {/* 휴대폰 메뉴: 손가락 크기(44px)·잘리지 않게 4개만 — ‘확장 예정’은 시연에서만 (D-65) */}
+        <nav className="no-scrollbar flex gap-1.5 overflow-x-auto border-t border-line px-3 py-2 lg:hidden" aria-label="포털 메뉴 (모바일)">
           {[
             ["#status", "현장 현황"],
             ["#request", "요청하기"],
             ["#my-requests", "내 요청"],
-            ["#next", "확장 예정"],
+            ...(showFuture ? [["#next", "확장 예정"]] : []),
             ["/help", "사용 안내"],
           ].map(([h, l]) => (
-            <a key={h} href={h} className="press shrink-0 rounded-full bg-surface-3 px-3 py-1.5 text-[0.8rem] font-bold text-ink-2">
+            <a key={h} href={h} className="press inline-flex min-h-11 shrink-0 items-center rounded-full bg-surface-3 px-3.5 text-[0.9rem] font-bold text-ink-2">
               {l}
             </a>
           ))}
@@ -198,12 +203,15 @@ function PartnerPortal({ db, partner, sites: mySites, preview }: { db: NonNullab
           </div>
         </div>
 
-        <section id="next" aria-labelledby="next-title">
-          <h2 id="next-title" className="mb-3 flex items-center gap-2 text-[1.05rem] font-bold">
-            <Sparkles size={18} aria-hidden /> 향후 확장 예정 <Badge tone="neutral">NEXT · 현재 미구현</Badge>
-          </h2>
-          <FutureCards />
-        </section>
+        {/* 아직 만들지 않은 기능은 실제 고객 화면에 보이지 않게 — 시연·본사 미리보기에서만 (D-65) */}
+        {showFuture && (
+          <section id="next" aria-labelledby="next-title">
+            <h2 id="next-title" className="mb-3 flex items-center gap-2 text-[1.05rem] font-bold">
+              <Sparkles size={18} aria-hidden /> 향후 확장 예정 <Badge tone="neutral">NEXT · 현재 미구현</Badge>
+            </h2>
+            <FutureCards />
+          </section>
+        )}
 
         <p className="text-center text-[0.74rem] text-ink-3">
           {IS_LIVE

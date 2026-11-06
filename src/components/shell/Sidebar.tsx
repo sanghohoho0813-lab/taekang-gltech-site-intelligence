@@ -10,7 +10,7 @@ import { useDb, useRole, usePrefs, useLiveStatus } from "@/lib/data/store";
 import { THEMES } from "@/lib/theme/themes";
 import { fmtTime } from "@/lib/domain/format";
 import { computeSignals } from "@/lib/domain/risk";
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { IS_LIVE } from "@/lib/mode";
 
 export function isActivePath(pathname: string, href: string) {
@@ -35,6 +35,11 @@ export function GroupIcon({ item, active, size = 18 }: { item: Pick<NavItem, "ic
 
 export function Sidebar({ compact }: { compact: boolean }) {
   const pathname = usePathname();
+  // 메뉴가 길어 지금 화면 항목이 아래에 가려지면 보이는 곳으로 (D-65)
+  const navRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    navRef.current?.querySelector<HTMLElement>('[aria-current="page"]')?.scrollIntoView({ block: "nearest" });
+  }, [pathname]);
   const role = useRole();
   const db = useDb();
   const prefs = usePrefs();
@@ -65,7 +70,7 @@ export function Sidebar({ compact }: { compact: boolean }) {
           <Logo compact={compact} onDark={!theme?.shellLight} />
         </Link>
       </div>
-      <nav className="flex-1 overflow-y-auto scroll-thin px-2.5 py-3 space-y-3">
+      <nav ref={navRef} className="flex-1 overflow-y-auto scroll-thin px-2.5 py-3 space-y-3">
         {GROUPS.map((g) => {
           const list = items.filter((i) => i.group === g.id);
           if (!list.length) return null;

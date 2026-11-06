@@ -24,6 +24,8 @@ export function EasyHome() {
   if (!db) return <PageSkeleton />;
   const today = todayIso();
   const mine = (r: FieldReport) => r.createdBy === userId && r.status !== "voided";
+  // ‘오늘 보고 보냄’은 하루 작업 보고만 센다 — 사진만·추가 비용만 보낸 것은 제외 (D-65)
+  const daily = (r: FieldReport) => mine(r) && !r.kind;
   // 본사 요청 = 작업지시 + 위험 조치 (긴급 지시가 먼저)
   const open = [
     ...(db.workOrders ?? []).filter((w) => w.assigneeUserId === userId && !["done", "confirmed"].includes(w.status)).sort((a, b) => Number(!!b.urgent) - Number(!!a.urgent)),
@@ -32,7 +34,7 @@ export function EasyHome() {
   const returned = db.reports.filter((r) => r.createdBy === userId && r.status !== "voided" && r.review?.status === "returned");
   const phone = db.settings?.helpPhone;
 
-  const sentCount = sites.filter((s) => db.reports.some((r) => r.siteId === s.id && r.reportDate === today && mine(r))).length;
+  const sentCount = sites.filter((s) => db.reports.some((r) => r.siteId === s.id && r.reportDate === today && daily(r))).length;
 
   return (
     <div className="mx-auto w-full max-w-xl pb-8" data-testid="easy-home">
@@ -49,7 +51,7 @@ export function EasyHome() {
             </p>
             <ul className="mt-2 flex flex-wrap gap-2" aria-label="내 현장 오늘 보고">
               {sites.map((s) => {
-                const sent = db.reports.some((r) => r.siteId === s.id && r.reportDate === today && mine(r));
+                const sent = db.reports.some((r) => r.siteId === s.id && r.reportDate === today && daily(r));
                 return (
                   <li key={s.id} className="flex items-center gap-1.5 rounded-full bg-surface px-3 py-1.5 text-[1rem] font-bold text-ink shadow-card" data-testid="easy-site-status" data-sent={sent ? "1" : "0"}>
                     {sent ? <CircleCheck size={19} className="shrink-0 text-ok" aria-hidden /> : <Clock3 size={19} className="shrink-0 text-warn" aria-hidden />}
@@ -98,7 +100,7 @@ export function EasyHome() {
             {/* 본사가 자재 품목을 정한 현장이 있을 때만 (D-62) */}
             {sites.some((s) => s.status === "active" && activeItems(db, s.id).length > 0) && <BigTile href="/field/material" icon={<Boxes size={30} />} label="자재 반입·설치 남기기" sub="들어온 수량 · 설치한 수량" testId="easy-go-material" />}
             {returned.length > 0 && (
-              <BigTile href="/my" tone="warn" icon={<AlertCircle size={30} />} label={`보완 요청 ${returned.length}건`} sub={returned[0].review?.note ?? "본사가 보고 보완을 요청했어요"} testId="easy-go-returned" />
+              <BigTile href="/my#my-reports" tone="warn" icon={<AlertCircle size={30} />} label={`보완 요청 ${returned.length}건`} sub={returned[0].review?.note ?? "본사가 보고 보완을 요청했어요"} testId="easy-go-returned" />
             )}
             {phone && <BigTile href={`tel:${phone.replace(/[^\d+]/g, "")}`} icon={<Phone size={30} />} label="본사에 전화하기" sub={`모르는 게 있으면 · ${phone}`} testId="easy-call" />}
             <PushNudge />
@@ -110,7 +112,7 @@ export function EasyHome() {
             <h2 id="recent-title" className="text-[1.3rem] font-extrabold">
               최근 보낸 보고
             </h2>
-            <Link href="/my" className="press inline-flex min-h-12 items-center rounded-xl px-2 text-[1.05rem] font-bold text-theme-ink underline underline-offset-4">
+            <Link href="/my#my-reports" className="press inline-flex min-h-12 items-center rounded-xl px-2 text-[1.05rem] font-bold text-theme-ink underline underline-offset-4">
               모두 보기
             </Link>
           </div>

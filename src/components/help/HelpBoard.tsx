@@ -42,7 +42,7 @@ export function HelpBoard() {
           </Button>
         }
       />
-      {!IS_LIVE && <Notice tone="info" className="no-print">실제 운영(로그인) 기준 안내입니다. 시연 화면에는 로그인·비밀번호 단계가 없습니다.</Notice>}
+      {!IS_LIVE && <Notice tone="info" className="no-print">실제 운영(로그인) 기준 안내입니다. 시연 화면에는 로그인·비밀번호 단계와 ‘운영 관리’ 메뉴가 없습니다 — 시연에서는 같은 설정을 ‘설정’에서 봅니다.</Notice>}
       {role !== "partner" && (
         <Link href="/help/quick" className="no-print press flex min-h-14 items-center gap-3 rounded-2xl border-2 border-line-strong bg-surface px-4 py-3" data-testid="help-quick-link">
           <Images size={26} className="shrink-0 text-theme-ink" aria-hidden />

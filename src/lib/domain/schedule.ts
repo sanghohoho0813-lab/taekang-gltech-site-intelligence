@@ -62,7 +62,8 @@ export function stagePlan(st: SiteStage, today: string): StagePlan {
   let status: StageStatus;
   if (actualPct >= 100) status = "done";
   else if (overdueDays > 0) status = "overdue";
-  else if (today < st.startDate) status = "upcoming";
+  // 시작일 전이라도 이미 진척이 있으면 ‘앞서 시작’ (‘시작 전’으로 보이지 않게 · D-65)
+  else if (today < st.startDate) status = actualPct > 0 ? "ahead" : "upcoming";
   else if (actualPct === 0 && days(st.startDate, today) >= 3) status = "not_started_late";
   else if (gapPp >= STAGE_BEHIND_PP) status = "behind";
   else if (gapPp <= -STAGE_BEHIND_PP) status = "ahead";

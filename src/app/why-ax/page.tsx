@@ -208,7 +208,7 @@ export default function WhyAxPage() {
             { icon: <Database size={15} />, label: "공통 데이터" },
             { icon: <ShieldAlert size={15} />, label: "위험 감지" },
             { icon: <UserCheck size={15} />, label: "담당자 조치" },
-            { icon: <BadgeCheck size={15} />, label: "Proof Event", tone: "good" },
+            { icon: <BadgeCheck size={15} />, label: "조치 성과 기록", tone: "good" },
             { icon: <FileBarChart size={15} />, label: "대표 보고서" },
           ]}
         />
@@ -247,13 +247,13 @@ export default function WhyAxPage() {
           </div>
           <div className="rounded-xl border border-line bg-surface-2 px-4 py-3">
             <Badge tone="info">다음 · PILOT 12주</Badge>
-            <p className="mt-1.5">실제 현장 1~2곳 Baseline 확보 → 실사용 → Proof Event 누적 → 전후 비교.</p>
+            <p className="mt-1.5">실제 현장 1~2곳 기준값 측정 → 실사용 → 조치 성과 기록 누적 → 도입 전·후 비교.</p>
           </div>
         </div>
       </Section>
 
       <Section no="14" title="기술사업화·정책 관점 — 검토 관점일 뿐, 보장하지 않습니다">
-        <p>실제 현장 데이터와 Proof Event가 쌓이면 ‘기존 업무가 어떻게 데이터·자동화·성과로 바뀌었는지’를 설명할 근거가 생깁니다. 다만 정책자금·보증·지원사업의 적합성과 결과는 각 기관의 독립적인 심사이며, 구체 제도는 최신 공고를 확인한 뒤 별도로 검토해야 합니다.</p>
+        <p>실제 현장 데이터와 조치 성과 기록이 쌓이면 ‘기존 업무가 어떻게 데이터·자동화·성과로 바뀌었는지’를 설명할 근거가 생깁니다. 다만 정책자금·보증·지원사업의 적합성과 결과는 각 기관의 독립적인 심사이며, 구체 제도는 최신 공고를 확인한 뒤 별도로 검토해야 합니다.</p>
       </Section>
 
       <Section no="15" title="향후 확장 (NEXT · 현재 미구현)">

@@ -5,7 +5,7 @@
  * 원칙: 한 화면에 질문 하나 · 큰 글자(19px 이상) · 누르는 곳은 높이 64px 이상 · 고르는 방식(타자 최소) · 쉬운 말
  */
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { cloneElement, isValidElement, type ReactNode } from "react";
 import { Check, ChevronLeft, Loader2, Minus, Plus } from "lucide-react";
 import { cx } from "@/components/ui/primitives";
 
@@ -215,7 +215,7 @@ export function Stepper({
   return (
     <div className="rounded-2xl border-2 border-line bg-surface p-3" role="group" aria-label={label} data-testid={testId}>
       <p className="mb-2 text-center text-[1.05rem] font-bold text-ink-2">{label}</p>
-      <div className="grid grid-cols-[4.2rem_1fr_4.2rem] items-center gap-2">
+      <div className="grid grid-cols-[minmax(3.2rem,4.2rem)_minmax(0,1fr)_minmax(3.2rem,4.2rem)] items-center gap-2">
         <button type="button" onClick={() => set(value - step)} disabled={value <= min} className="press grid h-[4.2rem] place-items-center rounded-2xl bg-surface-3 text-ink disabled:opacity-35" aria-label={`${label} ${step} 줄이기`} data-testid={testId ? `${testId}-minus` : undefined}>
           <Minus size={30} strokeWidth={3} />
         </button>
@@ -284,6 +284,7 @@ export function EasyBar({
   sticky = true,
   embedded = false,
   hint,
+  className,
 }: {
   onBack?: () => void;
   backLabel?: string;
@@ -296,9 +297,11 @@ export function EasyBar({
   /** 아래에서 올라오는 창 안에서 쓸 때 (하단 메뉴 위가 아니라 창 바닥에 고정) */
   embedded?: boolean;
   hint?: ReactNode;
+  /** 마법사 맨 아래에 붙일 때 mt-auto 등 (D-65) */
+  className?: string;
 }) {
   return (
-    <div className={cx("z-20 -mx-4 border-t border-line bg-surface/97 px-4 pb-3 pt-3 backdrop-blur", sticky && (embedded ? "sticky bottom-0" : "sticky bottom-[calc(4.9rem+env(safe-area-inset-bottom))] lg:bottom-0"))}>
+    <div className={cx("z-20 -mx-4 border-t border-line bg-surface/97 px-4 pb-3 pt-3 backdrop-blur", sticky && (embedded ? "sticky bottom-0" : "sticky bottom-[calc(4.9rem+env(safe-area-inset-bottom))] lg:bottom-0"), className)}>
       {hint && <p className="mb-2 text-center text-[0.98rem] font-semibold text-warn">{hint}</p>}
       <div className={cx("grid gap-2.5", onBack && onNext ? "grid-cols-[1fr_1.8fr]" : "grid-cols-1")}>
         {onBack && (
@@ -312,7 +315,8 @@ export function EasyBar({
             onClick={onNext}
             disabled={nextDisabled || loading}
             aria-busy={loading || undefined}
-            className="press inline-flex h-[4rem] items-center justify-center gap-2 rounded-full bg-cta text-[1.25rem] font-extrabold text-cta-text shadow-card disabled:opacity-40"
+            // 못 누를 때는 흐리게(햇빛에서 안 보임) 대신 회색 바탕 + 진한 글자 (D-65)
+            className="press inline-flex h-[4rem] items-center justify-center gap-2 rounded-full bg-cta text-[1.25rem] font-extrabold text-cta-text shadow-card disabled:bg-surface-3 disabled:text-ink-2 disabled:shadow-none"
             data-testid={nextTestId ?? "easy-next"}
           >
             {loading && <Loader2 className="animate-spin" size={22} aria-hidden />}
@@ -341,3 +345,8 @@ export function VoiceHint() {
 
 export const easyTextareaCls =
   "w-full rounded-2xl border-2 border-line-strong bg-surface px-4 py-3 text-[1.15rem] leading-relaxed text-ink placeholder:text-ink-3 focus:border-active focus:outline-none focus:ring-4 focus:ring-active/20";
+
+/** 마법사 하단 줄을 화면 아래쪽으로 — 짧은 단계에서 화면 가운데에 떠 있지 않게 (sticky는 그대로 · D-65) */
+export function AtBottom({ bar }: { bar: ReactNode }) {
+  return isValidElement<{ className?: string }>(bar) ? cloneElement(bar, { className: cx(bar.props.className, "mt-auto") }) : bar;
+}

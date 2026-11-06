@@ -116,26 +116,40 @@ export function Donut({ value, label, size = 132, stroke = 14, sub }: { value: n
 /** 계약금액 = 발생원가 + 잔여예상원가 + 예상이익 분해 바 (현장 손익 엔진 Signature) */
 export function ProfitStack({ incurred, remaining, profit, contract }: { incurred: number; remaining: number; profit: number; contract: number }) {
   const total = Math.max(contract, incurred + remaining);
-  const pct = (v: number) => `${(Math.max(0, v) / total) * 100}%`;
+  const share = (v: number) => Math.max(0, v) / total;
+  const pct = (v: number) => `${share(v) * 100}%`;
   const loss = profit < 0;
+  // 좁은 칸에는 글자를 넣지 않는다(잘려 보임) — 값은 아래 범례에 늘 보인다 (D-65)
+  const inBar = (v: number) => share(v) >= 0.2;
   return (
     <div>
       <div className="flex h-9 w-full overflow-hidden rounded-xl ring-1 ring-line" role="img" aria-label={`발생원가 ${fmtEok(incurred)}, 잔여예상원가 ${fmtEok(remaining)}, 예상이익 ${fmtEok(profit)}`}>
         <div className="grid place-items-center bg-chart-2-fill text-[0.72rem] font-bold text-chart-2-text transition-[width] duration-700" style={{ width: pct(incurred) }}>
-          <span className="truncate px-1">발생 {fmtEok(incurred, { unit: false, digits: 2 })}</span>
+          {inBar(incurred) && <span className="truncate px-1">발생 {fmtEok(incurred, { unit: false, digits: 2 })}</span>}
         </div>
         <div className="grid place-items-center bg-[color-mix(in_srgb,var(--t-chart-2)_45%,#C9CFD6)] text-[0.72rem] font-bold text-ink transition-[width] duration-700" style={{ width: pct(remaining) }}>
-          <span className="truncate px-1">잔여 {fmtEok(remaining, { unit: false, digits: 2 })}</span>
+          {inBar(remaining) && <span className="truncate px-1">잔여 {fmtEok(remaining, { unit: false, digits: 2 })}</span>}
         </div>
         {!loss && (
           <div className="grid place-items-center bg-chart-1-fill text-[0.72rem] font-bold text-chart-1-text transition-[width] duration-700" style={{ width: pct(profit) }}>
-            <span className="truncate px-1">이익 {fmtEok(profit, { unit: false, digits: 2 })}</span>
+            {inBar(profit) && <span className="truncate px-1">이익 {fmtEok(profit, { unit: false, digits: 2 })}</span>}
           </div>
         )}
       </div>
+      <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[0.78rem] text-ink-2 num" aria-hidden>
+        <li className="flex items-center gap-1.5">
+          <span className="size-2.5 rounded-full bg-chart-2-fill" /> 발생 {fmtEok(incurred)}
+        </li>
+        <li className="flex items-center gap-1.5">
+          <span className="size-2.5 rounded-full bg-[color-mix(in_srgb,var(--t-chart-2)_45%,#C9CFD6)]" /> 잔여 {fmtEok(remaining)}
+        </li>
+        <li className={cx("flex items-center gap-1.5 font-semibold", loss ? "text-err" : "text-ink")}>
+          <span className={cx("size-2.5 rounded-full", loss ? "bg-err" : "bg-chart-1-fill")} /> {loss ? "손실" : "이익"} {fmtEok(Math.abs(profit))}
+        </li>
+      </ul>
       <div className="mt-1.5 flex justify-between text-[0.72rem] text-ink-3 num">
         <span>0</span>
-        <span>{loss ? `EAC가 변경 반영 계약금액을 초과 (손실 ${fmtEok(-profit)})` : `변경 반영 계약금액 ${fmtEok(contract)}`}</span>
+        <span>{loss ? `예상 총원가가 변경 반영 계약금액을 넘음 (손실 ${fmtEok(-profit)})` : `변경 반영 계약금액 ${fmtEok(contract)}`}</span>
       </div>
     </div>
   );

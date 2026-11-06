@@ -1,6 +1,7 @@
 "use client";
 
 /** 본사 — 공정 일정 (계획 대비 실제·늦은 일수·준공 예상·지연 경비 추정·출근 공백) */
+import { MetricTile } from "@/components/domain/Widgets";
 import Link from "next/link";
 import { AlertTriangle, CalendarClock, CircleCheck } from "lucide-react";
 import { useMe } from "@/lib/data/hooks";
@@ -74,13 +75,7 @@ export function ScheduleBoard() {
 }
 
 function SummaryTile({ tone, label, value, sub }: { tone: "ok" | "warn" | "err"; label: string; value: string; sub: string }) {
-  return (
-    <div className={cx("rounded-2xl border p-4", tone === "err" ? "border-err/30 bg-err-bg" : tone === "warn" ? "border-warn/30 bg-warn-bg" : "border-line bg-surface")}>
-      <p className="text-[0.8rem] font-bold text-ink-2">{label}</p>
-      <p className="num mt-1 text-[1.5rem] font-extrabold">{value}</p>
-      <p className="mt-0.5 truncate text-[0.78rem] text-ink-2">{sub}</p>
-    </div>
-  );
+  return <MetricTile label={label} value={value} sub={sub} tone={tone === "ok" ? undefined : tone} />;
 }
 
 function SiteSchedule({ p, canSeeMoney, today }: { p: SitePlan; canSeeMoney: boolean; today: string }) {
@@ -94,6 +89,11 @@ function SiteSchedule({ p, canSeeMoney, today }: { p: SitePlan; canSeeMoney: boo
     ) : p.status === "ahead" ? (
       <span className="inline-flex items-center gap-1 font-bold text-ok">
         <CircleCheck size={16} aria-hidden /> 계획보다 약 {-p.delayDays}일 앞섬
+      </span>
+    ) : lateStages > 0 ? (
+      // 전체 진척은 계획 범위지만 기한 지난 공정이 있으면 초록 ‘계획대로’를 띄우지 않는다 (D-65)
+      <span className="inline-flex items-center gap-1 font-bold text-warn">
+        <AlertTriangle size={16} aria-hidden /> 전체는 계획 범위 · 일부 공정 지연
       </span>
     ) : (
       <span className="inline-flex items-center gap-1 font-bold text-ok">
@@ -146,13 +146,37 @@ function SiteSchedule({ p, canSeeMoney, today }: { p: SitePlan; canSeeMoney: boo
             공정 단계가 없어 현장 전체 기간으로만 계산했습니다. {IS_LIVE ? "운영 관리 → 현장 → 수정에서 공정 단계(이름·시작·종료)를 등록하면 단계별로 확인할 수 있습니다." : ""}
           </p>
         ) : (
-          <div tabIndex={0} role="region" aria-label="공정 표 (가로 스크롤)" className="relative overflow-x-auto">
+          <>
+          {/* 휴대폰: 공정마다 카드 (표는 넓은 화면에서만 · D-65) */}
+          <ul className="space-y-2 @min-[760px]:hidden" aria-label={`${p.site.shortName} 공정`}>
+            {p.stages.map((s) => (
+              <li key={s.stage.id} className="rounded-2xl border border-line bg-surface-2/60 p-3" data-testid="sched-stage-card" data-status={s.status}>
+                <div className="flex items-start justify-between gap-2">
+                  <p className="min-w-0 text-[0.9rem] font-bold">{s.stage.name}</p>
+                  <span className={cx("shrink-0 rounded-full px-2 py-0.5 text-[0.74rem] font-bold", STAGE_TONE[s.status])}>
+                    {STAGE_STATUS_LABEL[s.status]}
+                    {s.status === "overdue" ? ` ${s.overdueDays}일` : s.status === "behind" ? ` ${Math.round(s.gapPp)}%p` : ""}
+                  </span>
+                </div>
+                <p className="num mt-0.5 text-[0.76rem] text-ink-3">
+                  {fmtDate(s.stage.startDate)} ~ {fmtDate(s.stage.endDate)}
+                </p>
+                <div className="mt-2 flex items-center gap-2">
+                  <PlanBar planned={s.plannedPct} actual={s.actualPct} label={s.stage.name} />
+                  <span className="num shrink-0 text-[0.78rem]">
+                    실제 <b>{s.actualPct}%</b> · 계획 {Math.round(s.plannedPct)}%
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
+          <div tabIndex={0} role="region" aria-label="공정 표 (가로 스크롤)" className="relative hidden overflow-x-auto @min-[760px]:block">
             <table className="w-full min-w-[40rem] text-[0.84rem]">
               <thead>
                 <tr className="text-left text-[0.74rem] text-ink-3">
                   <th className="py-2 pr-3 font-semibold">공정 단계</th>
                   <th className="py-2 pr-3 font-semibold">기간</th>
-                  <th className="w-[38%] py-2 pr-3 font-semibold">계획(세로선) vs 실제</th>
+                  <th className="w-[42%] py-2 pr-3 font-semibold">실제(막대) · 계획(세로선)</th>
                   <th className="py-2 font-semibold">상태</th>
                 </tr>
               </thead>
@@ -166,8 +190,8 @@ function SiteSchedule({ p, canSeeMoney, today }: { p: SitePlan; canSeeMoney: boo
                     <td className="py-2.5 pr-3">
                       <div className="flex items-center gap-2">
                         <PlanBar planned={s.plannedPct} actual={s.actualPct} label={s.stage.name} />
-                        <span className="num w-24 shrink-0 text-right text-[0.78rem]">
-                          {s.actualPct}% / {Math.round(s.plannedPct)}%
+                        <span className="num w-32 shrink-0 text-right text-[0.78rem]">
+                          실제 <b>{s.actualPct}%</b> · 계획 {Math.round(s.plannedPct)}%
                         </span>
                       </div>
                     </td>
@@ -182,6 +206,7 @@ function SiteSchedule({ p, canSeeMoney, today }: { p: SitePlan; canSeeMoney: boo
               </tbody>
             </table>
           </div>
+          </>
         )}
         <p className="text-[0.76rem] text-ink-3">기준일 {fmtDate(today)} · 공정률은 현장 보고(공정별 진척)와 운영 관리에서 바뀝니다</p>
       </div>

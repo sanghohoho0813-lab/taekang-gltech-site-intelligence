@@ -51,7 +51,7 @@ export const NAV: NavItem[] = [
   { href: "/partner", label: "발주처 포털", icon: "Handshake", group: "growth", roles: ["ceo", "manager", "partner"], desc: "발주처·협력사 상태 공유" },
   { href: "/insights", label: "위험 분석·조치", icon: "ShieldAlert", group: "ax", roles: INTERNAL, alsoAccess: ["field"], desc: "규칙 기반 진단 → 조치 → 결과" },
   { href: "/usage", label: "사용 현황", icon: "Activity", group: "ax", roles: INTERNAL, desc: "현장 직원 정착도·본사 응답 시간 (실사용 검증)" },
-  { href: "/evidence", label: "실증 Evidence", icon: "BadgeCheck", group: "ax", roles: INTERNAL, desc: "Proof Event·KPI·12주 계획" },
+  { href: "/evidence", label: "실증 기록", icon: "BadgeCheck", group: "ax", roles: INTERNAL, desc: "조치 성과 기록·성과 지표·12주 계획" },
   { href: "/why-ax", label: "기획의도", icon: "Lightbulb", group: "ax", roles: ALL_INTERNAL, desc: "왜 이 AX인가", only: "demo" },
   { href: "/launch", label: "시범 운영 준비", icon: "Rocket", group: "admin", roles: INTERNAL, desc: "첫날 준비 점검 — 회사 설정·현장 위치·직원별 첫 로그인·휴대폰·위치 동의 · 로그인 쪽지 인쇄" },
   { href: "/data", label: "자료 이관·점검", icon: "FileUp", group: "admin", roles: INTERNAL, desc: "지난 기성·변경공사·출력·원가 엑셀 가져오기 · 현장별 자료 준비 점검" },

@@ -19,7 +19,8 @@ export function MyActionsView() {
 function ManagerActionsView() {
   const { db, role, userId, user } = useMe();
   const isManager = role === "ceo" || role === "manager";
-  const [scope, setScope] = useState<"mine" | "all">(isManager ? "all" : "mine");
+  // ‘내 조치’ 화면이므로 본사도 내 담당부터 (전체는 한 번 눌러 보기 · D-65)
+  const [scope, setScope] = useState<"mine" | "all">("mine");
   const [status, setStatus] = useState<"open" | "done">("open");
   if (!db) return <PageSkeleton />;
   const list = db.actions
@@ -31,7 +32,7 @@ function ManagerActionsView() {
       <PageHeader
         eyebrow={<DemoBadge compact />}
         title="내 조치"
-        desc={role === "field" ? `${user?.name} ${user?.title}님에게 배정된 위험 조치입니다. 진행 상황과 결과를 입력하면 본사 화면에 바로 반영됩니다.` : "담당자에게 배정된 조치 전체를 확인합니다."}
+        desc={role === "field" ? `${user?.name} ${user?.title}님에게 배정된 위험 조치입니다. 진행 상황과 결과를 입력하면 본사 화면에 바로 반영됩니다.` : "나에게 배정된 조치부터 보여 줍니다. 다른 담당자 것까지 보려면 ‘배정 전체’를 누르세요."}
         right={
           <div className="flex flex-wrap gap-2">
             {isManager && (
@@ -40,8 +41,8 @@ function ManagerActionsView() {
                 value={scope}
                 onChange={setScope}
                 options={[
-                  { value: "all", label: "배정 전체" },
                   { value: "mine", label: "내 담당" },
+                  { value: "all", label: "배정 전체" },
                 ]}
               />
             )}

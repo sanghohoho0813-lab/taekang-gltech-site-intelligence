@@ -145,7 +145,7 @@ test("현장 직원 사진만 보내기 · 추가 비용만 알리기 · 쓰다 
   await expect(page.getByTestId("easy-next")).toContainText("사진 1장");
   await page.getByTestId("easy-next").click();
   await page.getByTestId("submit-report").click();
-  await expect(page.getByTestId("report-done")).toContainText("본사로 보냈습니다");
+  await expect(page.getByTestId("report-done")).toContainText("본사로 보냈어요");
 });
 
 test("현장 직원 본사 요청: 큰 버튼으로 시작 → 다 했어요(눌러서 결과 고르기)", async ({ page }) => {
@@ -231,6 +231,9 @@ test.describe("GPS 출퇴근", () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/field");
     await page.getByTestId("att-out").click();
+    // 퇴근은 한 번 더 묻는다 (D-65)
+    await expect(page.getByTestId("att-out-ask")).toContainText("지금 퇴근할까요?");
+    await page.getByTestId("att-out-yes").click();
     await expect(page.getByTestId("att-result")).toContainText("퇴근");
     await expect(page.getByTestId("att-status")).toContainText("오늘 근무 끝");
   });
@@ -265,6 +268,7 @@ test.describe("현장 QR 출근", () => {
     await page.evaluate(([pk]) => localStorage.setItem(pk, JSON.stringify({ ...JSON.parse(localStorage.getItem(pk)!), role: "manager" })), [PREFS] as const);
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/attendance");
+    page.once("dialog", (d) => void d.accept()); // 회사 설정 변경 확인 (D-65)
     await page.getByTestId("att-mode-qr").click();
     const siteA = page.locator('[data-testid="att-site"][data-site="site-a"]');
     await siteA.getByTestId("kiosk-add").click();

@@ -325,6 +325,8 @@ export interface FieldReport {
   id: string;
   siteId: string;
   reportDate: string;
+  /** 사진만·추가 비용만 보낸 보고 — 없으면 하루 작업 보고 (홈 ‘오늘 보고 보냄’은 작업 보고만 셈 · D-65) */
+  kind?: "photo" | "cost";
   workDone: string;
   issues: string;
   tomorrowPlan: string;

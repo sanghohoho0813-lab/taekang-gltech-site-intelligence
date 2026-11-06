@@ -74,7 +74,7 @@ await cm.getByTestId("complete-confirm").click(); await page.waitForTimeout(900)
 const card = page.getByTestId("action-board").getByTestId("action-card").filter({ hasText: "추가공사 청구가능성 검토" });
 check("2:50", "PC 조치 카드 완료 · 확인 대기", await card.innerText(), ["완료", "결과 확인"]);
 await card.getByTestId("proof-confirm").click(); await page.waitForTimeout(600);
-check("2:50", "본사 결과 확인", await card.innerText(), [/Proof Event 결과 확인/]);
+check("2:50", "본사 결과 확인", await card.innerText(), [/조치 성과 기록 결과 확인/]);
 await page.getByTestId("demo-role").selectOption("ceo");
 await page.goto(B + "/sites/site-a"); await page.waitForTimeout(1200);
 const eng3 = await txt(page.locator('[data-tour="profit-engine"]'));

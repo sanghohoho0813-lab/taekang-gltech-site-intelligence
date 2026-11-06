@@ -14,16 +14,19 @@ import type { ProofEvent } from "@/lib/domain/types";
 import { IS_LIVE } from "@/lib/mode";
 
 const KPIS = [
-  { type: "COST", name: "원가 초과 인지 리드타임", unit: "일", point: "원가 발생일(cost_entries.date) → 위험 감지 → 조치 생성(actions.created_at)", why: "월말·준공 무렵에야 알던 원가 초과를 며칠 만에 아는지" },
-  { type: "REVENUE", name: "설계변경 추가원가 → 청구 검토 전환율", unit: "%", point: "사유=설계변경 원가 합계 대비 change_orders 등록 금액", why: "받을 수 있는 돈을 놓치지 않는지" },
+  { type: "COST", name: "원가 초과 인지 리드타임", unit: "일", point: "원가가 생긴 날 → 위험 감지 → 조치를 만든 날", why: "월말·준공 무렵에야 알던 원가 초과를 며칠 만에 아는지" },
+  { type: "REVENUE", name: "설계변경 추가원가 → 청구 검토 전환율", unit: "%", point: "사유가 ‘설계변경’인 원가 합계 대비 변경공사로 등록한 금액", why: "받을 수 있는 돈을 놓치지 않는지" },
   { type: "SCALE", name: "본사 관리자 1인당 관리 현장 수 · 월 손익 집계 시간", unit: "곳 · 시간", point: "사용자·현장 수, 월말 보고 작성 소요시간 (도입 전 인터뷰로 측정)", why: "인원을 늘리지 않고 관리 현장을 늘릴 수 있는지" },
 ];
 
+/** 조치 전·후 지표 이름 (내부 키 → 화면 이름) */
+const KPI_LABEL: Record<string, string> = { eac: "예상 총원가", expectedProfit: "예상이익", marginPct: "예상이익률(%)", adjustedContract: "변경 반영 계약금액", pendingClaimAmount: "청구 검토 중 금액", at: "시각" };
+
 const WEEKS = [
-  { w: "Week 0", t: "Baseline Lock", d: "현장 1~2곳 선정, 현재 원가 집계 방식·소요시간·설계변경 청구 이력 인터뷰, KPI 3종 측정값 확보" },
-  { w: "Week 1~4", t: "Adoption · First Proof Events", d: "현장소장 모바일 보고 습관화(주 3회+), 실제 원가 이벤트 입력, 첫 위험 감지→조치 기록" },
-  { w: "Week 5~8", t: "Business Lift", d: "청구 검토 전환·원가 초과 조기 인지 사례 누적, 위험 기준값을 회사 실정에 맞게 보정" },
-  { w: "Week 9~12", t: "Enterprise Value · Judge Pack", d: "Before/After 비교, Proof Event 묶음, 표준 Workflow 문서화, 확장(다현장·발주처 포털) 판단" },
+  { w: "0주", t: "기준값 정하기", d: "현장 1~2곳 선정, 현재 원가 집계 방식·소요시간·설계변경 청구 이력 인터뷰, KPI 3종 측정값 확보" },
+  { w: "1~4주", t: "쓰는 습관 · 첫 조치 기록", d: "현장소장 휴대폰 보고 습관화(주 3회 이상), 실제 원가 입력, 첫 위험 감지→조치 기록" },
+  { w: "5~8주", t: "돈이 되는 변화 쌓기", d: "청구 검토 전환·원가 초과 조기 인지 사례 누적, 위험 기준값을 회사 실정에 맞게 보정" },
+  { w: "9~12주", t: "성과 정리", d: "도입 전·후 비교, 조치 성과 기록 묶음, 표준 업무 절차 문서화, 확장(여러 현장·발주처 포털) 판단" },
 ];
 
 export default function EvidencePage() {
@@ -36,27 +39,27 @@ export default function EvidencePage() {
     <PageBody>
       <PageHeader
         eyebrow="AX·성과"
-        title="실증 Evidence"
-        desc="‘좋아 보이는 화면’이 아니라 실제 행동과 결과가 바뀌었는지를 기록합니다. Trigger → Decision → 사람 승인 → Action → Result → KPI 전후."
+        title="실증 기록"
+        desc="‘좋아 보이는 화면’이 아니라 실제 행동과 결과가 바뀌었는지를 기록합니다. 위험 감지 → 판단 → 사람 승인 → 조치 → 결과 → 지표 전·후."
         right={<DemoBadge />}
       />
       {IS_LIVE ? (
-        <Notice tone="info" title="조치 기록(Proof Event)은 실제 조치 완료 시 자동으로 남습니다">
+        <Notice tone="info" title="조치 성과 기록은 실제 조치를 완료하면 자동으로 남습니다">
           개선율은 도입 전 기준값(Baseline)을 측정한 뒤에만 산출합니다 — 그 전에는 건수와 처리 기록만 봅니다.
         </Notice>
       ) : (
-        <Notice tone="warn" title="아래 Proof Event는 시연 중 클릭으로 생성된 DEMO 기록입니다">
-          data_source = DEMO_LOCAL · 실제 현장 실증 성과가 아니며, 개선율은 Baseline 확보 전까지 산출하지 않습니다 (Baseline not yet established).
+        <Notice tone="warn" title="아래 조치 성과 기록은 시연 중 누른 DEMO 기록입니다">
+          시연 자료(가상)로 만든 기록입니다 · 실제 현장 실증 성과가 아니며, 개선율은 도입 전 기준값이 생기기 전까지 계산하지 않습니다.
         </Notice>
       )}
 
       <Card data-testid="proof-list">
-        <CardHeader title={`Proof Event ${db.proofEvents.length}건`} sub="조치 완료 시 자동 생성 · 결과 확인(관리자) 후 확정" right={<MethodChip />} />
+        <CardHeader title={`조치 성과 기록 ${db.proofEvents.length}건`} sub="조치 완료 시 자동 생성 · 결과 확인(관리자) 후 확정" right={<MethodChip />} />
         {db.proofEvents.length === 0 ? (
           <EmptyState
             icon={<BadgeCheck size={30} />}
             title="아직 기록이 없습니다"
-            desc="‘위험 분석·조치’에서 조치를 완료하면 이곳에 Proof Event가 남습니다."
+            desc="‘위험 분석·조치’에서 조치를 완료하면 이곳에 조치 성과 기록이 남습니다."
             action={
               <Link href="/insights">
                 <Button size="sm">위험 분석·조치로</Button>
@@ -88,17 +91,17 @@ export default function EvidencePage() {
       </Card>
 
       <Card>
-        <CardHeader title="Money KPI 3 · Baseline 상태" sub="실제 값이 없으면 목표를 지어내지 않습니다 (TARGET: DO NOT INVENT)" />
+        <CardHeader title="돈과 연결된 성과 지표 3가지 · 기준값 상태" sub="실제 값이 없으면 목표를 지어내지 않습니다" />
         <div className="grid gap-3 px-5 pb-5 @min-[900px]:grid-cols-3">
           {KPIS.map((k) => (
             <div key={k.type} className="rounded-2xl border border-line bg-surface-2 p-4">
-              <Badge tone={k.type === "COST" ? "err" : k.type === "REVENUE" ? "ok" : "info"}>{k.type} KPI</Badge>
+              <Badge tone={k.type === "COST" ? "err" : k.type === "REVENUE" ? "ok" : "info"}>{k.type === "COST" ? "원가" : k.type === "REVENUE" ? "매출·청구" : "관리 효율"}</Badge>
               <p className="mt-2 text-[0.95rem] font-bold">{k.name}</p>
               <p className="mt-1 text-[0.78rem] text-ink-2">{k.why}</p>
               <dl className="mt-3 space-y-1 text-[0.76rem]">
                 <div>
-                  <dt className="font-semibold text-ink-3">Baseline</dt>
-                  <dd className="font-bold text-warn">REQUIRED / UNKNOWN — Baseline not yet established</dd>
+                  <dt className="font-semibold text-ink-3">기준값</dt>
+                  <dd className="font-bold text-warn">아직 없음 — 운영 시작 전 측정 필요</dd>
                 </div>
                 <div>
                   <dt className="font-semibold text-ink-3">측정 지점</dt>
@@ -106,7 +109,7 @@ export default function EvidencePage() {
                 </div>
                 <div>
                   <dt className="font-semibold text-ink-3">목표</dt>
-                  <dd className="text-ink-2">미설정 (Baseline 확보 후 협의)</dd>
+                  <dd className="text-ink-2">미설정 (기준값을 잰 뒤 협의)</dd>
                 </div>
               </dl>
             </div>
@@ -134,7 +137,7 @@ export default function EvidencePage() {
             {[
               ["실제 누가 반복적으로 사용하는가?", "아직 없음 — 미팅 후 현장소장 1~2명 Pilot 대상 확인 필요"],
               ["도입 전과 비교해 무엇이 얼마나 바뀌었는가?", "측정 전 — Baseline 미확보 (Week 0 필요)"],
-              ["변화가 AX Decision → Action 때문이라는 근거가 있는가?", "구조는 준비됨 — Proof Event에 신호·승인·조치·결과·시각 기록"],
+              ["변화가 이 시스템의 판단 → 조치 때문이라는 근거가 있는가?", "구조는 준비됨 — 조치 성과 기록에 신호·승인·조치·결과·시각이 남음"],
               ["12개월 후 남는 자산은?", "현장별 원가 이벤트·사유·조치·결과 이력, 회사 고유 위험 기준 (가설)"],
               ["추가 자본 투입 시 더 빨리 커지는 것은?", "미확정 — 실증 결과와 확장(다현장·발주처 포털) 수요 확인 후 판단"],
             ].map(([q, a]) => (
@@ -158,27 +161,27 @@ function ProofItem({ p, site, approver, user, canConfirm, onConfirm }: { p: Proo
         <Badge tone={p.status === "confirmed" ? "ok" : "warn"} icon={<BadgeCheck size={13} />}>
           {p.status === "confirmed" ? "결과 확인" : "확인 대기"}
         </Badge>
-        <Badge tone={p.data_source === "LIVE" ? "info" : "demo"}>{p.data_source === "LIVE" ? "실제 기록" : "DEMO_LOCAL"}</Badge>
+        <Badge tone={p.data_source === "LIVE" ? "info" : "demo"}>{p.data_source === "LIVE" ? "실제 기록" : "시연 기록"}</Badge>
         <b className="text-ink-2">{site}</b> · {fmtDateTime(p.created_at)}
         {typeof p.response_minutes === "number" && <span>· 감지→완료 {p.response_minutes ? `${p.response_minutes}분` : "1분 미만"} (시연 측정값)</span>}
       </div>
       <div className="mt-2 grid gap-2 @min-[900px]:grid-cols-[1fr_1fr]">
         <dl className="space-y-1.5 text-[0.82rem]">
-          <Row k="Trigger" v={p.trigger} />
-          <Row k="Decision" v={p.decision} />
-          <Row k="Method" v={p.decision_method} />
+          <Row k="감지된 위험" v={p.trigger} />
+          <Row k="판단" v={p.decision} />
+          <Row k="판단 방식" v={p.decision_method} />
           <Row k="사람 승인" v={`${approver} · ${fmtDateTime(p.human_approval.at)}`} />
-          <Row k="Action" v={p.action} />
-          <Row k="Result" v={p.result} />
+          <Row k="조치" v={p.action} />
+          <Row k="결과" v={p.result} />
           <Row k="기록자" v={user} />
         </dl>
         <div className="rounded-xl bg-surface-2 p-3 text-[0.8rem]">
-          <p className="mb-1.5 font-bold">KPI 전 → 후 (조치 시점 vs 완료 시점)</p>
+          <p className="mb-1.5 font-bold">지표 전 → 후 (조치를 만든 때 vs 완료한 때)</p>
           <table className="w-full">
             <tbody>
               {Object.keys(p.kpi_before).map((k) => (
                 <tr key={k} className="border-t border-line">
-                  <td className="py-1 text-ink-3">{k}</td>
+                  <td className="py-1 text-ink-3">{KPI_LABEL[k] ?? k}</td>
                   <td className="py-1 text-right num">{String(p.kpi_before[k])}</td>
                   <td className="py-1 text-center text-ink-3">→</td>
                   <td className="py-1 text-right font-bold num">{String(p.kpi_after[k])}</td>

@@ -42,7 +42,7 @@ export default function SettingsPage() {
       <PageHeader eyebrow="관리" title="설정" desc="화면·권한 프리뷰·데모·데이터·AI 상태를 관리합니다. 모든 변경은 이 브라우저에만 저장됩니다." right={<DemoBadge />} />
 
       <Card data-tour="theme-picker" data-testid="theme-picker">
-        <CardHeader title="화면 · 테마 (Canonical 7)" sub="테마는 메뉴·강조색·차트 분위기만 바꾸고 본문·표·폼의 가독성은 고정합니다 · PC와 모바일 화면이 같은 테마를 공유" />
+        <CardHeader title="화면 · 테마 (7가지)" sub="테마는 메뉴·강조색·차트 분위기만 바꾸고 본문·표·폼의 가독성은 고정합니다 · PC와 모바일 화면이 같은 테마를 공유" />
         <div className="grid grid-cols-1 gap-3 px-5 pb-5 @min-[600px]:grid-cols-2 @min-[1080px]:grid-cols-4" role="radiogroup" aria-label="테마 선택">
           {THEMES.map((t) => {
             const on = prefs.theme === t.id;
@@ -82,7 +82,7 @@ export default function SettingsPage() {
               onChange={(v) => setPrefs({ fontScale: v })}
               options={[
                 { value: "sm", label: "작게", testId: "font-sm" },
-                { value: "md", label: "기본", testId: "font-md" },
+                { value: "md", label: "보통", testId: "font-md" },
                 { value: "lg", label: "크게", testId: "font-lg" },
                 { value: "xl", label: "아주 크게", testId: "font-xl" },
               ]}
@@ -116,7 +116,7 @@ export default function SettingsPage() {
       {!IS_LIVE && isManager && <PrivacyAdmin db={db} role={role} />}
 
       {!IS_LIVE && (<Card>
-        <CardHeader title="사용자 · 권한 프리뷰" sub="실제 로그인·보안이 아닙니다 — 역할별 화면 노출을 미리 보여주는 DEMO 기능입니다" right={<Badge tone="warn" icon={<ShieldCheck size={13} />}>RLS 미적용 (READY)</Badge>} />
+        <CardHeader title="사용자 · 권한 프리뷰" sub="실제 로그인·보안이 아닙니다 — 역할별 화면 노출을 미리 보여주는 DEMO 기능입니다" right={<Badge tone="warn" icon={<ShieldCheck size={13} />}>시연용 · 실제 보안 아님</Badge>} />
         <div className="flex flex-wrap gap-2 px-5" role="radiogroup" aria-label="Demo 역할">
           {(["ceo", "manager", "field", "partner"] as RoleId[]).map((r) => (
             <button
@@ -188,10 +188,10 @@ export default function SettingsPage() {
           <CardHeader title="AI 연결 상태" right={<AiReadyButton />} />
           <div className="space-y-2 px-5 pb-5 text-[0.85rem] text-ink-2">
             <p className="flex items-center gap-2">
-              <Sparkles size={17} className="text-ink-3" /> <b>규칙 기반 진단 (RULE v1)</b> 사용 중 — 외부 AI API 미연결
+              <Sparkles size={17} className="text-ink-3" /> <b>규칙 기반 진단</b> 사용 중 — 외부 AI 연결 안 됨
             </p>
             <p>금액·이익률 계산과 위험 감지는 결정론적 코드입니다. AI를 연결하더라도 ‘현장 위험요인 요약·우선조치 제안’ 1개 기능만 서버 API로 연결하고, 결과 실행은 사람이 승인합니다.</p>
-            <p className="text-[0.78rem] text-ink-3">연결 지점: <code className="rounded bg-surface-3 px-1">src/lib/ai/provider.ts</code> (인터페이스 준비 · 실제 호출 코드 없음)</p>
+            <p className="text-[0.78rem] text-ink-3">AI를 연결할 자리만 만들어 두었습니다 — 지금은 AI를 부르는 코드가 없습니다.</p>
           </div>
         </Card>
         {isManager && <ThresholdCard thresholds={db.thresholds} />}
@@ -229,7 +229,7 @@ function DataSection() {
     <Card data-testid="data-section">
       <CardHeader
         title={IS_LIVE ? "데이터 가져오기·내보내기" : "데이터 · 실데이터 전환 경로"}
-        sub={IS_LIVE ? "기존 엑셀 원가를 CSV로 한 번에 넣거나, 입력된 원가를 CSV로 받습니다" : "Demo Seed → Repository Layer → CSV / Supabase 교체 지점"}
+        sub={IS_LIVE ? "기존 엑셀 원가를 CSV로 한 번에 넣거나, 입력된 원가를 CSV로 받습니다" : "시연 자료(가상)로 확인하고, 실제 운영에서는 같은 방식으로 회사 서버에 저장됩니다"}
         right={IS_LIVE ? <Badge tone="ok">운영 DB</Badge> : <Badge tone="demo">DEMO · 브라우저 로컬 저장소</Badge>}
       />
       <div className="grid gap-5 px-5 pb-5 @min-[1000px]:grid-cols-2">
@@ -338,24 +338,24 @@ function DataSection() {
           <p className="text-[0.9rem] font-bold">실데이터 전환 경로</p>
           <ol className="space-y-2">
             {[
-              ["지금", "DEMO Seed + 브라우저 로컬 Repository — 같은 브라우저의 PC·모바일 화면이 같은 데이터 공유", "LIVE"],
-              ["다음", "CSV로 실제 현장 1곳의 원가·계약·기성 일부 반영 (실데이터 10~20%)", "READY"],
-              ["전환", "Supabase 테이블·RLS·Auth 적용 (supabase/migrations 준비됨) → 기기 간 실시간 공유", "READY"],
-              ["확장", "실제 AI API 1개 기능(위험요인 요약) — 대표 승인 후", "NEXT"],
+              ["지금", "시연 자료(가상)로 이 브라우저에서만 동작 — 같은 브라우저의 PC·휴대폰 화면이 같은 자료를 씀", "지금 · 시연"],
+              ["다음", "실제 현장 1곳의 원가·계약·기성 일부를 엑셀로 넣어 확인", "준비됨"],
+              ["전환", "회사 서버(로그인·데이터베이스)로 옮겨 여러 기기가 같은 자료를 함께 씀", "준비됨"],
+              ["확장", "실제 AI 기능 1개(위험요인 요약) — 대표 승인 후", "다음 단계"],
             ].map(([k, v, st]) => (
               <li key={k} className="flex gap-3 rounded-xl border border-line bg-surface-2 px-3 py-2.5">
-                <Badge tone={st === "LIVE" ? "ok" : st === "READY" ? "info" : "neutral"}>{st}</Badge>
+                <Badge tone={st === "지금 · 시연" ? "demo" : st === "준비됨" ? "info" : "neutral"}>{st}</Badge>
                 <span>
                   <b>{k}</b> — {v}
                 </span>
               </li>
             ))}
           </ol>
-          <Notice tone="info" title="사용자 직접 작업 (USER ACTION QUEUE)">
-            ① Supabase 프로젝트 생성 ② migrations 실행 ③ 환경변수 2개 등록 ④ Vercel 재배포 — 자세한 순서는 README의 ‘실데이터 전환’을 참고하세요.
+          <Notice tone="info" title="실제 운영으로 옮기려면 (회사가 할 일)">
+            회사 명의로 데이터베이스(Supabase)·배포(Vercel) 계정을 만들어 주시면, 미래AI랩이 연결·배포합니다. 자세한 순서는 인수인계서의 ‘실데이터 전환’에 있습니다.
           </Notice>
           <p className="flex items-center gap-1.5 text-[0.76rem] text-ink-3">
-            <Database size={14} /> 저장 위치: 이 브라우저 localStorage · 운영 DB 연결 아님
+            <Database size={14} /> 저장 위치: 이 브라우저 (시연용) · 회사 서버에 연결되지 않음
           </p>
         </div>)}
       </div>

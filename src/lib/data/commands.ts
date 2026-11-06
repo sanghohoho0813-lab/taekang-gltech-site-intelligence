@@ -135,6 +135,8 @@ export interface FieldReportInput {
   stageProgress?: { stageId: string; progressPct: number }[];
   /** 보고를 보낸 곳 — 휴대폰 위치 (서버가 현장 안/밖을 다시 판정) */
   geo?: { sample?: GeoSample | null; noLocation?: GeoStamp["reason"] };
+  /** 사진만·추가 비용만 보낸 보고 (D-65) — 없으면 하루 작업 보고 */
+  kind?: "photo" | "cost";
 }
 
 export interface FieldReportResult {
@@ -234,6 +236,7 @@ export function submitFieldReport(db0: DemoDB, input: FieldReportInput, ctx: Ctx
     createdBy: ctx.userId,
     createdAt: at,
     status: "submitted",
+    ...(input.kind === "photo" || input.kind === "cost" ? { kind: input.kind } : {}),
   };
   if (input.geo) {
     // 위치 기록 동의가 있을 때만 좌표를 남긴다. 판정은 서버(이 함수)가 다시 한다.
@@ -298,7 +301,7 @@ export function voidCostEntry(db0: DemoDB, entryId: string, reason: string, ctx:
   if (!e) throw new CommandError("원가 이벤트를 찾을 수 없습니다.", "NOT_FOUND");
   if (e.status === "voided") throw new CommandError("이미 무효 처리된 원가입니다.", "STATE");
   if (e.status === "rejected") throw new CommandError("공무가 반려한 원가는 무효 처리할 필요가 없습니다.", "STATE");
-  if (e.source === "SEED") throw new CommandError("기준 발생원가(시드)는 무효 처리할 수 없습니다. Demo Reset을 사용하세요.", "STATE");
+  if (e.source === "SEED") throw new CommandError("시스템 시작 전 발생원가는 무효 처리할 수 없습니다. 시연에서는 ‘데모 초기화’를 쓰세요.", "STATE");
   const before = siteFinancials(db0, e.siteId);
   e.status = "voided";
   e.voidedAt = nowIso(ctx);
@@ -344,7 +347,7 @@ export function editCostEntry(
   const e = db.costEntries.find((x) => x.id === entryId);
   if (!e) throw new CommandError("원가 이벤트를 찾을 수 없습니다.", "NOT_FOUND");
   if (e.status !== "active" && e.status !== "pending") throw new CommandError("무효·반려된 원가는 수정할 수 없습니다.", "STATE");
-  if (e.source === "SEED") throw new CommandError("기준 발생원가(시드)는 수정할 수 없습니다.", "STATE");
+  if (e.source === "SEED") throw new CommandError("시스템 시작 전 발생원가는 수정할 수 없습니다.", "STATE");
   validateAmount(patch.amount);
   if (!COST_CATEGORIES.includes(patch.category)) throw new CommandError("비용 항목을 선택해주세요.");
   const before = siteFinancials(db0, e.siteId);
@@ -567,7 +570,7 @@ export function completeAction(db0: DemoDB, actionId: string, input: CompleteAct
   };
   db.proofEvents.unshift(proof);
   a.proofEventId = proof.proof_event_id;
-  log(db, ctx, "proof", `${site.shortName} 조치 완료 → Proof Event 기록 (${confirmed ? "결과 확인" : "확인 대기"})`, a.siteId, "/evidence");
+  log(db, ctx, "proof", `${site.shortName} 조치 완료 → 성과 기록 (${confirmed ? "결과 확인" : "확인 대기"})`, a.siteId, "/evidence");
   touch(db, ctx);
   return { db, result: { proofEventId: proof.proof_event_id, changeOrderId: coId } };
 }
@@ -575,12 +578,12 @@ export function completeAction(db0: DemoDB, actionId: string, input: CompleteAct
 export function confirmProofEvent(db0: DemoDB, proofId: string, ctx: Ctx) {
   const db = clone(db0);
   const p = db.proofEvents.find((x) => x.proof_event_id === proofId);
-  if (!p) throw new CommandError("Proof Event를 찾을 수 없습니다.", "NOT_FOUND");
+  if (!p) throw new CommandError("조치 성과 기록을 찾을 수 없습니다.", "NOT_FOUND");
   if (p.status === "confirmed") throw new CommandError("이미 결과 확인된 기록입니다.", "STATE");
   p.status = "confirmed";
   p.result_confirmed_at = nowIso(ctx);
   p.confirmed_by = ctx.userId;
-  log(db, ctx, "proof", `Proof Event 결과 확인: ${p.decision}`, p.site_id, "/evidence");
+  log(db, ctx, "proof", `조치 성과 기록 결과 확인: ${p.decision}`, p.site_id, "/evidence");
   touch(db, ctx);
   return { db, result: {} };
 }

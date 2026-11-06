@@ -325,6 +325,7 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
   test("현장 QR: 본사 단말기 등록 → 로그인 없는 태블릿 연결 → 현장소장 QR 확인 → 해제", async ({ browser }) => {
     const admin = await login(browser, CEO.email, CEO.password);
     await admin.goto("/attendance");
+    admin.once("dialog", (d) => void d.accept()); // 회사 설정 변경 확인 (D-65)
     await admin.getByTestId("att-mode-qr").click();
     await expect(admin.getByTestId("att-mode-qr")).toHaveAttribute("aria-checked", "true");
     await admin.locator(`[data-testid="att-site"][data-site="${siteId}"]`).getByTestId("kiosk-add").click();
@@ -367,6 +368,7 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     expect((await (await kp.request.get(`/api/kiosk/status?id=${kioskId}`)).json()).active).toBe(false);
     await tab.close();
     // 다음 테스트를 위해 GPS만으로 되돌림
+    admin.once("dialog", (d) => void d.accept()); // 회사 설정 변경 확인 (D-65)
     await admin.getByTestId("att-mode-gps").click();
   });
 
@@ -473,7 +475,7 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     const portal = page.getByTestId("partner-portal");
     await expect(portal).toContainText("물류센터");
     const text = (await portal.innerText()).replace(/\s+/g, " ");
-    expect(text).not.toMatch(/\d+(\.\d+)?억|이익률|EAC/);
+    expect(text).not.toMatch(/\d+(\.\d+)?억|이익률|EAC|총원가/);
     // 견적 문의(S7): 품목 없이 보내면 거부 → 품목·수량 넣고 접수
     await page.locator("#p-title").fill("1층 로비 고정창 추가 견적 문의");
     await page.locator("#p-desc").fill("대략적인 금액과 시공 가능 시기를 알려주세요.");

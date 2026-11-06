@@ -174,7 +174,7 @@ function EasyComplete({ db, action, onClose }: { db: DemoDB; action: ActionItem;
             닫기
           </button>
           <button type="button" onClick={save} disabled={!result || busy} className="press h-[3.8rem] rounded-2xl bg-cta text-[1.15rem] font-extrabold text-cta-text disabled:opacity-40" data-testid="complete-confirm">
-            본사에 알리기
+            본사로 보내기
           </button>
         </div>
       }

@@ -28,6 +28,7 @@ const kstDay = (iso: unknown) => (typeof iso === "string" && Number.isFinite(Dat
 type Phase =
   | { k: "idle" }
   | { k: "consent"; mode: "in" | "out"; qr?: string }
+  | { k: "confirmOut" }
   | { k: "locating"; mode: "in" | "out" }
   | { k: "pick"; mode: "in"; sample: GeoSample | null; reason?: GeoStamp["reason"]; consent?: boolean }
   | { k: "warn"; mode: "in" | "out"; site: Site; sample: GeoSample | null; reason?: GeoStamp["reason"]; distance?: number; consent?: boolean }
@@ -38,6 +39,15 @@ const bigBtn = "press flex min-h-[4.6rem] w-full items-center justify-center gap
 export function EasyAttendance({ db, userId, sites, autoQr }: { db: DemoDB; userId: string; sites: Site[]; autoQr?: string }) {
   const [phase, setPhase] = useState<Phase>({ k: "idle" });
   const autoDone = useRef(false);
+  const cardRef = useRef<HTMLElement>(null);
+  // 동의·현장 고르기·위치 확인 중·완료로 바뀌면 그 카드가 화면에 보이게 (위로 밀려 ‘아무 일도 없는 것’처럼 보이던 문제 · D-65)
+  useEffect(() => {
+    if (phase.k === "idle") return;
+    const el = cardRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    if (r.top < 80 || r.bottom > window.innerHeight) el.scrollIntoView({ block: "center" });
+  }, [phase.k]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const today = todayIso();
@@ -140,7 +150,9 @@ export function EasyAttendance({ db, userId, sites, autoQr }: { db: DemoDB; user
     setPhase({ k: "warn", mode, site, sample, reason, distance: d, consent });
   };
 
-  const tap = (mode: "in" | "out") => (consented ? start(mode) : setPhase({ k: "consent", mode }));
+  const go = (mode: "in" | "out") => (consented ? start(mode) : setPhase({ k: "consent", mode }));
+  // 퇴근은 출근 버튼 자리에 나타나 잘못 누르기 쉬워 한 번 더 묻는다 (D-65)
+  const tap = (mode: "in" | "out") => (mode === "out" ? setPhase({ k: "confirmOut" }) : go(mode));
 
   /** 현장 태블릿 QR로 출근 (이미 출근했으면 QR 확인만) */
   const startQr = async (text: string, consent?: boolean) => {
@@ -217,12 +229,30 @@ export function EasyAttendance({ db, userId, sites, autoQr }: { db: DemoDB; user
     );
 
   const box = (children: React.ReactNode, tone: "plain" | "ok" | "warn" = "plain") => (
-    <section className={cx("space-y-3 rounded-[1.75rem] border p-5 shadow-pop", tone === "ok" ? "border-ok/30 bg-ok-bg" : tone === "warn" ? "border-warn/40 bg-warn-bg" : "border-line bg-surface")} data-testid="att-card" aria-live="polite">
+    <section ref={cardRef} className={cx("scroll-mt-24 space-y-3 rounded-[1.75rem] border p-5 shadow-pop", tone === "ok" ? "border-ok/30 bg-ok-bg" : tone === "warn" ? "border-warn/40 bg-warn-bg" : "border-line bg-surface")} data-testid="att-card" aria-live="polite">
       {children}
     </section>
   );
 
   // ───── 진행 화면 ─────
+  if (phase.k === "confirmOut")
+    return box(
+      <>
+        <p className="flex items-center gap-2 text-[1.35rem] font-extrabold" data-testid="att-out-ask">
+          <LogOut size={26} aria-hidden /> 지금 퇴근할까요?
+        </p>
+        <p className="text-[1.08rem] text-ink-2">퇴근을 누르면 오늘 근무가 끝난 것으로 기록돼요.</p>
+        <div className="grid grid-cols-[1fr_1.6fr] gap-2.5">
+          <button type="button" onClick={() => setPhase({ k: "idle" })} className="press min-h-[4rem] rounded-full border-2 border-line-strong bg-surface text-[1.12rem] font-bold" data-testid="att-out-no">
+            아니요
+          </button>
+          <button type="button" onClick={() => go("out")} className="press min-h-[4rem] rounded-full bg-primary text-[1.2rem] font-extrabold text-white shadow-card" data-testid="att-out-yes">
+            네, 퇴근할게요
+          </button>
+        </div>
+      </>,
+    );
+
   if (phase.k === "consent")
     return box(
       <>

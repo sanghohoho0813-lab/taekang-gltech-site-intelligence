@@ -143,7 +143,7 @@ export function CompleteModal({ db, action, open, onClose }: { db: DemoDB; actio
       open={open}
       onClose={onClose}
       title="조치 완료 · 결과 입력"
-      description="완료하면 조치 결과와 전·후 지표가 조치 증빙 기록(Proof Event)으로 남습니다."
+      description="완료하면 조치 결과와 전·후 지표가 조치 성과 기록으로 남습니다."
       size="md"
       testId="complete-modal"
       footer={
@@ -156,7 +156,7 @@ export function CompleteModal({ db, action, open, onClose }: { db: DemoDB; actio
             onClick={async () => {
               try {
                 const r = await run("completeAction", { actionId: action.id, input: { result, claimAmount: register ? amount : undefined, registerChangeOrder: register, confirm, idempotencyKey: key } });
-                toast.push({ tone: "ok", title: "조치 완료 · Proof Event 기록", desc: r.changeOrderId ? `변경공사 청구 검토 ${fmtMan(amount)} 등록 (원청 승인 전 · 이익 미반영)` : "실증 Evidence에서 확인할 수 있습니다." });
+                toast.push({ tone: "ok", title: "조치 완료 · 성과 기록 남김", desc: r.changeOrderId ? `변경공사 청구 검토 ${fmtMan(amount)} 등록 (원청 승인 전 · 이익 미반영)` : "‘실증 기록’에서 확인할 수 있습니다." });
                 onClose();
               } catch (e) {
                 setErr(e instanceof CommandError ? e.message : "완료 처리 실패");
@@ -206,7 +206,7 @@ export function CompleteModal({ db, action, open, onClose }: { db: DemoDB; actio
             <input type="checkbox" checked={confirm} onChange={(e) => setConfirm(e.target.checked)} className="mt-1 size-4 accent-[var(--t-active)]" />
             <span>
               <b>결과 확인 (관리자 승인)</b>
-              <span className="block text-[0.75rem] text-ink-3">체크 해제 시 Proof Event가 ‘확인 대기’로 남습니다.</span>
+              <span className="block text-[0.75rem] text-ink-3">체크를 풀면 조치 성과 기록이 ‘확인 대기’로 남습니다.</span>
             </span>
           </label>
         )}
@@ -278,7 +278,7 @@ export function ActionCard({ db, action, compact = false }: { db: DemoDB; action
           {proof && (
             <p className="mt-1 flex flex-wrap items-center gap-1.5">
               <Badge tone={proof.status === "confirmed" ? "ok" : "warn"} icon={<BadgeCheck size={13} />}>
-                Proof Event {proof.status === "confirmed" ? "결과 확인" : "확인 대기"}
+                조치 성과 기록 {proof.status === "confirmed" ? "결과 확인" : "확인 대기"}
               </Badge>
               <Link href="/evidence" className="text-[0.74rem] font-bold text-theme-ink underline-offset-2 hover:underline">
                 기록 보기
@@ -327,7 +327,7 @@ export function ActionCard({ db, action, compact = false }: { db: DemoDB; action
             onClick={async () => {
               try {
                 await run("confirmProofEvent", { proofId: proof.proof_event_id });
-                toast.push({ tone: "ok", title: "결과를 확인했습니다 (Proof Event 확정)" });
+                toast.push({ tone: "ok", title: "결과를 확인했습니다 (성과 기록 확정)" });
               } catch (e) {
                 toast.push({ tone: "err", title: e instanceof Error ? e.message : "실패" });
               }
@@ -348,7 +348,7 @@ export function ActionCard({ db, action, compact = false }: { db: DemoDB; action
             근거: {action.signalTitle} <MethodChip className="ml-1" />
           </p>
           <p className="num text-ink-3">
-            조치 시점 지표 — 이익률 {fmtPct(action.kpiBefore.marginPct)} · 예상이익 {fmtEok(action.kpiBefore.expectedProfit)} · EAC {fmtEok(action.kpiBefore.eac)}
+            조치 시점 지표 — 이익률 {fmtPct(action.kpiBefore.marginPct)} · 예상이익 {fmtEok(action.kpiBefore.expectedProfit)} · 예상 총원가 {fmtEok(action.kpiBefore.eac)}
           </p>
           <ol className="space-y-1">
             {action.history.map((h, i) => (

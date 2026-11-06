@@ -88,6 +88,14 @@ export default function SiteDetailPage() {
         <span className="font-semibold text-ink-2">{site.shortName}</span>
       </div>
 
+      {/* 휴대폰: 돈 카드보다 먼저 어느 현장인지 한 줄로 (현장 이름이 한참 아래에 있던 문제 · D-65) */}
+      <div className="flex items-center justify-between gap-3 @min-[1000px]:hidden" data-testid="site-mobile-title">
+        <p className="min-w-0">
+          <span className="block text-[1.2rem] font-extrabold leading-tight">{site.shortName}</span>
+          <span className="block truncate text-[0.8rem] text-ink-3">{site.workType} · {site.region}</span>
+        </p>
+        <span className="num shrink-0 rounded-full bg-active-soft px-3 py-1 text-[0.85rem] font-bold text-theme-ink">공정률 {site.progressPct}%</span>
+      </div>
       {/* 헤더: 모바일은 참고 시안의 '현장 상세' 구성 */}
       <div className="grid gap-5 @min-[1000px]:grid-cols-[minmax(0,0.9fr)_minmax(0,1.6fr)]">
         <Card className="order-2 overflow-hidden @min-[1000px]:order-1">
@@ -261,16 +269,18 @@ function ProfitEngine({ db, site, f }: { db: DemoDB; site: Site; f: SiteFinancia
         </p>
       </div>
       <div className="px-5 pt-4">
-        <p className="mb-1.5 text-[0.78rem] font-bold text-ink-2">원가항목별 EAC vs 실행예산</p>
+        <p className="mb-1.5 text-[0.78rem] font-bold text-ink-2">원가항목별 쓴 돈(진한 색) · 남은 예상(옅은 색) vs 실행예산</p>
         <ul className="grid grid-cols-1 gap-x-5 gap-y-1.5 @min-[560px]:grid-cols-2" data-testid="category-mini">
           {f.categories.map((c) => {
             const over = c.variancePct > db.thresholds.overrunPct;
             return (
               <li key={c.category} className="grid grid-cols-[4.6rem_1fr_auto] items-center gap-2 text-[0.76rem]">
                 <span className="font-semibold text-ink-2">{CATEGORY_LABEL[c.category].replace("(인건비)", "")}</span>
-                <span className="relative h-2 rounded-full bg-surface-3">
-                  <span className={cx("absolute inset-y-0 left-0 rounded-full transition-[width] duration-700", over ? "bg-err" : "bg-chart-2")} style={{ width: `${Math.min(100, (c.eac / Math.max(c.budget, c.eac)) * 100)}%` }} />
-                  {c.eac > c.budget && <span className="absolute inset-y-[-3px] w-0.5 bg-ink" style={{ left: `${(c.budget / c.eac) * 100}%` }} aria-hidden />}
+                {/* 막대 = 실행예산(또는 예상 총원가 중 큰 쪽) — 진한 부분은 이미 쓴 돈, 옅은 부분은 앞으로 더 들 예상 (모두 꽉 차 보이던 문제 · D-65) */}
+                <span className="relative h-2 overflow-hidden rounded-full bg-surface-3" title={`실행예산 ${fmtEok(c.budget)} · 발생 ${fmtEok(c.incurred)} · 잔여 예상 ${fmtEok(c.remaining)}`}>
+                  <span className={cx("absolute inset-y-0 left-0 opacity-35 transition-[width] duration-700", over ? "bg-err" : "bg-chart-2")} style={{ width: `${Math.min(100, (c.eac / Math.max(c.budget, c.eac, 1)) * 100)}%` }} />
+                  <span className={cx("absolute inset-y-0 left-0 transition-[width] duration-700", over ? "bg-err" : "bg-chart-2")} style={{ width: `${Math.min(100, (c.incurred / Math.max(c.budget, c.eac, 1)) * 100)}%` }} />
+                  {c.eac > c.budget && <span className="absolute inset-y-0 w-0.5 bg-ink" style={{ left: `${(c.budget / c.eac) * 100}%` }} aria-hidden />}
                 </span>
                 <span className={cx("num font-bold", over ? "text-err" : c.variance > 0 ? "text-warn" : "text-ink-3")}>{c.variance > 0 ? `+${fmtPct(c.variancePct)}` : "예산 내"}</span>
               </li>
@@ -283,7 +293,7 @@ function ProfitEngine({ db, site, f }: { db: DemoDB; site: Site; f: SiteFinancia
           <div className="anim-flash rounded-xl border border-err/25 bg-err-bg px-3.5 py-2.5 text-[0.82rem]" data-testid="change-banner">
             <p className="font-bold text-ink">기준({BASE_LABEL}) 대비 변화</p>
             <p className="num text-ink-2">
-              EAC {fmtEok(base.eac)} → <b>{fmtEok(f.eac)}</b> ({f.eac - base.eac >= 0 ? "+" : "−"}
+              예상 총원가 {fmtEok(base.eac)} → <b>{fmtEok(f.eac)}</b> ({f.eac - base.eac >= 0 ? "+" : "−"}
               {fmtMan(Math.abs(f.eac - base.eac))}) · 예상이익 {fmtEok(base.expectedProfit)} → <b>{fmtEok(f.expectedProfit)}</b> · 이익률 {fmtPct(base.marginPct)} → <b>{fmtPct(f.marginPct)}</b>
             </p>
           </div>
@@ -403,16 +413,33 @@ function CostTab({ db, site, f, canSeeMoney }: { db: DemoDB; site: Site; f: Site
     <div className="space-y-5">
       {canSeeMoney && (
         <Card>
-          <CardHeader title="원가항목별 예산 vs 총예상원가" sub="항목 EAC = 발생 + 잔여예상 · 예산 초과 5% 이상은 위험 신호" />
-          <div tabIndex={0} role="region" aria-label="원가항목별 예산 표 (가로 스크롤)" className="overflow-x-auto scroll-thin">
+          <CardHeader title="원가항목별 예산 vs 예상 총원가" sub={`예상 총원가 = 발생 + 잔여예상 · 예산 초과 ${db.thresholds.overrunPct}% 이상은 위험 신호 · 단위 만 원`} />
+          {/* 휴대폰: 항목마다 한 줄 — ‘예산 대비’가 화면 밖으로 밀리지 않게 (D-65) */}
+          <ul className="divide-y divide-line border-t border-line @min-[760px]:hidden" data-testid="cost-cards">
+            {f.categories.map((c) => (
+              <li key={c.category} className="flex items-center justify-between gap-3 px-5 py-2.5">
+                <span className="min-w-0">
+                  <span className="block font-semibold">{CATEGORY_LABEL[c.category]}</span>
+                  <span className="num block text-[0.76rem] text-ink-3">
+                    예산 {fmtManNum(c.budget)} · 예상 {fmtManNum(c.eac)}만
+                  </span>
+                </span>
+                <span className={cx("num shrink-0 text-right text-[0.86rem] font-bold", c.variancePct > db.thresholds.overrunPct ? "text-err" : c.variance > 0 ? "text-warn" : "text-ok")}>
+                  {c.variance === 0 ? "예산대로" : `${c.variance > 0 ? "+" : "−"}${fmtManNum(Math.abs(c.variance))}만`}
+                  <span className="block text-[0.74rem] font-semibold">{fmtPct(c.variancePct)}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+          <div tabIndex={0} role="region" aria-label="원가항목별 예산 표 (가로 스크롤)" className="hidden overflow-x-auto scroll-thin @min-[760px]:block">
             <table className="w-full min-w-[42rem] text-[0.85rem]" data-testid="cost-table">
               <thead>
                 <tr className="border-y border-line bg-surface-2 text-left text-[0.75rem] font-semibold text-ink-3">
                   <th className="px-5 py-2.5">항목</th>
-                  <th className="px-3 py-2.5 text-right">실행예산</th>
+                  <th className="px-3 py-2.5 text-right">실행예산 (만 원)</th>
                   <th className="px-3 py-2.5 text-right">발생원가</th>
                   <th className="px-3 py-2.5 text-right">잔여예상</th>
-                  <th className="px-3 py-2.5 text-right">항목 EAC</th>
+                  <th className="px-3 py-2.5 text-right">예상 총원가</th>
                   <th className="px-5 py-2.5 text-right">예산 대비</th>
                 </tr>
               </thead>
@@ -444,7 +471,7 @@ function CostTab({ db, site, f, canSeeMoney }: { db: DemoDB; site: Site; f: Site
         </Card>
       )}
       <Card>
-        <CardHeader title="원가 이벤트" sub={`현장보고·PC·CSV로 입력된 원가 · 기준 발생원가(시드) ${seedCount}건은 별도 집계`} />
+        <CardHeader title="원가 이벤트" sub={`현장 보고·PC·엑셀로 입력된 원가 · 시스템 시작 전 발생원가 ${seedCount}건은 따로 집계`} />
         <div className="px-5 pb-3">
           <CostEntryList db={db} entries={entries} emptyText="시연 중 입력된 원가가 아직 없습니다. 모바일 ‘현장 보고 · 비용 입력’으로 추가해보세요." />
         </div>
@@ -547,7 +574,7 @@ function ContractTab({ db, site, f }: { db: DemoDB; site: Site; f: SiteFinancial
         </dl>
       </Card>
       <Card>
-        <CardHeader title="변경공사" sub="승인(approved)된 금액만 계약에 반영" right={<Link href="/finance"><Button size="sm">정산에서 처리</Button></Link>} />
+        <CardHeader title="변경공사" sub="‘승인’된 금액만 계약에 반영" right={<Link href="/finance"><Button size="sm">정산에서 처리</Button></Link>} />
         {cos.length === 0 ? (
           <EmptyState title="변경공사가 없습니다." />
         ) : (
@@ -618,7 +645,7 @@ function RequestsTab({ db, site }: { db: DemoDB; site: Site }) {
   const reqs = db.partnerRequests.filter((r) => r.siteId === site.id);
   return (
     <Card>
-      <CardHeader title="발주처·협력사 요청함" sub="파트너 포털에서 등록된 요청" right={<Link href="/insights#requests"><Button size="sm" icon={<Handshake size={15} />}>요청 처리</Button></Link>} />
+      <CardHeader title="발주처·협력사 요청함" sub="발주처 포털에서 등록된 요청" right={<Link href="/insights#requests"><Button size="sm" icon={<Handshake size={15} />}>요청 처리</Button></Link>} />
       {reqs.length === 0 ? (
         <EmptyState title="요청이 없습니다." />
       ) : (
@@ -644,7 +671,7 @@ function HistoryTab({ db, site }: { db: DemoDB; site: Site }) {
   const logs = db.activityLogs.filter((l) => l.siteId === site.id);
   return (
     <Card>
-      <CardHeader title="활동 이력" sub="모든 변경은 시간·사용자와 함께 기록" right={<MethodChip />} />
+      <CardHeader title="활동 이력" sub="모든 변경은 시간·사용자와 함께 기록" />
       {logs.length === 0 ? (
         <EmptyState title="이력이 없습니다." />
       ) : (

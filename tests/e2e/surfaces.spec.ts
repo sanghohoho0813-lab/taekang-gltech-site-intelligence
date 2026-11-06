@@ -33,7 +33,7 @@ test("파트너 Closed Loop: 요청 등록 → 본사 요청함 → 검토·회�
   // 내부 원가·이익·미수 비노출
   // 금액(억·만 원)·이익률·EAC·다른 현장이 전혀 표시되지 않아야 한다
   const text = (await portal.innerText()).replace(/\s+/g, " ");
-  expect(text).not.toMatch(/\d+(\.\d+)?억|\d[\d,]*만 원|이익률|EAC|B현장|C현장/);
+  expect(text).not.toMatch(/\d+(\.\d+)?억|\d[\d,]*만 원|이익률|EAC|총원가|B현장|C현장/);
   await page.getByTestId("p-type").selectOption("change_review");
   await page.getByTestId("partner-fill").click();
   await page.getByTestId("partner-submit").click();
@@ -354,7 +354,7 @@ test("S7 고객 기초: 견적 문의·주문 요청(품목·수량) → 본사 
   await expect(item).toHaveAttribute("data-status", "answered");
   await expect(item).toContainText("납품·시공일을 확정해 안내");
   const text = (await page.getByTestId("partner-portal").innerText()).replace(/\s+/g, " ");
-  expect(text).not.toMatch(/\d+(\.\d+)?억|\d[\d,]*만 원|이익률|EAC/);
+  expect(text).not.toMatch(/\d+(\.\d+)?억|\d[\d,]*만 원|이익률|EAC|총원가/);
 });
 
 test("자료 이관·점검: 준비 점검 → 기성·입금 붙여넣기(오류→수정) → 넣기 → 중복 건너뜀 → 한글 엑셀(CP949) 팀 단가 → 취소", async ({ page }) => {
