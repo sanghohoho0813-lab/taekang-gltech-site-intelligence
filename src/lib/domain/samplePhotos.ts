@@ -27,10 +27,10 @@ function svg(title: string, sub: string, i: number): string {
 }
 
 export function samplePhotos(site: Site, today: string, by: string, n = 6): SitePhoto[] {
-  const stages = site.stages.length ? site.stages : [{ name: site.workType }];
   return Array.from({ length: n }, (_, i) => {
     const date = shiftDate(today, -(n - 1 - i));
-    const stage = (stages[Math.min(stages.length - 1, Math.floor((i / n) * stages.length))] as { name: string }).name;
+    // 사진대장이 붙이는 공종(그날 진행 중인 단계)과 같은 이름을 그림에도 쓴다
+    const stage = site.stages.find((s) => s.startDate <= date && s.endDate >= date)?.name ?? site.workType;
     return {
       id: `ph-sample-${site.id}-${date}-${i}`,
       siteId: site.id,
