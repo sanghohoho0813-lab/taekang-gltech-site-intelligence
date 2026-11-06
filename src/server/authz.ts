@@ -4,6 +4,7 @@
  * 2) viewFor: 역할별로 내려보낼 데이터만 남긴다 — 현장직원·발주처에게는 계약·원가·이익·기성·미수가 아예 전송되지 않음
  * 3) sanitizeResult: 명령 결과에서도 금액 정보 제거
  */
+import { hasMoney, stripMoney } from "@/lib/domain/redact";
 import type { ActionItem, DemoDB, GeoStamp, SiteContract } from "@/lib/domain/types";
 import { canSeeStamp, hasCoords, locationPolicy, stripGeo } from "@/lib/domain/privacy";
 import { computeSignals } from "@/lib/domain/risk";
@@ -65,7 +66,7 @@ export function authorize(m: Member, name: CommandName, argsIn: unknown, db: Dem
         const r = db.reports.find((x) => x.id === args.reportId);
         if (!r || r.createdBy !== m.id) throw new ForbiddenError("본인이 등록한 보고만 되돌릴 수 있습니다.");
         // 본사 공무가 이미 확인(승인·반려)한 비용이 있으면 현장에서 혼자 취소할 수 없다
-        if (r.costEntryIds.some((id) => entry(id)?.reviewedAt)) throw new ForbiddenError("본사가 이미 확인한 보고입니다. 취소가 필요하면 본사에 요청해주세요.");
+        if (r.costEntryIds.some((id) => entry(id)?.reviewedAt) || r.review?.status === "confirmed") throw new ForbiddenError("본사가 이미 확인한 보고입니다. 취소가 필요하면 본사에 요청해주세요.");
         return args;
       }
       case "voidCostEntry":
@@ -86,6 +87,9 @@ export function authorize(m: Member, name: CommandName, argsIn: unknown, db: Dem
           // 현장 완료는 '확인 대기'로 남기고, 결과 확인(확정)은 본사가 한다
           const input = { ...((args.input as Args) ?? {}) };
           input.confirm = false;
+          // 변경공사 청구(금액)는 본사만 — 현장에서 보낸 금액으로 변경공사가 생기지 않게 (D-66 점검 반영)
+          input.registerChangeOrder = false;
+          delete input.claimAmount;
           args.input = input;
         }
         return args;
@@ -122,7 +126,8 @@ export function authorize(m: Member, name: CommandName, argsIn: unknown, db: Dem
         const mv = (db.materialMoves ?? []).find((x) => x.id === args.moveId);
         if (!mv || mv.by !== m.id || !sites.has(mv.siteId)) throw new ForbiddenError("본인이 남긴 자재 기록만 취소할 수 있습니다.");
         // 현장에서는 오늘 남긴 것만 — 지난 기록(이미 인쇄한 공사일보·설치율 근거)은 본사가 사유를 남기고 취소 (리뷰 반영 D-63)
-        if (mv.workDate !== kstDate(now.toISOString())) throw new ForbiddenError("지난 날 기록은 현장에서 취소할 수 없습니다. 본사에 취소를 요청해 주세요.");
+        // 자정 전에 누르고 자정 뒤에 전송된 기록(통신 불량 보관)도 받은 날이 오늘이면 취소할 수 있게 (D-66 점검 반영)
+        if (mv.workDate !== kstDate(now.toISOString()) && kstDate(mv.at) !== kstDate(now.toISOString())) throw new ForbiddenError("지난 날 기록은 현장에서 취소할 수 없습니다. 본사에 취소를 요청해 주세요.");
         return args;
       }
       case "checkIn":
@@ -257,7 +262,8 @@ export function viewFor(m: Member, db: DemoDB, now = new Date()): DemoDB {
       proofEvents: db.proofEvents
         .filter((p) => actionIds.has(p.action_id))
         .map((p) => ({ ...p, trigger: "", why: [], decision: "", action: "", result: "", kpi_before: {}, kpi_after: {} })),
-      activityLogs: db.activityLogs.filter((l) => l.by === m.id),
+      // 본인 활동 이력만 — 이력 문구는 본사용이라 ‘예상 총원가 …’ 같은 금액이 들어가므로 지우고 보낸다 (D-66 점검 반영)
+      activityLogs: db.activityLogs.filter((l) => l.by === m.id).map((l) => (hasMoney(l.summary) ? { ...l, summary: stripMoney(l.summary) } : l)),
       // 출퇴근은 본인 기록만
       attendance: (db.attendance ?? []).filter((r) => r.userId === m.id && r.workDate >= since),
       consents: (db.consents ?? []).filter((c) => c.userId === m.id),

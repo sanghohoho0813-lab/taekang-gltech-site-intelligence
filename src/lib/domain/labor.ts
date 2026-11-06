@@ -69,11 +69,15 @@ export function laborEstimate(db: DemoDB, site: Site, from: string, to: string):
   const compareFrom = firstCrew && firstCrew > from ? firstCrew : from;
   const crew = allCrew.filter((c) => c.workDate >= compareFrom && c.workDate <= to);
   const byTeam = new Map<string, LaborTeamRow>();
+  const teamDays = new Map<string, Set<string>>();
   for (const c of crew) {
     const key = c.team.toLowerCase();
     const r = teamRate(db, c.team);
     const row = byTeam.get(key) ?? { team: c.team, kind: c.kind, days: 0, personDays: 0, dayRate: r.rate, rateSet: r.set, estimate: 0 };
-    row.days += 1;
+    const ds = teamDays.get(key) ?? new Set<string>();
+    ds.add(c.workDate);
+    teamDays.set(key, ds);
+    row.days = ds.size;
     row.personDays += c.headcount;
     row.estimate = row.personDays * row.dayRate;
     byTeam.set(key, row);

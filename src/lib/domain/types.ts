@@ -238,6 +238,10 @@ export interface ImportBatch {
   siteIds: string[];
   /** 기준선을 다시 잡기 전 값 (취소 시 되돌림) */
   prevBaseline?: Record<string, FinancialSnapshot | null>;
+  /** 이 묶음이 손익 기준선에 더한 만큼 (현장별) — 취소하면 이만큼만 뺀다. 그 사이 현장 보고로 생긴 변화는 그대로 남는다 (D-66) */
+  baselineDelta?: Record<string, Partial<FinancialSnapshot>>;
+  /** 팀 단가 가져오기: 이 묶음이 넣은 팀 이름 — 취소하면 이 팀들만 이전 값으로 (D-66) */
+  rateTeams?: string[];
   prevTeamRates?: { team: string; dayRate: number }[];
   undoneAt?: string;
   undoneBy?: string;
@@ -427,6 +431,10 @@ export interface ChangeOrder {
   status: ChangeOrderStatus;
   requestedAt: string;
   decidedAt?: string;
+  /** 발주처에 청구한 시각 — 승인 대기 일수는 이때부터 센다 (D-66) */
+  submittedAt?: string;
+  /** 본사가 상태(청구·승인·반려)를 바꾼 마지막 시각 */
+  statusChangedAt?: string;
   sourceEntryIds: string[];
   sourceActionId?: string;
   sourcePartnerRequestId?: string;

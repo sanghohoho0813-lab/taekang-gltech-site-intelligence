@@ -2,7 +2,7 @@
  * 실제 자료 가져오기 명령 (계약 3단계 ‘실제 자료 연결’). 서버는 브라우저 미리보기를 믿지 않고 CSV 원문을 다시 검증한다.
  * 중복(이미 있는 기록)은 건너뛰고, 오류가 한 줄이라도 있으면 아무것도 넣지 않는다 (전부 아니면 전무).
  */
-import type { ChangeOrder, CrewCheck, DemoDB, ImportBatch } from "@/lib/domain/types";
+import type { ChangeOrder, CrewCheck, DemoDB, FinancialSnapshot, ImportBatch } from "@/lib/domain/types";
 import { DEFAULT_SETTINGS } from "@/lib/domain/types";
 import { siteFinancials, snapshotOf } from "@/lib/domain/calc";
 import { fmtMan, todayIso } from "@/lib/domain/format";
@@ -16,6 +16,16 @@ export interface ImportDataInput {
   idempotencyKey: string;
   /** 이관 자료를 ‘운영 중 변화’로 보지 않도록 손익 기준선을 다시 잡는다 (기본 켬) */
   rebaseline?: boolean;
+}
+
+const SNAP_KEYS = ["contractAmount", "approvedChange", "adjustedContract", "incurred", "remaining", "eac", "expectedProfit"] as const;
+
+/** 기준선에 변화량을 더하거나(sign 1) 빼고(sign −1) 이익률은 다시 계산 */
+function shiftSnap(b: FinancialSnapshot, d: Partial<FinancialSnapshot>, sign: 1 | -1): FinancialSnapshot {
+  const out = { ...b };
+  for (const k of SNAP_KEYS) out[k] = b[k] + sign * (d[k] ?? 0);
+  out.marginPct = out.adjustedContract > 0 ? (out.expectedProfit / out.adjustedContract) * 100 : 0;
+  return out;
 }
 
 /** 한국 시간 그날 오전 9시를 기록 시각으로 */
@@ -102,13 +112,20 @@ export function importData(db0: DemoDB, input: ImportDataInput, ctx: Ctx) {
     }
   }
 
-  // 손익 기준선 다시 잡기 — 이관한 과거 자료가 ‘운영 시작 후 변화’로 보이지 않게
+  // 손익 기준선 옮기기 — 이관한 과거 자료가 ‘운영 시작 후 변화’로 보이지 않게, 이 묶음이 만든 변화만큼만 기준선에 더한다.
+  // (예전에는 기준선을 지금 값으로 통째로 다시 잡아, 그 전에 현장 보고로 생긴 원가 상승까지 보고서에서 사라졌다 · D-66 점검 반영)
   const rebased: string[] = [];
-  const prevBaseline: NonNullable<ImportBatch["prevBaseline"]> = {};
-  if (input.rebaseline !== false && (plan.kind === "billing" || plan.kind === "change" || plan.kind === "cost")) {
+  const baselineDelta: NonNullable<ImportBatch["baselineDelta"]> = {};
+  if (input.rebaseline !== false && (plan.kind === "change" || plan.kind === "cost")) {
     for (const id of sites) {
-      prevBaseline[id] = db0.baseline[id] ?? null;
-      db.baseline[id] = snapshotOf(siteFinancials(db, id));
+      const before = snapshotOf(siteFinancials(db0, id));
+      const after = snapshotOf(siteFinancials(db, id));
+      const d: Partial<FinancialSnapshot> = {};
+      for (const k of SNAP_KEYS) if (after[k] !== before[k]) d[k] = after[k] - before[k];
+      if (!Object.keys(d).length) continue;
+      const base = db0.baseline[id];
+      db.baseline[id] = base ? shiftSnap(base, d, 1) : after;
+      baselineDelta[id] = d;
       rebased.push(id);
     }
   }
@@ -120,8 +137,8 @@ export function importData(db0: DemoDB, input: ImportDataInput, ctx: Ctx) {
     count: plan.rows.length,
     skipped: plan.duplicates.length,
     siteIds: [...sites],
-    ...(rebased.length ? { prevBaseline } : {}),
-    ...(plan.kind === "rates" ? { prevTeamRates: (db0.settings?.teamRates ?? []).map((t) => ({ ...t })) } : {}),
+    ...(rebased.length ? { baselineDelta } : {}),
+    ...(plan.kind === "rates" ? { prevTeamRates: (db0.settings?.teamRates ?? []).map((t) => ({ ...t })), rateTeams: (plan.rows as RateRow[]).map((r) => r.team) } : {}),
   };
   db.importBatches = [batch, ...(db.importBatches ?? [])].slice(0, 100);
 
@@ -173,7 +190,8 @@ export function undoImport(db0: DemoDB, input: { batchId: string }, ctx: Ctx) {
     renumberRounds(db, b0.siteIds);
   } else if (b0.kind === "change") {
     const cos = db.changeOrders.filter(mine);
-    if (cos.some((c) => c.decidedAt && c.decidedAt > b0.at)) throw new CommandError("가져온 뒤 승인·반려가 바뀐 변경공사가 있어 통째로 취소할 수 없습니다.", "STATE");
+    // 가져온 뒤 본사가 승인·반려를 바꿨는지는 ‘가져온 그대로인지’로 본다 (결정일을 그날 9시로 넣어 오늘 날짜면 바로 취소가 막히던 문제 · D-66)
+    if (cos.some((c) => c.statusChangedAt)) throw new CommandError("가져온 뒤 승인·반려가 바뀐 변경공사가 있어 통째로 취소할 수 없습니다.", "STATE");
     removed = cos.length;
     db.changeOrders = db.changeOrders.filter((x) => !mine(x));
   } else if (b0.kind === "crew") {
@@ -188,7 +206,16 @@ export function undoImport(db0: DemoDB, input: { batchId: string }, ctx: Ctx) {
     db.materialMoves = (db.materialMoves ?? []).filter((m) => !mine(m));
   } else if (b0.kind === "rates") {
     removed = b0.count;
-    db.settings = { ...(db.settings ?? DEFAULT_SETTINGS), teamRates: (b0.prevTeamRates ?? []).map((t) => ({ ...t })) };
+    if (b0.rateTeams) {
+      // 가져온 팀만 이전 값으로 — 그 뒤 설정에서 추가·변경한 다른 팀 단가는 지키기 (D-66 점검 반영)
+      const prev = new Map((b0.prevTeamRates ?? []).map((t) => [t.team.toLowerCase(), t]));
+      const touched = new Set(b0.rateTeams.map((t) => t.toLowerCase()));
+      const cur = db.settings?.teamRates ?? [];
+      const next = cur.flatMap((t) => (touched.has(t.team.toLowerCase()) ? (prev.has(t.team.toLowerCase()) ? [{ ...prev.get(t.team.toLowerCase())! }] : []) : [t]));
+      db.settings = { ...(db.settings ?? DEFAULT_SETTINGS), teamRates: next };
+    } else {
+      db.settings = { ...(db.settings ?? DEFAULT_SETTINGS), teamRates: (b0.prevTeamRates ?? []).map((t) => ({ ...t })) };
+    }
     if (!db.settings.teamRates?.length) delete db.settings.teamRates;
   } else if (b0.kind === "cost") {
     for (const e of db.costEntries.filter(mine)) {
@@ -200,8 +227,11 @@ export function undoImport(db0: DemoDB, input: { batchId: string }, ctx: Ctx) {
       removed += 1;
     }
   }
-  for (const [id, snap] of Object.entries(b0.prevBaseline ?? {})) {
-    if (snap) db.baseline[id] = snap;
+  if (b0.baselineDelta) {
+    for (const [id, d] of Object.entries(b0.baselineDelta)) if (db.baseline[id]) db.baseline[id] = shiftSnap(db.baseline[id], d, -1);
+  } else {
+    // 예전 방식으로 가져온 묶음 (기준선 통째 저장)
+    for (const [id, snap] of Object.entries(b0.prevBaseline ?? {})) if (snap) db.baseline[id] = snap;
   }
   const b = (db.importBatches ?? []).find((x) => x.id === b0.id)!;
   b.undoneAt = at;

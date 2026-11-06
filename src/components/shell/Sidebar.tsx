@@ -6,7 +6,7 @@ import { GROUPS, navFor, navLabel, type NavItem } from "@/lib/nav";
 import { NavIcon } from "@/components/ui/Icon";
 import { cx } from "@/components/ui/primitives";
 import { Logo } from "./Logo";
-import { useDb, useRole, usePrefs, useLiveStatus } from "@/lib/data/store";
+import { currentUserId, useDb, useRole, usePrefs, useLiveStatus } from "@/lib/data/store";
 import { THEMES } from "@/lib/theme/themes";
 import { fmtTime } from "@/lib/domain/format";
 import { computeSignals } from "@/lib/domain/risk";
@@ -47,7 +47,9 @@ export function Sidebar({ compact }: { compact: boolean }) {
   const theme = THEMES.find((t) => t.id === prefs.theme);
   const openSignals = useMemo(() => (db ? computeSignals(db).length : 0), [db]);
   const newRequests = db?.partnerRequests.filter((r) => r.status === "received").length ?? 0;
-  const myActions = db ? db.actions.filter((a) => a.assigneeUserId === "u-field" && ["assigned", "in_progress"].includes(a.status)).length : 0;
+  // 로그인한 사람에게 배정된 조치 수 (시연용 아이디를 고정해 실제 계정에서 배지가 안 보이던 문제 · D-66)
+  const me = db ? currentUserId() : "";
+  const myActions = db ? db.actions.filter((a) => a.assigneeUserId === me && ["assigned", "in_progress"].includes(a.status)).length : 0;
 
   const badgeFor = (href: string) => {
     if (href === "/insights" && openSignals + newRequests > 0) return openSignals + newRequests;

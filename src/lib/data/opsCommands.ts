@@ -14,6 +14,12 @@ import { CommandError, claimKey, clone, log, nowIso, requireSite, touch, userNam
 
 const HM = /^([01]\d|2[0-3]):[0-5]\d$/;
 const kst = (date: string, hm: string) => new Date(`${date}T${hm}:00+09:00`).toISOString();
+/** 퇴근 시각 — 출근보다 이른 시각이면 다음 날 퇴근(야간 근무)으로 본다 (D-66 점검 반영) */
+const MAX_SHIFT_MS = 20 * 3_600_000;
+const outIso = (date: string, hm: string, inAt: string) => {
+  const t = kst(date, hm);
+  return t > inAt ? t : new Date(new Date(t).getTime() + 86_400_000).toISOString();
+};
 const PHOTO = { test: (v: unknown) => validPhoto(v) };
 
 export const FIX_KIND_LABEL: Record<AttendanceRequest["kind"], string> = {
@@ -46,13 +52,19 @@ export function requestAttendanceFix(db0: DemoDB, input: FixRequestInput, ctx: C
   if (input.outTime !== undefined && !HM.test(input.outTime)) errors.outTime = "퇴근 시각을 확인해 주세요.";
   if (input.kind === "missed_in" && !input.inTime) errors.inTime = "실제 출근 시각을 넣어 주세요.";
   if (input.kind === "missed_out" && !input.outTime) errors.outTime = "실제 퇴근 시각을 넣어 주세요.";
-  if (input.inTime && input.outTime && input.outTime <= input.inTime) errors.outTime = "퇴근이 출근보다 늦어야 해요.";
+  if (input.inTime && input.outTime && input.outTime === input.inTime) errors.outTime = "출근과 퇴근 시각이 같아요.";
   if ((input.reason ?? "").trim().length < 2) errors.reason = "사유를 골라 주세요.";
   // 아직 오지 않은 시각으로는 요청할 수 없다
   if (!errors.workDate && input.inTime && HM.test(input.inTime) && kst(input.workDate, input.inTime) > at) errors.inTime = "아직 지나지 않은 시각이에요.";
-  if (!errors.workDate && input.outTime && HM.test(input.outTime) && kst(input.workDate, input.outTime) > at) errors.outTime = "아직 지나지 않은 시각이에요.";
   if (Object.keys(errors).length) throw new CommandError("입력값을 확인해주세요.", "VALIDATION", errors);
   const rec = (db0.attendance ?? []).find((r) => r.userId === ctx.userId && r.siteId === site.id && r.workDate === input.workDate);
+  // 퇴근 시각: 출근보다 이르면 다음 날(야간 근무) — 아직 오지 않은 시각·20시간 넘는 근무는 받지 않는다
+  const inRef = input.inTime ? kst(input.workDate, input.inTime) : rec?.inAt;
+  if (input.outTime && inRef) {
+    const out = outIso(input.workDate, input.outTime, inRef);
+    if (out > at) throw new CommandError("입력값을 확인해주세요.", "VALIDATION", { outTime: "아직 지나지 않은 시각이에요." });
+    if (new Date(out).getTime() - new Date(inRef).getTime() > MAX_SHIFT_MS) throw new CommandError("입력값을 확인해주세요.", "VALIDATION", { outTime: "근무가 20시간을 넘어요. 퇴근 시각을 확인해 주세요." });
+  } else if (input.outTime && kst(input.workDate, input.outTime) > at) throw new CommandError("입력값을 확인해주세요.", "VALIDATION", { outTime: "아직 지나지 않은 시각이에요." });
   if (input.kind === "missed_in" && rec) throw new CommandError("그날 출근 기록이 이미 있어요. ‘시각이 잘못 찍혔어요’로 요청해 주세요.", "STATE");
   if (input.kind !== "missed_in" && !rec) throw new CommandError("그날 출근 기록이 없어요. ‘출근을 못 눌렀어요’로 요청해 주세요.", "STATE");
   const waiting = (db0.attendanceRequests ?? []).find((q) => q.userId === ctx.userId && q.siteId === site.id && q.workDate === input.workDate && q.status === "pending");
@@ -103,7 +115,7 @@ export function reviewAttendanceFix(db0: DemoDB, input: { requestId: string; dec
     if (existing >= 0) {
       const r = db.attendance[existing];
       const inAt = kst(q.workDate, q.inTime!);
-      const outAt = q.outTime && !r.outAt ? kst(q.workDate, q.outTime) : r.outAt;
+      const outAt = q.outTime && !r.outAt ? outIso(q.workDate, q.outTime, inAt) : r.outAt;
       if (outAt && outAt <= inAt) throw new CommandError("요청한 출근 시각이 이미 기록된 퇴근 시각보다 늦습니다. 출퇴근 현황에서 직접 정정해 주세요.", "STATE");
       db.attendance[existing] = { ...r, inAt, ...(outAt ? { outAt } : {}), exceptionNote: stamp, corrections: [...(r.corrections ?? []), { at, by: ctx.userId, note: `${stamp} (그 뒤 누른 출근 기록의 시각을 고침)`, before: { inAt: r.inAt, ...(r.outAt ? { outAt: r.outAt } : {}) } }] };
       attendanceId = r.id;
@@ -115,7 +127,7 @@ export function reviewAttendanceFix(db0: DemoDB, input: { requestId: string; dec
         workDate: q.workDate,
         inAt: kst(q.workDate, q.inTime!),
         inGeo: { status: "none", reason: "skipped" },
-        ...(q.outTime ? { outAt: kst(q.workDate, q.outTime) } : {}),
+        ...(q.outTime ? { outAt: outIso(q.workDate, q.outTime, kst(q.workDate, q.inTime!)) } : {}),
         fromRequestId: q.id,
         exceptionNote: stamp,
         corrections: [{ at, by: ctx.userId, note: stamp, before: { inAt: kst(q.workDate, q.inTime!) } }],
@@ -127,7 +139,7 @@ export function reviewAttendanceFix(db0: DemoDB, input: { requestId: string; dec
       if (k < 0) throw new CommandError("고칠 출퇴근 기록을 찾을 수 없습니다.", "STATE");
       const r = db.attendance[k];
       const inAt = q.inTime ? kst(q.workDate, q.inTime) : r.inAt;
-      const outAt = q.outTime ? kst(q.workDate, q.outTime) : r.outAt;
+      const outAt = q.outTime ? outIso(q.workDate, q.outTime, inAt) : r.outAt;
       if (outAt && outAt <= inAt) throw new CommandError("퇴근 시각이 출근 시각보다 늦어야 합니다.", "VALIDATION");
       db.attendance[k] = {
         ...r,
@@ -265,6 +277,9 @@ export function supplementReport(db0: DemoDB, input: { reportId: string; text?: 
   const db = clone(db0);
   const r = db.reports.find((x) => x.id === input.reportId);
   if (!r) throw new CommandError("현장 보고를 찾을 수 없습니다.", "NOT_FOUND");
+  // 보완은 본사가 보완을 요청한 보고에만 — 확인된 보고를 보완해 확인 기록이 지워지던 문제 (D-66 점검 반영)
+  if (r.status === "voided") throw new CommandError("취소한 보고는 보완할 수 없습니다.", "STATE");
+  if (r.review?.status !== "returned") throw new CommandError("본사가 보완을 요청한 보고만 보완할 수 있습니다.", "STATE");
   const text = (input.text ?? "").trim().slice(0, 400);
   const photos = (input.photoDataUrls ?? []).slice(0, 3);
   if (photos.some((p) => typeof p !== "string" || !PHOTO.test(p))) throw new CommandError("사진 형식을 확인해 주세요.", "VALIDATION");

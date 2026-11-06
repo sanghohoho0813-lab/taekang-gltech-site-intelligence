@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createSeed } from "@/lib/data/seed";
-import { CommandError } from "@/lib/data/commands";
+import { CommandError, setChangeOrderStatus } from "@/lib/data/commands";
 import { importData, undoImport } from "@/lib/data/importCommands";
 import { normDate, planImport } from "@/lib/domain/importers";
 import { siteFinancials } from "@/lib/domain/calc";
@@ -165,8 +165,14 @@ describe("자료 가져오기 — 반영·중복·취소", () => {
     const db0 = createSeed(NOW);
     const r = imp(db0, "change", "현장,제목,금액,상태,요청일\nA현장,추가창,8000000,청구,2026-10-10");
     const co = r.db.changeOrders.find((c) => c.title === "추가창")!;
-    const changed: DemoDB = { ...r.db, changeOrders: r.db.changeOrders.map((c) => (c.id === co.id ? { ...c, status: "approved", decidedAt: new Date(NOW.getTime() + 1000).toISOString() } : c)) };
+    const changed = setChangeOrderStatus(r.db, co.id, "approved", undefined, ctx(new Date(NOW.getTime() + 1000))).db;
     expect(() => undoImport(changed, { batchId: r.result.batchId }, ctx(new Date(NOW.getTime() + 2000)))).toThrow("승인·반려가 바뀐");
+  });
+  it("결정일이 오늘인 승인 변경공사도 가져온 직후에는 취소할 수 있다 (오전 9시 전에 가져와도 · D-66)", () => {
+    const early = new Date("2026-11-03T22:30:00Z"); // 11/04 07:30 KST
+    const db0 = createSeed(early);
+    const r = importData(db0, { kind: "change", text: "현장,제목,금액,상태,요청일,결정일\nA현장,추가창,8000000,승인,2026-11-01,2026-11-04", idempotencyKey: "k-early" }, ctx(early));
+    expect(() => undoImport(r.db, { batchId: r.result.batchId }, ctx(new Date(early.getTime() + 60_000)))).not.toThrow();
   });
 });
 

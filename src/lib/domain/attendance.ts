@@ -144,10 +144,15 @@ export interface MonthRow {
 /** 기간 합계 (급여·공수 정산 근거) */
 export function periodSummary(db: DemoDB, from: string, to: string): MonthRow[] {
   const rows = new Map<string, MonthRow>();
+  // 출근일수는 ‘서로 다른 날’ 수 — 하루에 두 현장을 오가도 1일 (급여 근거 · D-66 점검 반영)
+  const dates = new Map<string, Set<string>>();
   for (const r of att(db)) {
     if (r.workDate < from || r.workDate > to) continue;
     const row = rows.get(r.userId) ?? { userId: r.userId, days: 0, minutes: 0, noCheckout: 0, outside: 0, noLocation: 0, corrected: 0, qrOk: 0 };
-    row.days += 1;
+    const ds = dates.get(r.userId) ?? new Set<string>();
+    ds.add(r.workDate);
+    dates.set(r.userId, ds);
+    row.days = ds.size;
     const m = minutesOf(r);
     if (m === null) row.noCheckout += 1;
     else row.minutes += m;

@@ -109,19 +109,21 @@ export function computeSignals(db: DemoDB, now = new Date()): RiskSignal[] {
 
     // 3) 원가항목 예산 초과
     for (const c of f.categories) {
-      if (c.budget > 0 && c.variancePct > t.overrunPct) {
+      // 예산 0원 항목에 쓴 돈도 ‘예산 없는 지출’로 잡는다 (0으로 나누지 않게 따로 · D-66 점검 반영)
+      const noBudget = c.budget <= 0 && c.eac > 0;
+      if (noBudget || (c.budget > 0 && c.variancePct > t.overrunPct)) {
         const causes = additional.filter((e) => e.category === c.category);
         signals.push({
           key: `COST_OVERRUN:${site.id}:${c.category}`,
           rule: "COST_OVERRUN",
           siteId: site.id,
-          severity: c.variancePct > t.overrunPct * 3 ? "high" : "medium",
-          title: `${name} ${CATEGORY_LABEL[c.category]} 예산 ${fmtPct(c.variancePct)} 초과`,
+          severity: noBudget ? (c.eac >= 10_000_000 ? "high" : "medium") : c.variancePct > t.overrunPct * 3 ? "high" : "medium",
+          title: noBudget ? `${name} ${CATEGORY_LABEL[c.category]} 예산 없이 ${fmtMan(c.eac)} 지출` : `${name} ${CATEGORY_LABEL[c.category]} 예산 ${fmtPct(c.variancePct)} 초과`,
           summary: `${CATEGORY_LABEL[c.category]} 예상원가가 실행예산보다 ${fmtMan(c.variance)} 많습니다.`,
           why: [
             `실행예산 ${fmtEok(c.budget)} vs 항목 예상원가 ${fmtEok(c.eac)} (발생 ${fmtEok(c.incurred)} + 잔여 ${fmtEok(c.remaining)})`,
             causes.length ? `최근 추가원가: ${causes.map((e) => fmtMan(e.amount)).join(", ")}` : `잔여예상원가 상향`,
-            `초과율 ${fmtPct(c.variancePct)} > 기준 ${t.overrunPct}%`,
+            noBudget ? `실행예산이 0원인 항목 — 예산을 넣거나 다른 항목으로 잘못 넣지 않았는지 확인` : `초과율 ${fmtPct(c.variancePct)} > 기준 ${t.overrunPct}%`,
           ],
           dataUsed: ["cost_budgets", "cost_entries", "cost_forecasts"],
           threshold: `항목 예상원가가 실행예산 대비 ${t.overrunPct}% 초과`,
@@ -261,7 +263,8 @@ export function computeSignals(db: DemoDB, now = new Date()): RiskSignal[] {
 
     // 7) 미승인 변경공사 장기 대기
     for (const co of db.changeOrders.filter((c) => c.siteId === site.id && c.status === "submitted")) {
-      const days = daysBetween(co.requestedAt, now);
+      // 발주처에 청구한 날부터 센다 (내부 검토 기간은 빼고 · D-66 점검 반영)
+      const days = daysBetween(co.submittedAt ?? co.requestedAt, now);
       if (days > t.changeOrderPendingDays) {
         signals.push({
           key: `PENDING_CHANGE_ORDER:${site.id}:${co.id}`,
@@ -279,7 +282,7 @@ export function computeSignals(db: DemoDB, now = new Date()): RiskSignal[] {
           threshold: `변경공사 승인 대기 ${t.changeOrderPendingDays}일 초과`,
           metric: { label: "승인 대기", current: fmtMan(co.amount) },
           recommendation: { actionTitle: "변경공사 승인 진행 상황 확인", description: "원청·발주처 담당자에게 검토 일정·보완자료를 확인합니다." },
-          detectedAt: new Date(new Date(co.requestedAt).getTime() + t.changeOrderPendingDays * 86_400_000).toISOString(),
+          detectedAt: new Date(new Date(co.submittedAt ?? co.requestedAt).getTime() + t.changeOrderPendingDays * 86_400_000).toISOString(),
           causeEntryIds: [],
           amountAtRisk: co.amount,
         });

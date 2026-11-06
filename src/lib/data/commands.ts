@@ -26,6 +26,7 @@ import type {
   RiskThresholds,
   SitePhoto,
 } from "@/lib/domain/types";
+import { worksOnSite } from "@/lib/domain/types";
 import { siteFinancials, type SiteFinancials } from "@/lib/domain/calc";
 import { ACTION_STATUS_LABEL, CATEGORY_LABEL, COST_CATEGORIES, PARTNER_STATUS_LABEL, PARTNER_TYPE_LABEL, REASON_LABEL } from "@/lib/domain/labels";
 import { fmtEok, fmtMan, fmtPct, todayIso } from "@/lib/domain/format";
@@ -85,12 +86,22 @@ export function requireSite(db: DemoDB, siteId: string) {
   if (!s) throw new CommandError("현장을 찾을 수 없습니다.", "NOT_FOUND");
   return s;
 }
-export function validateAmount(v: unknown, field = "amount"): number {
+/** 계약금액 상한 — 1건 금액(50억)과 따로, 대형 현장(100억 넘는 커튼월 등)도 등록되게 (D-66 점검 반영) */
+export const MAX_CONTRACT = 100_000_000_000;
+
+/** 실제 달력 날짜이고 오늘(한국 시간) 이후가 아닌지 — ‘2025-13-01’·미래 입금일 거부 (D-66 점검 반영) */
+export function pastCalendarDate(v: unknown, ctx: Ctx): v is string {
+  if (typeof v !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  const d = new Date(`${v}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v && v <= todayIso(ctx.now);
+}
+
+export function validateAmount(v: unknown, field = "amount", max = MAX_AMOUNT): number {
   if (typeof v !== "number" || !Number.isFinite(v) || !Number.isInteger(v)) {
     throw new CommandError("금액은 원 단위 정수로 입력해주세요.", "VALIDATION", { [field]: "원 단위 정수" });
   }
   if (v <= 0) throw new CommandError("금액은 0보다 커야 합니다.", "VALIDATION", { [field]: "0보다 큰 금액" });
-  if (v > MAX_AMOUNT) throw new CommandError(`1건 금액은 ${fmtEok(MAX_AMOUNT)} 이하로 입력해주세요.`, "VALIDATION", { [field]: "상한 초과" });
+  if (v > max) throw new CommandError(`${max === MAX_AMOUNT ? "1건 금액은 " : ""}${fmtEok(max)} 이하로 입력해주세요.`, "VALIDATION", { [field]: "상한 초과" });
   return v;
 }
 
@@ -412,7 +423,7 @@ export function createAction(
   if (!title) throw new CommandError("조치 제목을 입력해주세요.", "VALIDATION", { title: "필수" });
   const dup = db.actions.find((a) => a.signalKey === s.key && a.title === title && !["done", "dismissed"].includes(a.status));
   if (dup) throw new CommandError("같은 신호에 같은 조치가 이미 진행 중입니다.", "DUPLICATE");
-  if (input.assigneeUserId && !db.users.some((u) => u.id === input.assigneeUserId)) throw new CommandError("담당자를 찾을 수 없습니다.");
+  if (input.assigneeUserId) checkAssignee(db, input.signal.siteId, input.assigneeUserId);
   const at = nowIso(ctx);
   const f = siteFinancials(db0, s.siteId);
   const status: ActionStatus = input.assigneeUserId ? "assigned" : "recommended";
@@ -458,11 +469,20 @@ function requireAction(db: DemoDB, id: string) {
   return a;
 }
 
+/** 조치 담당자 — 본사 직원이거나 그 현장을 맡은 현장 직원만 (발주처에게 내부 조치가 가던 문제 · D-66 점검 반영) */
+function checkAssignee(db: DemoDB, siteId: string, userId: string) {
+  const u = db.users.find((x) => x.id === userId);
+  if (!u) throw new CommandError("담당자를 찾을 수 없습니다.");
+  const site = db.sites.find((s) => s.id === siteId);
+  const ok = !u.inactive && (u.role === "ceo" || u.role === "manager" || (u.role === "field" && !!site && worksOnSite(u, site)));
+  if (!ok) throw new CommandError(`${u.name}님은 이 조치의 담당자가 될 수 없습니다 — 본사 직원이나 이 현장 담당을 고르세요.`, "VALIDATION", { assigneeUserId: "담당 불가" });
+}
+
 export function assignAction(db0: DemoDB, actionId: string, assigneeUserId: string, dueDate: string | undefined, ctx: Ctx) {
   const db = clone(db0);
   const a = requireAction(db, actionId);
   if (a.status === "done") throw new CommandError("완료된 조치는 재배정할 수 없습니다.", "STATE");
-  if (!db.users.some((u) => u.id === assigneeUserId)) throw new CommandError("담당자를 찾을 수 없습니다.");
+  checkAssignee(db, a.siteId, assigneeUserId);
   const from = a.status;
   a.assigneeUserId = assigneeUserId;
   a.dueDate = dueDate || a.dueDate;
@@ -728,6 +748,8 @@ export function setChangeOrderStatus(db0: DemoDB, coId: string, status: ChangeOr
   co.status = status;
   if (status === "approved") co.approvedAmount = validateAmount(approvedAmount ?? co.amount, "approvedAmount");
   if (status === "approved" || status === "rejected") co.decidedAt = nowIso(ctx);
+  if (status === "submitted") co.submittedAt = nowIso(ctx);
+  co.statusChangedAt = nowIso(ctx);
   const after = siteFinancials(db, co.siteId);
   const site = requireSite(db, co.siteId);
   log(
@@ -747,7 +769,14 @@ export function setChangeOrderStatus(db0: DemoDB, coId: string, status: ChangeOr
 export function addBilling(db0: DemoDB, input: { siteId: string; amount: number; billedDate: string; idempotencyKey?: string }, ctx: Ctx) {
   requireSite(db0, input.siteId);
   validateAmount(input.amount);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.billedDate)) throw new CommandError("청구일을 입력해주세요.", "VALIDATION", { billedDate: "필수" });
+  if (!pastCalendarDate(input.billedDate, ctx)) throw new CommandError("청구일을 확인해주세요 (오늘 이후 날짜는 안 됩니다).", "VALIDATION", { billedDate: "날짜 확인" });
+  {
+    // 확정 기성 합계가 변경 반영 계약금액의 120%를 넘으면 단위 실수로 본다
+    const f = siteFinancials(db0, input.siteId);
+    const cap = Math.max(f.adjustedContract + f.pendingChangeAmount, f.adjustedContract) * 1.2;
+    if (f.adjustedContract > 0 && f.billed + input.amount > cap)
+      throw new CommandError(`기성 합계가 계약금액(변경 포함)의 120%를 넘습니다 (${fmtEok(f.billed + input.amount)}) — 금액 단위를 확인해주세요.`, "VALIDATION", { amount: "계약 대비 과다" });
+  }
   const db = clone(db0);
   claimKey(db, input.idempotencyKey);
   const round = db.billings.filter((b) => b.siteId === input.siteId).length + 1;
@@ -763,7 +792,7 @@ export function addPayment(db0: DemoDB, input: { siteId: string; amount: number;
   const f = siteFinancials(db0, input.siteId);
   validateAmount(input.amount);
   if (input.amount > f.outstanding) throw new CommandError(`수금액이 미수금(${fmtMan(f.outstanding)})보다 클 수 없습니다.`, "VALIDATION", { amount: "미수금 초과" });
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.receivedDate)) throw new CommandError("입금일을 입력해주세요.", "VALIDATION", { receivedDate: "필수" });
+  if (!pastCalendarDate(input.receivedDate, ctx)) throw new CommandError("입금일을 확인해주세요 (오늘 이후 날짜는 안 됩니다).", "VALIDATION", { receivedDate: "날짜 확인" });
   const db = clone(db0);
   claimKey(db, input.idempotencyKey);
   db.payments.push({ id: uid("pay"), siteId: input.siteId, amount: input.amount, receivedDate: input.receivedDate });

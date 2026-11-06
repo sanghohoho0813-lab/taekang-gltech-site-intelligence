@@ -168,8 +168,19 @@ const norm = (s: string) => s.replace(/^﻿/, "").trim().toLowerCase().replace(/
 
 /** 원 단위 금액: 쉼표·공백·‘원’ 허용 */
 export function parseWonCell(v: string): number {
-  const raw = v.replace(/[,\s원₩]/g, "");
+  const t = v.replace(/[\s원₩]/g, "");
+  // 쉼표는 천 단위 자리에만 (12,00 → 1200으로 잘못 읽던 문제 · D-66)
+  if (t.includes(",") && !/^\d{1,3}(,\d{3})+$/.test(t)) return NaN;
+  const raw = t.replace(/,/g, "");
   return /^\d+$/.test(raw) ? Number(raw) : NaN;
+}
+
+/** 수량: 천 단위 쉼표와 소수점(.)만 — ‘1,5’(유럽식 소수)를 15로 읽지 않게 (D-66) */
+export function parseQtyCell(v: string): number {
+  const t = v.replace(/\s/g, "");
+  if (t.includes(",") && !/^\d{1,3}(,\d{3})+(\.\d{1,2})?$/.test(t)) return NaN;
+  const raw = t.replace(/,/g, "");
+  return /^\d+(\.\d{1,2})?$/.test(raw) ? Number(raw) : NaN;
 }
 
 function validDate(s: string): boolean {
@@ -180,7 +191,8 @@ function validDate(s: string): boolean {
 
 /** 엑셀에서 2026.10.20 / 2026/10/20 / 2026-10-20 / 2026. 10. 20. 으로 저장된 날짜를 받아준다 */
 export function normDate(v: string): string {
-  const m = v.trim().match(/^(\d{4})\s*[-./]\s*(\d{1,2})\s*[-./]\s*(\d{1,2})\.?$/);
+  // 은행 내역처럼 시각이 붙은 날짜(2026-10-20 14:30)는 날짜만 쓴다 (D-66)
+  const m = v.trim().match(/^(\d{4})\s*[-./]\s*(\d{1,2})\s*[-./]\s*(\d{1,2})\.?(?:\s+(?:오전|오후)?\s*\d{1,2}:\d{2}(?::\d{2})?)?$/);
   return m ? `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}` : v.trim();
 }
 
@@ -294,6 +306,7 @@ export function planImport(db: DemoDB, kind: ImportKind, text: string, today: st
       const bk = k === "기성" || k === "기성청구" || k === "billing" ? "billing" : k === "입금" || k === "수금" || k === "payment" ? "payment" : null;
       if (!bk) err("구분", "구분은 ‘기성’ 또는 ‘입금’");
       const date = dateOf("date", "날짜");
+      if (date && validDate(date) && date > today) err("날짜", "오늘 이후 날짜는 넣을 수 없습니다");
       const amount = amountOf("amount", "금액");
       const note = noteOf();
       if (plan.errors.length === before && site && bk && date && amount) plan.rows.push({ line, siteId: site.id, kind: bk, date, amount, note });
@@ -308,7 +321,9 @@ export function planImport(db: DemoDB, kind: ImportKind, text: string, today: st
       const requestedDate = dateOf("requested", "요청일");
       const approvedAmount = amountOf("approved", "승인금액", false);
       if (approvedAmount !== undefined && status && status !== "approved") err("승인금액", "승인금액은 ‘승인’일 때만 적습니다");
+      if (requestedDate && validDate(requestedDate) && requestedDate > today) err("요청일", "오늘 이후 날짜는 넣을 수 없습니다");
       const decidedDate = dateOf("decided", "결정일", false);
+      if (decidedDate && validDate(decidedDate) && decidedDate > today) err("결정일", "오늘 이후 날짜는 넣을 수 없습니다");
       if (decidedDate && requestedDate && decidedDate < requestedDate) err("결정일", "결정일이 요청일보다 빠릅니다");
       const note = noteOf();
       if (plan.errors.length === before && site && status && requestedDate && amount)
@@ -323,7 +338,8 @@ export function planImport(db: DemoDB, kind: ImportKind, text: string, today: st
       const kRaw = norm(get("kind"));
       const ck = !kRaw || kRaw === "외주" || kRaw === "subcontract" ? "subcontract" : kRaw === "직영" || kRaw === "direct" ? "direct" : null;
       if (!ck) err("구분", "구분은 ‘직영’ 또는 ‘외주’");
-      const hc = Number(get("headcount").replace(/[명\s,]/g, ""));
+      const hcRaw = get("headcount").replace(/[명\s]/g, "");
+      const hc = /^\d+$/.test(hcRaw) ? Number(hcRaw) : NaN;
       if (!Number.isInteger(hc) || hc < 1 || hc > 300) err("인원", "인원은 1~300 사이 정수");
       if (plan.errors.length === before && site && date && ck) plan.rows.push({ line, siteId: site.id, date, team, kind: ck, headcount: hc });
     } else if (kind === "rates") {
@@ -346,14 +362,14 @@ export function planImport(db: DemoDB, kind: ImportKind, text: string, today: st
       const item = site ? (site.materials ?? []).find((i) => !i.archived && norm(i.name) === norm(itemRef)) : undefined;
       if (!itemRef) err("품목", "품목을 적어주세요");
       else if (site && !item) err("품목", `‘${itemRef}’ 품목이 ${site.shortName}에 없습니다 — 현장 상세 ‘자재’ → ‘품목 정하기’에서 먼저 넣어 주세요`);
-      const qRaw = get("qty").replace(/[,\s]/g, "");
-      const qty = /^\d+(\.\d{1,2})?$/.test(qRaw) ? Number(qRaw) : NaN;
+      const qty = parseQtyCell(get("qty"));
       if (!(qty > 0) || qty > 1_000_000) err("수량", "수량은 0보다 큰 숫자 (소수 둘째 자리까지 · 100만 이하)");
       const note = noteOf();
       if (plan.errors.length === before && site && date && mk && item) plan.rows.push({ line, siteId: site.id, date, kind: mk, itemId: item.id, itemName: item.name, unit: item.unit, qty, note });
     } else if (kind === "cost") {
       const site = siteOf();
       const date = dateOf("date", "날짜");
+      if (date && validDate(date) && date > today) err("날짜", "오늘 이후 날짜는 넣을 수 없습니다");
       const category = CATEGORY_IN[norm(get("category"))];
       if (!category || !COST_CATEGORIES.includes(category)) err("항목", "항목은 자재 · 노무 · 외주 · 장비 · 경비 중 하나");
       const amount = amountOf("amount", "금액");
@@ -380,12 +396,23 @@ export function planImport(db: DemoDB, kind: ImportKind, text: string, today: st
     if (total > 60) plan.errors.push({ line: 1, field: "file", message: `팀 단가는 최대 60팀까지 (합치면 ${total}팀)` });
   }
 
-  // DB에 이미 있는 기록 → 중복으로 건너뜀
+  // DB에 이미 있는 기록 → 중복으로 건너뜀. 같은 파일 안에서 같은 줄이 또 나와도 건너뛴다
+  // (예전에는 DB와만 비교해 같은 파일의 같은 출력 2줄이 모두 들어가 인건비 추정이 2배가 됐다 · D-66 점검 반영)
   const keep: ImportRow[] = [];
+  const seenRow = new Map<string, number>();
   for (const r of plan.rows) {
     const dup = duplicateOf(db, kind, r);
-    if (dup) plan.duplicates.push({ line: r.line, text: dup });
-    else keep.push(r);
+    if (dup) {
+      plan.duplicates.push({ line: r.line, text: dup });
+      continue;
+    }
+    const k = rowKey(kind, r);
+    if (k && seenRow.has(k)) {
+      plan.duplicates.push({ line: r.line, text: `${seenRow.get(k)}행과 같은 내용 — 한 번만 넣음` });
+      continue;
+    }
+    if (k) seenRow.set(k, r.line);
+    keep.push(r);
   }
   plan.rows = keep;
 
@@ -409,6 +436,16 @@ export function planImport(db: DemoDB, kind: ImportKind, text: string, today: st
 }
 
 const won = (n: number) => `${Math.round(n / 10_000).toLocaleString("ko-KR")}만 원`;
+
+/** 같은 파일 안 중복 판단 열쇠 — DB 중복 판단(duplicateOf)과 같은 기준 */
+function rowKey(kind: ImportKind, r: ImportRow): string | null {
+  if (kind === "billing") { const b = r as BillingRow; return `${b.siteId}|${b.kind}|${b.date}|${b.amount}`; }
+  if (kind === "change") { const c = r as ChangeRow; return `${c.siteId}|${c.title}|${c.amount}`; }
+  if (kind === "crew") { const c = r as CrewRow; return `${c.siteId}|${c.date}|${c.team.toLowerCase()}`; }
+  if (kind === "material") { const m = r as MaterialRow; return `${m.siteId}|${m.itemId}|${m.kind}|${m.date}|${m.qty}`; }
+  if (kind === "cost") { const c = r as CostRow; return `${c.siteId}|${c.date}|${c.category}|${c.amount}|${c.note}`; }
+  return null;
+}
 
 function duplicateOf(db: DemoDB, kind: ImportKind, r: ImportRow): string | null {
   if (kind === "billing") {

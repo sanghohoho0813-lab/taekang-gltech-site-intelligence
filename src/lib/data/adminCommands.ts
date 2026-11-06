@@ -8,7 +8,7 @@ import { siteFinancials, snapshotOf } from "@/lib/domain/calc";
 import { CATEGORY_LABEL, COST_CATEGORIES } from "@/lib/domain/labels";
 import { fmtEok, fmtMan, todayIso } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
-import { CommandError, MAX_AMOUNT, claimKey, clone, log, nowIso, requireSite, touch, validateAmount, type Ctx } from "./commands";
+import { CommandError, MAX_AMOUNT, MAX_CONTRACT, claimKey, clone, log, nowIso, requireSite, touch, validateAmount, type Ctx } from "./commands";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const STATUSES: SiteStatus[] = ["active", "hold", "completed"];
@@ -57,7 +57,7 @@ export function saveSite(db0: DemoDB, input: SaveSiteInput, ctx: Ctx) {
   if (DATE_RE.test(input.startDate ?? "") && DATE_RE.test(input.endDate ?? "") && input.endDate < input.startDate) errors.endDate = "준공 예정일이 착공일보다 빠릅니다.";
   if (!STATUSES.includes(input.status)) errors.status = "상태를 선택해주세요.";
   try {
-    validateAmount(input.contractAmount, "contractAmount");
+    validateAmount(input.contractAmount, "contractAmount", MAX_CONTRACT);
   } catch (e) {
     errors.contractAmount = e instanceof CommandError ? Object.values(e.fieldErrors)[0] ?? e.message : "계약금액 확인";
   }
