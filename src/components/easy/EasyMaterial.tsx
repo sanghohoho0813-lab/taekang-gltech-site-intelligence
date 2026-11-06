@@ -17,6 +17,7 @@ import { todayIso } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
 import { cx } from "@/components/ui/primitives";
 import { outboxAdd } from "@/lib/browser/outbox";
+import { useOutbox } from "./Outbox";
 import { Choice, EasyBar, EasyPageHead, EasyQuestion, SectionBar, easyTextareaCls } from "./ui";
 import { downscalePhoto } from "./photo";
 import { easyDate } from "./words";
@@ -51,6 +52,8 @@ export function EasyMaterial() {
   const [voiding, setVoiding] = useState<string | null>(null);
   const [done, setDone] = useState<{ name: string; unit: string; qty: number; kind: MaterialMoveKind; inQty?: number; installQty?: number; onSite?: number; flags?: string[]; queued?: boolean; already?: boolean } | null>(null);
   const step = stack[stack.length - 1];
+  // 휴대폰에 보관 중(아직 못 보낸) 자재 기록 — ‘오늘 내가 남긴 기록’에 ‘보내는 중’으로 함께 보여 준다 (D-64)
+  const queued = useOutbox(userId);
   // 내용(종류·자재·수량·사진·메모)이 바뀌면 새 기록 — 중복 방지 키도 새로 (같은 내용을 다시 누르면 같은 키 → 한 번만 들어감 · 리뷰 반영 D-63)
   useEffect(() => setKey(uid("idem")), [kind, itemId, qty, photo, note]);
 
@@ -84,6 +87,7 @@ export function EasyMaterial() {
   const qtyOk = qty.trim() !== "" && Number.isFinite(n) && n > 0 && n <= 1_000_000 && Math.abs(Math.round(n * 100) / 100 - n) < 1e-9;
   const today = todayIso();
   const mineToday = liveMoves(db, siteId).filter((m) => m.by === userId && m.workDate === today).sort((a, b) => b.at.localeCompare(a.at));
+  const waitingHere = queued.filter((i) => i.name === "recordMaterial" && !i.failed && i.args.siteId === siteId);
   const nameOf = (id: string) => items.find((i) => i.id === id) ?? site?.materials?.find((i) => i.id === id);
 
   const go = (s: Step) => {
@@ -196,9 +200,18 @@ export function EasyMaterial() {
             <Choice icon={KIND_Q.in.icon} label="자재가 들어왔어요" sub="반입 · 송장 수량 대조" selected={picked && kind === "in"} onClick={() => (setKind("in"), setPicked(true), go("item"))} testId="material-kind-in" />
             <Choice icon={KIND_Q.install.icon} label="자재를 설치했어요" sub="오늘 시공한 수량" selected={picked && kind === "install"} onClick={() => (setKind("install"), setPicked(true), go("item"))} testId="material-kind-install" />
           </div>
-          {mineToday.length > 0 && (
+          {(mineToday.length > 0 || waitingHere.length > 0) && (
             <div className="space-y-2" data-testid="material-today">
               <p className="text-[1.08rem] font-bold">오늘 내가 남긴 기록</p>
+              {waitingHere.map((i) => (
+                <div key={i.id} className="flex items-center gap-2 rounded-2xl border-2 border-warn/50 bg-warn-bg p-3" data-testid="material-today-waiting">
+                  <WifiOff size={20} className="shrink-0 text-warn" aria-hidden />
+                  <p className="min-w-0 text-[1.05rem]">
+                    <b>보내는 중</b> · {i.label.replace(/^[^·]+·\s*/, "")}
+                    <span className="block text-[0.98rem] text-ink-2">신호가 잡히면 자동으로 보내요. 보내지기 전에는 누계에 안 들어가요.</span>
+                  </p>
+                </div>
+              ))}
               {mineToday.map((m) => {
                 const it = nameOf(m.itemId);
                 return (

@@ -4,7 +4,7 @@
  */
 import type { CostCategory, DemoDB, FieldReport, Site, SitePhoto, WorkOrder } from "./types";
 import { hhmm, minutesOf, shiftDate } from "./attendance";
-import { movesOn } from "./material";
+import { liveMoves, materialRows, movesOn, roundQty } from "./material";
 
 export interface DailyCrewRow {
   team: string;
@@ -119,6 +119,8 @@ export interface WeeklyLog {
   stages: { name: string; from: number; to: number }[];
   issues: { date: string; text: string }[];
   openOrders: { title: string; status: WorkOrder["status"]; dueDate?: string }[];
+  /** 자재 반입·설치 — 이번 주 합계와 주말까지 누계 (D-64 · 수량만) */
+  materials: { name: string; unit: string; weekIn: number; weekInstall: number; inTotal: number; installTotal: number; plannedQty: number; installPct: number | null }[];
   nextStages: { name: string; startDate: string; endDate: string; progressPct: number }[];
 }
 
@@ -150,6 +152,13 @@ export function weeklyLog(db: DemoDB, site: Site, from: string): WeeklyLog {
     stages: [...byStage.values()],
     issues: days.flatMap((d) => d.issues.map((text) => ({ date: d.date, text }))),
     openOrders: (db.workOrders ?? []).filter((w) => w.siteId === site.id && w.status !== "confirmed").map((w) => ({ title: w.title, status: w.status, dueDate: w.dueDate })),
+    materials: (() => {
+      const week = liveMoves(db, site.id).filter((m) => m.workDate >= from && m.workDate <= to);
+      const sum = (itemId: string, kind: "in" | "install") => roundQty(week.filter((m) => m.itemId === itemId && m.kind === kind).reduce((a, m) => a + m.qty, 0));
+      return materialRows(db, site.id, { until: to })
+        .filter((r) => !r.item.archived || week.some((m) => m.itemId === r.item.id))
+        .map((r) => ({ name: r.item.name, unit: r.item.unit, weekIn: sum(r.item.id, "in"), weekInstall: sum(r.item.id, "install"), inTotal: r.inQty, installTotal: r.installQty, plannedQty: r.item.plannedQty, installPct: r.installPct }));
+    })(),
     nextStages: site.stages.filter((s) => s.progressPct < 100 && s.startDate <= nextTo && s.endDate >= nextFrom).map((s) => ({ name: s.name, startDate: s.startDate, endDate: s.endDate, progressPct: s.progressPct })),
   };
 }

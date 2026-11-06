@@ -466,6 +466,11 @@ test("자재 반입·설치 (D-62): 반입 → 수량 → 사진 → 보내기 �
   await expect(q).toContainText("커튼월 유닛");
   await expect(q).toContainText("10 EA");
   await expect(q).not.toContainText("40 장");
+  // 주간 보고: 이번 주 설치(어제·그제 시연 기록 + 오늘 10) · 누계 118/240 (D-64)
+  await page.getByTestId("daily-mode-week").click();
+  const wm = page.getByTestId("weekly-materials");
+  await expect(wm.locator("tr").filter({ hasText: "커튼월 유닛" })).toContainText("118 EA / 240");
+  await expect(wm.locator("tr").filter({ hasText: "커튼월 유닛" })).toContainText("49.2%");
   // B현장: 설치가 반입보다 많음 표시
   await page.goto("/sites/site-b?tab=material");
   await expect(page.getByTestId("material-flag")).toContainText("반입 기록이 빠졌는지 확인");

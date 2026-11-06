@@ -371,6 +371,35 @@ function WeekDoc({ w, today }: { w: WeeklyLog; today: string }) {
           <Empty text="이번 주 보고된 공정 변화 없음" />
         )}
       </Section>
+      {w.materials.length > 0 && (
+        <Section title="자재 반입·설치 (이번 주 · 누계)" testId="weekly-materials">
+          <table className="w-full text-[0.86rem]">
+            <thead>
+              <tr>
+                <th className={th}>품목</th>
+                <th className={cx(th, "text-right")}>이번 주 반입</th>
+                <th className={cx(th, "text-right")}>이번 주 설치</th>
+                <th className={cx(th, "text-right")}>설치 누계</th>
+                <th className={cx(th, "text-right")}>설치율</th>
+              </tr>
+            </thead>
+            <tbody>
+              {w.materials.map((m) => (
+                <tr key={m.name}>
+                  <td className={td}>{m.name}</td>
+                  <td className={cx(td, "num text-right")}>{m.weekIn ? fmtQty(m.weekIn, m.unit) : "—"}</td>
+                  <td className={cx(td, "num text-right")}>{m.weekInstall ? fmtQty(m.weekInstall, m.unit) : "—"}</td>
+                  <td className={cx(td, "num text-right")}>
+                    {fmtQty(m.installTotal, m.unit)}
+                    {m.plannedQty ? <span className="text-ink-3"> / {fmtQty(m.plannedQty)}</span> : null}
+                  </td>
+                  <td className={cx(td, "num text-right")}>{m.installPct === null ? "—" : `${Math.round(m.installPct * 10) / 10}%`}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Section>
+      )}
       <Section title="특이사항·문제">
         {w.issues.length ? (
           <ul className="list-disc space-y-0.5 pl-5 text-[0.9rem]">

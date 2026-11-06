@@ -153,15 +153,19 @@ export function validateCostCsv(text: string, siteCodes: string[]): CsvValidatio
   return { rows, errors, headerOk: true };
 }
 
-export function toCsv(rows: (string | number)[][]): string {
-  return rows
-    .map((r) =>
-      r
-        .map((c) => {
-          const s = String(c);
-          return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-        })
-        .join(","),
-    )
-    .join("\n");
+/**
+ * CSV 한 칸 — 쉼표·따옴표·줄바꿈은 따옴표로 감싸고,
+ * 엑셀이 수식으로 실행할 수 있는 글자(=·+·-·@·탭으로 시작)는 앞에 ' 를 붙여 글자로만 보이게 한다 (D-64).
+ * 숫자(number)는 그대로 둔다 (음수 금액이 글자로 바뀌지 않게).
+ */
+export function csvCell(c: string | number | null | undefined): string {
+  if (c === null || c === undefined) return "";
+  if (typeof c === "number") return Number.isFinite(c) ? String(c) : "";
+  const s = /^[=+\-@\t\r]/.test(c) ? `'${c}` : c;
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+/** 모든 CSV 내려받기는 이 함수로 만든다 (시험이 확인) */
+export function toCsv(rows: (string | number | null | undefined)[][]): string {
+  return rows.map((r) => r.map(csvCell).join(",")).join("\n");
 }

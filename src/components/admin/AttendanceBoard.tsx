@@ -2,6 +2,7 @@
 
 /** 본사 — 출퇴근 현황 (GPS) · 의심 표시 · 보고 위치 · 월 합계(CSV) */
 import { downloadCsv } from "@/lib/browser/download";
+import { toCsv } from "@/lib/domain/csv";
 import { useState } from "react";
 import { AlertTriangle, Clock, Download, LocateFixed, MapPin, MapPinCheck, Pencil, QrCode, TabletSmartphone } from "lucide-react";
 import { useMe } from "@/lib/data/hooks";
@@ -102,12 +103,13 @@ export function AttendanceBoard() {
 
   const csv = () => {
     const head = ["이름", "기간", "출근일수", "총 근무(시간)", "퇴근 누락", "현장 밖", "위치 없음", "본사 정정"];
-    const lines = month.map((m) => [name(m.userId), `${monthFrom}~${date}`, m.days, (m.minutes / 60).toFixed(1), m.noCheckout, m.outside, m.noLocation, m.corrected].join(","));
+    const lines = month.map((m) => [name(m.userId), `${monthFrom}~${date}`, m.days, (m.minutes / 60).toFixed(1), m.noCheckout, m.outside, m.noLocation, m.corrected]);
     const detail = (db.attendance ?? [])
       .filter((r) => r.workDate >= monthFrom && r.workDate <= date)
       .sort((a, b) => a.workDate.localeCompare(b.workDate))
-      .map((r) => [r.workDate, name(r.userId), db.sites.find((s) => s.id === r.siteId)?.shortName ?? "", hhmm(r.inAt), GEO_LABEL[r.inGeo.status], r.outAt ? hhmm(r.outAt) : "", r.outGeo ? GEO_LABEL[r.outGeo.status] : "", minutesOf(r) ?? "", (r.corrections ?? []).map((c) => c.note).join(" / ")].join(","));
-    const body = ["# 월 합계", head.join(","), ...lines, "", "# 일별 기록", "날짜,이름,현장,출근,출근 위치,퇴근,퇴근 위치,근무(분),정정 사유", ...detail].join("\n");
+      .map((r) => [r.workDate, name(r.userId), db.sites.find((s) => s.id === r.siteId)?.shortName ?? "", hhmm(r.inAt), GEO_LABEL[r.inGeo.status], r.outAt ? hhmm(r.outAt) : "", r.outGeo ? GEO_LABEL[r.outGeo.status] : "", minutesOf(r) ?? "", (r.corrections ?? []).map((c) => c.note).join(" / ")]);
+    // 정정 사유에 쉼표가 있어도 칸이 밀리지 않게 (D-64)
+    const body = toCsv([["# 월 합계"], head, ...lines, [], ["# 일별 기록"], ["날짜", "이름", "현장", "출근", "출근 위치", "퇴근", "퇴근 위치", "근무(분)", "정정 사유"], ...detail]);
     downloadCsv(`출퇴근_${monthFrom}_${date}.csv`, body);
   };
 
@@ -556,7 +558,7 @@ function CrewCard({ db, date, name }: { db: DemoDB; date: string; name: (id: str
   const siteName = (id: string) => db.sites.find((s) => s.id === id)?.shortName ?? "";
   const csv = () => {
     const sum = crewSummary(db, monthFrom, date);
-    const body = ["현장,팀,구분,보고 일수,인원일 합계,사진 없음", ...sum.map((r) => [siteName(r.siteId), `"${r.team.replace(/"/g, "'")}"`, r.kind === "direct" ? "직영" : "외주", r.days, r.personDays, r.noPhoto].join(","))].join("\n");
+    const body = toCsv([["현장", "팀", "구분", "보고 일수", "인원일 합계", "사진 없음"], ...sum.map((r) => [siteName(r.siteId), r.team, r.kind === "direct" ? "직영" : "외주", r.days, r.personDays, r.noPhoto])]);
     downloadCsv(`작업인원_${monthFrom}_${date}.csv`, body);
   };
   return (

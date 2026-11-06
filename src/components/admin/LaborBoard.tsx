@@ -13,6 +13,7 @@ import { fmtDate, fmtMan, todayIso } from "@/lib/domain/format";
 import { PageBody, PageHeader } from "@/components/shell/AppShell";
 import { Badge, Button, Card, CardHeader, DemoBadge, EmptyState, Notice, PageSkeleton, Segmented, cx, inputCls } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/Toast";
+import { toCsv } from "@/lib/domain/csv";
 
 export function LaborBoard() {
   const { db } = useMe();
@@ -22,10 +23,10 @@ export function LaborBoard() {
   const from = period === "month" ? `${to.slice(0, 8)}01` : shiftDate(to, -29);
   const rows = db.sites.filter((s) => s.status === "active").map((s) => laborEstimate(db, s, from, to));
   const csv = () => {
-    const head = "현장,기간,팀,구분,출력 일수,인원일,1인 1일 단가,추정 인건비,단가 설정";
-    const lines = rows.flatMap((r) => r.teams.map((t) => [r.site.shortName, `${r.compareFrom}~${r.to}`, `"${t.team.replace(/"/g, "'")}"`, t.kind === "direct" ? "직영" : "외주", t.days, t.personDays, t.dayRate, t.estimate, t.rateSet ? "팀 단가" : "기본 일당"].join(",")));
-    const sum = rows.map((r) => [r.site.shortName, `${r.compareFrom}~${r.to}`, "합계", "", "", r.teams.reduce((a, t) => a + t.personDays, 0), "", r.estimate, `실제 노무비 ${r.actual}`].join(","));
-    downloadCsv(`투입인건비_${from}_${to}.csv`, [head, ...lines, "", ...sum].join("\n"));
+    const head = ["현장", "기간", "팀", "구분", "출력 일수", "인원일", "1인 1일 단가", "추정 인건비", "단가 설정"];
+    const lines = rows.flatMap((r) => r.teams.map((t) => [r.site.shortName, `${r.compareFrom}~${r.to}`, t.team, t.kind === "direct" ? "직영" : "외주", t.days, t.personDays, t.dayRate, t.estimate, t.rateSet ? "팀 단가" : "기본 일당"]));
+    const sum = rows.map((r) => [r.site.shortName, `${r.compareFrom}~${r.to}`, "합계", "", "", r.teams.reduce((a, t) => a + t.personDays, 0), "", r.estimate, `실제 노무비 ${r.actual}`]);
+    downloadCsv(`투입인건비_${from}_${to}.csv`, toCsv([head, ...lines, [], ...sum]));
   };
   return (
     <PageBody>

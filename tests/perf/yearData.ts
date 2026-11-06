@@ -1,6 +1,7 @@
 /**
  * 성능 측정용 1년치(기본 300 작업일) 가짜 운영 데이터 — year.perf·peak.perf 공용
  * 규모(중견 창호·유리 시공사 가정): 현장 6곳 · 현장 직원 20명 · 하루 출퇴근 20 · 보고 6 · 작업 인원 18 · 활동 이력 50
+ *   + 자재 반입·설치 (D-64): 현장마다 하루 설치 1건, 사흘에 반입 1건 → 300일 약 2,400건
  */
 import { getDb } from "@/server/sql";
 
@@ -37,6 +38,7 @@ export async function seedYear(companyId: string, DAYS: number): Promise<number>
   const costs: Record<string, unknown>[] = [];
   const orders: Record<string, unknown>[] = [];
   const logs: Record<string, unknown>[] = [];
+  const moves: Record<string, unknown>[] = [];
   const geo = { status: "inside", lat: 37.5, lng: 127.03, accuracyM: 12, distanceM: 40 };
   for (let d = 0; d < DAYS; d++) {
     const date = day(d);
@@ -46,6 +48,8 @@ export async function seedYear(companyId: string, DAYS: number): Promise<number>
       reports.push({ id: rid, siteId: s, reportDate: date, workDone: `${si + 3}층 커튼월 유닛 ${d % 12}개 설치, 실링 사전 점검 및 앵커 토크 검사`, issues: d % 5 ? "" : "크레인 대기 40분", tomorrowPlan: "다음 층 앵커 설치", photoIds: [`ph-${d}-${si}-0`, `ph-${d}-${si}-1`], costEntryIds: [], createdBy: users[si], createdAt: `${date}T17:00:00+09:00`, status: "submitted", geo, review: { status: "confirmed", at: `${date}T18:30:00+09:00`, by: "u-manager" } });
       for (let p = 0; p < 2; p++) photos.push({ id: `ph-${d}-${si}-${p}`, siteId: s, reportId: rid, dataUrl: `/api/photos/ph-${d}-${si}-${p}`, caption: "현장 사진", createdAt: `${date}T16:50:00+09:00`, createdBy: users[si] });
       for (let t = 0; t < 3; t++) crew.push({ id: `crew-${d}-${si}-${t}`, siteId: s, workDate: date, team: ["유리 설치팀", "실링팀", "철골팀"][t], kind: t ? "direct" : "subcontract", headcount: 3 + t, photoId: `ph-${d}-${si}-0`, photoHash: `h${d}${si}${t}`.padEnd(64, "0"), geo, at: `${date}T09:00:00+09:00`, by: users[si] });
+      moves.push({ id: `mm-${d}-${si}-i`, siteId: s, itemId: `mat-${s}-unit`, kind: "install", qty: 1 + (d % 12), workDate: date, note: d % 4 ? "" : `${si + 3}층 동측`, at: `${date}T16:30:00+09:00`, by: users[si] });
+      if (d % 3 === 0) moves.push({ id: `mm-${d}-${si}-r`, siteId: s, itemId: `mat-${s}-unit`, kind: "in", qty: 24, workDate: date, note: "송장 대조", at: `${date}T09:30:00+09:00`, by: users[si] });
       if (d % 2 === 0) costs.push({ id: `ce-${d}-${si}`, siteId: s, category: ["material", "labor", "subcontract", "equipment", "overhead"][d % 5], amount: 1_000_000 + d * 1000, date, forecastImpact: "within_forecast", reason: "planned", note: "자재 반입", source: "FIELD", createdBy: users[si], createdAt: `${date}T17:00:00+09:00`, status: "active" });
     });
     for (let k = 0; k < 3; k++) {
@@ -61,5 +65,6 @@ export async function seedYear(companyId: string, DAYS: number): Promise<number>
   await bulk(companyId, "costEntries", costs);
   await bulk(companyId, "workOrders", orders);
   await bulk(companyId, "activityLogs", logs);
-  return att.length + reports.length + photos.length + crew.length + costs.length + orders.length + logs.length;
+  await bulk(companyId, "materialMoves", moves);
+  return att.length + reports.length + photos.length + crew.length + costs.length + orders.length + logs.length + moves.length;
 }

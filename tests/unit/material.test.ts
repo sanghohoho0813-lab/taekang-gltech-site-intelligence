@@ -8,7 +8,7 @@ import { CommandError } from "@/lib/data/commands";
 import { materialRows, movesOn, siteInstallPct } from "@/lib/domain/material";
 import { computeSignals } from "@/lib/domain/risk";
 import { siteFinancials } from "@/lib/domain/calc";
-import { dailyLog } from "@/lib/domain/dailylog";
+import { dailyLog, weekStart, weeklyLog } from "@/lib/domain/dailylog";
 import { photoLedger } from "@/lib/domain/photoLedger";
 import { importTemplate, planImport } from "@/lib/domain/importers";
 import { flushWith, type OutboxItem } from "@/lib/browser/outbox";
@@ -303,5 +303,26 @@ describe("독립 검토 반영 (D-63)", () => {
     db = COMMANDS.updateProgress(db, { siteId: "site-a", progressPct: 75 }, hq).db;
     const s = computeSignals(db, NOW).find((x) => x.rule === "BILLING_LAG")!;
     expect(s.detectedAt).toBe(NOW.toISOString());
+  });
+});
+
+describe("주간 공정 보고 — 자재 (D-64)", () => {
+  it("이번 주 반입·설치 합계와 주말까지 누계·설치율 (취소한 기록은 빼고)", () => {
+    let db = createSeed(NOW);
+    const site = db.sites.find((s) => s.id === "site-a")!;
+    const from = weekStart("2026-11-04"); // 11/02(월) ~ 11/08(일)
+    const w0 = weeklyLog(db, site, from).materials.find((m) => m.name === "커튼월 유닛")!;
+    // 시연 자료: 11/02·11/03 설치 12씩 + 11/01 이전 · 11/01 반입 48
+    const inWeek = (db.materialMoves ?? []).filter((m) => m.itemId === "mat-a-unit" && m.workDate >= from && m.workDate <= "2026-11-08");
+    expect(w0.weekInstall).toBe(inWeek.filter((m) => m.kind === "install").reduce((a, m) => a + m.qty, 0));
+    expect(w0.installTotal).toBe(108);
+    expect(w0.installPct).toBeCloseTo(45);
+    const target = inWeek.find((m) => m.kind === "install")!;
+    db = COMMANDS.voidMaterialMove(db, { moveId: target.id, reason: "중복" }, hq).db;
+    const w1 = weeklyLog(db, db.sites.find((s) => s.id === "site-a")!, from).materials.find((m) => m.name === "커튼월 유닛")!;
+    expect(w1.weekInstall).toBe(w0.weekInstall - target.qty);
+    expect(w1.installTotal).toBe(108 - target.qty);
+    // 품목이 없는 현장은 표를 만들지 않는다
+    expect(weeklyLog(db, db.sites.find((s) => s.id === "site-c")!, from).materials).toEqual([]);
   });
 });

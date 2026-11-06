@@ -10,6 +10,7 @@ import { run } from "@/lib/data/store";
 import { useMe, userLabel } from "@/lib/data/hooks";
 import { CommandError } from "@/lib/data/commands";
 import { downloadCsv } from "@/lib/browser/download";
+import { toCsv } from "@/lib/domain/csv";
 import type { DemoDB, MaterialMoveKind, Site } from "@/lib/domain/types";
 import { activeItems, fmtQty, materialRows, MATERIAL_FLAG_LABEL, MOVE_LABEL, siteInstallPct } from "@/lib/domain/material";
 import { fmtDate, fmtDateTime, fmtPct, todayIso } from "@/lib/domain/format";
@@ -33,17 +34,12 @@ export function MaterialTab({ db, site }: { db: DemoDB; site: Site }) {
   const itemOf = (id: string) => items.find((i) => i.id === id);
 
   const csv = () => {
-    const head = "날짜,구분,품목,수량,단위,메모,남긴 사람,상태,취소 사유";
+    const head = ["날짜", "구분", "품목", "수량", "단위", "메모", "남긴 사람", "상태", "취소 사유"];
     const lines = [...moves].reverse().map((m) => {
       const it = itemOf(m.itemId);
-      // 엑셀 수식으로 읽히지 않게(=·+·-·@로 시작) 앞에 ' 를 붙이고, 쉼표·따옴표·줄바꿈은 따옴표로 감싼다 (리뷰 반영 D-63)
-      const cell = (v0: string) => {
-        const v = /^[=+\-@\t\r]/.test(v0) ? `'${v0}` : v0;
-        return /[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
-      };
-      return [m.workDate, MOVE_LABEL[m.kind], cell(it?.name ?? ""), m.qty, cell(it?.unit ?? ""), cell(m.note ?? ""), cell(userLabel(db, m.by)), m.voided ? "취소" : "", cell(m.voided?.reason ?? "")].join(",");
+      return [m.workDate, MOVE_LABEL[m.kind], it?.name ?? "", m.qty, it?.unit ?? "", m.note ?? "", userLabel(db, m.by), m.voided ? "취소" : "", m.voided?.reason ?? ""];
     });
-    downloadCsv(`자재_${site.shortName}.csv`, [head, ...lines].join("\n"));
+    downloadCsv(`자재_${site.shortName}.csv`, toCsv([head, ...lines]));
   };
 
   return (

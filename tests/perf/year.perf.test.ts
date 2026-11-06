@@ -63,6 +63,12 @@ describe("1년치 데이터 성능", () => {
     const { gzipSync } = await import("node:zlib");
     RESULTS["대표 화면 데이터 압축 (MB)"] = Math.round((gzipSync(JSON.stringify(ceoView)).length / 1_048_576) * 100) / 100;
     RESULTS["현장 화면 데이터 압축 (KB)"] = Math.round(gzipSync(JSON.stringify(fieldView)).length / 1024);
+    // 자재 기록은 담당 현장 것을 기간 제한 없이 보낸다 (휴대폰 누계가 맞도록 · D-62) — 1년치에서도 작은지 (D-64)
+    const mm = fieldView.db.materialMoves ?? [];
+    RESULTS["현장 화면 자재 기록 (건)"] = mm.length;
+    RESULTS["현장 화면 자재 기록 (KB)"] = Math.round(JSON.stringify(mm).length / 1024);
+    RESULTS["현장 화면 자재 기록 압축 (KB)"] = Math.round(gzipSync(JSON.stringify(mm)).length / 1024);
+    if (DAYS <= 365) expect(Number(RESULTS["현장 화면 자재 기록 압축 (KB)"])).toBeLessThan(60);
     // 현장 휴대폰: 최근 60일 + 끝나지 않은 것만
     expect(fieldView.db.attendance!.every((r) => r.workDate >= day(DAYS - 61))).toBe(true);
     expect(fieldView.db.reports.length).toBeLessThan(400);

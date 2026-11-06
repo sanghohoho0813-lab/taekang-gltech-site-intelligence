@@ -598,6 +598,9 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     await page.route("**/api/commands", (r) => r.abort("internetdisconnected"));
     await page.getByTestId("material-send").click();
     await expect(page.getByTestId("material-queued")).toBeVisible();
+    // 다시 자재 화면을 열면 ‘오늘 내가 남긴 기록’에 ‘보내는 중’으로 보인다 (D-64)
+    await page.getByTestId("material-again").click();
+    await expect(page.getByTestId("material-today-waiting")).toContainText("자재 설치 커튼월 유닛 7 EA");
     await page.goto("/field");
     await expect(page.getByTestId("outbox-waiting")).toContainText("아직 못 보낸 기록 1건");
     await expect(page.getByTestId("outbox-waiting")).toContainText("자재 설치 커튼월 유닛 7 EA");
