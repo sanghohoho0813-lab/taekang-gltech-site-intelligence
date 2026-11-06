@@ -575,6 +575,33 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     for (const p of [partner, hq, field]) await p.context().close();
   });
 
+  test("이미 로그인된 휴대폰에서 다른 사람이 로그인 쪽지 QR로 로그인 (D-68): 틀리면 앞 사람 그대로, 맞으면 앞 사람 세션 종료", async ({ browser }) => {
+    const page = await login(browser, FIELD.email, FIELD.password, { width: 390, height: 844 });
+    const oldCookie = (await page.context().cookies()).find((c) => c.name === "tk_session")!;
+    await page.goto(`/login?id=${encodeURIComponent(PARTNER.email)}`);
+    await expect(page.getByTestId("login-current")).toContainText("로그인되어 있어요");
+    await expect(page.locator("#l-email")).toHaveValue(PARTNER.email);
+    // 비밀번호를 틀리면 앞 사람(현장 직원)은 그대로
+    await page.locator("#l-pw").fill("wrong-password-1");
+    await page.getByTestId("login-submit").click();
+    await expect(page.getByTestId("login-error")).toBeVisible();
+    expect((await (await page.request.get("/api/auth/me")).json()).me.email).toBe(FIELD.email);
+    // 맞게 넣으면 발주처로 바뀌고, 앞 사람 세션은 서버에서 끝난다
+    await page.locator("#l-pw").fill(PARTNER.password);
+    await page.getByTestId("login-submit").click();
+    await page.waitForURL(/\/partner/);
+    expect((await (await page.request.get("/api/auth/me")).json()).me.email).toBe(PARTNER.email);
+    const stale = await browser.newContext();
+    await stale.addCookies([{ name: oldCookie.name, value: oldCookie.value, domain: oldCookie.domain, path: oldCookie.path }]);
+    expect((await stale.request.get(new URL("/api/auth/me", page.url()).toString())).status()).toBe(401);
+    await stale.close();
+    // 같은 사람이면 ‘계속하기’로 바로 홈
+    await page.goto("/login");
+    await page.getByTestId("login-continue").click();
+    await expect(page).toHaveURL(/\/partner/);
+    await page.context().close();
+  });
+
   test("휴대폰 알림: 내 정보의 알림 카드 · 공식 푸시 서버만 등록 · 켜기/끄기 · 다른 사이트 요청 차단", async ({ browser }) => {
     const page = await login(browser, FIELD.email, FIELD.password, { width: 390, height: 844 });
     const st = await (await page.request.get("/api/push")).json();
