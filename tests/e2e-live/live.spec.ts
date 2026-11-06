@@ -513,6 +513,68 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     await expect(req).toHaveAttribute("data-status", "answered");
   });
 
+  test("하자보수(D-68): 발주처 사진 첨부 → 본사 작업지시 → 현장 완료 사진 → 보수 사진 회신 → 발주처 확인 · 사진 권한 · 월간 보고서", async ({ browser }) => {
+    const PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const cmd = async (page: Page, name: string, args: unknown) => {
+      const r = await page.request.post("/api/commands", { data: { name, args } });
+      return { status: r.status(), body: await r.json().catch(() => null) };
+    };
+    const state = async (page: Page) => (await (await page.request.get("/api/state")).json()).db;
+    const partner = await login(browser, PARTNER.email, PARTNER.password);
+    const made = await cmd(partner, "createPartnerRequest", { idempotencyKey: "e2e-defect-1", siteId, type: "defect", title: "3층 거실 창 누수", description: "비 올 때 창틀 아래로 물이 샙니다.", location: "3층 302호 거실 창", photoDataUrls: [PNG] });
+    expect(made.status).toBe(200);
+    let pst = await state(partner);
+    const req = pst.partnerRequests.find((r: { title: string }) => r.title === "3층 거실 창 누수");
+    expect(req.photoIds).toHaveLength(1);
+    const attached = req.photoIds[0];
+    // 본인이 첨부한 사진은 다시 볼 수 있다 (사진은 DB 사진 저장소로, 주소만 기록)
+    expect(pst.photos.find((p: { id: string }) => p.id === attached).dataUrl).toBe(`/api/photos/${attached}`);
+    expect((await partner.request.get(`/api/photos/${attached}`)).status()).toBe(200);
+    // 본사: 작업지시로 보낸다
+    const hq = await login(browser, CEO.email, CEO.password);
+    const field = await login(browser, FIELD.email, FIELD.password, { width: 390, height: 844 });
+    const fieldId = (await (await field.request.get("/api/auth/me")).json()).me.id;
+    const wo = await cmd(hq, "createWorkOrder", { siteId, title: "하자보수 · 3층 거실 창 누수", detail: "위치: 3층 302호", assigneeUserId: fieldId, partnerRequestId: req.id, idempotencyKey: "e2e-defect-wo" });
+    expect(wo.status).toBe(200);
+    const woId = wo.body.result.workOrderId;
+    pst = await state(partner);
+    expect(pst.partnerRepairs[req.id]).toMatchObject({ stage: "assigned" });
+    expect(pst.partnerRequests.find((r: { id: string }) => r.id === req.id).linkedWorkOrderId).toBeUndefined();
+    expect(pst.workOrders).toHaveLength(0);
+    // 현장: 휴대폰 작업지시 카드에 ‘하자보수’와 발주처 사진 → 완료(사진)
+    await field.goto("/my-actions");
+    const card = field.locator(`[data-wo="${woId}"]`);
+    await expect(card).toContainText("하자보수");
+    await expect(card.getByTestId("wo-ref-photos").locator("img")).toHaveCount(1);
+    expect((await cmd(field, "workOrderStep", { workOrderId: woId, action: "complete", note: "실리콘 재시공", photoDataUrls: [PNG] })).status).toBe(200);
+    const done = (await state(hq)).workOrders.find((w: { id: string }) => w.id === woId);
+    const donePhoto = done.donePhotoIds[0];
+    // 회신 전에는 보수 사진을 발주처가 받을 수 없다
+    expect((await partner.request.get(`/api/photos/${donePhoto}`)).status()).toBe(404);
+    expect((await cmd(hq, "updatePartnerRequest", { requestId: req.id, patch: { status: "answered", reply: "보수 완료했습니다. 살수 시험으로 누수 없음 확인.", sharePhotoIds: [donePhoto] } })).status).toBe(200);
+    expect((await partner.request.get(`/api/photos/${donePhoto}`)).status()).toBe(200);
+    // 발주처 화면: 보수 완료 · 보수 사진 · 확인 버튼
+    await partner.goto("/partner#my-requests");
+    const item = partner.getByTestId("partner-request-item").filter({ hasText: "3층 거실 창 누수" });
+    await expect(item.getByTestId("partner-repair")).toHaveAttribute("data-stage", "done");
+    await expect(item.getByTestId("partner-reply-photos").locator("img")).toHaveCount(1);
+    await item.getByTestId("partner-confirm").click();
+    await expect(item.getByTestId("partner-confirmed")).toBeVisible();
+    expect((await cmd(partner, "confirmPartnerRequest", { requestId: req.id })).status).toBe(409);
+    // 발주처는 작업지시·사진 공개를 할 수 없다
+    expect((await cmd(partner, "createWorkOrder", { siteId, title: "x", partnerRequestId: req.id })).status).toBe(403);
+    expect((await cmd(partner, "setPhotoShare", { photoIds: [attached], shared: true })).status).toBe(403);
+    // 월간 보고서: 금액 없이 하자보수 처리 기록
+    await partner.goto("/partner/report");
+    const rep = partner.getByTestId("report-body");
+    await expect(rep.getByTestId("report-request").filter({ hasText: "3층 거실 창 누수" })).toContainText("확인 완료");
+    expect((await rep.innerText()).replace(/\s+/g, " ")).not.toMatch(/\d+(\.\d+)?억|\d[\d,]*만 원|이익률|원가/);
+    // 본사 요청함: 발주처 확인 완료 표시
+    await hq.goto("/insights#requests");
+    await expect(hq.getByTestId("partner-request").filter({ hasText: "3층 거실 창 누수" }).getByTestId("request-confirmed")).toBeVisible();
+    for (const p of [partner, hq, field]) await p.context().close();
+  });
+
   test("휴대폰 알림: 내 정보의 알림 카드 · 공식 푸시 서버만 등록 · 켜기/끄기 · 다른 사이트 요청 차단", async ({ browser }) => {
     const page = await login(browser, FIELD.email, FIELD.password, { width: 390, height: 844 });
     const st = await (await page.request.get("/api/push")).json();

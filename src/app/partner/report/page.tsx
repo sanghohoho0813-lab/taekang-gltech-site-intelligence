@@ -214,7 +214,7 @@ function Report({ db, siteId, month, partnerUserId, preview, today }: { db: Demo
       </Section>
 
       <footer className="mt-6 border-t border-line pt-3 text-[0.74rem] leading-relaxed text-ink-3">
-        이 보고서에는 계약·원가·기성 금액과 내부 메모가 들어가지 않습니다. 태강지엘텍 시스템에 기록된 현장 보고·공개 사진·요청 처리 기록으로 자동 작성했습니다.
+        이 보고서에는 계약·공사비·기성 금액과 내부 메모가 들어가지 않습니다. 태강지엘텍 시스템에 기록된 현장 보고·공개 사진·요청 처리 기록으로 자동 작성했습니다.
         {!IS_LIVE && " DEMO 화면의 현장·사진·요청은 가상 시연 데이터입니다."}
       </footer>
     </article>
