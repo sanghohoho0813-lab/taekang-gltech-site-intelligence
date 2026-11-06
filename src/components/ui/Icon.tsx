@@ -21,6 +21,7 @@ import {
   Activity,
   BookOpen,
   NotebookText,
+  Wrench,
   History,
   Images,
   MessageSquareWarning,
@@ -57,6 +58,7 @@ const MAP: Record<string, LucideIcon> = {
   Activity,
   BookOpen,
   NotebookText,
+  Wrench,
   History,
   Images,
 };

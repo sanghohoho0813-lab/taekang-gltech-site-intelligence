@@ -49,6 +49,7 @@ export const NAV: NavItem[] = [
   { href: "/attendance", label: "출퇴근 현황", icon: "MapPinCheck", group: "ops", roles: INTERNAL, desc: "GPS 출퇴근·보고 위치·의심 표시" },
   { href: "/my-actions", label: "내 조치", fieldLabel: "본사 요청", icon: "ListChecks", group: "ops", roles: ALL_INTERNAL, desc: "배정된 위험 조치 처리" },
   { href: "/my", label: "내 정보", icon: "UserRound", group: "ops", roles: ["field"], alsoAccess: ["ceo", "manager"], desc: "글자 크기·내가 보낸 보고·비밀번호" },
+  { href: "/defects", label: "하자보수", icon: "Wrench", group: "growth", roles: INTERNAL, desc: "발주처 하자보수 요청 — 진행·기한·처리 기간·하자보수 관리대장 (인쇄)" },
   { href: "/finance", label: "기성·수금", icon: "Wallet", group: "growth", roles: INTERNAL, desc: "계약·변경공사·기성·입금·미수" },
   { href: "/report", label: "대표 보고서", icon: "FileBarChart", group: "growth", roles: INTERNAL, desc: "실시간 손익 변화 보고" },
   { href: "/insights", label: "위험 분석·조치", icon: "ShieldAlert", group: "ax", roles: INTERNAL, alsoAccess: ["field"], desc: "규칙 기반 진단 → 조치 → 결과" },
