@@ -114,11 +114,11 @@ export const COLLECTION_SPEC: Record<CollectionName, CollectionSpec> = {
   forecasts: { label: "잔여 예상 원가", holds: "공종별 앞으로 더 들 비용 (본사 추정)", field: DATA_NONE, partner: DATA_NONE, keep: "보관" },
   costEntries: { label: "원가·추가 비용", holds: "현장·공종·금액·내용·확인 상태·수정 이력", field: "본인이 올린 것 (최근 60일·확인 대기)", partner: DATA_NONE, keep: "보관 (무효 처리는 이력으로 남음)" },
   reports: { label: "현장 보고", holds: "작업 내용·사진·문제·공정 진척·본사 확인·보완", field: "담당 현장 최근 60일 (동료의 위치 좌표는 빼고)", partner: DATA_NONE, keep: "보관" },
-  photos: { label: "사진", holds: "현장 보고·작업 인원·자재 반입·설치·작업지시·조치 사진 (원본은 별도 저장)", field: "담당 현장 관련 사진", partner: DATA_NONE, keep: "보관" },
+  photos: { label: "사진", holds: "현장 보고·작업 인원·자재 반입·설치·작업지시·조치 사진·발주처 하자 사진 (원본은 별도 저장)", field: "담당 현장 관련 사진", partner: "본사가 공개한 공정 사진 · 본인이 보낸 하자 사진 · 본인 요청의 보수 완료 사진", keep: "보관" },
   changeOrders: { label: "변경공사", holds: "변경 내용·요청 금액·승인 금액·상태", field: DATA_NONE, partner: DATA_NONE, keep: "보관" },
   billings: { label: "기성 청구", holds: "회차·청구일·금액", field: DATA_NONE, partner: DATA_NONE, keep: "보관" },
   payments: { label: "입금", holds: "입금일·금액", field: DATA_NONE, partner: DATA_NONE, keep: "보관" },
-  partnerRequests: { label: "발주처 요청", holds: "견적 문의·주문 요청(품목·수량·희망일)·회신", field: "담당 현장 것", partner: "본인이 보낸 것만", keep: "보관" },
+  partnerRequests: { label: "발주처 요청", holds: "견적 문의·주문 요청(품목·수량·희망일)·하자보수(위치·사진·보수 작업지시)·회신·발주처 확인", field: "담당 현장 것", partner: "본인이 보낸 것만 (작업지시 번호 없이 보수 단계·기한만)", keep: "보관" },
   actions: { label: "위험 조치 (본사 요청)", holds: "위험 신호에서 만든 할 일·담당·기한·진행·결과", field: "본인 배정분 (금액이 든 근거 문구는 빼고)", partner: DATA_NONE, keep: "보관" },
   proofEvents: { label: "조치 성과 기록", holds: "조치 전후 지표·확인 여부", field: "확인 여부만", partner: DATA_NONE, keep: "보관" },
   activityLogs: { label: "활동 이력", holds: "누가·언제·무엇을 했는지 (지워지지 않음)", field: "본인 것만", partner: DATA_NONE, keep: "지우지 않음 (화면에는 최근 300건, 전체는 검색)" },
@@ -215,7 +215,7 @@ export const MODULES: { no: string; name: string; routes: string[]; note: string
   { no: "03", name: "본사-현장 소통", routes: ["/orders", "/my-actions", "/audit"], note: "지시→접수→진행→완료→확인, 보완 요청, 휴대폰 알림, 활동 이력" },
   { no: "04", name: "공정·투입 원가", routes: ["/sites", "/schedule", "/labor", "/finance"], note: "현장 손익·공정 일정·투입 인건비 추정 vs 실제·기성·변경공사·자재 설치율·기성 청구 지연 표시" },
   { no: "05", name: "대표자 통합 현황판", routes: ["/dashboard", "/report", "/insights"], note: "처리 대기·현장별 손익·위험 신호(규칙 기반)·대표 보고서" },
-  { no: "06", name: "고객·협력사 초기화면", routes: ["/partner"], note: "공개 현장 진행·견적 문의·주문 요청·회신 (내부 금액 비노출)" },
+  { no: "06", name: "고객·협력사 초기화면", routes: ["/partner", "/partner/report"], note: "공개 현장 진행·공정 사진·견적 문의·주문 요청·하자보수(사진·보수 진행·확인)·월간 공정 보고서 (내부 금액 비노출)" },
   { no: "07", name: "기존 프로그램 일부 기능", routes: ["/data"], note: "엑셀 가져오기 6종(기성·입금 / 변경공사 / 출력 / 팀 단가 / 원가 / 자재 반입·설치)·내려받기 — 합의 항목은 계약에 따라 확정" },
 ];
 
