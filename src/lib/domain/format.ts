@@ -19,7 +19,8 @@ export function fmtEok(v: number, opts: { digits?: number; unit?: boolean } = {}
   const unit = opts.unit ?? true;
   const sign = v < 0 ? "−" : "";
   const abs = Math.abs(v);
-  if (abs < 100_000_000) return sign + fmtMan(abs, { unit });
+  // 단위 없이(‘단위 억 원’ 표) 쓸 때는 1억 미만도 억으로 — 한 표에 ‘8,060만’과 ‘1.5’가 섞이던 문제 (D-66)
+  if (abs < 100_000_000) return unit ? sign + fmtMan(abs, { unit }) : abs > 0 && abs < 1_000_000 ? `${sign}<0.01` : sign + trimNum(abs / 100_000_000, digits);
   return `${sign}${trimNum(abs / 100_000_000, digits)}억${unit ? " 원" : ""}`;
 }
 

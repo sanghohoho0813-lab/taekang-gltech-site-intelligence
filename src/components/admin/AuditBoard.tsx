@@ -97,7 +97,7 @@ export function AuditBoard() {
       {!IS_LIVE && <Notice tone="info">DEMO는 이 브라우저에 남은 최근 이력만 보입니다. 실제 운영에서는 서버에 쌓인 전체 이력(최대 1년)을 조건으로 찾습니다.</Notice>}
       {server?.error && <Notice tone="err">{server.error}</Notice>}
       <Card data-testid="audit-list">
-        <CardHeader title={loading ? "불러오는 중…" : `${result.logs.length.toLocaleString("ko-KR")}건${result.truncated ? ` (최근 ${AUDIT_LIMIT.toLocaleString("ko-KR")}건까지 — 기간·조건을 줄이세요)` : ""}`} sub={`${from} ~ ${to}`} />
+        <CardHeader title={loading ? "불러오는 중…" : `${result.logs.length.toLocaleString("ko-KR")}건${result.truncated ? ` (최근 ${AUDIT_LIMIT.toLocaleString("ko-KR")}건까지 — 기간·조건을 줄이세요)` : ""}`} sub={`${from.replace(/-/g, ".")} ~ ${to.replace(/-/g, ".")}`} />
         {result.logs.length === 0 ? (
           <EmptyState title="조건에 맞는 이력이 없습니다" />
         ) : (

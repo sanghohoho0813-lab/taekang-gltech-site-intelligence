@@ -127,7 +127,7 @@ function SignalItem({ db, s, onAssign }: { db: DemoDB; s: RiskSignal; onAssign: 
               <li key={w}>{w}</li>
             ))}
           </ul>
-          <p className="mt-1.5 text-[0.72rem] text-ink-3">기준: {s.threshold} · 사용 데이터: {s.dataUsed.join(", ")}</p>
+          <p className="mt-1.5 text-[0.72rem] text-ink-3">기준: {s.threshold} · 사용 데이터: {s.dataUsed.map((k) => DATA_LABEL[k] ?? k).join(", ")}</p>
         </div>
       )}
       <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-dashed border-line-strong px-3 py-2">
@@ -319,3 +319,16 @@ function ReplyModal({ req, onClose }: { req: PartnerRequest; onClose: () => void
     </Modal>
   );
 }
+
+/** 근거에 쓴 자료 — 내부 표 이름 대신 업무 말 (D-66) */
+const DATA_LABEL: Record<string, string> = {
+  change_orders: "변경공사",
+  cost_budgets: "실행예산",
+  cost_entries: "원가 입력",
+  cost_forecasts: "잔여예상원가",
+  material_moves: "자재 반입·설치",
+  payments_received: "입금",
+  progress_billings: "기성청구",
+  progress_updates: "공정률",
+  site_contracts: "계약",
+};

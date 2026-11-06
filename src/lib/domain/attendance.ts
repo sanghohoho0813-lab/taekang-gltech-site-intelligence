@@ -96,7 +96,7 @@ export function recentFlags(db: DemoDB, today: string, days = 14): AttendanceFla
   const recent = att(db).filter((r) => r.workDate >= from && r.workDate <= today);
   const name = (id: string) => db.users.find((u) => u.id === id)?.name ?? "알 수 없음";
   for (const r of recent) {
-    if (!r.outAt && r.workDate < today) flags.push({ kind: "no_checkout", userId: r.userId, siteId: r.siteId, recordId: r.id, workDate: r.workDate, text: `${name(r.userId)} — ${r.workDate} 퇴근 기록이 없습니다 (근무 시간 확인 필요)` });
+    if (!r.outAt && r.workDate < today) flags.push({ kind: "no_checkout", userId: r.userId, siteId: r.siteId, recordId: r.id, workDate: r.workDate, text: `${name(r.userId)} — ${r.workDate.replace(/-/g, ".")} 퇴근 기록이 없습니다 (근무 시간 확인 필요)` });
   }
   // 실제 GPS는 매번 조금씩 달라진다. 소수점 6자리까지 같은 좌표가 3일 이상이면 위치 조작 앱을 의심
   const byUser = new Map<string, Map<string, Set<string>>>();

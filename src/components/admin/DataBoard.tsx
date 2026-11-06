@@ -104,8 +104,9 @@ function fixHref(fix: ReadyFix | undefined, siteId?: string): string | null {
   if (fix === "geo") return "/attendance";
   if (fix === "forecast") return IS_LIVE ? "/admin?tab=sites" : siteId ? `/sites/${siteId}` : null;
   if (fix === "site") return IS_LIVE ? "/admin?tab=sites" : siteId ? `/sites/${siteId}` : null;
-  if (fix === "partner") return IS_LIVE ? "/admin?tab=members" : "/partner";
-  if (fix === "settings") return IS_LIVE ? "/admin?tab=settings" : "/settings";
+  // 시연판에는 계정 추가·회사 설정 화면이 없다 — 엉뚱한 화면으로 보내지 않고 링크를 감춘다 (D-66)
+  if (fix === "partner") return IS_LIVE ? "/admin?tab=members" : null;
+  if (fix === "settings") return IS_LIVE ? "/admin?tab=settings" : null;
   return null;
 }
 
@@ -122,14 +123,15 @@ function ReadyRow({ it, siteId, onImport, flat }: { it: ReadyItem; siteId?: stri
       </span>
       {action &&
         (importKind && onImport ? (
-          <button type="button" onClick={() => onImport(importKind)} className="press shrink-0 rounded-lg px-2 py-1 text-[0.78rem] font-bold text-theme-ink hover:bg-active-soft" data-testid="ready-import">
+          <button type="button" onClick={() => onImport(importKind)} className="press inline-flex min-h-10 shrink-0 items-center rounded-lg px-3 text-[0.8rem] font-bold text-theme-ink hover:bg-active-soft" data-testid="ready-import">
             가져오기
           </button>
         ) : href ? (
-          <Link href={href} className="press shrink-0 rounded-lg px-2 py-1 text-[0.78rem] font-bold text-theme-ink hover:bg-active-soft">
+          <Link href={href} className="press inline-flex min-h-10 shrink-0 items-center rounded-lg px-3 text-[0.8rem] font-bold text-theme-ink hover:bg-active-soft">
             고치기
           </Link>
         ) : null)}
+      {it.status !== "ok" && !importKind && !href && !IS_LIVE && (it.fix === "partner" || it.fix === "settings") && <span className="shrink-0 self-center text-[0.74rem] text-ink-3">실제 운영에서 설정</span>}
     </li>
   );
 }
@@ -284,7 +286,7 @@ function ImportCard({ kind, setKind }: { kind: ImportKind; setKind: (k: ImportKi
                 <ul className="mt-1 space-y-0.5 text-[0.8rem]" data-testid="import-errors">
                   {plan.errors.slice(0, 20).map((e, i) => (
                     <li key={i}>
-                      <b className="num">{e.line}행</b> · {e.field} — {e.message}
+                      <b className="num">{e.line}행</b> · {FIELD_NAME[e.field] ?? e.field} — {e.message}
                     </li>
                   ))}
                   {plan.errors.length > 20 && <li>… 외 {plan.errors.length - 20}건</li>}
@@ -443,10 +445,13 @@ function BackupCard() {
             전체 자료 내려받기 (JSON)
           </Button>
         )}
-        <p className="min-w-0 flex-1 text-[0.8rem] text-ink-3">
+        <p className="min-w-[14rem] flex-1 basis-full text-[0.8rem] text-ink-3 @min-[760px]:basis-auto">
           현장·원가·기성·변경공사·출퇴근·보고·작업 인원·지시·요청·이력이 모두 들어갑니다. 비밀번호·로그인 정보·QR 단말기 비밀값은 넣지 않고, 사진 원본은 크기 때문에 빠집니다(사진은 DB 전체 백업으로 보관).
         </p>
       </div>
     </Card>
   );
 }
+
+/** 오류 위치 이름 — 내부 키(file·header) 대신 화면 말 (D-66) */
+const FIELD_NAME: Record<string, string> = { file: "파일", header: "열 이름(첫 줄)" };

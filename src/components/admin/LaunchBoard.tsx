@@ -123,6 +123,11 @@ export function LaunchBoard() {
                 {rep.blockers.join(" · ")}
               </p>
             )}
+            {!verdictOk && !IS_LIVE && (
+              <p className="mt-1 text-[0.8rem] text-ink-3" data-testid="launch-demo-note">
+                시연판에서는 회사 설정·사용자를 바꿀 수 없어 이 항목이 남아 있습니다. 실제 운영에서는 ‘운영 관리’에서 바로 고칩니다.
+              </p>
+            )}
             {rep.warnings.length > 0 && (
               <p className="mt-1 text-[0.84rem] text-ink-3" data-testid="launch-warnings">
                 고치면 좋은 것: {rep.warnings.join(" · ")}
@@ -256,18 +261,18 @@ function ItemRow({ i, compact }: { i: LaunchItem; compact?: boolean }) {
   return (
     <li className={cx("flex flex-wrap items-start gap-x-3 gap-y-1", compact ? "py-1.5" : "px-5 py-3")} data-testid="launch-item" data-key={i.key} data-status={i.status}>
       {STATUS_ICON[i.status]}
-      <span className="min-w-0 flex-1">
+      <span className="min-w-[12rem] flex-1">
         <span className="block text-[0.92rem] font-bold">{i.label}</span>
         <span className="block text-[0.84rem] text-ink-2 [overflow-wrap:anywhere]">{i.text}</span>
       </span>
       {i.status !== "ok" &&
         fix &&
         (fix.href ? (
-          <Link href={fix.href} className="press inline-flex h-9 shrink-0 items-center rounded-lg border border-line-strong px-3 text-[0.82rem] font-bold" data-testid="launch-fix">
+          <Link href={fix.href} className="press inline-flex min-h-10 shrink-0 items-center rounded-lg border border-line-strong px-3 text-[0.82rem] font-bold" data-testid="launch-fix">
             {fix.label}
           </Link>
         ) : (
-          <span className="shrink-0 text-[0.78rem] text-ink-3">운영 모드: {fix.label}</span>
+          <span className="basis-full pl-8 text-[0.78rem] text-ink-3 @min-[760px]:basis-auto @min-[760px]:pl-0">실제 운영에서: {fix.label} (시연판에서는 바꿀 수 없음)</span>
         ))}
     </li>
   );

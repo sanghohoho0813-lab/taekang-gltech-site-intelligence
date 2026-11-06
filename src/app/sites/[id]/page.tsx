@@ -173,7 +173,8 @@ export default function SiteDetailPage() {
       )}
 
       <div className="sticky top-[calc(var(--demo-bar-h)+3.6rem)] z-20 -mx-4 border-b border-line bg-canvas/95 px-4 backdrop-blur lg:top-[calc(var(--demo-bar-h)+4rem)] @min-[760px]:-mx-7 @min-[760px]:px-7">
-        <div className="flex gap-1 overflow-x-auto no-scrollbar" role="tablist" aria-label="현장 상세 탭">
+        {/* 휴대폰: 9개 탭이 화면 밖으로 숨던 문제 → 두 줄로 줄바꿈 (D-66) */}
+        <div className="flex flex-wrap gap-x-1 @min-[760px]:flex-nowrap @min-[760px]:overflow-x-auto no-scrollbar" role="tablist" aria-label="현장 상세 탭">
           {visibleTabs.map((t) => (
             <button
               key={t.id}
@@ -181,7 +182,7 @@ export default function SiteDetailPage() {
               aria-selected={tab === t.id}
               onClick={() => setTab(t.id)}
               className={cx(
-                "press relative shrink-0 px-3.5 py-3 text-[0.88rem] font-bold",
+                "press relative shrink-0 px-3 py-2.5 text-[0.88rem] font-bold @min-[760px]:px-3.5 @min-[760px]:py-3",
                 tab === t.id ? "text-theme-ink" : "text-ink-3 hover:text-ink",
               )}
               data-testid={`tab-${t.id}`}
@@ -258,7 +259,7 @@ function ProfitEngine({ db, site, f }: { db: DemoDB; site: Site; f: SiteFinancia
         <Metric
           label="예상이익률"
           value={<CountUp value={f.marginPct} format={(v) => fmtPct(v)} />}
-          sub={<>계획 {fmtPct(f.plannedMarginPct)} · <span className={cx(f.marginPct < f.plannedMarginPct - 0.05 ? "text-err font-bold" : "")}>{fmtPp(f.marginPct - f.plannedMarginPct)}</span></>}
+          sub={<>계획 {fmtPct(f.plannedMarginPct)} · <span className={cx(f.marginPct < f.plannedMarginPct - 0.05 ? "text-err font-bold" : "")}>{Math.abs(f.marginPct - f.plannedMarginPct) < 0.05 ? "계획과 같음" : fmtPp(f.marginPct - f.plannedMarginPct)}</span></>}
           strong
           testId="m-margin"
         />
@@ -414,7 +415,7 @@ function CostTab({ db, site, f, canSeeMoney }: { db: DemoDB; site: Site; f: Site
     <div className="space-y-5">
       {canSeeMoney && (
         <Card>
-          <CardHeader title="원가항목별 예산 vs 예상 총원가" sub={`예상 총원가 = 발생 + 잔여예상 · 예산 초과 ${db.thresholds.overrunPct}% 이상은 위험 신호 · 단위 만 원`} />
+          <CardHeader title="원가항목별 예산 vs 예상 총원가" sub={`예상 총원가 = 발생 + 잔여예상 · 예산 초과 ${db.thresholds.overrunPct}% 이상은 위험 신호 · 표 단위 만 원`} />
           {/* 휴대폰: 항목마다 한 줄 — ‘예산 대비’가 화면 밖으로 밀리지 않게 (D-65) */}
           <ul className="divide-y divide-line border-t border-line @min-[760px]:hidden" data-testid="cost-cards">
             {f.categories.map((c) => (
@@ -422,7 +423,7 @@ function CostTab({ db, site, f, canSeeMoney }: { db: DemoDB; site: Site; f: Site
                 <span className="min-w-0">
                   <span className="block font-semibold">{CATEGORY_LABEL[c.category]}</span>
                   <span className="num block text-[0.76rem] text-ink-3">
-                    예산 {fmtManNum(c.budget)} · 예상 {fmtManNum(c.eac)}만
+                    예산 {fmtEok(c.budget)} · 예상 {fmtEok(c.eac)}
                   </span>
                 </span>
                 <span className={cx("num shrink-0 text-right text-[0.86rem] font-bold", c.variancePct > db.thresholds.overrunPct ? "text-err" : c.variance > 0 ? "text-warn" : "text-ok")}>

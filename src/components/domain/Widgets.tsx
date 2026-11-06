@@ -58,14 +58,14 @@ export function AiReadyButton({ context = "risk" }: { context?: "risk" | "report
       <Modal
         open={open}
         onClose={() => setOpen(false)}
-        title="이 위치에는 AI API가 연결될 예정입니다 (현재 미연결)"
+        title="이 자리에는 나중에 AI를 연결할 수 있습니다 (지금은 연결 안 됨)"
         size="md"
         footer={<Button onClick={() => setOpen(false)}>확인</Button>}
       >
         <div className="space-y-4 text-[0.88rem] text-ink-2">
           <Section title="지금 이 화면은 무엇으로 판단하나요?">
             <p>
-              <b>규칙 기반 진단(RULE v1)</b>입니다. 이익률 하락 3%p, 원가항목 예산 5% 초과, 설계변경 원가의 변경공사 미등록, 미수 60일 초과 같은 <b>명확한 기준</b>으로 코드가 계산합니다. 금액·이익률 계산은 AI에 맡기지 않습니다.
+              <b>규칙 기반 진단</b>입니다. 이익률 하락 3%p, 원가항목 예산 5% 초과, 설계변경 원가의 변경공사 미등록, 미수 60일 초과 같은 <b>명확한 기준</b>으로 코드가 계산합니다. 금액·이익률 계산은 AI에 맡기지 않습니다.
             </p>
           </Section>
           <Section title={context === "risk" ? "AI가 들어가면 무엇을 하나요? (1개 기능만)" : "보고서에서 AI의 역할"}>

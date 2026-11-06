@@ -181,6 +181,8 @@ export function createWorkOrder(db0: DemoDB, input: WorkOrderInput, ctx: Ctx) {
   // 그 현장을 맡지 않은 현장 직원에게는 보내지 않는다 (현장 이름 없이 엉뚱한 사람에게 가던 문제 · D-65 점검 반영)
   else if (!worksOnSite(u, site)) errors.assigneeUserId = `${u.name}님은 ${site.shortName}을 맡고 있지 않습니다. 현장 담당이나 운영 관리에서 현장을 먼저 배정하세요.`;
   if (input.dueDate && !/^\d{4}-\d{2}-\d{2}$/.test(input.dueDate)) errors.dueDate = "기한 날짜를 확인해 주세요.";
+  // 이미 지난 날짜를 기한으로 주면 보내자마자 ‘(지남)’이 붙는다 (D-66 점검 반영)
+  else if (input.dueDate && input.dueDate < todayIso(ctx.now)) errors.dueDate = "기한은 오늘이나 그 뒤로 정해 주세요.";
   if (Object.keys(errors).length) throw new CommandError("입력값을 확인해주세요.", "VALIDATION", errors);
   const db = clone(db0);
   claimKey(db, input.idempotencyKey);

@@ -208,7 +208,7 @@ export function computeSignals(db: DemoDB, now = new Date()): RiskSignal[] {
         summary: "확정된 기성청구액 중 기준일을 넘긴 미수 잔액이 있습니다.",
         why: [
           `확정 기성 ${fmtEok(f.billed)} − 수금 ${fmtEok(f.received)} = 미수 ${fmtEok(f.outstanding)}`,
-          `수금은 오래된 기성부터 차감(FIFO)해 경과일 계산`,
+          `수금은 오래된 기성부터 먼저 갚은 것으로 보고 경과일 계산`,
           `${oldest.round}차 잔액 ${fmtMan(oldest.unpaid)} · ${oldest.ageDays}일 > 기준 ${t.receivableDays}일`,
         ],
         dataUsed: ["progress_billings", "payments_received"],

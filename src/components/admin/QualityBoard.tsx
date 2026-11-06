@@ -14,6 +14,7 @@ import { useMe, userLabel } from "@/lib/data/hooks";
 import { run } from "@/lib/data/store";
 import { CommandError } from "@/lib/data/commands";
 import { IS_LIVE } from "@/lib/mode";
+import { NAV, navLabel } from "@/lib/nav";
 import { FEEDBACK_LABEL, FEEDBACK_STATUS_LABEL, qualitySummary, type ErrorEntry, type Feedback, type FeedbackStatus } from "@/lib/domain/feedback";
 import { fmtDateTime, todayIso } from "@/lib/domain/format";
 import { shiftDate } from "@/lib/domain/attendance";
@@ -83,7 +84,7 @@ export function QualityBoard() {
           <Field label="종료일" htmlFor="q-to">
             <input id="q-to" type="date" className={cx(inputCls, "w-44")} value={to} min={from} onChange={(e) => e.target.value && setTo(e.target.value)} data-testid="quality-to" />
           </Field>
-          <div className="grid flex-1 grid-cols-2 gap-2 @min-[760px]:grid-cols-4" data-testid="quality-summary">
+          <div className="grid w-full basis-full grid-cols-2 gap-2 @min-[760px]:w-auto @min-[760px]:flex-1 @min-[760px]:basis-auto @min-[760px]:grid-cols-4" data-testid="quality-summary">
             <Stat label="앱 의견" value={`${sum.feedback.total}건`} sub={`반영 ${sum.feedback.done} · 보류 ${sum.feedback.hold}`} />
             <Stat label="확인 전 의견" value={`${sum.feedback.open}건`} tone={sum.feedback.open ? "warn" : "ok"} testId="quality-open" />
             <Stat label="기록된 앱 오류" value={IS_LIVE ? `${sum.errors.total}회` : "—"} sub={IS_LIVE ? `${sum.errors.kinds}종류 · 화면 ${sum.errors.client} · 서버 ${sum.errors.server}` : "실제 운영에서 자동 기록"} tone={IS_LIVE ? (sum.errors.total ? "err" : "ok") : undefined} testId="quality-errors" />
@@ -189,7 +190,7 @@ function FeedbackRow({ f, name, reviewer }: { f: Feedback; name: string; reviewe
         <span className="text-ink-2">{name}</span>
         <span className="ml-auto text-[0.78rem] text-ink-3">
           {fmtDateTime(f.at)}
-          {f.route ? ` · ${f.route}` : ""}
+          {f.route ? ` · ${screenName(f.route)}` : ""}
         </span>
       </p>
       {f.text && <p className="text-[0.88rem]">{f.text}</p>}
@@ -225,4 +226,10 @@ function FeedbackRow({ f, name, reviewer }: { f: Feedback; name: string; reviewe
 
 function Stat({ label, value, sub, tone, testId }: { label: string; value: string; sub?: string; tone?: "ok" | "warn" | "err"; testId?: string }) {
   return <MetricTile label={label} value={value} sub={sub} tone={tone === "ok" ? undefined : tone} testId={testId} compact />;
+}
+
+/** 의견을 보낸 화면 — 내부 주소(/field) 대신 화면 이름 (D-66) */
+function screenName(route: string): string {
+  const item = NAV.filter((n) => route === n.href || route.startsWith(n.href + "/")).sort((a, b) => b.href.length - a.href.length)[0];
+  return item ? `${navLabel(item, "field")} 화면` : "기타 화면";
 }

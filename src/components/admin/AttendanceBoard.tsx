@@ -650,7 +650,8 @@ function CrewCard({ db, date, name }: { db: DemoDB; date: string; name: (id: str
               <li key={s.id} className="flex flex-wrap items-center gap-x-2" data-testid="crew-gap" data-over={over ? "1" : "0"}>
                 <b>{s.shortName}</b>
                 <span className="text-ink-2">최근 30일 노무 공수 보고 {g.reported} · 출력 인원 {g.crewDays}명·일</span>
-                {over ? <Badge tone="err">공수가 더 많음 — 확인 필요</Badge> : <Badge tone="ok">맞음</Badge>}
+                {/* 공수 보고가 0이면 비교할 수 없다 — ‘맞음’(초록)으로 보이던 문제 (D-66) */}
+                {over ? <Badge tone="err">공수가 더 많음 — 확인 필요</Badge> : g.reported === 0 ? <Badge>공수 보고 없음 — 비교 불가</Badge> : <Badge tone="ok">맞음</Badge>}
               </li>
             );
           })}

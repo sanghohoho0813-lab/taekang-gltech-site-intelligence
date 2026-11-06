@@ -104,7 +104,7 @@ export function AcceptanceBoard() {
         <p className="mt-1 text-center text-[0.9rem] font-semibold text-ink-2" data-testid="acc-stage-title">
           {STAGE_TITLE[stage]}
         </p>
-        <table className="mt-4 w-full border-collapse">
+        <table className="mt-4 w-full table-fixed border-collapse [overflow-wrap:anywhere]">
           <tbody>
             <tr>
               <th className={cx(th, "w-24")}>사업명</th>
@@ -156,6 +156,8 @@ export function AcceptanceBoard() {
           </div>
         </section>
 
+        {/* 종합 판정과 서명은 한 덩어리 — 인쇄 때 서명란만 다음 쪽에 혼자 찍히던 문제 (D-66) */}
+        <div className="break-inside-avoid">
         <section className="mt-4 break-inside-avoid print:mt-3" data-testid="acc-overall">
           <h3 className="mb-1.5 border-l-4 border-solid pl-2 text-[0.95rem] font-extrabold">종합 판정</h3>
           <div className="flex flex-wrap gap-x-6 gap-y-2 text-[0.92rem]">
@@ -168,6 +170,7 @@ export function AcceptanceBoard() {
           <Sign party="발주자" org={db.company.name} who="확인자" />
           <Sign party="수행사" org={VENDOR} who="대표" />
         </section>
+        </div>
 
         <p className="mt-4 border-t border-line pt-2 text-[0.74rem] text-ink-3" data-testid="acc-foot">
           {IS_LIVE ? "" : "DEMO · 가상 시연 데이터 — 실제 검수에는 운영 화면에서 다시 만드세요. "}

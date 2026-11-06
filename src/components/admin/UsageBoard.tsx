@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 /** 대표·관리자 — 사용 현황 (계약 4단계 ‘실사용 검증’): 현장 직원 정착도 + 본사 응답 시간 */
 import { MetricTile } from "@/components/domain/Widgets";
 import { useState } from "react";
@@ -62,7 +64,9 @@ export function UsageBoard() {
         <Tile label="정착한 현장 직원" value={`${u.settled} / ${u.field.length}명`} sub="출근 기록 80%↑ · 보고 60%↑" testId="usage-settled" />
         <Tile label="평균 출근 기록률" value={pct(avgAttend)} sub="월~토 작업일 기준" />
         <Tile label="현장 보고 확인까지" value={fmtHours(report.medianHours)} sub={`중앙값 · ${report.n}건 확인`} />
-        <Tile label="기준 시간 넘긴 미처리" value={`${overdue}건`} sub="보고·근태 24시간, 고객 요청 48시간" tone={overdue ? "err" : undefined} testId="usage-overdue" />
+        <Link href="/orders" className="block rounded-[inherit] focus-visible:outline-2" aria-label="기준 시간 넘긴 미처리 — 지시·확인에서 처리하기">
+          <Tile label="기준 시간 넘긴 미처리" value={`${overdue}건`} sub="보고·근태 24시간, 고객 요청 48시간 · 눌러서 처리" tone={overdue ? "err" : undefined} testId="usage-overdue" />
+        </Link>
       </div>
 
       <Card data-testid="usage-field">

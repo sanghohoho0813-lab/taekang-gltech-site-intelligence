@@ -63,7 +63,7 @@ const nameOf = (db: DemoDB, id?: string) => db.users.find((u) => u.id === id)?.n
 const siteOf = (db: DemoDB, id: string) => db.sites.find((s) => s.id === id)?.shortName ?? "";
 
 /** 확인 / 보완 요청(사유 필수) 두 버튼 */
-function Decide({ onConfirm, onReturn, confirmLabel = "확인", returnLabel = "보완 요청", testPrefix }: { onConfirm: () => Promise<void>; onReturn: (note: string) => Promise<void>; confirmLabel?: string; returnLabel?: string; testPrefix: string }) {
+function Decide({ onConfirm, onReturn, confirmLabel = "확인", returnLabel = "보완 요청", testPrefix, notePlaceholder = "사유 (예: 보수 후 사진 추가)", sendLabel = "보내기" }: { onConfirm: () => Promise<void>; onReturn: (note: string) => Promise<void>; confirmLabel?: string; returnLabel?: string; testPrefix: string; notePlaceholder?: string; sendLabel?: string }) {
   const [ret, setRet] = useState(false);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
@@ -88,9 +88,9 @@ function Decide({ onConfirm, onReturn, confirmLabel = "확인", returnLabel = "�
         </>
       ) : (
         <>
-          <input className={cx(inputCls, "h-9 w-64 py-1 text-[0.84rem]")} value={note} onChange={(e) => setNote(e.target.value)} placeholder="사유 (예: 보수 후 사진 추가)" aria-label="사유" data-testid={`${testPrefix}-note`} />
+          <input className={cx(inputCls, "h-9 w-64 py-1 text-[0.84rem]")} value={note} onChange={(e) => setNote(e.target.value)} placeholder={notePlaceholder} aria-label="사유" data-testid={`${testPrefix}-note`} />
           <Button size="sm" variant="danger" loading={busy} disabled={note.trim().length < 2} onClick={() => act(() => onReturn(note))} data-testid={`${testPrefix}-return-send`}>
-            보내기
+            {sendLabel}
           </Button>
           <Button size="sm" variant="ghost" onClick={() => setRet(false)}>
             취소
@@ -349,6 +349,8 @@ function Fixes({ db }: { db: DemoDB }) {
                     testPrefix="fix"
                     confirmLabel="승인"
                     returnLabel="반려"
+                    notePlaceholder="반려 사유 (예: 그날 현장 출근 기록이 없음)"
+                    sendLabel="반려하기"
                     onConfirm={() => go(() => run("reviewAttendanceFix", { requestId: q.id, decision: "approve" }), "승인 — 출퇴근 기록에 반영했습니다")}
                     onReturn={(note) => go(() => run("reviewAttendanceFix", { requestId: q.id, decision: "reject", note }), "반려했습니다")}
                   />

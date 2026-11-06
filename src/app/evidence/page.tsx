@@ -14,7 +14,7 @@ import type { ProofEvent } from "@/lib/domain/types";
 import { IS_LIVE } from "@/lib/mode";
 
 const KPIS = [
-  { type: "COST", name: "원가 초과 인지 리드타임", unit: "일", point: "원가가 생긴 날 → 위험 감지 → 조치를 만든 날", why: "월말·준공 무렵에야 알던 원가 초과를 며칠 만에 아는지" },
+  { type: "COST", name: "원가 초과를 알기까지 걸린 날", unit: "일", point: "원가가 생긴 날 → 위험 감지 → 조치를 만든 날", why: "월말·준공 무렵에야 알던 원가 초과를 며칠 만에 아는지" },
   { type: "REVENUE", name: "설계변경 추가원가 → 청구 검토 전환율", unit: "%", point: "사유가 ‘설계변경’인 원가 합계 대비 변경공사로 등록한 금액", why: "받을 수 있는 돈을 놓치지 않는지" },
   { type: "SCALE", name: "본사 관리자 1인당 관리 현장 수 · 월 손익 집계 시간", unit: "곳 · 시간", point: "사용자·현장 수, 월말 보고 작성 소요시간 (도입 전 인터뷰로 측정)", why: "인원을 늘리지 않고 관리 현장을 늘릴 수 있는지" },
 ];
@@ -117,7 +117,7 @@ export default function EvidencePage() {
 
       <div className="grid gap-5 @min-[1000px]:grid-cols-2">
         <Card>
-          <CardHeader title="12주 실증 계획 (안)" sub={IS_LIVE ? "실제 운영 12주 실증 계획" : "PILOT 전환 시 적용 — 현재 단계는 DEMO"} />
+          <CardHeader title="12주 실증 계획 (안)" sub={IS_LIVE ? "실제 운영 12주 실증 계획" : "시범 운영을 시작하면 적용 — 지금은 시연판"} />
           <ol className="relative mx-5 mb-5 border-l-2 border-line pl-5">
             {WEEKS.map((w, i) => (
               <li key={w.w} className="relative pb-4 last:pb-0">
