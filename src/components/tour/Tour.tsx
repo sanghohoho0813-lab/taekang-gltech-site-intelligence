@@ -117,7 +117,7 @@ export const TOURS: Record<TourId, { name: string; steps: TourStep[] }> = {
     name: "처음 사용 안내",
     steps: [
       { route: "/dashboard", target: "sidebar", title: "1. 메뉴는 4개 그룹", body: "운영 · 고객·정산 · AX·성과 · 관리. 같은 그룹은 같은 색 아이콘을 씁니다." },
-      { route: "/dashboard", target: "kpi-strip", title: "2. 숫자를 누르면 상세로", body: "KPI와 현장 행을 누르면 현장별 손익·원가·공정 상세로 이동합니다." },
+      { route: "/dashboard", target: "kpi-strip", title: "2. 숫자를 누르면 상세로", body: "핵심 숫자와 현장 행을 누르면 현장별 손익·원가·공정 상세로 이동합니다." },
       { route: "/dashboard", target: "device-switch", title: "3. PC · Mobile · PC+Mobile", body: "같은 화면·같은 데이터를 실제 390px 모바일로 보거나 PC와 나란히 비교할 수 있습니다." },
       { route: "/settings", target: "theme-picker", title: "4. 설정", body: "테마 7종, 글자 크기, 역할(권한 프리뷰), 데모 초기화, CSV 가져오기를 여기서 합니다." },
     ],

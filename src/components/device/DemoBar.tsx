@@ -48,7 +48,7 @@ export function DemoBar({ active }: { active: boolean }) {
           DEMO<span className="hidden min-[1180px]:inline"> · 가상 시연 데이터</span>
         </span>
       </span>
-      <span className="hidden whitespace-nowrap font-semibold tracking-[0.06em] text-white/80 min-[1640px]:inline">TAEKANG SITE INTELLIGENCE · 시연용 MVP</span>
+      <span className="hidden whitespace-nowrap font-semibold tracking-[0.06em] text-white/80 min-[1640px]:inline">TAEKANG SITE INTELLIGENCE · 시연판</span>
 
       <div className="mx-auto flex shrink-0 items-center gap-1 rounded-xl bg-white/8 p-0.5" role="radiogroup" aria-label="화면 보기 모드 (Device View)" data-testid="device-switch">
         {(

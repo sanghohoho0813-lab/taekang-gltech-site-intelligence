@@ -1,11 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 import { Printer, ArrowRight } from "lucide-react";
 import { useMe, useFinancials, usePortfolio, useSignals, userLabel } from "@/lib/data/hooks";
 import { PageBody, PageHeader } from "@/components/shell/AppShell";
-import { Badge, Button, Card, CardHeader, DemoBadge, EmptyState, Notice, PageSkeleton, SeverityBadge, cx } from "@/components/ui/primitives";
+import { Badge, Button, Card, CardHeader, EmptyState, Notice, PageSkeleton, SeverityBadge, cx } from "@/components/ui/primitives";
 import { Delta, MethodChip } from "@/components/domain/Widgets";
 import { Clock } from "@/components/shell/Clock";
 import { entryEacImpact, simulateApprovedClaims } from "@/lib/domain/calc";
@@ -65,8 +65,8 @@ export default function ReportPage() {
     <PageBody className="print-full">
       <PageHeader
         eyebrow={
-          <span className="inline-flex flex-wrap items-center gap-2">
-            <DemoBadge /> 생성 시각 <Clock />
+          <span className="inline-flex flex-wrap items-center gap-1.5">
+            생성 시각 <Clock />
           </span>
         }
         title="대표 보고서 · 현장 수익 현황"
@@ -98,7 +98,39 @@ export default function ReportPage() {
 
       <Card className="print-card">
         <CardHeader title="2. 현장별 변경 전후 손익" sub="단위 억 원 · 부가세 별도 · 승인 전 변경공사는 이익 미반영" />
-        <div tabIndex={0} role="region" aria-label="현장별 변경 전후 손익 표 (가로 스크롤)" className="overflow-x-auto scroll-thin">
+        {/* 휴대폰: 현장마다 카드 (7칸 표는 이익·미수가 화면 밖으로 밀려 안 보였다 · D-66) */}
+        <ul className="divide-y divide-line border-t border-line @min-[760px]:hidden print:hidden" data-testid="report-compare-cards">
+          {db.sites.map((s) => {
+            const f = fin[s.id];
+            const b = db.baseline[s.id];
+            const sim = simulateApprovedClaims(f);
+            const changed = b && b.eac !== f.eac;
+            const row = (k: string, v: ReactNode) => (
+              <div className="flex items-baseline justify-between gap-3">
+                <dt className="shrink-0 text-[0.78rem] text-ink-3">{k}</dt>
+                <dd className="num text-right text-[0.86rem]">{v}</dd>
+              </div>
+            );
+            return (
+              <li key={s.id} className={cx("space-y-1.5 px-5 py-3.5", changed && "bg-err-bg/40")}>
+                <div className="flex items-baseline justify-between gap-2">
+                  <Link href={`/sites/${s.id}`} className="min-w-0 font-bold [overflow-wrap:anywhere] hover:text-theme-ink hover:underline">
+                    {s.shortName}
+                  </Link>
+                  <span className="num shrink-0 text-[0.8rem] text-ink-3">계약 {fmtEok(f.adjustedContract, { unit: false })}</span>
+                </div>
+                <dl className="space-y-1">
+                  {row("예상 총원가", <>{fmtEok(b.eac, { unit: false })} → <b>{fmtEok(f.eac, { unit: false })}</b></>)}
+                  {row("예상이익", <>{fmtEok(b.expectedProfit, { unit: false })} → <b className={cx(f.expectedProfit < b.expectedProfit && "text-err")}>{fmtEok(f.expectedProfit, { unit: false })}</b></>)}
+                  {row("이익률", <>{fmtPct(b.marginPct)} → <b className={cx(f.marginPct < b.marginPct - 0.05 && "text-err")}>{fmtPct(f.marginPct)}</b></>)}
+                  {f.pendingChangeAmount > 0 && row("승인 대기 변경", <>{fmtMan(f.pendingChangeAmount)} <span className="text-[0.72rem] text-ink-3">(승인 시 {fmtPct(sim.marginPct)})</span></>)}
+                  {row("미수금", fmtEok(f.outstanding, { unit: false }))}
+                </dl>
+              </li>
+            );
+          })}
+        </ul>
+        <div tabIndex={0} role="region" aria-label="현장별 변경 전후 손익 표 (가로 스크롤)" className="hidden overflow-x-auto scroll-thin @min-[760px]:block print:block">
           <table className="w-full min-w-[50rem] text-[0.84rem]" data-testid="report-compare">
             <thead>
               <tr className="border-y border-line bg-surface-2 text-left text-[0.74rem] font-semibold text-ink-3">
@@ -216,7 +248,35 @@ export default function ReportPage() {
         {db.actions.length === 0 ? (
           <EmptyState title="조치가 없습니다." />
         ) : (
-          <div tabIndex={0} role="region" aria-label="조치 상태 표 (가로 스크롤)" className="overflow-x-auto scroll-thin">
+          <>
+          <ul className="divide-y divide-line border-t border-line @min-[760px]:hidden print:hidden" data-testid="report-actions-cards">
+            {db.actions.map((a) => {
+              const p = db.proofEvents.find((x) => x.proof_event_id === a.proofEventId);
+              return (
+                <li key={a.id} className="space-y-1 px-5 py-3.5 text-[0.84rem]">
+                  <div className="flex items-start justify-between gap-2">
+                    <b className="min-w-0 [overflow-wrap:anywhere]">{a.title}</b>
+                    <Badge tone={a.status === "done" ? "ok" : "theme"}>{ACTION_STATUS_LABEL[a.status]}</Badge>
+                  </div>
+                  <p className="text-[0.78rem] text-ink-3">
+                    {db.sites.find((s) => s.id === a.siteId)?.shortName} · 담당 {userLabel(db, a.assigneeUserId)}
+                  </p>
+                  {a.result && <p className="text-ink-2">결과: {a.result}</p>}
+                  {p && (
+                    <p className="text-[0.78rem] text-ink-3">
+                      <Badge tone={p.status === "confirmed" ? "ok" : "warn"}>{p.status === "confirmed" ? "결과 확인" : "확인 대기"}</Badge>{" "}
+                      <span className="num">
+                        {p.kpi_before["청구 검토·승인대기 변경공사"] !== p.kpi_after["청구 검토·승인대기 변경공사"]
+                          ? `청구 검토 ${String(p.kpi_before["청구 검토·승인대기 변경공사"])} → ${String(p.kpi_after["청구 검토·승인대기 변경공사"])} (승인 전 · 이익 미반영)`
+                          : `이익률 ${String(p.kpi_before["예상이익률"])} → ${String(p.kpi_after["예상이익률"])}`}
+                      </span>
+                    </p>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+          <div tabIndex={0} role="region" aria-label="조치 상태 표 (가로 스크롤)" className="hidden overflow-x-auto scroll-thin @min-[760px]:block print:block">
             <table className="w-full min-w-[48rem] text-[0.83rem]" data-testid="report-actions">
               <thead>
                 <tr className="border-y border-line bg-surface-2 text-left text-[0.74rem] font-semibold text-ink-3">
@@ -260,6 +320,7 @@ export default function ReportPage() {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </Card>
 
@@ -309,13 +370,13 @@ export default function ReportPage() {
       <Notice tone="warn" title="보고서 해석 주의">
         {IS_LIVE
           ? "본 보고서는 입력된 원가·계약·기성 데이터의 규칙 기반 계산 결과이며 AI 모델 예측이 아닙니다. 현장 입력이 늦거나 빠지면 숫자도 늦게 바뀝니다."
-          : "본 보고서는 DEMO(가상 시연 데이터)와 규칙 기반 계산 결과이며, AI 모델 예측이나 실증 성과가 아닙니다. 실제 개선율은 Baseline 확보 후 12주 실증에서만 산출합니다."}
+          : "본 보고서는 DEMO(가상 시연 데이터)와 규칙 기반 계산 결과이며, AI 모델 예측이나 실증 성과가 아닙니다. 실제 개선 효과는 운영을 시작할 때의 기준값을 잡고 12주 동안 비교해야 알 수 있습니다."}
       </Notice>
     </PageBody>
   );
 }
 
-function Tile({ label, before, after, delta }: { label: string; before?: string; after: string; delta?: React.ReactNode }) {
+function Tile({ label, before, after, delta }: { label: string; before?: string; after: string; delta?: ReactNode }) {
   return (
     <div className="rounded-xl border border-line bg-surface-2 p-3">
       <p className="text-[0.75rem] font-semibold text-ink-3">{label}</p>

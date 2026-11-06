@@ -12,7 +12,7 @@ import { LABOR_FLAG_LABEL, laborEstimate, type LaborSite } from "@/lib/domain/la
 import { shiftDate } from "@/lib/domain/attendance";
 import { fmtDate, fmtMan, todayIso } from "@/lib/domain/format";
 import { PageBody, PageHeader } from "@/components/shell/AppShell";
-import { Badge, Button, Card, CardHeader, DemoBadge, EmptyState, Notice, PageSkeleton, Segmented, cx, inputCls } from "@/components/ui/primitives";
+import { Badge, Button, Card, CardHeader, EmptyState, Notice, PageSkeleton, Segmented, cx, inputCls } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/Toast";
 import { toCsv } from "@/lib/domain/csv";
 
@@ -32,7 +32,6 @@ export function LaborBoard() {
   return (
     <PageBody>
       <PageHeader
-        eyebrow={<DemoBadge compact />}
         title="투입·인건비"
         desc="작업 인원(출력) 인원일 × 팀 단가로 인건비를 추정하고, 실제로 입력된 노무비와 나란히 보여줍니다. 추정은 확정 노무비·급여가 아니며, 누락·불일치를 찾는 용도입니다."
         right={

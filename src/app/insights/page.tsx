@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { ChevronDown, UserPlus, Handshake, BadgeCheck, Send, Eye, Plus } from "lucide-react";
 import { useMe, useSignals, userLabel } from "@/lib/data/hooks";
 import { PageBody, PageHeader } from "@/components/shell/AppShell";
-import { Badge, Button, Card, CardHeader, DemoBadge, EmptyState, Field, Notice, PageSkeleton, SeverityBadge, cx, inputCls } from "@/components/ui/primitives";
+import { Badge, Button, Card, CardHeader, EmptyState, Field, Notice, PageSkeleton, SeverityBadge, cx, inputCls } from "@/components/ui/primitives";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { AiReadyButton, Freshness, MethodChip, StatCard } from "@/components/domain/Widgets";
@@ -42,14 +42,10 @@ function Insights() {
   return (
     <PageBody>
       <PageHeader
-        eyebrow="AX·성과"
         title="위험 분석 · 조치"
         desc="데이터에서 위험을 규칙으로 감지 → 사람이 승인해 담당자 배정 → 진행 → 결과 확인 → 조치 성과 기록으로 남깁니다."
         right={
-          <>
-            <DemoBadge />
-            <AiReadyButton />
-          </>
+<AiReadyButton />
         }
       />
       <Freshness />

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMe, useFinancials, useSignals, siteHealth, userLabel } from "@/lib/data/hooks";
 import { PageBody, PageHeader } from "@/components/shell/AppShell";
-import { Button, DemoBadge, EmptyState, PageSkeleton, ProgressBar } from "@/components/ui/primitives";
+import { Button, EmptyState, PageSkeleton, ProgressBar } from "@/components/ui/primitives";
 import { IS_LIVE } from "@/lib/mode";
 import { Facade } from "@/components/domain/Facade";
 import { HealthPill } from "@/components/domain/Widgets";
@@ -19,7 +19,6 @@ export default function SitesPage() {
   return (
     <PageBody>
       <PageHeader
-        eyebrow="운영"
         title={role === "field" ? "내 현장" : "현장 관리"}
         desc={IS_LIVE ? `현장 ${sites.length}곳 — 카드를 누르면 손익·원가·공정 상세로 이동합니다.` : "가상 현장 3곳 — 카드를 누르면 손익·원가·공정 상세로 이동합니다."}
         right={
@@ -27,9 +26,7 @@ export default function SitesPage() {
             <Link href="/admin?tab=sites">
               <Button variant="cta">현장 등록·수정</Button>
             </Link>
-          ) : (
-            <DemoBadge />
-          )
+          ) : null
         }
       />
       {IS_LIVE && sites.length === 0 && <EmptyState title={role === "field" ? "담당 현장이 아직 없습니다" : "등록된 현장이 없습니다"} desc={role === "field" ? "본사에 현장 담당 지정을 요청하세요." : "운영 관리에서 첫 현장을 등록하세요."} />}

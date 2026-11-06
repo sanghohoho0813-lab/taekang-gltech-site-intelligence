@@ -13,7 +13,7 @@ import type { ActivityLog } from "@/lib/domain/types";
 import { downloadCsv } from "@/lib/browser/download";
 import { IS_LIVE } from "@/lib/mode";
 import { PageBody, PageHeader } from "@/components/shell/AppShell";
-import { Badge, Button, Card, CardHeader, DemoBadge, EmptyState, Notice, PageSkeleton, Segmented, cx, inputCls } from "@/components/ui/primitives";
+import { Badge, Button, Card, CardHeader, EmptyState, Notice, PageSkeleton, Segmented, cx, inputCls } from "@/components/ui/primitives";
 
 type Period = "7" | "30" | "90" | "365";
 
@@ -55,7 +55,6 @@ export function AuditBoard() {
   return (
     <PageBody>
       <PageHeader
-        eyebrow={<DemoBadge compact />}
         title="활동 이력"
         desc="누가·언제·무엇을 바꿨는지 회사 전체에서 찾습니다. 이력은 지워지지 않습니다 (현장 보고·원가·출퇴근 정정·승인·설정·자료 가져오기 등)."
         right={

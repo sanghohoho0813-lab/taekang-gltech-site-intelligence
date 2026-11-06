@@ -350,11 +350,26 @@ function AccessGate({ children }: { children: ReactNode }) {
   );
 }
 
-export function PageHeader({ eyebrow, title, desc, right, className }: { eyebrow?: ReactNode; title: ReactNode; desc?: ReactNode; right?: ReactNode; className?: string }) {
+/**
+ * 화면 제목. 제목 위 한 줄은 모든 화면이 같은 규칙 (D-66):
+ * 메뉴 묶음 이름(운영·고객·정산·AX·성과·관리) → DEMO 표시(시연판에서만) → 화면별 추가 정보(eyebrow).
+ * 화면마다 DEMO 표시를 제목 위·오른쪽·본문 등 제각각 두던 것을 여기 한 곳으로 모았다.
+ */
+export function PageHeader({ eyebrow, title, desc, right, className, group = true }: { eyebrow?: ReactNode; title: ReactNode; desc?: ReactNode; right?: ReactNode; className?: string; group?: boolean }) {
+  const pathname = usePathname() ?? "";
+  const item = NAV.find((n) => pathname === n.href || pathname.startsWith(n.href + "/"));
+  const groupLabel = group && item ? GROUPS.find((g) => g.id === item.group)?.label : undefined;
+  const hasLine = !!groupLabel || !IS_LIVE || !!eyebrow;
   return (
     <div className={cx("flex flex-col gap-3 @min-[760px]:flex-row @min-[760px]:items-end @min-[760px]:justify-between", className)}>
       <div className="min-w-0">
-        {eyebrow && <p className="text-[0.82rem] font-semibold text-ink-3">{eyebrow}</p>}
+        {hasLine && (
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.82rem] font-semibold text-ink-3" data-testid="page-eyebrow">
+            {groupLabel && <span>{groupLabel}</span>}
+            <DemoBadge compact />
+            {eyebrow}
+          </p>
+        )}
         <h1 className="mt-0.5 text-[1.55rem] @min-[760px]:text-[1.85rem] font-extrabold leading-tight tracking-[-0.01em] text-ink">{title}</h1>
         {desc && <p className="mt-1.5 max-w-3xl text-[0.9rem] text-ink-3">{desc}</p>}
       </div>

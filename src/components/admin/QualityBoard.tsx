@@ -21,7 +21,7 @@ import { toCsv } from "@/lib/domain/csv";
 import { downloadCsv } from "@/lib/browser/download";
 import { ROLE_LABEL } from "@/lib/domain/labels";
 import { PageBody, PageHeader } from "@/components/shell/AppShell";
-import { Badge, Button, Card, CardHeader, DemoBadge, EmptyState, Field, Notice, PageSkeleton, Segmented, cx, inputCls } from "@/components/ui/primitives";
+import { Badge, Button, Card, CardHeader, EmptyState, Field, Notice, PageSkeleton, Segmented, cx, inputCls } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/Toast";
 
 const kst = (iso: string) => new Date(new Date(iso).getTime() + 9 * 3_600_000).toISOString().slice(0, 10);
@@ -67,7 +67,6 @@ export function QualityBoard() {
   return (
     <PageBody>
       <PageHeader
-        eyebrow={<DemoBadge compact />}
         title="오류·의견"
         desc="현장이 보낸 앱 의견을 반영하고, 앱에서 난 오류를 확인합니다. 시범 운영 기간을 골라 CSV로 내려받아 4단계 검수 자료로 쓰세요."
         right={

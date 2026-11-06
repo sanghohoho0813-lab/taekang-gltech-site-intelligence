@@ -15,7 +15,7 @@ import type { ErrorEntry } from "@/lib/domain/feedback";
 import { fmtDate, todayIso } from "@/lib/domain/format";
 import { shiftDate } from "@/lib/domain/attendance";
 import { PageBody, PageHeader } from "@/components/shell/AppShell";
-import { Button, Card, DemoBadge, Field, Notice, PageSkeleton, Segmented, cx, inputCls } from "@/components/ui/primitives";
+import { Button, Card, Field, Notice, PageSkeleton, Segmented, cx, inputCls } from "@/components/ui/primitives";
 
 type Mark = "pass" | "fix";
 const VENDOR = "미래AI랩";
@@ -56,7 +56,6 @@ export function AcceptanceBoard() {
     <PageBody>
       <PageHeader
         className="no-print"
-        eyebrow={<DemoBadge compact />}
         title="검수 확인서"
         desc="계약 단계를 고르면 계약 기준·확인 방법과 이 시스템에 쌓인 실사용 기록 수를 한 장으로 만듭니다. 합격 여부는 발주자가 판단합니다 — 화면에서 체크해 인쇄하거나, 인쇄 후 손으로 체크·서명하세요."
         right={

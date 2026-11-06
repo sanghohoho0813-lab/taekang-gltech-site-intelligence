@@ -15,7 +15,7 @@ import { backdatedDays, hhmm } from "@/lib/domain/attendance";
 import { GEO_LABEL } from "@/lib/domain/geo";
 import { uid } from "@/lib/domain/ids";
 import { PageBody, PageHeader } from "@/components/shell/AppShell";
-import { Badge, Button, Card, CardHeader, DemoBadge, EmptyState, Field, PageSkeleton, Segmented, cx, inputCls } from "@/components/ui/primitives";
+import { Badge, Button, Card, CardHeader, EmptyState, Field, PageSkeleton, Segmented, cx, inputCls } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/Toast";
 
 const WO_LABEL: Record<WorkOrder["status"], string> = { sent: "미접수", received: "접수", in_progress: "진행 중", done: "완료 보고 — 확인 필요", confirmed: "확인 완료", returned: "보완 요청 중" };
@@ -33,7 +33,7 @@ function Inner() {
   const fixes = (db.attendanceRequests ?? []).filter((x) => x.status === "pending").length;
   return (
     <PageBody>
-      <PageHeader eyebrow={<DemoBadge compact />} title="지시·확인" desc="본사가 현장에 일을 지시하고, 현장 보고와 근태 수정 요청을 확인하는 곳입니다. 모든 처리는 시각·처리자와 함께 이력에 남습니다." />
+      <PageHeader title="지시·확인" desc="본사가 현장에 일을 지시하고, 현장 보고와 근태 수정 요청을 확인하는 곳입니다. 모든 처리는 시각·처리자와 함께 이력에 남습니다." />
       <Segmented
         label="지시·확인 메뉴"
         value={tab}

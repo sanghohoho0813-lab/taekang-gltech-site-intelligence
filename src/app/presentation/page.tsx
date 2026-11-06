@@ -3,7 +3,7 @@
 import { PlayCircle, GraduationCap, RotateCcw, Monitor, Columns2, Smartphone } from "lucide-react";
 import { useState } from "react";
 import { PageBody, PageHeader } from "@/components/shell/AppShell";
-import { Badge, Button, Card, CardHeader, DemoBadge, Notice } from "@/components/ui/primitives";
+import { Badge, Button, Card, CardHeader, Notice } from "@/components/ui/primitives";
 import { TOURS, useTour } from "@/components/tour/Tour";
 import { resetDemo } from "@/lib/data/store";
 import { ResetDialog } from "@/components/device/DemoBar";
@@ -17,7 +17,6 @@ export default function PresentationPage() {
   return (
     <PageBody className="max-w-[1100px]">
       <PageHeader
-        eyebrow={<DemoBadge />}
         title="대표자 시연 (3~4분)"
         desc="‘시연 시작’을 누르면 데이터가 처음 상태로 초기화되고, 아래쪽 안내 바의 주황 버튼만 차례로 누르면 됩니다. 타자 입력은 없습니다."
         right={
@@ -73,7 +72,7 @@ export default function PresentationPage() {
       </Card>
       <Card>
         <CardHeader title="처음 사용 안내 (튜토리얼 4단계)" right={<Button icon={<GraduationCap size={17} />} onClick={() => tour.start("tutorial")}>튜토리얼 시작</Button>} />
-        <p className="px-5 pb-5 text-[0.85rem] text-ink-3">메뉴 그룹 → KPI 클릭 → 화면 보기 모드 → 설정 순으로 안내합니다. 설정에서 언제든 다시 볼 수 있습니다.</p>
+        <p className="px-5 pb-5 text-[0.85rem] text-ink-3">메뉴 그룹 → 핵심 숫자 클릭 → 화면 보기 모드 → 설정 순으로 안내합니다. 설정에서 언제든 다시 볼 수 있습니다.</p>
       </Card>
       <ResetDialog
         open={reset}

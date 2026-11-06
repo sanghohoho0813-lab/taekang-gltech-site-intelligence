@@ -4,7 +4,7 @@ import { useState } from "react";
 import { FilePlus2, FileSignature, BadgeCheck, Ban, Send, TrendingUp, Wallet } from "lucide-react";
 import { useMe, useFinancials } from "@/lib/data/hooks";
 import { PageBody, PageHeader } from "@/components/shell/AppShell";
-import { Badge, Button, Card, CardHeader, DemoBadge, EmptyState, Field, Notice, PageSkeleton, cx, inputCls } from "@/components/ui/primitives";
+import { Badge, Button, Card, CardHeader, EmptyState, Field, Notice, PageSkeleton, cx, inputCls } from "@/components/ui/primitives";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { Freshness, StatCard } from "@/components/domain/Widgets";
@@ -29,12 +29,10 @@ export default function FinancePage() {
   return (
     <PageBody>
       <PageHeader
-        eyebrow="고객·정산"
         title="기성 · 수금 · 변경공사"
         desc="계약액·예상이익·기성청구액·입금액은 서로 다른 숫자입니다. 모든 금액은 공급가액(부가세 별도) 기준입니다."
         right={
           <>
-            <DemoBadge />
             <Button icon={<FilePlus2 size={17} />} onClick={() => setForm("billing")} disabled={!db.sites.length} title={db.sites.length ? undefined : "현장을 먼저 등록하세요"}>기성청구 등록</Button>
             <Button variant="cta" icon={<Wallet size={17} />} onClick={() => setForm("payment")} disabled={!db.sites.length} title={db.sites.length ? undefined : "현장을 먼저 등록하세요"}>입금 등록</Button>
           </>

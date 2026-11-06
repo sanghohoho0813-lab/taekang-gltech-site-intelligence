@@ -4,7 +4,7 @@ import { useState } from "react";
 import { ListChecks } from "lucide-react";
 import { useMe } from "@/lib/data/hooks";
 import { PageBody, PageHeader } from "@/components/shell/AppShell";
-import { DemoBadge, EmptyState, PageSkeleton, Segmented } from "@/components/ui/primitives";
+import { EmptyState, PageSkeleton, Segmented } from "@/components/ui/primitives";
 import { ActionCard } from "./Actions";
 import { EasyActions } from "@/components/easy/EasyActions";
 
@@ -30,7 +30,6 @@ function ManagerActionsView() {
   return (
     <PageBody>
       <PageHeader
-        eyebrow={<DemoBadge compact />}
         title="내 조치"
         desc={role === "field" ? `${user?.name} ${user?.title}님에게 배정된 위험 조치입니다. 진행 상황과 결과를 입력하면 본사 화면에 바로 반영됩니다.` : "나에게 배정된 조치부터 보여 줍니다. 다른 담당자 것까지 보려면 ‘배정 전체’를 누르세요."}
         right={

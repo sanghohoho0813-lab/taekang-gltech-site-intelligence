@@ -14,7 +14,7 @@ import { CommandError } from "@/lib/data/commands";
 import { fmtDateTime, fmtMan } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
 import { PageBody, PageHeader } from "@/components/shell/AppShell";
-import { Badge, Button, Card, CardHeader, DemoBadge, Field, Notice, PageSkeleton, Segmented, cx, inputCls } from "@/components/ui/primitives";
+import { Badge, Button, Card, CardHeader, Field, Notice, PageSkeleton, Segmented, cx, inputCls } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/Toast";
 import { useTour } from "@/components/tour/Tour";
 import { ResetDialog } from "@/components/device/DemoBar";
@@ -39,7 +39,7 @@ export default function SettingsPage() {
 
   return (
     <PageBody>
-      <PageHeader eyebrow="관리" title="설정" desc="화면·권한 프리뷰·데모·데이터·AI 상태를 관리합니다. 모든 변경은 이 브라우저에만 저장됩니다." right={<DemoBadge />} />
+      <PageHeader title="설정" desc="화면·권한 프리뷰·데모·데이터·AI 상태를 관리합니다. 모든 변경은 이 브라우저에만 저장됩니다." />
 
       <Card data-tour="theme-picker" data-testid="theme-picker">
         <CardHeader title="화면 · 테마 (7가지)" sub="테마는 메뉴·강조색·차트 분위기만 바꾸고 본문·표·폼의 가독성은 고정합니다 · PC와 모바일 화면이 같은 테마를 공유" />

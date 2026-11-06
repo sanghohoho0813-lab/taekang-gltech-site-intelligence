@@ -6,7 +6,7 @@ import { Building2, CircleDollarSign, TrendingUp, Receipt, ShieldAlert, ChevronR
 import { useDb, useRole } from "@/lib/data/store";
 import { useFinancials, usePortfolio, useSignals, siteHealth, userLabel } from "@/lib/data/hooks";
 import { PageBody, PageHeader } from "@/components/shell/AppShell";
-import { Button, Card, CardHeader, CountUp, DemoBadge, EmptyState, PageSkeleton, ProgressBar, SeverityBadge, cx } from "@/components/ui/primitives";
+import { Button, Card, CardHeader, CountUp, EmptyState, PageSkeleton, ProgressBar, SeverityBadge, cx } from "@/components/ui/primitives";
 import { AiReadyButton, Freshness, HealthPill, MethodChip, ProgressRing, StatCard } from "@/components/domain/Widgets";
 import { BillingBars, MarginBars } from "@/components/domain/Charts";
 import { fmtEok, fmtMan, fmtPct, fmtPp, fmtRelative } from "@/lib/domain/format";
@@ -48,6 +48,7 @@ function CeoDashboard() {
   return (
     <PageBody>
       <PageHeader
+        group={false}
         eyebrow="건설의 오늘을, 더 나은 내일로"
         title={
           <span className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
@@ -60,7 +61,6 @@ function CeoDashboard() {
         }
         right={
           <>
-            <DemoBadge />
             <Link href="/field">
               <Button variant="cta" icon={<ClipboardPen size={18} />}>현장 보고 입력</Button>
             </Link>

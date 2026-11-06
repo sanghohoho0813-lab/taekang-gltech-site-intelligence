@@ -5,7 +5,7 @@ import { useState } from "react";
 import { BadgeCheck, ChevronDown, FileJson } from "lucide-react";
 import { useMe, userLabel } from "@/lib/data/hooks";
 import { PageBody, PageHeader } from "@/components/shell/AppShell";
-import { Badge, Button, Card, CardHeader, DemoBadge, EmptyState, Notice, PageSkeleton, cx } from "@/components/ui/primitives";
+import { Badge, Button, Card, CardHeader, EmptyState, Notice, PageSkeleton, cx } from "@/components/ui/primitives";
 import { MethodChip } from "@/components/domain/Widgets";
 import { run } from "@/lib/data/store";
 import { useToast } from "@/components/ui/Toast";
@@ -23,7 +23,7 @@ const KPIS = [
 const KPI_LABEL: Record<string, string> = { eac: "예상 총원가", expectedProfit: "예상이익", marginPct: "예상이익률(%)", adjustedContract: "변경 반영 계약금액", pendingClaimAmount: "청구 검토 중 금액", at: "시각" };
 
 const WEEKS = [
-  { w: "0주", t: "기준값 정하기", d: "현장 1~2곳 선정, 현재 원가 집계 방식·소요시간·설계변경 청구 이력 인터뷰, KPI 3종 측정값 확보" },
+  { w: "0주", t: "기준값 정하기", d: "현장 1~2곳 선정, 현재 원가 집계 방식·소요시간·설계변경 청구 이력 인터뷰, 핵심 지표 3가지 측정값 확보" },
   { w: "1~4주", t: "쓰는 습관 · 첫 조치 기록", d: "현장소장 휴대폰 보고 습관화(주 3회 이상), 실제 원가 입력, 첫 위험 감지→조치 기록" },
   { w: "5~8주", t: "돈이 되는 변화 쌓기", d: "청구 검토 전환·원가 초과 조기 인지 사례 누적, 위험 기준값을 회사 실정에 맞게 보정" },
   { w: "9~12주", t: "성과 정리", d: "도입 전·후 비교, 조치 성과 기록 묶음, 표준 업무 절차 문서화, 확장(여러 현장·발주처 포털) 판단" },
@@ -38,10 +38,8 @@ export default function EvidencePage() {
   return (
     <PageBody>
       <PageHeader
-        eyebrow="AX·성과"
         title="실증 기록"
         desc="‘좋아 보이는 화면’이 아니라 실제 행동과 결과가 바뀌었는지를 기록합니다. 위험 감지 → 판단 → 사람 승인 → 조치 → 결과 → 지표 전·후."
-        right={<DemoBadge />}
       />
       {IS_LIVE ? (
         <Notice tone="info" title="조치 성과 기록은 실제 조치를 완료하면 자동으로 남습니다">
@@ -132,11 +130,11 @@ export default function EvidencePage() {
           </ol>
         </Card>
         <Card>
-          <CardHeader title="Release 전 5가지 질문 — 현재 정직한 답" />
+          <CardHeader title="정식 운영 전 5가지 질문 — 현재 정직한 답" />
           <ul className="space-y-2.5 px-5 pb-5 text-[0.84rem]">
             {[
-              ["실제 누가 반복적으로 사용하는가?", "아직 없음 — 미팅 후 현장소장 1~2명 Pilot 대상 확인 필요"],
-              ["도입 전과 비교해 무엇이 얼마나 바뀌었는가?", "측정 전 — Baseline 미확보 (Week 0 필요)"],
+              ["실제 누가 반복적으로 사용하는가?", "아직 없음 — 미팅 후 현장소장 1~2명 시범 사용자 확인 필요"],
+              ["도입 전과 비교해 무엇이 얼마나 바뀌었는가?", "측정 전 — 운영 시작 시점의 기준값을 아직 잡지 않음 (첫 주 측정 필요)"],
               ["변화가 이 시스템의 판단 → 조치 때문이라는 근거가 있는가?", "구조는 준비됨 — 조치 성과 기록에 신호·승인·조치·결과·시각이 남음"],
               ["12개월 후 남는 자산은?", "현장별 원가 이벤트·사유·조치·결과 이력, 회사 고유 위험 기준 (가설)"],
               ["추가 자본 투입 시 더 빨리 커지는 것은?", "미확정 — 실증 결과와 확장(다현장·발주처 포털) 수요 확인 후 판단"],

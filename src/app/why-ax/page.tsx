@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { ArrowRight, MessageCircle, FileSpreadsheet, Phone, Smartphone, Database, ShieldAlert, UserCheck, BadgeCheck, FileBarChart, Handshake, Building2, Layers, Truck, Wrench } from "lucide-react";
 import { PageBody, PageHeader } from "@/components/shell/AppShell";
-import { Badge, Button, Card, DemoBadge, cx } from "@/components/ui/primitives";
+import { Badge, Button, Card, cx } from "@/components/ui/primitives";
 import { Facade } from "@/components/domain/Facade";
 
 function Section({ no, title, children, company, className }: { no: string; title: string; children: ReactNode; company?: ReactNode; className?: string }) {
@@ -48,7 +48,7 @@ function Flow({ steps }: { steps: { icon: ReactNode; label: string; tone?: "bad"
 export default function WhyAxPage() {
   return (
     <PageBody className="max-w-[1100px]">
-      <PageHeader eyebrow={<span className="inline-flex items-center gap-2">기획의도 · Why AX <DemoBadge compact /></span>} title="현장이 돈을 버는지, 지금 바로 알 수 있게" desc="(주)태강지엘텍 맞춤 AX 기획의도 — 미팅 전 가설과 시연 시나리오를 바탕으로 작성했으며, 실제 현장 수·매출·실적은 미팅에서 확인할 내용입니다." />
+      <PageHeader eyebrow="기획의도" title="현장이 돈을 버는지, 지금 바로 알 수 있게" desc="(주)태강지엘텍 맞춤 AX 기획의도 — 미팅 전 가설과 시연 시나리오를 바탕으로 작성했으며, 실제 현장 수·매출·실적은 미팅에서 확인할 내용입니다." />
 
       <Card className="overflow-hidden">
         <div className="grid @min-[760px]:grid-cols-3">
@@ -167,7 +167,7 @@ export default function WhyAxPage() {
             </div>
           ))}
         </div>
-        <p className="text-[0.8rem] text-ink-3">※ 가상 시연 수치입니다. 실제 효과 금액은 Baseline 확보 후에만 산출합니다.</p>
+        <p className="text-[0.8rem] text-ink-3">※ 가상 시연 수치입니다. 실제 효과 금액은 운영 시작 시점의 기준값을 잡은 뒤에만 계산합니다.</p>
       </Section>
 
       <Section no="09" title="AI는 실제로 무엇을 하나 — 정직한 구분">
@@ -201,7 +201,7 @@ export default function WhyAxPage() {
         <p>숫자 계산은 AI에 맡기지 않습니다. AI가 연결되더라도 실행은 사람이 승인합니다.</p>
       </Section>
 
-      <Section no="10" title="판단 → 실행 → 결과 → 기록 (Closed Loop)">
+      <Section no="10" title="판단 → 실행 → 결과 → 기록 (한 바퀴로 이어짐)">
         <Flow
           steps={[
             { icon: <Smartphone size={15} />, label: "모바일 원가 입력", tone: "good" },

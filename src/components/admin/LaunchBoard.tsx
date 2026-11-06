@@ -15,7 +15,7 @@ import { launchReport, type LaunchFix, type LaunchItem, type LaunchStatus, type 
 import { tempPassword } from "@/lib/domain/password";
 import { fmtDate } from "@/lib/domain/format";
 import { PageBody, PageHeader } from "@/components/shell/AppShell";
-import { Badge, Button, Card, CardHeader, DemoBadge, Notice, PageSkeleton, cx } from "@/components/ui/primitives";
+import { Badge, Button, Card, CardHeader, Notice, PageSkeleton, cx } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/Toast";
 import { SlipPrintDialog, type Slip } from "./LoginSlips";
 
@@ -102,7 +102,6 @@ export function LaunchBoard() {
   return (
     <PageBody>
       <PageHeader
-        eyebrow={<DemoBadge compact />}
         title="시범 운영 준비"
         desc="첫날 현장 직원이 막히지 않게 — 회사·현장·직원별로 준비가 끝났는지 한 화면에서 확인합니다. 빨간 것부터 고치고, 직원 로그인 쪽지를 인쇄해 나눠 주세요."
         right={

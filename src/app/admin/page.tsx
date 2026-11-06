@@ -21,7 +21,7 @@ function AdminInner() {
   const pending = db.costEntries.filter((e) => e.status === "pending").length;
   return (
     <PageBody>
-      <PageHeader eyebrow="관리" title="운영 관리" desc="현장 등록, 직원·발주처 계정, 현장 입력 원가 확인, 회사 운영 방식, 개인위치정보 규칙을 관리합니다." />
+      <PageHeader title="운영 관리" desc="현장 등록, 직원·발주처 계정, 현장 입력 원가 확인, 회사 운영 방식, 개인위치정보 규칙을 관리합니다." />
       {/* 메뉴가 5개라 휴대폰 폭에서는 메뉴 줄만 옆으로 밀어 본다 (화면 전체가 넘치지 않게) */}
       <div className="-mx-1 overflow-x-auto px-1 pb-1">
         <Segmented

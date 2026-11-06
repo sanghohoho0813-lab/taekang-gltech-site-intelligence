@@ -78,7 +78,7 @@ export function AiReadyButton({ context = "risk" }: { context?: "risk" | "report
             <p>현장 약칭·위험 신호 제목·근거 수치·현장보고 요약. 발주처 실명·개인정보·도면은 보내지 않습니다. API Key는 서버에만 보관합니다.</p>
           </Section>
           <Section title="연결 조건">
-            <p>대표자 명시 승인 + API Key 제공 + 응답 시간 제한(타임아웃)·오류 시 규칙 기반 결과 유지. 현재 이 MVP는 외부 AI를 호출하지 않습니다.</p>
+            <p>대표자 명시 승인 + API Key 제공 + 응답 시간 제한(타임아웃)·오류 시 규칙 기반 결과 유지. 현재 이 시스템은 외부 AI를 호출하지 않습니다.</p>
           </Section>
         </div>
       </Modal>

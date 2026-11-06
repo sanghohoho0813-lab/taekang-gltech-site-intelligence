@@ -9,7 +9,7 @@ import { sitePlan, STAGE_STATUS_LABEL, type SitePlan, type StageStatus } from "@
 import { fmtDate, fmtMan, todayIso } from "@/lib/domain/format";
 import { IS_LIVE } from "@/lib/mode";
 import { PageBody, PageHeader } from "@/components/shell/AppShell";
-import { Card, CardHeader, DemoBadge, EmptyState, Notice, PageSkeleton, cx } from "@/components/ui/primitives";
+import { Card, CardHeader, EmptyState, Notice, PageSkeleton, cx } from "@/components/ui/primitives";
 
 const STAGE_TONE: Record<StageStatus, string> = {
   done: "bg-ok-bg text-ok",
@@ -44,7 +44,6 @@ export function ScheduleBoard() {
   return (
     <PageBody>
       <PageHeader
-        eyebrow={<DemoBadge compact />}
         title="공정 일정"
         desc="공정 단계 기간으로 오늘까지 ‘계획상 몇 %’여야 하는지 계산해 실제 공정률과 비교합니다. 계산 규칙이며 예측 AI가 아닙니다."
       />

@@ -12,7 +12,7 @@ import { DEVICE_CHECK_LABEL, VERDICT_LABEL, deviceVerdict, type DeviceCheck, typ
 import { downloadCsv } from "@/lib/browser/download";
 import { toCsv } from "@/lib/domain/csv";
 import { PageBody, PageHeader } from "@/components/shell/AppShell";
-import { Badge, Button, Card, CardHeader, DemoBadge, EmptyState, Notice, PageSkeleton, Segmented, cx } from "@/components/ui/primitives";
+import { Badge, Button, Card, CardHeader, EmptyState, Notice, PageSkeleton, Segmented, cx } from "@/components/ui/primitives";
 
 const TONE: Record<Adoption, "ok" | "warn" | "err"> = { settled: "ok", partial: "warn", none: "err" };
 const pct = (v: number | null) => (v === null ? "—" : `${Math.round(v * 100)}%`);
@@ -39,7 +39,6 @@ export function UsageBoard() {
   return (
     <PageBody>
       <PageHeader
-        eyebrow={<DemoBadge compact />}
         title="사용 현황"
         desc="현장 직원이 실제로 쓰는지, 본사가 제때 답하는지 업무 기록(출퇴근·보고·작업 인원·지시)으로 봅니다. 시범 운영·최종 검수(실사용 검증)의 근거 자료입니다."
         right={

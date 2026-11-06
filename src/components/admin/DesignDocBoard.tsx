@@ -13,7 +13,7 @@ import { fmtDate, todayIso } from "@/lib/domain/format";
 import type { RoleId } from "@/lib/domain/types";
 import { ACCOUNT_SPEC, CMD_GROUP_LABEL, COLLECTION_SPEC, COMMAND_SPEC, DATA_NONE, FIELD_SCREENS, FLOWS, MODULES, ROLE_DESC, ROLE_NAME, ROLE_ORDER, SECURITY, SERVER_TABLES, type Allow, type CmdGroup } from "@/lib/design/spec";
 import { PageBody, PageHeader } from "@/components/shell/AppShell";
-import { Button, DemoBadge, PageSkeleton, cx } from "@/components/ui/primitives";
+import { Button, PageSkeleton, cx } from "@/components/ui/primitives";
 
 const VENDOR = "미래AI랩";
 const th = "border border-line-strong bg-surface-2 px-2.5 py-1.5 text-left text-[0.8rem] font-bold text-ink-2 print:bg-transparent";
@@ -32,7 +32,6 @@ export function DesignDocBoard() {
     <PageBody>
       <PageHeader
         className="no-print"
-        eyebrow={<DemoBadge compact />}
         title="상세설계서"
         desc="계약 1단계 산출물입니다. 업무 흐름·화면·역할별 권한·데이터 구조·보안 설계를 실제 시스템 기준으로 정리했습니다. 권한표와 데이터 표는 서버 규칙과 같은지 자동 시험으로 확인합니다. 금액은 넣지 않습니다."
         right={

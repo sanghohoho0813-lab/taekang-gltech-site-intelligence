@@ -17,7 +17,7 @@ import { FLAG_LABEL, FLAG_ORDER, backdatedDays, dayFlags, hhmm, minutesOf, perio
 import { todayIso } from "@/lib/domain/format";
 import { locateOnce } from "@/lib/geo/client";
 import { PageBody, PageHeader } from "@/components/shell/AppShell";
-import { Badge, Button, Card, CardHeader, DemoBadge, EmptyState, Field, Notice, PageSkeleton, Segmented, cx, inputCls } from "@/components/ui/primitives";
+import { Badge, Button, Card, CardHeader, EmptyState, Field, Notice, PageSkeleton, Segmented, cx, inputCls } from "@/components/ui/primitives";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { StatCard } from "@/components/domain/Widgets";
@@ -126,7 +126,6 @@ export function AttendanceBoard() {
   return (
     <PageBody>
       <PageHeader
-        eyebrow={<DemoBadge compact />}
         title="출퇴근 현황"
         desc="현장 직원이 출근·퇴근 버튼을 누른 시각(서버 시각)과 그때의 위치입니다. 의심 표시는 ‘확인할 대상’이지 부정 확정이 아닙니다."
         right={
