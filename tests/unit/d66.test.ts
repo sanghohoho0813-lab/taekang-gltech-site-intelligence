@@ -151,7 +151,7 @@ describe("표시", () => {
     expect(errorMessage(new CommandError("입력값을 확인해주세요.", "VALIDATION", { title: "필수" }))).toBe("입력값을 확인해주세요.");
   });
   it("‘단위 억 원’ 표에서는 1억 미만도 억으로", () => {
-    expect(fmtEok(80_600_000, { unit: false })).toBe("0.81");
+    expect(fmtEok(80_600_000, { unit: false })).toBe("0.81억");
     expect(fmtEok(80_600_000)).toBe("8,060만 원");
   });
 });

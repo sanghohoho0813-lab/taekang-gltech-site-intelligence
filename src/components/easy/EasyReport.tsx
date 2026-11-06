@@ -847,16 +847,6 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
                 />
                 <span className="shrink-0 text-[1.4rem] font-bold text-ink-2">만 원</span>
               </div>
-              <div className="grid grid-cols-3 gap-2">
-                {[10, 50, 100, 500, 1000].map((m) => (
-                  <button key={m} type="button" onClick={() => setCost({ amountMan: editing.amountMan + m })} className="press h-[3.6rem] rounded-2xl bg-surface-3 text-[1.15rem] font-extrabold text-ink" data-testid={`amt-plus-${m}`}>
-                    +{m.toLocaleString("ko-KR")}만
-                  </button>
-                ))}
-                <button type="button" onClick={() => setCost({ amountMan: 0 })} className="press h-[3.6rem] rounded-2xl border-2 border-line-strong text-[1.1rem] font-bold text-ink-2">
-                  다시 넣기
-                </button>
-              </div>
               {won > 0 && <BigNumber testId="cost-readback">{easyWon(won)}</BigNumber>}
               {/* 원 단위로 넣으면(350000 → 35억) 1만 배가 된다 — 1천만 원 넘으면 한 번 더 확인 (D-66 점검 반영) */}
               {bigAmount && (
@@ -874,6 +864,16 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
                   </div>
                 </div>
               )}
+              <div className="grid grid-cols-3 gap-2">
+                {[10, 50, 100, 500, 1000].map((m) => (
+                  <button key={m} type="button" onClick={() => setCost({ amountMan: editing.amountMan + m })} className="press h-[3.6rem] rounded-2xl bg-surface-3 text-[1.15rem] font-extrabold text-ink" data-testid={`amt-plus-${m}`}>
+                    +{m.toLocaleString("ko-KR")}만
+                  </button>
+                ))}
+                <button type="button" onClick={() => setCost({ amountMan: 0 })} className="press h-[3.6rem] rounded-2xl border-2 border-line-strong text-[1.1rem] font-bold text-ink-2">
+                  다시 넣기
+                </button>
+              </div>
             </div>
           )}
         </EasyQuestion>

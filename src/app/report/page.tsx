@@ -123,7 +123,7 @@ export default function ReportPage() {
                   {row("예상 총원가", <>{fmtEok(b.eac, { unit: false })} → <b>{fmtEok(f.eac, { unit: false })}</b></>)}
                   {row("예상이익", <>{fmtEok(b.expectedProfit, { unit: false })} → <b className={cx(f.expectedProfit < b.expectedProfit && "text-err")}>{fmtEok(f.expectedProfit, { unit: false })}</b></>)}
                   {row("이익률", <>{fmtPct(b.marginPct)} → <b className={cx(f.marginPct < b.marginPct - 0.05 && "text-err")}>{fmtPct(f.marginPct)}</b></>)}
-                  {f.pendingChangeAmount > 0 && row("승인 대기 변경", <>{fmtMan(f.pendingChangeAmount)} <span className="text-[0.72rem] text-ink-3">(승인 시 {fmtPct(sim.marginPct)})</span></>)}
+                  {f.pendingChangeAmount > 0 && row("승인 대기 변경", <>{fmtEok(f.pendingChangeAmount, { unit: false })} <span className="text-[0.72rem] text-ink-3">(승인 시 {fmtPct(sim.marginPct)})</span></>)}
                   {row("미수금", fmtEok(f.outstanding, { unit: false }))}
                 </dl>
               </li>
@@ -169,7 +169,7 @@ export default function ReportPage() {
                     <td className="px-3 py-2.5 text-right num">
                       {f.pendingChangeAmount ? (
                         <>
-                          {fmtMan(f.pendingChangeAmount)}
+                          {fmtEok(f.pendingChangeAmount, { unit: false })}
                           <span className="block text-[0.7rem] text-ink-3">승인 시 {fmtPct(sim.marginPct)} (시뮬레이션)</span>
                         </>
                       ) : (
