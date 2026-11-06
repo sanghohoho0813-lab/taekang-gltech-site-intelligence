@@ -57,7 +57,7 @@ export default function FinancePage() {
             const f = fin[s.id];
             const aging = receivableAging(db, s.id);
             const longOver = aging.filter((a) => a.ageDays > db.thresholds.receivableDays).reduce((x, a) => x + a.unpaid, 0);
-            const kv = (k: string, v: string, strong?: boolean) => (
+            const kv = (k: string, v: React.ReactNode, strong?: boolean) => (
               <div className="flex items-baseline justify-between gap-2">
                 <dt className="text-[0.78rem] text-ink-3">{k}</dt>
                 <dd className={cx("num text-[0.88rem]", strong && "font-bold")}>{v}</dd>
@@ -74,7 +74,7 @@ export default function FinancePage() {
                 {longOver > 0 && <p className="text-[0.76rem] font-semibold text-err">{db.thresholds.receivableDays}일 넘은 미수 {fmtMan(longOver)}</p>}
                 <dl className="grid grid-cols-2 gap-x-4 gap-y-1">
                   {kv("계약금액", fmtEok(f.adjustedContract, { unit: false, fixed: true }), true)}
-                  {kv("예상이익", fmtEok(f.expectedProfit, { unit: false, fixed: true }))}
+                  {kv("예상이익", <span className={cx(f.expectedProfit < 0 && "font-bold text-err")}>{fmtEok(f.expectedProfit, { unit: false, fixed: true })}</span>)}
                   {kv("확정 기성", fmtEok(f.billed, { unit: false, fixed: true }))}
                   {kv("기성률", fmtPct((f.billed / f.adjustedContract) * 100))}
                   {kv("입금", fmtEok(f.received, { unit: false, fixed: true }))}
@@ -110,7 +110,7 @@ export default function FinancePage() {
                     <td className="px-3 py-2.5 text-right num">{fmtEok(f.contractAmount, { unit: false, fixed: true })}</td>
                     <td className="px-3 py-2.5 text-right num">{f.approvedChange ? fmtEok(f.approvedChange, { unit: false, fixed: true }) : "—"}</td>
                     <td className="px-3 py-2.5 text-right num font-semibold">{fmtEok(f.adjustedContract, { unit: false, fixed: true })}</td>
-                    <td className="px-3 py-2.5 text-right num">{fmtEok(f.expectedProfit, { unit: false, fixed: true })}</td>
+                    <td className={cx("px-3 py-2.5 text-right num", f.expectedProfit < 0 && "font-bold text-err")}>{fmtEok(f.expectedProfit, { unit: false, fixed: true })}</td>
                     <td className="px-3 py-2.5 text-right num">{fmtEok(f.billed, { unit: false, fixed: true })}</td>
                     <td className="px-3 py-2.5 text-right num">{fmtPct((f.billed / f.adjustedContract) * 100)}</td>
                     <td className="px-3 py-2.5 text-right num">{fmtEok(f.received, { unit: false, fixed: true })}</td>

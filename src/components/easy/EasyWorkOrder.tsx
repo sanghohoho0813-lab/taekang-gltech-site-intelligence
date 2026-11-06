@@ -32,7 +32,7 @@ export function EasyWorkOrderCard({ db, wo }: { db: DemoDB; wo: WorkOrder }) {
   const [err, setErr] = useState<string | null>(null);
   const [finish, setFinish] = useState(false);
   const site = db.sites.find((s) => s.id === wo.siteId);
-  const [bigPhoto, setBigPhoto] = useState<string | null>(null);
+  const [bigIdx, setBigIdx] = useState<number | null>(null);
   const refPhotos = (wo.refPhotoIds ?? []).map((id) => db.photos.find((p) => p.id === id)).filter((p): p is NonNullable<typeof p> => !!p);
   const due = wo.dueDate && !["done", "confirmed"].includes(wo.status) ? dueText(wo.dueDate, todayIso()) : null;
   const step = async (action: "receive" | "start") => {
@@ -60,10 +60,10 @@ export function EasyWorkOrderCard({ db, wo }: { db: DemoDB; wo: WorkOrder }) {
         <div className="mt-2.5" data-testid="wo-ref-photos">
           <p className="text-[0.98rem] font-bold text-ink-2">발주처가 보낸 하자 사진</p>
           <div className="mt-1.5 flex gap-2">
-            {refPhotos.map((p) => (
-              <button key={p.id} type="button" onClick={() => setBigPhoto(p.dataUrl)} className="press overflow-hidden rounded-xl border border-line" aria-label="하자 사진 크게 보기">
+            {refPhotos.map((p, i) => (
+              <button key={p.id} type="button" onClick={() => setBigIdx(i)} className="press aspect-square w-[30%] max-w-24 overflow-hidden rounded-xl border border-line" aria-label={`하자 사진 ${i + 1} 크게 보기`}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={p.dataUrl} alt="" className="size-20 object-cover" />
+                <img src={p.dataUrl} alt="" className="size-full object-cover" />
               </button>
             ))}
           </div>
@@ -103,9 +103,25 @@ export function EasyWorkOrderCard({ db, wo }: { db: DemoDB; wo: WorkOrder }) {
         )}
       </div>
       {finish && <FinishModal wo={wo} onClose={() => setFinish(false)} />}
-      <Modal open={!!bigPhoto} onClose={() => setBigPhoto(null)} title="발주처가 보낸 하자 사진" size="lg">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        {bigPhoto && <img src={bigPhoto} alt="하자 사진" className="w-full rounded-xl" />}
+      {/* 크게 보기: 여러 장이면 ‘이전·다음’ 큰 버튼으로 넘겨 본다 (D-68 점검 반영) */}
+      <Modal open={bigIdx !== null} onClose={() => setBigIdx(null)} title={`발주처가 보낸 하자 사진${refPhotos.length > 1 && bigIdx !== null ? ` ${bigIdx + 1}/${refPhotos.length}` : ""}`} size="lg">
+        {bigIdx !== null && refPhotos[bigIdx] && (
+          <div className="space-y-3" data-testid="wo-ref-viewer">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={refPhotos[bigIdx].dataUrl} alt={`하자 사진 ${bigIdx + 1}`} className="max-h-[60dvh] w-full rounded-xl object-contain" />
+            {wo.detail && <p className="text-[1.02rem] text-ink-2">{wo.detail}</p>}
+            {refPhotos.length > 1 && (
+              <div className="grid grid-cols-2 gap-2.5">
+                <button type="button" disabled={bigIdx === 0} onClick={() => setBigIdx((i) => Math.max(0, (i ?? 0) - 1))} className="press h-14 rounded-2xl border-2 border-line-strong text-[1.1rem] font-bold disabled:opacity-40">
+                  이전 사진
+                </button>
+                <button type="button" disabled={bigIdx === refPhotos.length - 1} onClick={() => setBigIdx((i) => Math.min(refPhotos.length - 1, (i ?? 0) + 1))} className="press h-14 rounded-2xl bg-cta text-[1.1rem] font-bold text-cta-text disabled:opacity-40" data-testid="wo-ref-next">
+                  다음 사진
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </Modal>
     </article>
   );
@@ -188,7 +204,7 @@ function FinishModal({ wo, onClose }: { wo: WorkOrder; onClose: () => void }) {
             <div key={i} className="relative">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={p} alt={`완료 사진 ${i + 1}`} className="size-20 rounded-xl object-cover" />
-              <button type="button" onClick={() => setPhotos((x) => x.filter((_, j) => j !== i))} className="press absolute -right-1 -top-1 grid size-8 place-items-center rounded-full bg-black/70 text-white" aria-label="사진 빼기">
+              <button type="button" onClick={() => setPhotos((x) => x.filter((_, j) => j !== i))} className="press absolute -right-2 -top-2 grid size-11 place-items-center rounded-full bg-black/70 text-white" aria-label="사진 빼기">
                 <X size={16} />
               </button>
             </div>

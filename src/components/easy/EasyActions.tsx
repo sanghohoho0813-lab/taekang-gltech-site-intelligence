@@ -27,7 +27,9 @@ export function EasyActions() {
   const list = tab === "open" ? open : done;
   // 본사 작업지시 (일반 지시) — 위험 신호 조치와 함께 보여준다
   const orders = (db.workOrders ?? []).filter((w) => w.assigneeUserId === userId);
-  const ordersOpen = orders.filter((w) => !["done", "confirmed"].includes(w.status)).sort((a, b) => Number(!!b.urgent) - Number(!!a.urgent) || (a.dueDate ?? "9").localeCompare(b.dueDate ?? "9"));
+  // 긴급 → 새로 온 지시(확인 전)·보완 요청 → 기한 순 — 새 지시가 하는 중인 일 뒤에 묻히던 문제 (D-68 점검 반영)
+  const fresh = (w: { status: string }) => Number(w.status === "sent" || w.status === "returned");
+  const ordersOpen = orders.filter((w) => !["done", "confirmed"].includes(w.status)).sort((a, b) => Number(!!b.urgent) - Number(!!a.urgent) || fresh(b) - fresh(a) || (a.dueDate ?? "9").localeCompare(b.dueDate ?? "9"));
   const ordersDone = orders.filter((w) => ["done", "confirmed"].includes(w.status));
   const woList = tab === "open" ? ordersOpen : ordersDone;
   return (

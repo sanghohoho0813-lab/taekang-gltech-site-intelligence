@@ -189,14 +189,14 @@ function CeoDashboard() {
                         <Link href={`/sites/${s.id}`} className="group block" data-testid={`site-row-${s.id}`}>
                           <span className="font-bold text-ink group-hover:text-theme-ink">{s.shortName}</span>
                           <span className="ml-1.5 text-[0.75rem] text-ink-3">{s.workType}</span>
-                          <span className="block max-w-[17rem] truncate text-[0.75rem] text-ink-3">{s.name}</span>
+                          <span className="block max-w-[13rem] truncate text-[0.75rem] text-ink-3">{s.name}</span>
                         </Link>
                       </td>
-                      <td className="px-3 py-3 text-right num">{fmtEok(f.adjustedContract, { unit: false, fixed: true })}</td>
-                      <td className="px-3 py-3 text-right num font-semibold">
+                      <td className="whitespace-nowrap px-3 py-3 text-right num">{fmtEok(f.adjustedContract, { unit: false, fixed: true })}</td>
+                      <td className="whitespace-nowrap px-3 py-3 text-right num font-semibold">
                         <CountUp value={f.eac} format={(v) => fmtEok(v, { unit: false, fixed: true })} />
                       </td>
-                      <td className={cx("px-3 py-3 text-right num font-bold", f.expectedProfit < 0 ? "text-err" : "text-ink")}>
+                      <td className={cx("whitespace-nowrap px-3 py-3 text-right num font-bold", f.expectedProfit < 0 ? "text-err" : "text-ink")}>
                         <CountUp value={f.expectedProfit} format={(v) => fmtEok(v, { unit: false, fixed: true })} />
                       </td>
                       <td className="whitespace-nowrap px-3 py-3 text-right num">
@@ -211,7 +211,7 @@ function CeoDashboard() {
                           <span className="w-9 text-right text-[0.78rem] font-semibold num">{s.progressPct}%</span>
                         </div>
                       </td>
-                      <td className="px-5 py-3">
+                      <td className="whitespace-nowrap px-5 py-3">
                         <HealthPill health={h} />
                       </td>
                     </tr>
