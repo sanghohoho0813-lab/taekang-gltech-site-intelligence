@@ -157,9 +157,17 @@ test("현장 직원 본사 요청: 큰 버튼으로 시작 → 다 했어요(눌
     },
     [PREFS, DB] as const,
   );
+  // A현장에 추가 원가가 들어와 위험 신호가 생긴 상황 (현장 직원은 자기 담당 현장 조치만 맡는다 · D-66)
+  await page.goto("/sites/site-a");
+  await page.getByTestId("open-report-sheet-pc").click();
+  const sheet = page.getByTestId("report-sheet");
+  await sheet.getByTestId("fill-demo").click();
+  await sheet.getByTestId("submit-report").click();
+  await expect(sheet.getByTestId("report-impact")).toContainText("8.9억 원");
   // 본사에서 A현장 위험 신호로 조치 배정
   await page.goto("/insights");
-  await page.getByTestId("signal-board").locator("[data-rule]").filter({ has: page.getByTestId("create-action") }).first().getByTestId("create-action").click();
+  // 현장 직원은 자기 담당 현장(A현장)의 조치만 맡을 수 있다 (D-66)
+  await page.getByTestId("signal-board").locator('[data-rule][data-site="site-a"]').filter({ has: page.getByTestId("create-action") }).first().getByTestId("create-action").click();
   await page.getByTestId("assignee-select").selectOption("u-field");
   await page.getByTestId("assign-confirm").click();
   // 현장 직원 휴대폰

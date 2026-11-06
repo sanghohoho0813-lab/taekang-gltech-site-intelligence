@@ -109,7 +109,7 @@ function SignalItem({ db, s, onAssign }: { db: DemoDB; s: RiskSignal; onAssign: 
   const [why, setWhy] = useState(s.rule === "UNBILLED_CHANGE" || s.rule === "MARGIN_DROP");
   const actions = db.actions.filter((a) => a.signalKey === s.key && a.status !== "dismissed");
   return (
-    <li id={s.key} className={cx("rounded-xl border bg-surface p-3.5", s.severity === "high" ? "border-err/30" : "border-line")} data-testid="signal-item" data-rule={s.rule}>
+    <li id={s.key} className={cx("rounded-xl border bg-surface p-3.5", s.severity === "high" ? "border-err/30" : "border-line")} data-testid="signal-item" data-rule={s.rule} data-site={s.siteId}>
       <div className="flex flex-wrap items-center gap-1.5">
         <SeverityBadge severity={s.severity} />
         <span className="text-[0.74rem] font-bold text-ink-3">{RULE_LABEL[s.rule]}</span>

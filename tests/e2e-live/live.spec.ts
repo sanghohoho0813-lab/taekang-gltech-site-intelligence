@@ -847,7 +847,8 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     const admin = await login(browser, CEO.email, CEO.password);
     await admin.goto("/admin?tab=members");
     await admin.getByTestId("member-row").filter({ hasText: "박현장" }).getByRole("button", { name: "비활성" }).click();
-    await expect(admin.getByTestId("member-row").filter({ hasText: "박현장" })).toContainText("비활성");
+    // 버튼 글자에도 ‘비활성’이 있어 처리 전에 통과하던 확인 → 버튼이 ‘활성’으로 바뀐 것(처리 완료)을 기다린다
+    await expect(admin.getByTestId("member-row").filter({ hasText: "박현장" }).getByRole("button", { name: "활성", exact: true })).toBeVisible();
     expect((await field.request.get("/api/state")).status()).toBe(401);
   });
 

@@ -26,7 +26,7 @@ test("시범 운영 준비: 시작 전 고칠 것 → 고치는 곳 · 직원별
   await expect(page.getByTestId("launch-people-ready")).toContainText("0 / 2명");
   const company = page.getByTestId("launch-company");
   await expect(company.locator('[data-key="phone"]')).toHaveAttribute("data-status", "missing");
-  await expect(company.locator('[data-key="phone"]')).toContainText("운영 모드: 운영 관리 → 운영 설정");
+  await expect(company.locator('[data-key="phone"]')).toContainText("실제 운영에서: 운영 관리 → 운영 설정");
   await expect(page.getByTestId("launch-site")).toHaveCount(3);
   const choi = page.locator('[data-testid="launch-person"][data-user="u-field"]');
   await expect(choi).toHaveAttribute("data-ready", "0");

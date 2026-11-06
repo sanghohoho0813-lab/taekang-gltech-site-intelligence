@@ -647,6 +647,9 @@ test("합계 카드 = 아래 표 (D-61): 기성·수금 합계는 현장별 표�
   const won = (t: string) => {
     const s = t.replace(/원|\s|,/g, "");
     if (!s || s === "—") return 0;
+    // ‘단위 억 원’ 표의 숫자만 있는 칸은 억 (D-66: 1억 미만도 0.81처럼 억으로 표시)
+    if (/^[\d.]+$/.test(s)) return Number(s) * 1e8;
+    if (s === "<0.01") return 0;
     const m = /^(?:([\d.]+)억)?(?:([\d.]+)만)?$/.exec(s);
     if (!m) throw new Error(`금액 아님: ${t}`);
     return Number(m[1] ?? 0) * 1e8 + Number(m[2] ?? 0) * 1e4;

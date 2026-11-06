@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { worksOnSite } from "@/lib/domain/types";
 import { useState } from "react";
 import { CircleCheck, Play, Pause, UserPlus, MessageSquarePlus, BadgeCheck, Camera, Wand2, ChevronDown } from "lucide-react";
 import type { ActionItem, ActionStatus, DemoDB, RiskSignal } from "@/lib/domain/types";
@@ -47,7 +48,8 @@ function plusDays(n: number) {
 export function AssignModal({ db, signal, open, onClose }: { db: DemoDB; signal: RiskSignal; open: boolean; onClose: () => void }) {
   const toast = useToast();
   const site = db.sites.find((s) => s.id === signal.siteId)!;
-  const assignees = db.users.filter((u) => u.role === "field" || u.role === "manager");
+  // 서버와 같은 규칙: 본사 직원이나 이 현장 담당만 (D-66)
+  const assignees = db.users.filter((u) => !u.inactive && (u.role === "manager" || u.role === "ceo" || (u.role === "field" && worksOnSite(u, site))));
   const [title, setTitle] = useState(signal.recommendation.actionTitle);
   const [desc, setDesc] = useState(signal.recommendation.description);
   const [assignee, setAssignee] = useState(signal.rule === "UNBILLED_CHANGE" || signal.rule === "COST_OVERRUN" ? site.fieldUserId : site.managerUserId);
@@ -467,7 +469,10 @@ function ReassignModal({ db, action, onClose }: { db: DemoDB; action: ActionItem
         <Field label="담당자" htmlFor="r-u">
           <select id="r-u" className={inputCls} value={u} onChange={(e) => setU(e.target.value)}>
             {db.users
-              .filter((x) => x.role === "field" || x.role === "manager")
+              .filter((x) => {
+                const site = db.sites.find((st) => st.id === action.siteId);
+                return !x.inactive && (x.role === "manager" || x.role === "ceo" || (x.role === "field" && !!site && worksOnSite(x, site)));
+              })
               .map((x) => (
                 <option key={x.id} value={x.id}>
                   {x.name} {x.title}
