@@ -104,7 +104,7 @@ export function SitesAdmin({ db }: { db: DemoDB }) {
   );
 }
 
-type StageRow = { key: string; id?: string; name: string; startDate: string; endDate: string; progressPct: number };
+type StageRow = { key: string; id?: string; name: string; startDate: string; endDate: string; progressPct: number; base?: number };
 
 function SiteFormModal({ db, site, onClose }: { db: DemoDB; site: Site | null; onClose: () => void }) {
   const toast = useToast();
@@ -125,7 +125,8 @@ function SiteFormModal({ db, site, onClose }: { db: DemoDB; site: Site | null; o
     contract: wonText(contract?.contractAmount),
   });
   const [budgets, setBudgets] = useState<Record<CostCategory, string>>(() => Object.fromEntries(COST_CATEGORIES.map((c) => [c, wonText(budget(c))])) as Record<CostCategory, string>);
-  const [stages, setStages] = useState<StageRow[]>(() => (site?.stages ?? []).map((s) => ({ key: s.id, ...s })));
+  // base: 창을 연 때의 공정률 — 저장할 때 함께 보내 그 사이 현장이 바꾼 값을 덮어쓰지 않게 (D-65)
+  const [stages, setStages] = useState<StageRow[]>(() => (site?.stages ?? []).map((s) => ({ key: s.id, ...s, base: s.progressPct })));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [key] = useState(() => uid("idem"));
@@ -157,7 +158,7 @@ function SiteFormModal({ db, site, onClose }: { db: DemoDB; site: Site | null; o
         managerUserId: f.managerUserId || undefined,
         contractAmount: Number.isFinite(contractNum) ? contractNum : 0,
         budgets: budgetNums,
-        stages: stages.filter((s) => s.name.trim()).map(({ id, name, startDate, endDate, progressPct }) => ({ id, name, startDate, endDate, progressPct })),
+        stages: stages.filter((s) => s.name.trim()).map(({ id, name, startDate, endDate, progressPct, base }) => ({ id, name, startDate, endDate, progressPct, ...(id && base !== undefined ? { basePct: base } : {}) })),
         idempotencyKey: site ? undefined : key,
       });
       toast.push({ tone: "ok", title: r.created ? "현장을 등록했습니다" : "현장 정보를 저장했습니다", desc: f.shortName });

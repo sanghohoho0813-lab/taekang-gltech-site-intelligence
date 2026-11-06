@@ -35,8 +35,8 @@ export default function FinancePage() {
         right={
           <>
             <DemoBadge />
-            <Button icon={<FilePlus2 size={17} />} onClick={() => setForm("billing")}>기성청구 등록</Button>
-            <Button variant="cta" icon={<Wallet size={17} />} onClick={() => setForm("payment")}>입금 등록</Button>
+            <Button icon={<FilePlus2 size={17} />} onClick={() => setForm("billing")} disabled={!db.sites.length} title={db.sites.length ? undefined : "현장을 먼저 등록하세요"}>기성청구 등록</Button>
+            <Button variant="cta" icon={<Wallet size={17} />} onClick={() => setForm("payment")} disabled={!db.sites.length} title={db.sites.length ? undefined : "현장을 먼저 등록하세요"}>입금 등록</Button>
           </>
         }
       />
@@ -265,7 +265,8 @@ function ChangeOrderModal({ db, c, to, onClose }: { db: DemoDB; c: ChangeOrder; 
 
 function MoneyFormModal({ db, kind, onClose }: { db: DemoDB; kind: "billing" | "payment"; onClose: () => void }) {
   const toast = useToast();
-  const [siteId, setSiteId] = useState(db.sites[0].id);
+  // 현장이 하나도 없는 회사에서도 열리게 (빈 회사에서 화면 오류 · D-65 점검 반영)
+  const [siteId, setSiteId] = useState(db.sites[0]?.id ?? "");
   const [amountText, setAmountText] = useState("");
   const [date, setDate] = useState(todayIso());
   const [key] = useState(() => uid("idem"));

@@ -436,6 +436,8 @@ test("자재 반입·설치 (D-62): 반입 → 수량 → 사진 → 보내기 �
 
   // 오늘 내가 남긴 기록 → 사유를 골라 취소 (지우지 않고 취소 표시)
   await page.getByTestId("material-again").click();
+  // 현장 두 곳을 맡은 사람은 현장부터 다시 고른다 (D-65)
+  await page.getByTestId("material-site-site-a").click();
   await expect(page.getByTestId("material-today-row")).toHaveCount(1);
   await page.getByTestId("material-void").click();
   await page.getByTestId("material-void-reason").first().click();

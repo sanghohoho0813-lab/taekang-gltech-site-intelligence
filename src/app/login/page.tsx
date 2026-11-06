@@ -9,12 +9,9 @@ import { Notice } from "@/components/ui/primitives";
 import { BigLabel, HangulWarning, PasswordInput, bigInputCls } from "@/components/auth/BigInputs";
 import { api } from "@/lib/live/api";
 import { homeFor } from "@/lib/nav";
+import { safeNext } from "@/lib/live/safeNext";
 import type { RoleId } from "@/lib/domain/types";
 
-function safeNext(v: string | null): string | null {
-  // 같은 사이트 안의 경로만 허용 (외부 주소로 보내는 공격 방지)
-  return v && v.startsWith("/") && !v.startsWith("//") && !v.startsWith("/login") ? v : null;
-}
 
 const LAST_ID = "tk-site-intel:last-login";
 

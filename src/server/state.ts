@@ -78,6 +78,7 @@ export function memberToUser(m: MemberRow): DemoUser {
     name: m.name,
     title: m.title,
     ...(m.role === "partner" ? { partnerSiteIds: m.partner_site_ids ?? [] } : {}),
+    ...(m.role === "field" && (m.site_ids ?? []).length ? { siteIds: m.site_ids } : {}),
     ...(m.active ? {} : { inactive: true }),
   };
 }

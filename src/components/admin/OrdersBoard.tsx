@@ -9,6 +9,7 @@ import { run } from "@/lib/data/store";
 import { CommandError } from "@/lib/data/commands";
 import { FIX_KIND_LABEL } from "@/lib/data/opsCommands";
 import type { AttendanceRecord, DemoDB, FieldReport, WorkOrder } from "@/lib/domain/types";
+import { worksOnSite } from "@/lib/domain/types";
 import { fmtDate, fmtMan, todayIso } from "@/lib/domain/format";
 import { backdatedDays, hhmm } from "@/lib/domain/attendance";
 import { GEO_LABEL } from "@/lib/domain/geo";
@@ -114,12 +115,14 @@ function useRun() {
 
 function Orders({ db }: { db: DemoDB }) {
   const go = useRun();
+  const toast = useToast();
   const sites = db.sites.filter((s) => s.status === "active");
   const [f, setF] = useState({ siteId: sites[0]?.id ?? "", title: "", detail: "", dueDate: "", urgent: false, assignee: "" });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [key, setKey] = useState(() => uid("idem"));
   const site = db.sites.find((s) => s.id === f.siteId);
-  const people = db.users.filter((u) => !u.inactive && u.role !== "partner" && u.role !== "ceo");
+  // 이 현장을 맡은 현장 직원과 본사 직원만 (D-65 점검 반영)
+  const people = db.users.filter((u) => !u.inactive && u.role !== "partner" && u.role !== "ceo" && (!site || worksOnSite(u, site)));
   const today = todayIso();
   const orders = [...(db.workOrders ?? [])].sort((a, b) => order(a) - order(b) || b.createdAt.localeCompare(a.createdAt));
   const create = async () => {
@@ -130,6 +133,8 @@ function Orders({ db }: { db: DemoDB }) {
       setKey(uid("idem"));
     } catch (e) {
       if (e instanceof CommandError) setErrors(e.fieldErrors);
+      // 칸 오류가 아닌 실패(현장 없음·권한·연결)도 알린다 — 아무 일도 없는 것처럼 보이던 문제 (D-65 점검 반영)
+      if (!(e instanceof CommandError) || !Object.keys(e.fieldErrors).length) toast.push({ tone: "err", title: e instanceof Error ? e.message : "작업지시를 보내지 못했습니다" });
     }
   };
   return (

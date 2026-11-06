@@ -18,7 +18,7 @@ import { uid } from "@/lib/domain/ids";
 import { cx } from "@/components/ui/primitives";
 import { outboxAdd } from "@/lib/browser/outbox";
 import { useOutbox } from "./Outbox";
-import { Choice, EasyBar, EasyPageHead, EasyQuestion, SectionBar, easyTextareaCls, AtBottom } from "./ui";
+import { Choice, EasyBar, EasyPageHead, EasyQuestion, SectionBar, easyTextareaCls, AtBottom, NoSite } from "./ui";
 import { downscalePhoto } from "./photo";
 import { easyDate } from "./words";
 
@@ -69,6 +69,9 @@ export function EasyMaterial() {
   }, [sites, siteId]);
 
   if (!db) return null;
+  // 맡은 현장 자체가 없으면 ‘품목이 없다’가 아니라 ‘현장이 없다’고 알린다
+  const assigned = role === "field" && !IS_LIVE ? db.sites.filter((s) => s.fieldUserId === userId) : db.sites;
+  if (!assigned.length) return <NoSite title="자재 반입·설치" />;
   if (!sites.length)
     return (
       <div className="space-y-5" data-testid="easy-material">
@@ -147,7 +150,8 @@ export function EasyMaterial() {
     setPhoto(null);
     setKey(uid("idem"));
     setDone(null);
-    setStack(["kind"]);
+    // 여러 현장을 맡은 사람은 현장부터 다시 고르게 (D-65 점검 반영)
+    setStack([sites.length === 1 ? "kind" : "site"]);
   };
 
   if (done)

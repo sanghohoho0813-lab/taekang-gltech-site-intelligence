@@ -5,6 +5,7 @@
  * - 현장 보고 본사 확인·보완 요청 → 현장 보완 (S3)
  * 시각은 서버 시각(ctx.now). 모든 변경은 이력에 남는다.
  */
+import { worksOnSite } from "@/lib/domain/types";
 import type { AttendanceRecord, AttendanceRequest, DemoDB, WorkOrder } from "@/lib/domain/types";
 import { todayIso } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
@@ -96,7 +97,17 @@ export function reviewAttendanceFix(db0: DemoDB, input: { requestId: string; dec
   let attendanceId = q.attendanceId;
   if (input.decision === "approve") {
     const stamp = `현장 요청 승인 — ${FIX_KIND_LABEL[q.kind]} · ${q.reason}${note ? ` (${note})` : ""}`;
-    if (q.kind === "missed_in") {
+    // ‘출근을 못 눌렀어요’ 요청 뒤에 그날 출근을 실제로 눌렀다면 새 기록을 만들지 않고 그 기록의 출근 시각을 고친다
+    // (같은 사람·현장·날에 출근 기록이 두 개 생기던 문제 · D-65 점검 반영)
+    const existing = q.kind === "missed_in" ? db.attendance.findIndex((r) => r.userId === q.userId && r.siteId === q.siteId && r.workDate === q.workDate) : -1;
+    if (existing >= 0) {
+      const r = db.attendance[existing];
+      const inAt = kst(q.workDate, q.inTime!);
+      const outAt = q.outTime && !r.outAt ? kst(q.workDate, q.outTime) : r.outAt;
+      if (outAt && outAt <= inAt) throw new CommandError("요청한 출근 시각이 이미 기록된 퇴근 시각보다 늦습니다. 출퇴근 현황에서 직접 정정해 주세요.", "STATE");
+      db.attendance[existing] = { ...r, inAt, ...(outAt ? { outAt } : {}), exceptionNote: stamp, corrections: [...(r.corrections ?? []), { at, by: ctx.userId, note: `${stamp} (그 뒤 누른 출근 기록의 시각을 고침)`, before: { inAt: r.inAt, ...(r.outAt ? { outAt: r.outAt } : {}) } }] };
+      attendanceId = r.id;
+    } else if (q.kind === "missed_in") {
       const rec: AttendanceRecord = {
         id: uid("att"),
         siteId: q.siteId,
@@ -155,6 +166,8 @@ export function createWorkOrder(db0: DemoDB, input: WorkOrderInput, ctx: Ctx) {
   const assignee = input.assigneeUserId || site.fieldUserId;
   const u = db0.users.find((x) => x.id === assignee);
   if (!u || u.inactive || u.role === "partner") errors.assigneeUserId = "받을 사람을 골라 주세요.";
+  // 그 현장을 맡지 않은 현장 직원에게는 보내지 않는다 (현장 이름 없이 엉뚱한 사람에게 가던 문제 · D-65 점검 반영)
+  else if (!worksOnSite(u, site)) errors.assigneeUserId = `${u.name}님은 ${site.shortName}을 맡고 있지 않습니다. 현장 담당이나 운영 관리에서 현장을 먼저 배정하세요.`;
   if (input.dueDate && !/^\d{4}-\d{2}-\d{2}$/.test(input.dueDate)) errors.dueDate = "기한 날짜를 확인해 주세요.";
   if (Object.keys(errors).length) throw new CommandError("입력값을 확인해주세요.", "VALIDATION", errors);
   const db = clone(db0);

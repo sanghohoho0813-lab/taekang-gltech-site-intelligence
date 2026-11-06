@@ -39,9 +39,10 @@ import type { CostCategory, CostReason, GeoStamp, Site } from "@/lib/domain/type
 import { geoText, judgeGeo, type GeoSample } from "@/lib/domain/geo";
 import { locateOnce } from "@/lib/geo/client";
 import { todayIso } from "@/lib/domain/format";
+import { shiftDate } from "@/lib/domain/attendance";
 import { uid } from "@/lib/domain/ids";
 import { cx } from "@/components/ui/primitives";
-import { BigNumber, Chip, Choice, EasyBar, EasyPageHead, EasyQuestion, SectionBar, Stepper, VoiceHint, easyTextareaCls, AtBottom } from "./ui";
+import { BigNumber, Chip, Choice, EasyBar, EasyPageHead, EasyQuestion, SectionBar, Stepper, VoiceHint, easyTextareaCls, AtBottom, NoSite } from "./ui";
 import { DEFAULT_WORK, EASY_CATEGORY, EASY_CATEGORY_ORDER, EASY_REASON, EASY_REASON_ORDER, ISSUE_CHIPS, NO_WORK, easyDate, easyWon } from "./words";
 import { downscalePhoto } from "./photo";
 import { hasConsent } from "@/lib/domain/privacy";
@@ -218,6 +219,7 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
   }, [rawStep, done]);
 
   if (!db) return null;
+  if (!sites.length && !fixedSiteId) return <NoSite title={mode === "photo" ? "사진 보내기" : mode === "cost" ? "추가 비용 알리기" : "오늘 보고하기"} />;
   const site = db.sites.find((s) => s.id === d.siteId);
   const settings = db.settings;
   const review = (settings?.costApproval ?? "immediate") === "review";
@@ -549,7 +551,19 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
                 sub={s.workType}
                 selected={d.siteId === s.id}
                 onClick={() => {
-                  set({ siteId: s.id });
+                  if (s.id !== d.siteId) {
+                    // 다른 현장을 고르면 앞 현장에서 고른 작업·공정·문제·비용·사진·지시를 모두 비운다
+                    // (앞 현장 답이 새 현장 보고에 섞여 들어가던 문제 · D-65 점검 반영)
+                    if (d.siteId) {
+                      try {
+                        localStorage.removeItem(DRAFT_KEY + d.siteId + ":" + mode);
+                      } catch {
+                        // 무시
+                      }
+                    }
+                    setD({ ...emptyDraft(s.id), reportDate: d.reportDate });
+                    setPhotos([]);
+                  }
                   proceed(nextAfter("site"));
                 }}
                 testId={`easy-site-${s.id}`}
@@ -970,7 +984,7 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
                     날짜 바꾸기
                   </button>
                 )}
-                {dateEdit && <input type="date" aria-label="보고 날짜" value={d.reportDate} max={todayIso()} onChange={(e) => e.target.value && set({ reportDate: e.target.value })} className="min-h-12 rounded-xl border-2 border-line-strong px-3 text-[1.05rem]" />}
+                {dateEdit && <input type="date" aria-label="보고 날짜" value={d.reportDate} max={todayIso()} min={shiftDate(todayIso(), -60)} onChange={(e) => { const v = e.target.value; if (v && v <= todayIso() && v >= shiftDate(todayIso(), -60)) set({ reportDate: v }); }} className="min-h-12 rounded-xl border-2 border-line-strong px-3 text-[1.05rem]" />}
               </span>,
               null,
             )}

@@ -17,6 +17,14 @@ export interface DemoUser {
   partnerSiteIds?: string[];
   /** LIVE: 비활성(퇴사·접근 중지) 사용자 — 이력 표시용으로만 남는다 */
   inactive?: boolean;
+  /** LIVE: 현장 직원에게 배정된 현장 (본사 화면에서 작업지시 받는 사람을 고를 때 · D-65) */
+  siteIds?: string[];
+}
+
+/** 이 사람이 이 현장을 맡고 있나 — 현장 담당으로 지정됐거나 배정된 현장 (본사 직원은 항상 가능) */
+export function worksOnSite(u: DemoUser, site: Pick<Site, "id" | "fieldUserId">): boolean {
+  if (u.role !== "field") return true;
+  return site.fieldUserId === u.id || (u.siteIds ?? []).includes(site.id);
 }
 
 export type CostCategory = "material" | "labor" | "subcontract" | "equipment" | "overhead";
@@ -345,6 +353,10 @@ export interface FieldReport {
   supplements?: { at: string; by: string; text: string; photoIds: string[] }[];
   /** 이 보고로 바뀐 공정 단계 진척 (공사일보용) */
   stages?: { stageId: string; name: string; from: number; to: number }[];
+  /** 이 보고로 바뀐 현장 공정률 (되돌리기용 · D-65) */
+  progress?: { from: number; to: number };
+  /** 이 보고로 작업지시가 ‘진행 중’이 됐으면 그 전 상태 (되돌리기용 · D-65) */
+  workOrderFrom?: "sent" | "received";
 }
 
 /** 근태 수정 요청 (GPS 실패·출퇴근 누락·잘못 찍힘) — 직원이 사유와 함께 요청, 본사가 승인·반려 */

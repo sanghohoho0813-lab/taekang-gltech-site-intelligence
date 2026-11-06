@@ -37,7 +37,8 @@ export interface SaveSiteInput {
   signedDate?: string;
   /** 실행예산 (원가 항목 5종) */
   budgets: Record<CostCategory, number>;
-  stages?: { id?: string; name: string; startDate: string; endDate: string; progressPct?: number }[];
+  /** basePct: 수정 창을 열 때의 공정률 — 그 뒤 현장이 바꿨고 이 창에서는 손대지 않았으면 현장 값을 지킨다 (D-65 점검 반영) */
+  stages?: { id?: string; name: string; startDate: string; endDate: string; progressPct?: number; basePct?: number }[];
   illustration?: Site["illustration"];
   idempotencyKey?: string;
 }
@@ -85,7 +86,14 @@ export function saveSite(db0: DemoDB, input: SaveSiteInput, ctx: Ctx) {
   let site = db.sites.find((s) => s.id === id);
   if (!isNew && !site) throw new CommandError("현장을 찾을 수 없습니다.", "NOT_FOUND");
 
-  const stageRows = stages.map((s) => ({ id: s.id ?? uid("stg"), name: s.name.trim(), startDate: s.startDate, endDate: s.endDate, progressPct: Math.round(s.progressPct ?? 0) }));
+  const current = new Map((db0.sites.find((x) => x.id === input.id)?.stages ?? []).map((st) => [st.id, st.progressPct]));
+  const stageRows = stages.map((s) => {
+    const cur = s.id ? current.get(s.id) : undefined;
+    const untouched = s.basePct !== undefined && Math.round(s.progressPct ?? 0) === Math.round(s.basePct);
+    // 본사가 창을 연 사이 현장 보고로 공정률이 바뀌었고 이 창에서는 그대로 두었다면 → 현장 값 유지 (덮어쓰기 방지)
+    const progressPct = cur !== undefined && untouched && cur !== s.basePct ? cur : Math.round(s.progressPct ?? 0);
+    return { id: s.id ?? uid("stg"), name: s.name.trim(), startDate: s.startDate, endDate: s.endDate, progressPct };
+  });
   if (!site) {
     const year = input.startDate.slice(0, 4);
     const seq = db.sites.filter((s) => s.code.includes(year)).length + 1;

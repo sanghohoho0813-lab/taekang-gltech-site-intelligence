@@ -13,7 +13,7 @@ import type { AttendanceRequest, Site } from "@/lib/domain/types";
 import { todayIso } from "@/lib/domain/format";
 import { hhmm, shiftDate } from "@/lib/domain/attendance";
 import { uid } from "@/lib/domain/ids";
-import { Chip, Choice, EasyBar, EasyPageHead, EasyQuestion, SectionBar, AtBottom } from "./ui";
+import { Chip, Choice, EasyBar, EasyPageHead, EasyQuestion, SectionBar, AtBottom, NoSite } from "./ui";
 import { easyDate } from "./words";
 
 const REASONS = ["휴대폰 배터리가 꺼짐", "위치(GPS)가 안 잡힘", "깜빡하고 못 누름", "현장 밖에서 잘못 누름", "휴대폰을 두고 옴", "기타 (본사에 전화로 설명)"];
@@ -43,6 +43,7 @@ export function EasyFix() {
     window.scrollTo({ top: 0 });
   }, [step]);
   if (!db) return null;
+  if (!sites.length) return <NoSite title="출퇴근 수정 요청" />;
   const site = db.sites.find((s) => s.id === siteId) ?? (sites.length === 1 ? sites[0] : undefined);
   const go = (s: Step) => (setErr(null), setStack((x) => [...x, s]));
   const back = () => stack.length > 1 && setStack((x) => x.slice(0, -1));

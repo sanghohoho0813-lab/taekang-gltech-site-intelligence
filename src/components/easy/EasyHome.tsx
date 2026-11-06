@@ -53,7 +53,7 @@ export function EasyHome() {
               {sites.map((s) => {
                 const sent = db.reports.some((r) => r.siteId === s.id && r.reportDate === today && daily(r));
                 return (
-                  <li key={s.id} className="flex items-center gap-1.5 rounded-full bg-surface px-3 py-1.5 text-[1rem] font-bold text-ink shadow-card" data-testid="easy-site-status" data-sent={sent ? "1" : "0"}>
+                  <li key={s.id} className="flex max-w-full flex-wrap items-center gap-x-1.5 gap-y-0.5 rounded-[1.25rem] bg-surface px-3 py-1.5 text-[1rem] font-bold text-ink shadow-card [overflow-wrap:anywhere]" data-testid="easy-site-status" data-sent={sent ? "1" : "0"}>
                     {sent ? <CircleCheck size={19} className="shrink-0 text-ok" aria-hidden /> : <Clock3 size={19} className="shrink-0 text-warn" aria-hidden />}
                     <span>{s.shortName}</span>
                     <span className={sent ? "text-ok" : "text-warn"}>{sent ? "오늘 보고 보냄" : "아직 안 보냄"}</span>

@@ -28,7 +28,8 @@ import type {
 } from "@/lib/domain/types";
 import { siteFinancials, type SiteFinancials } from "@/lib/domain/calc";
 import { ACTION_STATUS_LABEL, CATEGORY_LABEL, COST_CATEGORIES, PARTNER_STATUS_LABEL, PARTNER_TYPE_LABEL, REASON_LABEL } from "@/lib/domain/labels";
-import { fmtEok, fmtMan, fmtPct } from "@/lib/domain/format";
+import { fmtEok, fmtMan, fmtPct, todayIso } from "@/lib/domain/format";
+import { shiftDate } from "@/lib/domain/attendance";
 import { DECISION_METHOD } from "@/lib/domain/risk";
 import { uid } from "@/lib/domain/ids";
 import { IS_LIVE } from "@/lib/mode";
@@ -115,6 +116,9 @@ export interface CostLineInput {
   qty?: { manDays: number; dayRate: number };
 }
 
+/** 현장 보고에 쓸 수 있는 날짜 범위 (오늘부터 며칠 전까지) */
+export const REPORT_DATE_WINDOW_DAYS = 60;
+
 export interface FieldReportInput {
   idempotencyKey: string;
   siteId: string;
@@ -155,6 +159,12 @@ export function submitFieldReport(db0: DemoDB, input: FieldReportInput, ctx: Ctx
   if (!input.workDone?.trim() && costs.length === 0) errors.workDone = "오늘의 작업 내용을 입력하거나 비용을 추가해주세요.";
   if ((input.workDone ?? "").length > 500) errors.workDone = "작업 내용은 500자 이내";
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.reportDate ?? "")) errors.reportDate = "보고일을 선택해주세요.";
+  else {
+    // 보고 날짜는 오늘부터 60일 전까지만 (미래·아주 오래된 날짜가 ‘최근 보고’ 맨 위에 쌓이던 문제 · D-65 점검 반영)
+    const today = todayIso(ctx.now);
+    if (input.reportDate > today) errors.reportDate = "오늘 이후 날짜로는 보고할 수 없습니다.";
+    else if (input.reportDate < shiftDate(today, -REPORT_DATE_WINDOW_DAYS)) errors.reportDate = `${REPORT_DATE_WINDOW_DAYS}일보다 오래된 날짜로는 보고할 수 없습니다. 본사에 알려 주세요.`;
+  }
   costs.forEach((c, i) => {
     if (!COST_CATEGORIES.includes(c.category)) errors[`costs.${i}.category`] = "비용 항목을 선택해주세요.";
     if (!Number.isInteger(c.amount) || c.amount <= 0) errors[`costs.${i}.amount`] = "0보다 큰 금액(원)을 입력해주세요.";
@@ -247,6 +257,8 @@ export function submitFieldReport(db0: DemoDB, input: FieldReportInput, ctx: Ctx
   if (input.workOrderId) {
     report.workOrderId = input.workOrderId;
     // 작업지시가 아직 접수·시작 전이면 보고와 함께 ‘진행 중’으로
+    const wo = (db.workOrders ?? []).find((w) => w.id === input.workOrderId);
+    if (wo && (wo.status === "sent" || wo.status === "received")) report.workOrderFrom = wo.status;
     db.workOrders = (db.workOrders ?? []).map((w) =>
       w.id === input.workOrderId && (w.status === "sent" || w.status === "received") ? { ...w, status: "in_progress", history: [...w.history, { at, by: ctx.userId, to: "in_progress", note: "현장 보고로 진행 시작" }] } : w,
     );
@@ -254,6 +266,7 @@ export function submitFieldReport(db0: DemoDB, input: FieldReportInput, ctx: Ctx
   db.reports.unshift(report);
 
   const site = requireSite(db, input.siteId);
+  const progressFrom = site.progressPct;
   const stageChanges = (input.stageProgress ?? []).map((c) => ({ stageId: c.stageId, progressPct: Math.round(c.progressPct) })).filter((c) => site.stages.find((st) => st.id === c.stageId)?.progressPct !== c.progressPct);
   if (stageChanges.length) {
     // 현장 공정률이 갑자기 튀지 않도록 단계 변화량만 기간 가중으로 더한다 (현장 공정률을 직접 고친 경우는 그 값 우선)
@@ -277,6 +290,7 @@ export function submitFieldReport(db0: DemoDB, input: FieldReportInput, ctx: Ctx
     log(db, ctx, "progress", `${site.shortName} 공정률 ${site.progressPct}% → ${Math.round(input.progressPct)}% (현장보고)`, input.siteId, `/sites/${input.siteId}`);
     site.progressPct = Math.round(input.progressPct);
   }
+  if (site.progressPct !== progressFrom) report.progress = { from: progressFrom, to: site.progressPct };
   const after = siteFinancials(db, input.siteId);
   const costSum = costs.reduce((s, c) => s + c.amount, 0);
   log(
@@ -332,7 +346,28 @@ export function voidReport(db0: DemoDB, reportId: string, ctx: Ctx) {
   }
   const after = siteFinancials(db, r.siteId);
   const site = requireSite(db, r.siteId);
-  log(db, ctx, "report_void", `${site.shortName} 현장보고 되돌리기 → EAC ${fmtEok(before.eac)} → ${fmtEok(after.eac)}`, r.siteId, `/sites/${r.siteId}`);
+  // 이 보고로 바뀐 공정률·공정 단계·작업지시도 되돌린다 — 그 뒤 다른 사람이 바꾸지 않았을 때만 (D-65 점검 반영)
+  const undone: string[] = [];
+  for (const c of r.stages ?? []) {
+    const st = site.stages.find((x) => x.id === c.stageId);
+    if (st && st.progressPct === c.to) {
+      site.stages = site.stages.map((x) => (x.id === c.stageId ? { ...x, progressPct: c.from } : x));
+      undone.push(`${c.name} ${c.to}% → ${c.from}%`);
+    }
+  }
+  if (r.progress && site.progressPct === r.progress.to) {
+    site.progressPct = r.progress.from;
+    undone.push(`공정률 ${r.progress.to}% → ${r.progress.from}%`);
+  }
+  if (r.workOrderId && r.workOrderFrom) {
+    db.workOrders = (db.workOrders ?? []).map((w) => {
+      const last = w.history.at(-1);
+      if (w.id !== r.workOrderId || w.status !== "in_progress" || last?.to !== "in_progress" || last.note !== "현장 보고로 진행 시작") return w;
+      undone.push(`작업지시 ‘${w.title}’ 진행 중 → ${r.workOrderFrom === "sent" ? "보냄" : "접수"}`);
+      return { ...w, status: r.workOrderFrom!, history: [...w.history, { at: nowIso(ctx), by: ctx.userId, to: r.workOrderFrom!, note: "현장 보고 되돌리기" }] };
+    });
+  }
+  log(db, ctx, "report_void", `${site.shortName} 현장보고 되돌리기 → EAC ${fmtEok(before.eac)} → ${fmtEok(after.eac)}${undone.length ? ` · ${undone.join(", ")}` : ""}`, r.siteId, `/sites/${r.siteId}`);
   touch(db, ctx);
   return { db, result: { before, after } };
 }

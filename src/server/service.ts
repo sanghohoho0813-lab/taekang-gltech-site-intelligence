@@ -18,7 +18,7 @@ import { uid } from "@/lib/domain/ids";
 import { getDb, type Tx } from "./sql";
 import { deliver } from "./push";
 import { noticesFor } from "@/lib/domain/notify";
-import { loadState, persistState } from "./state";
+import { COLLECTIONS, loadState, persistState } from "./state";
 import { authorize, fieldSiteIds, ForbiddenError, sanitizeResult, viewFor } from "./authz";
 import { createSession, hashPassword, MEMBER_COLS, normalizeEmail, passwordProblem, toMember, type Member } from "./auth";
 
@@ -263,6 +263,8 @@ export async function setupCompany(input: SetupInput): Promise<{ token: string; 
           attendanceRequests: [],
           workOrders: [],
           importBatches: [],
+          // 위 목록에 없는 새 자료 묶음(앱 의견·자재 기록·휴대폰 점검 등)도 빈 채로 시작 — 시연 자료가 섞여 들어가던 문제 (D-65 점검 반영)
+          ...(Object.fromEntries(Object.keys(COLLECTIONS).filter((n) => n !== "sites").map((n) => [n, []])) as Partial<DemoDB>),
           settings: DEFAULT_SETTINGS,
           rev: 1,
         };

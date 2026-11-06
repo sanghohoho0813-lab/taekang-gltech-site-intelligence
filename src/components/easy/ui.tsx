@@ -350,3 +350,16 @@ export const easyTextareaCls =
 export function AtBottom({ bar }: { bar: ReactNode }) {
   return isValidElement<{ className?: string }>(bar) ? cloneElement(bar, { className: cx(bar.props.className, "mt-auto") }) : bar;
 }
+
+/** 맡은 현장이 없는 현장 직원 — 질문만 있고 고를 것이 없는 막다른 화면 대신 (D-65 점검 반영) */
+export function NoSite({ title }: { title: string }) {
+  return (
+    <div className="space-y-5" data-testid="easy-no-site-page">
+      <EasyPageHead title={title} />
+      <p className="rounded-2xl border-2 border-line bg-surface p-4 text-[1.1rem] leading-relaxed">아직 맡은 현장이 없어요. 본사에 현장 지정을 요청해 주세요.</p>
+      <Link href="/field" className="press flex h-[3.8rem] w-full items-center justify-center rounded-full border-2 border-line-strong bg-surface text-[1.12rem] font-bold">
+        처음 화면으로
+      </Link>
+    </div>
+  );
+}

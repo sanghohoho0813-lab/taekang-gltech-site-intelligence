@@ -15,7 +15,7 @@ import { todayIso } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
 import { locateOnce } from "@/lib/geo/client";
 import { cx } from "@/components/ui/primitives";
-import { Choice, EasyBar, EasyPageHead, EasyQuestion, SectionBar, Stepper, VoiceHint, easyTextareaCls, AtBottom } from "./ui";
+import { Choice, EasyBar, EasyPageHead, EasyQuestion, SectionBar, Stepper, VoiceHint, easyTextareaCls, AtBottom, NoSite } from "./ui";
 import { downscalePhoto } from "./photo";
 import { easyDate } from "./words";
 import { hasConsent } from "@/lib/domain/privacy";
@@ -62,6 +62,7 @@ export function EasyCrew() {
   }, [step, geo, consented]);
 
   if (!db) return null;
+  if (!sites.length) return <NoSite title="작업 인원 알리기" />;
   const site = db.sites.find((s) => s.id === siteId);
   const teams = site ? recentTeams(db, site.id) : [];
   const todayDone = (db.crewChecks ?? []).filter((c) => c.siteId === siteId && c.workDate === todayIso());
@@ -97,7 +98,8 @@ export function EasyCrew() {
     setGeo(null);
     setKey(uid("idem"));
     setDone(null);
-    setStack(["team"]);
+    // 여러 현장을 맡은 사람은 현장부터 다시 고르게 (이전 없이 한 현장에 갇히던 문제 · D-65 점검 반영)
+    setStack([sites.length === 1 ? "team" : "site"]);
   };
 
   if (done)
