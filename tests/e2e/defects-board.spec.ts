@@ -73,3 +73,30 @@ test("시연 데이터: 월간 보고서에 지난 공정 변화가 들어 있�
   await page.goto("/defects");
   await expect(page.getByTestId("access-denied")).toBeVisible();
 });
+
+test("두 현장 담당: 확인 화면에서 오늘 출근한 현장으로 옮기면 현장마다 다른 작업·진행률은 비우고 다시 고르게 한다 (적은 글은 유지)", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await freshStart(page, { role: "field" });
+  await page.goto("/field");
+  await expect(page.getByTestId("bottom-nav")).toBeVisible();
+  await page.evaluate((dk) => {
+    const db = JSON.parse(localStorage.getItem(dk)!);
+    const t = new Date(Date.now() + 9 * 3_600_000).toISOString().slice(0, 10);
+    db.attendance = [...(db.attendance ?? []), { id: "att-e2e-b2", siteId: "site-b", userId: "u-field", workDate: t, inAt: new Date().toISOString(), inGeo: { status: "inside", lat: 37.5, lng: 127, accuracyM: 10, distanceM: 20 }, inDevice: "dev-e2e" }];
+    localStorage.setItem(dk, JSON.stringify(db));
+  }, DB);
+  await page.goto("/field/report");
+  await page.getByTestId("fill-demo").click();
+  await expect(page.getByTestId("confirm-other-site")).toContainText("B현장");
+  // A현장 공정 이름 작업 하나 고르고 확인 화면으로
+  await page.getByRole("button", { name: "오늘 한 작업 고치기" }).click();
+  await page.getByTestId("work-chip").first().click();
+  await page.getByTestId("easy-next").click();
+  await expect(page.getByTestId("confirm-move-site")).toBeVisible();
+  await page.getByTestId("confirm-move-site").click();
+  // 작업 단계로 돌아와 안내 · A현장 작업은 빠지고 · 적은 글은 그대로
+  await expect(page.getByTestId("moved-site-note")).toContainText("B현장으로 옮겼어요");
+  await expect(page.getByTestId("work-chip-orphan")).toHaveCount(0);
+  await expect(page.getByTestId("work-chip").and(page.locator('[aria-pressed="true"]'))).toHaveCount(0);
+  expect((await page.locator("#easy-work-text").inputValue()).length).toBeGreaterThan(5);
+});
