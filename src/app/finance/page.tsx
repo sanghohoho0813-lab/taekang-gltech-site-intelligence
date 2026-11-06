@@ -45,7 +45,7 @@ export default function FinancePage() {
       {/* 숫자가 먼저, 뜻은 아래 (D-61) — 네 숫자는 서로 다른 개념이라 정의를 함께 둔다 */}
       <div className="grid grid-cols-2 gap-3 @min-[900px]:grid-cols-4" aria-label="합계와 개념 정의" data-testid="finance-totals">
         <StatCard testId="fin-total-contract" label="변경 반영 계약금액" value={fmtEok(sum((f) => f.adjustedContract))} sub="원 계약 + 원청·발주처가 승인한 변경계약. 청구 검토·승인 대기는 제외." icon={<FileSignature size={20} />} group="growth" />
-        <StatCard testId="fin-total-profit" label="예상이익" value={fmtEok(sum((f) => f.expectedProfit))} sub="변경 반영 계약금액 − 총예상원가(EAC). 매출·입금과 다른 ‘준공 시 예상’ 개념." icon={<TrendingUp size={20} />} group="ax" />
+        <StatCard testId="fin-total-profit" label="예상이익" value={fmtEok(sum((f) => f.expectedProfit))} sub="변경 반영 계약금액 − 예상 총원가. 매출·입금과 다른 ‘준공 시 예상’ 개념." icon={<TrendingUp size={20} />} group="ax" />
         <StatCard testId="fin-total-billed" label="기성청구액 (확정)" value={fmtEok(sum((f) => f.billed))} sub="공정 진행에 따라 발주처에 청구해 확정된 금액. 받은 돈이 아님." icon={<FilePlus2 size={20} />} group="growth" />
         <StatCard testId="fin-total-outstanding" label="미수금" value={fmtEok(sum((f) => f.outstanding))} sub={<>입금 누계 <b className="num text-ink-2">{fmtEok(sum((f) => f.received))}</b> (실제 통장에 들어온 돈). 미수금 = 확정 기성청구 − 입금.</>} icon={<Wallet size={20} />} group="growth" />
       </div>
@@ -67,8 +67,8 @@ export default function FinancePage() {
             return (
               <li key={s.id} className="space-y-2 px-5 py-3.5" data-testid="finance-card">
                 <div className="flex items-baseline justify-between gap-2">
-                  <p className="font-bold">{s.shortName}</p>
-                  <p className={cx("num text-[0.95rem] font-extrabold", longOver ? "text-err" : "text-ink")}>
+                  <p className="min-w-0 font-bold [overflow-wrap:anywhere]">{s.shortName}</p>
+                  <p className={cx("num shrink-0 text-[0.95rem] font-extrabold", longOver ? "text-err" : "text-ink")}>
                     미수금 {fmtEok(f.outstanding, { unit: false })}
                   </p>
                 </div>

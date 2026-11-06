@@ -37,8 +37,8 @@ export const IMPACT_LABEL: Record<ForecastImpact, string> = {
 
 export const IMPACT_HELP: Record<ForecastImpact, string> = {
   baseline: "기준 시점에 이미 잔여예상원가 산정에 반영된 발생원가입니다.",
-  additional: "실행예산에 없던 비용입니다. 본사 총예상원가(EAC)가 그만큼 늘어납니다.",
-  within_forecast: "실행예산에 이미 잡혀 있던 비용입니다. 남은 예산에서 빠지므로 총예상원가는 변하지 않습니다.",
+  additional: "실행예산에 없던 비용입니다. 본사 예상 총원가가 그만큼 늘어납니다.",
+  within_forecast: "실행예산에 이미 잡혀 있던 비용입니다. 남은 예산에서 빠지므로 예상 총원가는 변하지 않습니다.",
 };
 
 export const REASON_LABEL: Record<CostReason, string> = {

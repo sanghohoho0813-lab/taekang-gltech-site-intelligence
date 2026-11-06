@@ -176,8 +176,8 @@ function EditCostModal({ entry, onClose, canSeeMoney }: { entry: CostEntry; onCl
         </Field>
         <Field label="비용 성격" htmlFor="e-imp">
           <select id="e-imp" className={inputCls} value={impact} onChange={(e) => setImpact(e.target.value as "additional" | "within_forecast")}>
-            <option value="additional">{IMPACT_LABEL.additional} (EAC 증가)</option>
-            <option value="within_forecast">{IMPACT_LABEL.within_forecast} (EAC 불변)</option>
+            <option value="additional">{IMPACT_LABEL.additional} (예상 총원가 증가)</option>
+            <option value="within_forecast">{IMPACT_LABEL.within_forecast} (예상 총원가 그대로)</option>
           </select>
         </Field>
         <Field label="메모" htmlFor="e-note">

@@ -104,7 +104,7 @@ export default function ReportPage() {
               <tr className="border-y border-line bg-surface-2 text-left text-[0.74rem] font-semibold text-ink-3">
                 <th className="px-5 py-2.5">현장</th>
                 <th className="px-3 py-2.5 text-right" title="승인된 변경계약 포함">계약금액</th>
-                <th className="px-3 py-2.5 text-right">EAC 기준 → 현재</th>
+                <th className="px-3 py-2.5 text-right">예상 총원가 기준 → 현재</th>
                 <th className="px-3 py-2.5 text-right">예상이익 기준 → 현재</th>
                 <th className="px-3 py-2.5 text-right">이익률 기준 → 현재</th>
                 <th className="px-3 py-2.5 text-right">승인 대기 변경</th>
@@ -169,7 +169,7 @@ export default function ReportPage() {
                     <p className="flex flex-wrap items-center gap-1.5">
                       <b>{s?.shortName}</b> {CATEGORY_LABEL[e.category]} <b className="num">{fmtMan(e.amount)}</b>
                       <Badge tone={e.forecastImpact === "additional" ? "err" : "neutral"}>{IMPACT_LABEL[e.forecastImpact]}</Badge>
-                      {e.status === "voided" ? <Badge>무효</Badge> : <span className="text-[0.74rem] font-bold text-err num">EAC {impact ? `+${fmtMan(impact)}` : "변동 없음"}</span>}
+                      {e.status === "voided" ? <Badge>무효</Badge> : <span className="text-[0.74rem] font-bold text-err num">예상 총원가 {impact ? `+${fmtMan(impact)}` : "변동 없음"}</span>}
                     </p>
                     <p className="text-[0.75rem] text-ink-3">
                       {fmtDateTime(e.createdAt)} · {REASON_LABEL[e.reason]} · {userLabel(db, e.createdBy)}

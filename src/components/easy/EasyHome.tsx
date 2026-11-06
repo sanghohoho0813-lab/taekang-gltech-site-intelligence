@@ -162,7 +162,7 @@ export function MyRecords({ db, userId, limit }: { db: DemoDB; userId: string; l
           return (
             <li key={r.id} className={cx("rounded-2xl border-2 border-line bg-surface p-4", voided && "opacity-65")} data-testid="record-item">
               <p className="flex flex-wrap items-center gap-x-2 text-[1.02rem] font-semibold text-ink-2">
-                <b className="text-[1.12rem] text-ink">{site?.shortName}</b>
+                <b className="min-w-0 text-[1.12rem] text-ink [overflow-wrap:anywhere]">{site?.shortName}</b>
                 {easyDate(r.reportDate)}
                 {r.photoIds.length > 0 && <span>· 사진 {r.photoIds.length}장</span>}
                 {voided && <span className="font-bold text-ink-3">· 취소함</span>}

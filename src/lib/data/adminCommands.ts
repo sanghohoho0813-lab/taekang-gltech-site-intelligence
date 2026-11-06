@@ -198,7 +198,7 @@ export function updateForecast(db0: DemoDB, input: UpdateForecastInput, ctx: Ctx
   }
   const after = siteFinancials(db, input.siteId);
   const site = requireSite(db, input.siteId);
-  log(db, ctx, "forecast", `${site.shortName} 잔여예상원가 재추정 ${fmtEok(before.remaining)} → ${fmtEok(after.remaining)} · EAC ${fmtEok(before.eac)} → ${fmtEok(after.eac)}`, input.siteId, `/sites/${input.siteId}`);
+  log(db, ctx, "forecast", `${site.shortName} 잔여예상원가 재추정 ${fmtEok(before.remaining)} → ${fmtEok(after.remaining)} · 예상 총원가 ${fmtEok(before.eac)} → ${fmtEok(after.eac)}`, input.siteId, `/sites/${input.siteId}`);
   touch(db, ctx);
   return { db, result: { before, after } };
 }
@@ -306,7 +306,7 @@ export function reviewCostEntry(db0: DemoDB, input: ReviewCostEntryInput, ctx: C
     ctx,
     "cost_review",
     input.decision === "approve"
-      ? `${site.shortName} ${CATEGORY_LABEL[e.category]} ${fmtMan(e.amount)} 공무 확인 → 손익 반영 (EAC ${fmtEok(before.eac)} → ${fmtEok(after.eac)})`
+      ? `${site.shortName} ${CATEGORY_LABEL[e.category]} ${fmtMan(e.amount)} 공무 확인 → 손익 반영 (예상 총원가 ${fmtEok(before.eac)} → ${fmtEok(after.eac)})`
       : `${site.shortName} ${CATEGORY_LABEL[e.category]} ${fmtMan(e.amount)} 공무 반려 — ${e.reviewNote}`,
     e.siteId,
     `/sites/${e.siteId}`,

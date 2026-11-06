@@ -64,7 +64,7 @@ export function computeSignals(db: DemoDB, now = new Date()): RiskSignal[] {
         summary: `계획 대비 예상이익이 ${fmtMan(plannedProfit - f.expectedProfit)} 줄었습니다.`,
         why: [
           `계획 이익률 ${fmtPct(f.plannedMarginPct)} = (계약 ${fmtEok(f.contractAmount)} − 실행예산 ${fmtEok(f.plannedCost)}) ÷ 계약`,
-          `현재 총예상원가(EAC) ${fmtEok(f.eac)} = 발생 ${fmtEok(f.incurred)} + 잔여예상 ${fmtEok(f.remaining)}`,
+          `현재 예상 총원가 ${fmtEok(f.eac)} = 발생 ${fmtEok(f.incurred)} + 잔여예상 ${fmtEok(f.remaining)}`,
           additionalSum > 0
             ? `예상 외 추가원가 ${fmtMan(additionalSum)} — ${recent.map((e) => `${CATEGORY_LABEL[e.category]} ${fmtMan(e.amount)}`).join(", ")}`
             : `잔여예상원가 상향 또는 변경공사 미반영`,
@@ -119,12 +119,12 @@ export function computeSignals(db: DemoDB, now = new Date()): RiskSignal[] {
           title: `${name} ${CATEGORY_LABEL[c.category]} 예산 ${fmtPct(c.variancePct)} 초과`,
           summary: `${CATEGORY_LABEL[c.category]} 예상원가가 실행예산보다 ${fmtMan(c.variance)} 많습니다.`,
           why: [
-            `실행예산 ${fmtEok(c.budget)} vs 항목 EAC ${fmtEok(c.eac)} (발생 ${fmtEok(c.incurred)} + 잔여 ${fmtEok(c.remaining)})`,
+            `실행예산 ${fmtEok(c.budget)} vs 항목 예상원가 ${fmtEok(c.eac)} (발생 ${fmtEok(c.incurred)} + 잔여 ${fmtEok(c.remaining)})`,
             causes.length ? `최근 추가원가: ${causes.map((e) => fmtMan(e.amount)).join(", ")}` : `잔여예상원가 상향`,
             `초과율 ${fmtPct(c.variancePct)} > 기준 ${t.overrunPct}%`,
           ],
           dataUsed: ["cost_budgets", "cost_entries", "cost_forecasts"],
-          threshold: `항목 EAC가 실행예산 대비 ${t.overrunPct}% 초과`,
+          threshold: `항목 예상원가가 실행예산 대비 ${t.overrunPct}% 초과`,
           metric: { label: `${CATEGORY_LABEL[c.category]} 초과`, current: fmtMan(c.variance) },
           recommendation: {
             actionTitle: `${CATEGORY_LABEL[c.category]} 잔여 발주 단가·물량 재검토`,
@@ -148,7 +148,7 @@ export function computeSignals(db: DemoDB, now = new Date()): RiskSignal[] {
         title: `${name} 원가 진척 ${fmtPct(f.costProgressPct)} > 공정률 ${fmtPct(f.physicalProgressPct)}`,
         summary: `공정보다 원가가 ${fmtPp(gap)} 앞서 나가고 있습니다.`,
         why: [
-          `원가 진척률 = 발생 ${fmtEok(f.incurred)} ÷ EAC ${fmtEok(f.eac)}`,
+          `원가 진척률 = 발생 ${fmtEok(f.incurred)} ÷ 예상 총원가 ${fmtEok(f.eac)}`,
           `현장 보고 공정률 ${fmtPct(f.physicalProgressPct)}`,
           `차이 ${fmtPp(gap)} > 기준 ${t.costProgressGapPp}%p`,
         ],

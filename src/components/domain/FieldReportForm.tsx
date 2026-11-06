@@ -252,7 +252,7 @@ export function FieldReportForm({ fixedSiteId, onClose, inSheet = false }: { fix
             {canSeeMoney && done.before && done.after ? (
               <dl className="mt-2 grid grid-cols-3 gap-2 text-center">
                 {[
-                  ["총예상원가", fmtEok(done.before.eac), fmtEok(done.after.eac)],
+                  ["예상 총원가", fmtEok(done.before.eac), fmtEok(done.after.eac)],
                   ["예상이익", fmtEok(done.before.expectedProfit), fmtEok(done.after.expectedProfit)],
                   ["이익률", fmtPct(done.before.marginPct), fmtPct(done.after.marginPct)],
                 ].map(([k, a, b]) => (
@@ -517,7 +517,7 @@ export function FieldReportForm({ fixedSiteId, onClose, inSheet = false }: { fix
             <p className="font-bold text-ink">저장하면 이렇게 반영됩니다 (미리보기 · 아직 저장 전)</p>
             {canSeeMoney ? (
               <p className="mt-0.5 num text-ink-2">
-                EAC {fmtEok(preview.before.eac)} → <b>{fmtEok(preview.after.eac)}</b> · 예상이익 {fmtEok(preview.before.expectedProfit)} → <b>{fmtEok(preview.after.expectedProfit)}</b> · 이익률 {fmtPct(preview.before.marginPct)} → <b>{fmtPct(preview.after.marginPct)}</b>
+                예상 총원가 {fmtEok(preview.before.eac)} → <b>{fmtEok(preview.after.eac)}</b> · 예상이익 {fmtEok(preview.before.expectedProfit)} → <b>{fmtEok(preview.after.expectedProfit)}</b> · 이익률 {fmtPct(preview.before.marginPct)} → <b>{fmtPct(preview.after.marginPct)}</b>
               </p>
             ) : (
               // 현장 화면은 실행예산 정보가 없으므로 입력한 비용 성격 기준으로 안내 (금액 계산은 본사 화면에서)

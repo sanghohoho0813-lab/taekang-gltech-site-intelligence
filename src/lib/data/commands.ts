@@ -300,7 +300,7 @@ export function submitFieldReport(db0: DemoDB, input: FieldReportInput, ctx: Ctx
     costs.length
       ? pendingReview
         ? `${site.shortName} 현장보고 + 원가 ${costs.length}건 ${fmtMan(costSum)} 등록 → 본사 공무 확인 대기 (손익 미반영)`
-        : `${site.shortName} 현장보고 + 원가 ${costs.length}건 ${fmtMan(costSum)} 등록 → EAC ${fmtEok(before.eac)} → ${fmtEok(after.eac)}`
+        : `${site.shortName} 현장보고 + 원가 ${costs.length}건 ${fmtMan(costSum)} 등록 → 예상 총원가 ${fmtEok(before.eac)} → ${fmtEok(after.eac)}`
       : `${site.shortName} 현장보고 등록 (원가 변동 없음)`,
     input.siteId,
     `/sites/${input.siteId}`,
@@ -322,7 +322,7 @@ export function voidCostEntry(db0: DemoDB, entryId: string, reason: string, ctx:
   e.voidedBy = ctx.userId;
   e.voidReason = reason || "되돌리기";
   const after = siteFinancials(db, e.siteId);
-  log(db, ctx, "cost_void", `${CATEGORY_LABEL[e.category]} ${fmtMan(e.amount)} 무효 처리 (${e.voidReason}) → EAC ${fmtEok(before.eac)} → ${fmtEok(after.eac)}`, e.siteId, `/sites/${e.siteId}`);
+  log(db, ctx, "cost_void", `${CATEGORY_LABEL[e.category]} ${fmtMan(e.amount)} 무효 처리 (${e.voidReason}) → 예상 총원가 ${fmtEok(before.eac)} → ${fmtEok(after.eac)}`, e.siteId, `/sites/${e.siteId}`);
   touch(db, ctx);
   return { db, result: { before, after } };
 }
@@ -367,7 +367,7 @@ export function voidReport(db0: DemoDB, reportId: string, ctx: Ctx) {
       return { ...w, status: r.workOrderFrom!, history: [...w.history, { at: nowIso(ctx), by: ctx.userId, to: r.workOrderFrom!, note: "현장 보고 되돌리기" }] };
     });
   }
-  log(db, ctx, "report_void", `${site.shortName} 현장보고 되돌리기 → EAC ${fmtEok(before.eac)} → ${fmtEok(after.eac)}${undone.length ? ` · ${undone.join(", ")}` : ""}`, r.siteId, `/sites/${r.siteId}`);
+  log(db, ctx, "report_void", `${site.shortName} 현장보고 되돌리기 → 예상 총원가 ${fmtEok(before.eac)} → ${fmtEok(after.eac)}${undone.length ? ` · ${undone.join(", ")}` : ""}`, r.siteId, `/sites/${r.siteId}`);
   touch(db, ctx);
   return { db, result: { before, after } };
 }
@@ -393,7 +393,7 @@ export function editCostEntry(
   if (patch.forecastImpact) e.forecastImpact = patch.forecastImpact;
   e.editedAt = nowIso(ctx);
   const after = siteFinancials(db, e.siteId);
-  log(db, ctx, "cost_edit", `원가 수정 ${CATEGORY_LABEL[e.category]} → ${fmtMan(e.amount)} · EAC ${fmtEok(before.eac)} → ${fmtEok(after.eac)}`, e.siteId, `/sites/${e.siteId}`);
+  log(db, ctx, "cost_edit", `원가 수정 ${CATEGORY_LABEL[e.category]} → ${fmtMan(e.amount)} · 예상 총원가 ${fmtEok(before.eac)} → ${fmtEok(after.eac)}`, e.siteId, `/sites/${e.siteId}`);
   touch(db, ctx);
   return { db, result: { before, after } };
 }
@@ -585,13 +585,13 @@ export function completeAction(db0: DemoDB, actionId: string, input: CompleteAct
     kpi_before: {
       "예상이익률": fmtPct(a.kpiBefore.marginPct),
       "예상이익": fmtEok(a.kpiBefore.expectedProfit),
-      "총예상원가(EAC)": fmtEok(a.kpiBefore.eac),
+      "예상 총원가": fmtEok(a.kpiBefore.eac),
       "청구 검토·승인대기 변경공사": fmtMan(a.kpiBefore.pendingClaimAmount),
     },
     kpi_after: {
       "예상이익률": fmtPct(fAfter.marginPct),
       "예상이익": fmtEok(fAfter.expectedProfit),
-      "총예상원가(EAC)": fmtEok(fAfter.eac),
+      "예상 총원가": fmtEok(fAfter.eac),
       "청구 검토·승인대기 변경공사": fmtMan(fAfter.pendingChangeAmount),
     },
     data_source: IS_LIVE ? "LIVE" : "DEMO_LOCAL",

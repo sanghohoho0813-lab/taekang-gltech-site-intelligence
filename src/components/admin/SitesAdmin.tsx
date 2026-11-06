@@ -45,7 +45,7 @@ export function SitesAdmin({ db }: { db: DemoDB }) {
                 <th className="px-3 py-2.5">원청·발주처</th>
                 <th className="px-3 py-2.5">상태</th>
                 <th className="px-3 py-2.5 text-right">계약금액</th>
-                <th className="px-3 py-2.5 text-right">총예상원가</th>
+                <th className="px-3 py-2.5 text-right">예상 총원가</th>
                 <th className="px-3 py-2.5 text-right">이익률</th>
                 <th className="px-3 py-2.5">공정률</th>
                 <th className="px-3 py-2.5">현장 담당</th>
@@ -311,7 +311,7 @@ function ForecastModal({ db, site, onClose }: { db: DemoDB; site: Site; onClose:
     setBusy(true);
     try {
       await run("updateForecast", { siteId: site.id, remaining: nums, note });
-      toast.push({ tone: "ok", title: "잔여예상원가를 다시 잡았습니다", desc: `EAC ${fmtEok(f.eac)} → ${fmtEok(preview.newEac)}` });
+      toast.push({ tone: "ok", title: "잔여예상원가를 다시 잡았습니다", desc: `예상 총원가 ${fmtEok(f.eac)} → ${fmtEok(preview.newEac)}` });
       onClose();
     } catch (e) {
       if (e instanceof CommandError) setErrors(e.fieldErrors);
@@ -375,7 +375,7 @@ function ForecastModal({ db, site, onClose }: { db: DemoDB; site: Site; onClose:
             </tbody>
           </table>
         </div>
-        <Notice tone={preview.newMargin < f.marginPct ? "warn" : "info"} title={`저장하면: EAC ${fmtEok(f.eac)} → ${fmtEok(preview.newEac)} · 이익률 ${fmtPct(f.marginPct)} → ${fmtPct(preview.newMargin)} (${fmtPp(preview.newMargin - f.marginPct)})`} />
+        <Notice tone={preview.newMargin < f.marginPct ? "warn" : "info"} title={`저장하면: 예상 총원가 ${fmtEok(f.eac)} → ${fmtEok(preview.newEac)} · 이익률 ${fmtPct(f.marginPct)} → ${fmtPct(preview.newMargin)} (${fmtPp(preview.newMargin - f.marginPct)})`} />
         <Field label="재추정 사유 (이력에 남음)" htmlFor="fc-note" error={errors.note}>
           <input id="fc-note" className={inputCls} value={note} maxLength={200} onChange={(e) => setNote(e.target.value)} placeholder="예) 11월 공정회의 — 잔여 유리 물량·단가 재확인" />
         </Field>

@@ -237,7 +237,7 @@ export const inputCls =
 
 export function Segmented<T extends string>({ value, onChange, options, label, size = "md" }: { value: T; onChange: (v: T) => void; options: { value: T; label: ReactNode; icon?: ReactNode; testId?: string }[]; label: string; size?: "sm" | "md" | "lg" }) {
   return (
-    <div role="radiogroup" aria-label={label} className="inline-flex rounded-xl border border-line bg-surface-2 p-1 gap-1">
+    <div role="radiogroup" aria-label={label} className="inline-flex max-w-full flex-wrap rounded-xl border border-line bg-surface-2 p-1 gap-1">
       {options.map((o) => {
         const on = o.value === value;
         return (

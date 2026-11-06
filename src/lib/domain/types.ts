@@ -30,10 +30,10 @@ export function worksOnSite(u: DemoUser, site: Pick<Site, "id" | "fieldUserId">)
 export type CostCategory = "material" | "labor" | "subcontract" | "equipment" | "overhead";
 
 /**
- * 원가 이벤트가 EAC(총예상원가)에 반영되는 방식.
+ * 원가 이벤트가 EAC(예상 총원가)에 반영되는 방식.
  * - baseline: 기준 시점에 이미 잔여예상원가 산정에 반영된 발생원가 (시드)
- * - additional: 예상 외 추가원가 → 발생원가 증가, 잔여예상 유지 → EAC 증가
- * - within_forecast: 계획 내 집행 → 발생원가 증가, 잔여예상 차감 → EAC 불변
+ * - additional: 예상 외 추가원가 → 발생원가 증가, 잔여예상 유지 → 예상 총원가 증가
+ * - within_forecast: 계획 내 집행 → 발생원가 증가, 잔여예상 차감 → 예상 총원가 그대로
  */
 export type ForecastImpact = "baseline" | "additional" | "within_forecast";
 

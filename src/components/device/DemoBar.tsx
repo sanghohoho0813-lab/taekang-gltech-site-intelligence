@@ -133,7 +133,7 @@ export function DemoBar({ active }: { active: boolean }) {
         onConfirm={() => {
           resetDemo();
           setConfirm(false);
-          toast.push({ tone: "ok", title: "데모를 초기 상태로 되돌렸습니다", desc: "A현장: 계약 10억 · EAC 8.5억 · 예상이익 1.5억 · 15%" });
+          toast.push({ tone: "ok", title: "데모를 초기 상태로 되돌렸습니다", desc: "A현장: 계약 10억 · 예상 총원가 8.5억 · 예상이익 1.5억 · 15%" });
         }}
       />
     </div>

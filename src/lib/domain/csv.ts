@@ -10,7 +10,7 @@ export const CSV_FIELD_GUIDE: { name: string; required: boolean; desc: string; e
   { name: "date", required: true, desc: "발생일 YYYY-MM-DD", example: "2026-10-20" },
   { name: "category", required: true, desc: "material(자재) · labor(노무) · subcontract(외주) · equipment(장비) · overhead(경비)", example: "material" },
   { name: "amount", required: true, desc: "원 단위 정수, 공급가액(부가세 별도), 쉼표 허용", example: "12000000" },
-  { name: "forecast_impact", required: true, desc: "additional(예상 외 추가원가, EAC 증가) · within_forecast(계획 내 집행, EAC 불변)", example: "within_forecast" },
+  { name: "forecast_impact", required: true, desc: "additional(예상 외 추가원가, 예상 총원가 증가) · within_forecast(계획 내 집행, 예상 총원가 그대로)", example: "within_forecast" },
   { name: "reason", required: true, desc: "design_change · price_increase · quantity_increase · rework · schedule · planned · other", example: "planned" },
   { name: "note", required: false, desc: "메모 (200자 이내)", example: "알루미늄 프레임 2차 입고" },
 ];
