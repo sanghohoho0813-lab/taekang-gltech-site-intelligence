@@ -139,6 +139,12 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
   // LIVE에서는 서버가 담당 현장만 보낸다. DEMO 현장직원은 담당 현장만.
   const sites = useMemo<Site[]>(() => (!db ? [] : role === "field" && !IS_LIVE ? db.sites.filter((s) => s.fieldUserId === userId) : db.sites), [db, role, userId]);
   const initialSite = fixedSiteId ?? (sites.length === 1 ? sites[0].id : "");
+  // 오늘 출근한 현장 — 두 현장 담당자에게 맨 위에 ‘오늘 출근’으로 보이고, 다른 현장을 고르면 확인 화면에서 한 번 묻는다 (D-68)
+  const checkedIn = useMemo(() => {
+    const t = todayIso();
+    return new Set((db?.attendance ?? []).filter((r) => r.userId === userId && r.workDate === t).map((r) => r.siteId));
+  }, [db, userId]);
+  const siteList = useMemo(() => [...sites].sort((a, b) => Number(checkedIn.has(b.id)) - Number(checkedIn.has(a.id))), [sites, checkedIn]);
   const [d, setD] = useState<Draft>(() => emptyDraft(initialSite));
   const [photos, setPhotos] = useState<string[]>([]);
   const [memo, setMemo] = useState("");
@@ -549,11 +555,20 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
       body = (
         <EasyQuestion title="어느 현장 보고인가요?">
           <div className="space-y-2.5">
-            {sites.map((s) => (
+            {siteList.map((s) => (
               <Choice
                 key={s.id}
                 icon={<HardHat size={24} />}
-                label={s.shortName}
+                label={
+                  <span className="flex flex-wrap items-center gap-2">
+                    {s.shortName}
+                    {checkedIn.has(s.id) && sites.length > 1 && (
+                      <span className="rounded-lg bg-ok-bg px-2 py-0.5 text-[0.92rem] font-bold text-ok" data-testid="site-checked-in">
+                        오늘 출근
+                      </span>
+                    )}
+                  </span>
+                }
                 sub={s.workType}
                 selected={d.siteId === s.id}
                 onClick={() => {
@@ -1024,8 +1039,21 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
         </div>
       );
       const hasWork = mode !== "full" || d.work.length > 0 || !!d.workText.trim() || !!linkedOrder;
+      const otherSiteToday = d.reportDate === todayIso() && checkedIn.size > 0 && !checkedIn.has(d.siteId) ? sites.filter((x) => checkedIn.has(x.id)).map((x) => x.shortName).join("·") || null : null;
       body = (
         <EasyQuestion title="이렇게 보낼까요?" help="맞으면 맨 아래 ‘본사로 보내기’를 누르세요." testId="easy-confirm">
+          {otherSiteToday && (
+            <div className="rounded-2xl border-2 border-warn/45 bg-warn-bg px-4 py-3 text-[1.05rem]" data-testid="confirm-other-site">
+              <p className="font-bold text-ink">
+                오늘 출근한 현장은 {otherSiteToday}이에요. {site?.shortName} 보고가 맞나요?
+              </p>
+              {!fixedSiteId && (
+                <button type="button" onClick={() => { setReturnToConfirm(false); go("site"); }} className="press mt-2 inline-flex min-h-12 items-center rounded-xl border-2 border-line-strong bg-surface px-3.5 text-[1rem] font-bold">
+                  현장 바꾸기
+                </button>
+              )}
+            </div>
+          )}
           <div className="rounded-2xl border-2 border-line bg-surface px-4">
             {row(
               "날짜",

@@ -99,7 +99,7 @@ export default function ReportPage() {
       <Card className="print-card @container">
         <CardHeader title="2. 현장별 변경 전후 손익" sub={`시작 = ${BASE_LABEL} · 단위 억 원 · 부가세 별도 · 승인 전 변경공사는 이익 미반영`} />
         {/* 휴대폰: 현장마다 카드 (7칸 표는 이익·미수가 화면 밖으로 밀려 안 보였다 · D-66) */}
-        <ul className="divide-y divide-line border-t border-line @min-[50rem]:hidden print:hidden" data-testid="report-compare-cards">
+        <ul className="divide-y divide-line border-t border-line @min-[56rem]:hidden print:hidden" data-testid="report-compare-cards">
           {db.sites.map((s) => {
             const f = fin[s.id];
             const b = db.baseline[s.id];
@@ -117,27 +117,29 @@ export default function ReportPage() {
                   <Link href={`/sites/${s.id}`} className="min-w-0 font-bold [overflow-wrap:anywhere] hover:text-theme-ink hover:underline">
                     {s.shortName}
                   </Link>
-                  <span className="num shrink-0 text-[0.8rem] text-ink-3">계약 {fmtEok(f.adjustedContract, { unit: false })}</span>
+                  <span className="num shrink-0 text-[0.8rem] text-ink-3">계약 {fmtEok(f.adjustedContract, { unit: false, fixed: true })}</span>
                 </div>
                 <dl className="space-y-1">
-                  {row("예상 총원가", <>{fmtEok(b.eac, { unit: false })} → <b>{fmtEok(f.eac, { unit: false })}</b></>)}
-                  {row("예상이익", <>{fmtEok(b.expectedProfit, { unit: false })} → <b className={cx(f.expectedProfit < b.expectedProfit && "text-err")}>{fmtEok(f.expectedProfit, { unit: false })}</b></>)}
-                  {row("이익률", <>{fmtPct(b.marginPct)} → <b className={cx(f.marginPct < b.marginPct - 0.05 && "text-err")}>{fmtPct(f.marginPct)}</b></>)}
-                  {f.pendingChangeAmount > 0 && row("승인 대기 변경", <>{fmtEok(f.pendingChangeAmount, { unit: false })} <span className="text-[0.72rem] text-ink-3">(승인 시 {fmtPct(sim.marginPct)})</span></>)}
-                  {row("미수금", fmtEok(f.outstanding, { unit: false }))}
+                  {row("예상 총원가", <>{fmtEok(b.eac, { unit: false, fixed: true })} → <b>{fmtEok(f.eac, { unit: false, fixed: true })}</b></>)}
+                  {row("예상이익", <>{fmtEok(b.expectedProfit, { unit: false, fixed: true })} → <b className={cx(f.expectedProfit < b.expectedProfit && "text-err")}>{fmtEok(f.expectedProfit, { unit: false, fixed: true })}</b></>)}
+                  {row("계약 계획 이익률", fmtPct(f.plannedMarginPct))}
+                  {row(`이익률 (${BASE_LABEL} → 현재)`, <>{fmtPct(b.marginPct)} → <b className={cx(f.marginPct < b.marginPct - 0.05 && "text-err")}>{fmtPct(f.marginPct)}</b></>)}
+                  {f.pendingChangeAmount > 0 && row("승인 대기 변경", <>{fmtEok(f.pendingChangeAmount, { unit: false, fixed: true })} <span className="text-[0.72rem] text-ink-3">(승인 시 {fmtPct(sim.marginPct)})</span></>)}
+                  {row("미수금", fmtEok(f.outstanding, { unit: false, fixed: true }))}
                 </dl>
               </li>
             );
           })}
         </ul>
-        <div tabIndex={0} role="region" aria-label="현장별 변경 전후 손익 표 (가로 스크롤)" className="hidden overflow-x-auto scroll-thin @min-[50rem]:block print:block">
-          <table className="w-full min-w-[50rem] text-[0.84rem]" data-testid="report-compare">
+        <div tabIndex={0} role="region" aria-label="현장별 변경 전후 손익 표 (가로 스크롤)" className="hidden overflow-x-auto scroll-thin @min-[56rem]:block print:block">
+          <table className="w-full min-w-[56rem] text-[0.84rem]" data-testid="report-compare">
             <thead>
               <tr className="border-y border-line bg-surface-2 text-left text-[0.74rem] font-semibold text-ink-3">
                 <th className="px-5 py-2.5">현장</th>
                 <th className="px-3 py-2.5 text-right" title="승인된 변경계약 포함">계약금액</th>
                 <th className="px-3 py-2.5 text-right">예상 총원가 (시작 → 현재)</th>
                 <th className="px-3 py-2.5 text-right">예상이익 (시작 → 현재)</th>
+                <th className="px-3 py-2.5 text-right" title="계약 때 실행예산으로 잡은 이익률 — 대시보드 ‘계약 계획’과 같은 값">계약 계획 이익률</th>
                 <th className="px-3 py-2.5 text-right">이익률 (시작 → 현재)</th>
                 <th className="px-3 py-2.5 text-right">승인 대기 변경</th>
                 <th className="px-5 py-2.5 text-right">미수금</th>
@@ -156,27 +158,28 @@ export default function ReportPage() {
                         {s.shortName}
                       </Link>
                     </td>
-                    <td className="px-3 py-2.5 text-right num">{fmtEok(f.adjustedContract, { unit: false })}</td>
+                    <td className="px-3 py-2.5 text-right num">{fmtEok(f.adjustedContract, { unit: false, fixed: true })}</td>
                     <td className="px-3 py-2.5 text-right num">
-                      {fmtEok(b.eac, { unit: false })} → <b>{fmtEok(f.eac, { unit: false })}</b>
+                      {fmtEok(b.eac, { unit: false, fixed: true })} → <b>{fmtEok(f.eac, { unit: false, fixed: true })}</b>
                     </td>
                     <td className="px-3 py-2.5 text-right num">
-                      {fmtEok(b.expectedProfit, { unit: false })} → <b className={cx(f.expectedProfit < b.expectedProfit && "text-err")}>{fmtEok(f.expectedProfit, { unit: false })}</b>
+                      {fmtEok(b.expectedProfit, { unit: false, fixed: true })} → <b className={cx(f.expectedProfit < b.expectedProfit && "text-err")}>{fmtEok(f.expectedProfit, { unit: false, fixed: true })}</b>
                     </td>
+                    <td className="px-3 py-2.5 text-right num text-ink-2">{fmtPct(f.plannedMarginPct)}</td>
                     <td className="px-3 py-2.5 text-right num">
                       {fmtPct(b.marginPct)} → <b className={cx(f.marginPct < b.marginPct - 0.05 && "text-err")}>{fmtPct(f.marginPct)}</b>
                     </td>
                     <td className="px-3 py-2.5 text-right num">
                       {f.pendingChangeAmount ? (
                         <>
-                          {fmtEok(f.pendingChangeAmount, { unit: false })}
+                          {fmtEok(f.pendingChangeAmount, { unit: false, fixed: true })}
                           <span className="block text-[0.7rem] text-ink-3">승인 시 {fmtPct(sim.marginPct)} (시뮬레이션)</span>
                         </>
                       ) : (
                         "—"
                       )}
                     </td>
-                    <td className="px-5 py-2.5 text-right num">{fmtEok(f.outstanding, { unit: false })}</td>
+                    <td className="px-5 py-2.5 text-right num">{fmtEok(f.outstanding, { unit: false, fixed: true })}</td>
                   </tr>
                 );
               })}

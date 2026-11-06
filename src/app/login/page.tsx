@@ -23,9 +23,12 @@ function LoginForm() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [needsSetup, setNeedsSetup] = useState(false);
+  // 이 휴대폰에 이미 로그인된 사람 — 로그인 쪽지 QR로 다른 사람이 들어오면 앞 사람을 정리하고 바꾼다 (D-68)
+  const [current, setCurrent] = useState<{ id: string; email: string; name: string; role: RoleId; mustChangePassword: boolean } | null>(null);
 
   useEffect(() => {
     void api<{ needsSetup: boolean }>("/api/setup").then((r) => setNeedsSetup(!!r.data?.needsSetup));
+    void api<{ me: { id: string; email: string; name: string; role: RoleId; mustChangePassword: boolean } }>("/api/auth/me").then((r) => setCurrent(r.ok && r.data?.me ? r.data.me : null));
     // 이 휴대폰에서 마지막으로 쓴 아이디를 미리 채워 둔다 (비밀번호는 저장하지 않음)
     // 로그인 쪽지 QR로 들어오면 그 사람 아이디를 채운다 (D-67) — 없으면 이 휴대폰에서 마지막으로 쓴 아이디
     const fromQr = params.get("id")?.trim().toLowerCase();
@@ -51,6 +54,13 @@ function LoginForm() {
     }
     setBusy(true);
     setError(null);
+    // 다른 사람으로 바꿔 로그인: 앞 사람의 이 휴대폰 알림 구독·보관 중인 출퇴근 좌표를 지우고 로그아웃한 뒤 로그인 (로그아웃 버튼과 같은 정리)
+    if (current && current.email.toLowerCase() !== email.trim().toLowerCase()) {
+      await import("@/lib/browser/outbox").then((m) => m.scrubQueuedLocation(current.id)).catch(() => {});
+      await import("@/lib/browser/push").then((m) => m.unsubscribeThisDevice()).catch(() => {});
+      await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" }).catch(() => {});
+      setCurrent(null);
+    }
     const r = await api<{ me: { role: RoleId; mustChangePassword: boolean } }>("/api/auth/login", { body: { email: email.trim(), password } });
     if (!r.ok || !r.data) {
       setError(r.error);
@@ -76,6 +86,20 @@ function LoginForm() {
           </Link>
           부터 진행하세요.
         </Notice>
+      )}
+      {current && (
+        <div className="mt-3 rounded-2xl border-2 border-line bg-surface-2 px-4 py-3.5 text-[1.05rem]" data-testid="login-current">
+          <p className="font-bold text-ink">이 휴대폰은 지금 {current.name}님으로 로그인되어 있어요.</p>
+          <button
+            type="button"
+            onClick={() => window.location.assign(current.mustChangePassword ? "/account?force=1" : (safeNext(params.get("next")) ?? homeFor(current.role)))}
+            className="press mt-2.5 inline-flex min-h-12 w-full items-center justify-center rounded-full border-2 border-line-strong bg-surface px-4 text-[1.08rem] font-extrabold"
+            data-testid="login-continue"
+          >
+            {current.name}님으로 계속하기
+          </button>
+          <p className="mt-2 text-[0.98rem] text-ink-2">다른 분이면 아래에 아이디·비밀번호를 넣으세요. 앞 사람은 이 휴대폰에서 로그아웃됩니다.</p>
+        </div>
       )}
       <form onSubmit={submit} className="mt-3 space-y-5" noValidate data-testid="login-form">
         <div>

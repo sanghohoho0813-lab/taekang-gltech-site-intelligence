@@ -147,13 +147,13 @@ function CeoDashboard() {
                       <span>
                         예상 총원가
                         <b className="block text-[0.95rem] text-ink num">
-                          <CountUp value={f.eac} format={(v) => fmtEok(v, { unit: false })} />
+                          <CountUp value={f.eac} format={(v) => fmtEok(v, { unit: false, fixed: true })} />
                         </b>
                       </span>
                       <span>
                         예상이익
                         <b className={cx("block text-[0.95rem] num", f.expectedProfit < 0 ? "text-err" : "text-ink")}>
-                          <CountUp value={f.expectedProfit} format={(v) => fmtEok(v, { unit: false })} />
+                          <CountUp value={f.expectedProfit} format={(v) => fmtEok(v, { unit: false, fixed: true })} />
                         </b>
                       </span>
                       <span>
@@ -192,12 +192,12 @@ function CeoDashboard() {
                           <span className="block max-w-[17rem] truncate text-[0.75rem] text-ink-3">{s.name}</span>
                         </Link>
                       </td>
-                      <td className="px-3 py-3 text-right num">{fmtEok(f.adjustedContract, { unit: false })}</td>
+                      <td className="px-3 py-3 text-right num">{fmtEok(f.adjustedContract, { unit: false, fixed: true })}</td>
                       <td className="px-3 py-3 text-right num font-semibold">
-                        <CountUp value={f.eac} format={(v) => fmtEok(v, { unit: false })} />
+                        <CountUp value={f.eac} format={(v) => fmtEok(v, { unit: false, fixed: true })} />
                       </td>
                       <td className={cx("px-3 py-3 text-right num font-bold", f.expectedProfit < 0 ? "text-err" : "text-ink")}>
-                        <CountUp value={f.expectedProfit} format={(v) => fmtEok(v, { unit: false })} />
+                        <CountUp value={f.expectedProfit} format={(v) => fmtEok(v, { unit: false, fixed: true })} />
                       </td>
                       <td className="whitespace-nowrap px-3 py-3 text-right num">
                         <span className="text-ink-3">{fmtPct(f.plannedMarginPct)} → </span>

@@ -87,7 +87,9 @@ export const DATA_VOLUME_WARN = 45_000;
 export function companyReadiness(db: DemoDB): ReadyItem[] {
   const s = db.settings;
   const items: ReadyItem[] = [];
-  items.push({ key: "help-phone", label: "본사 전화 (현장 화면 ‘본사 전화’ 버튼)", status: s?.helpPhone ? "ok" : "warn", text: s?.helpPhone ?? "번호 없음 — 현장 직원이 화면에서 바로 전화할 수 없습니다 (시범 운영을 시작하기 전에는 꼭 넣어야 합니다 · ‘시범 운영 준비’ 참고)", fix: "settings" });
+  // 시범 운영 준비(/launch)와 같은 판정 — 없으면 ‘빠짐’ (앞에서는 ‘주의’, 뒤에서는 ‘빠짐’이라 헷갈리던 문제 · D-68)
+  const phone = s?.helpPhone?.trim();
+  items.push({ key: "help-phone", label: "본사 전화번호 (현장 화면 ‘본사에 전화하기’)", status: phone ? "ok" : "missing", text: phone || "없음 — 현장 직원이 화면에서 바로 전화할 수 없습니다. 시범 운영 전에 ‘현장 문의 전화번호’를 넣으세요", fix: "settings" });
   const qr = s?.attendanceMode === "qr";
   const sitesNoKiosk = qr ? db.sites.filter((x) => x.status === "active" && !(db.kiosks ?? []).some((k) => k.siteId === x.id && !k.revokedAt && k.pairedAt)) : [];
   items.push({

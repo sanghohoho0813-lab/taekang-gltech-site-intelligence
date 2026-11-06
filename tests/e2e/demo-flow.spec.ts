@@ -91,7 +91,7 @@ test("P0: 모바일 원가 입력 → PC 손익 재계산 → 위험 → 조치 
   await expect(page.getByTestId("report-bullets")).toContainText("15% → 11%");
   await expect(page.getByTestId("report-bullets")).toContainText("추가공사 청구가능성 검토");
   await expect(page.getByTestId("report-actions")).toContainText("결과 확인");
-  await expect(page.getByTestId("report-compare")).toContainText("8.5억 → 8.9억");
+  await expect(page.getByTestId("report-compare")).toContainText("8.50억 → 8.90억");
 
   expect(errors, errors.join("\n")).toEqual([]);
 });
