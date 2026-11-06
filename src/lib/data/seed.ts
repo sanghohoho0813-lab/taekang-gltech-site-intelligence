@@ -320,6 +320,31 @@ export function createSeed(now = new Date()): DemoDB {
       createdAt: dayOffset(now, -3),
       status: "submitted",
     },
+    // 지난 공정 진척 기록 (D-69) — 월간 보고서·공사일보·발주처 ‘공정 변화’가 처음부터 비어 보이지 않게.
+    // 지금 공정률까지 차례로 오른 기록이며 모두 본사 확인을 마쳤다 (처리 대기·금액에는 영향 없음)
+    ...([
+      [-38, "site-a", "3층 북측 커튼월 유닛 8개 설치.", [["site-a-stage-3", "커튼월 유닛 설치", 25, 30]], [52, 54]],
+      [-30, "site-a", "유닛 제작분 2차 입고 확인, 3층 서측 유닛 설치.", [["site-a-stage-2", "커튼월 유닛 제작", 80, 85], ["site-a-stage-3", "커튼월 유닛 설치", 30, 35]], [54, 55]],
+      [-23, "site-a", "2층 창호 프레임 설치 시작, 3층 유닛 설치 계속.", [["site-a-stage-3", "커튼월 유닛 설치", 35, 40], ["site-a-stage-4", "창호·유리 시공", 10, 15]], [55, 57]],
+      [-16, "site-a", "3층 남측 유닛 설치, 2층 창호 유리 끼움.", [["site-a-stage-3", "커튼월 유닛 설치", 40, 45], ["site-a-stage-4", "창호·유리 시공", 15, 20]], [57, 58]],
+      [-27, "site-b", "5~7층 단열유리 교체 38매.", [["site-b-stage-3", "단열유리 시공", 45, 52]], [66, 69]],
+      [-18, "site-b", "7~8층 단열유리 교체, 코킹 사전 점검.", [["site-b-stage-3", "단열유리 시공", 52, 60], ["site-b-stage-4", "코킹·마감", 5, 10]], [69, 72]],
+    ] as [number, string, string, [string, string, number, number][], [number, number]][]).map(([d, siteId, work, st, pg], i) => ({
+      id: `rpt-seed-hist-${i + 1}`,
+      siteId,
+      reportDate: dateOnly(dayOffset(now, d)),
+      workDone: work,
+      issues: "",
+      tomorrowPlan: "",
+      photoIds: [],
+      costEntryIds: [],
+      createdBy: "u-field",
+      createdAt: dayOffset(now, d),
+      status: "submitted" as const,
+      stages: st.map(([stageId, name, from, to]) => ({ stageId, name, from, to })),
+      progress: { from: pg[0], to: pg[1] },
+      review: { status: "confirmed" as const, at: dayOffset(now, d + 0.3), by: "u-manager" },
+    })),
   ];
 
   const partnerRequests: PartnerRequest[] = [
@@ -356,6 +381,29 @@ export function createSeed(now = new Date()): DemoDB {
         { at: dayOffset(now, -12), status: "received", by: "u-partner" },
         { at: dayOffset(now, -11), status: "reviewing", by: "u-manager" },
         { at: dayOffset(now, -11), status: "answered", by: "u-manager", note: "일정 안내" },
+      ],
+    },
+    // 지난 하자보수 한 건 (D-69) — 접수 → 작업지시 → 보수 → 회신 → 발주처 확인까지 끝난 기록 (사진 없음)
+    {
+      id: "pr-seed-a-defect-1",
+      siteId: "site-a",
+      partnerUserId: "u-partner",
+      type: "defect",
+      title: "2층 회의실 창 개폐 불량 (DEMO)",
+      description: "남측 창이 끝까지 닫히지 않고 손잡이가 헛돕니다.",
+      location: "2층 회의실 남측 창",
+      status: "answered",
+      createdAt: dayOffset(now, -20),
+      updatedAt: dayOffset(now, -15),
+      reply: "창 하부 롤러와 손잡이 기어를 교체했습니다. 개폐·잠금 정상 확인했습니다. (DEMO 회신)",
+      repliedBy: "u-manager",
+      linkedWorkOrderId: "wo-seed-defect-1",
+      confirmedAt: dayOffset(now, -15),
+      history: [
+        { at: dayOffset(now, -20), status: "received", by: "u-partner" },
+        { at: dayOffset(now, -19.8), status: "reviewing", by: "u-manager", note: "보수 작업 배정" },
+        { at: dayOffset(now, -16), status: "answered", by: "u-manager", note: "창 하부 롤러와 손잡이 기어를 교체했습니다. 개폐·잠금 정상 확인했습니다. (DEMO 회신)" },
+        { at: dayOffset(now, -15), status: "answered", by: "u-partner", note: "발주처 확인" },
       ],
     },
   ];
@@ -553,6 +601,27 @@ function seedAttendance(db: DemoDB, now: Date) {
   ].filter((q) => q.createdAt <= nowIsoStr) as DemoDB["attendanceRequests"];
   // 본사 작업지시 (가상)
   db.workOrders = [
+    // 지난 하자보수 작업지시 (D-69) — 발주처 요청 pr-seed-a-defect-1에서 보낸 것, 완료 확인까지 끝남
+    {
+      id: "wo-seed-defect-1",
+      siteId: "site-a",
+      title: "2층 회의실 창 개폐 불량 (DEMO)",
+      detail: "위치: 2층 회의실 남측 창 — 남측 창이 끝까지 닫히지 않고 손잡이가 헛돕니다.",
+      assigneeUserId: "u-field",
+      dueDate: kstDate(-17),
+      status: "confirmed" as const,
+      createdAt: dayOffset(now, -19.8),
+      createdBy: "u-manager",
+      doneNote: "하부 롤러 2개·손잡이 기어 교체, 개폐 확인",
+      sourcePartnerRequestId: "pr-seed-a-defect-1",
+      history: [
+        { at: dayOffset(now, -19.8), by: "u-manager", to: "sent" as const },
+        { at: dayOffset(now, -19.5), by: "u-field", to: "received" as const },
+        { at: dayOffset(now, -18), by: "u-field", to: "in_progress" as const },
+        { at: dayOffset(now, -17), by: "u-field", to: "done" as const, note: "하부 롤러 2개·손잡이 기어 교체" },
+        { at: dayOffset(now, -16.2), by: "u-manager", to: "confirmed" as const },
+      ],
+    },
     {
       id: "wo-seed-1",
       siteId: "site-a",

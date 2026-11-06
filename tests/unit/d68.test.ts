@@ -162,7 +162,8 @@ describe("발주처 월간 공정 보고서", () => {
     expect(JSON.stringify(m)).not.toMatch(/contractAmount|amount|원가/);
     // 지난달에는 이번 달 기록이 들어가지 않는다
     const prev = partnerMonthly(db, "site-a", "2026-10", feed, "u-partner");
-    expect(prev.stages.find((x) => x.stage === st.name)).toBeUndefined();
+    // (시연 데이터의 지난달 기록은 그대로 — 이번 달에 보낸 보고만 섞이지 않으면 된다 · D-69)
+    expect(prev.stages).toEqual(partnerMonthly(db0, "site-a", "2026-10", partnerProgressFeed(db0, "site-a", "2026-11-04", 62), "u-partner").stages);
     expect(prev.photos).toHaveLength(0);
     // 서버는 발주처에게 62일치를 보내 같은 보고서가 나온다
     const v = viewFor(PARTNER, db, NOW);

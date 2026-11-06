@@ -4,7 +4,7 @@ import { createSeed } from "@/lib/data/seed";
 import { submitFieldReport, voidReport, CommandError } from "@/lib/data/commands";
 import { stripMoney } from "@/lib/domain/redact";
 import { setPhotoShare } from "@/lib/data/portalCommands";
-import { partnerProgressFeed, sharedPhotos } from "@/lib/domain/partnerFeed";
+import { PARTNER_FEED_KEEP_DAYS, partnerProgressFeed, sharedPhotos } from "@/lib/domain/partnerFeed";
 import { noticesFor } from "@/lib/domain/notify";
 import { samplePhotos } from "@/lib/domain/samplePhotos";
 import { authorize, viewFor, ForbiddenError } from "@/server/authz";
@@ -84,7 +84,9 @@ describe("최근 공정 변화 (발주처용)", () => {
     expect(feed.filter((f) => f.stage === st.name)).toHaveLength(1);
     // 서버가 발주처에게 만들어 보내는 것도 같은 내용 (보고 원문은 없음)
     const v = viewFor(PARTNER, r2.db, NOW);
-    expect(v.partnerFeed?.["site-a"]).toEqual(feed);
+    // 서버는 월간 보고서용으로 62일치를 보낸다 (D-68) — 같은 계산 · 최근 14일 부분은 위 목록과 같다
+    expect(v.partnerFeed?.["site-a"]).toEqual(partnerProgressFeed(r2.db, "site-a", "2026-11-04", PARTNER_FEED_KEEP_DAYS));
+    expect(v.partnerFeed?.["site-a"]?.filter((f) => f.date >= "2026-10-22")).toEqual(feed);
     expect(JSON.stringify(v.partnerFeed)).not.toContain("작업");
   });
 });
