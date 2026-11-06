@@ -33,6 +33,8 @@
   --brand-mark: #f06424;
 
   --font-scale: 1;
+  /* 현장 하단 메뉴 높이 — 입력 단계에서는 메뉴를 숨기므로 0 (D-66) */
+  --fieldnav-h: calc(4.9rem + env(safe-area-inset-bottom));
   --demo-bar-h: 0px;
 }
 
@@ -471,4 +473,12 @@ html.tk-scroll-lock {
     box-shadow: none !important;
     border: 1px solid #d0d5dd !important;
   }
+}
+
+/* 현장 입력 단계: 하단 메뉴 숨김 (D-66) */
+html[data-wizard="1"] {
+  --fieldnav-h: env(safe-area-inset-bottom);
+}
+html[data-wizard="1"] .field-bottom-nav {
+  display: none;
 }

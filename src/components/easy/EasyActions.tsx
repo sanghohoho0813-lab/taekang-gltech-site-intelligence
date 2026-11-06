@@ -6,7 +6,7 @@ import { Camera, CircleCheck, ClipboardList, MessageSquarePlus, Play, Wand2, X }
 import { useMe } from "@/lib/data/hooks";
 import { run } from "@/lib/data/store";
 import { IS_LIVE } from "@/lib/mode";
-import { CommandError } from "@/lib/data/commands";
+import { CommandError, errorMessage } from "@/lib/data/commands";
 import type { ActionItem, DemoDB } from "@/lib/domain/types";
 import { todayIso } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
@@ -88,7 +88,7 @@ function EasyActionCard({ db, action }: { db: DemoDB; action: ActionItem }) {
     try {
       await run("setActionStatus", { actionId: action.id, to: "in_progress" });
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "바꾸지 못했어요.");
+      setErr(errorMessage(e, "바꾸지 못했어요."));
     } finally {
       setBusy(false);
     }
@@ -115,7 +115,7 @@ function EasyActionCard({ db, action }: { db: DemoDB; action: ActionItem }) {
       {action.status !== "done" && action.status !== "dismissed" && (
         <div className="mt-3.5 space-y-2.5">
           {(action.status === "assigned" || action.status === "recommended" || action.status === "on_hold") && (
-            <button type="button" onClick={start} disabled={busy} className="press flex h-[3.9rem] w-full items-center justify-center gap-2 rounded-2xl bg-cta text-[1.2rem] font-extrabold text-cta-text disabled:opacity-50" data-testid="action-start">
+            <button type="button" onClick={start} disabled={busy} className="press flex h-[3.9rem] w-full items-center justify-center gap-2 rounded-2xl bg-cta text-[1.2rem] font-extrabold text-cta-text disabled:bg-surface-3 disabled:text-ink-2 disabled:shadow-none" data-testid="action-start">
               <Play size={22} aria-hidden /> 시작했어요
             </button>
           )}
@@ -156,7 +156,7 @@ function EasyComplete({ db, action, onClose }: { db: DemoDB; action: ActionItem;
       await run("completeAction", { actionId: action.id, input: { result, claimAmount: isClaim && claim && causeSum > 0 ? causeSum : undefined, registerChangeOrder: isClaim && claim && causeSum > 0, confirm: false, idempotencyKey: key } });
       onClose();
     } catch (e) {
-      setErr(e instanceof CommandError || e instanceof Error ? e.message : "보내지 못했어요.");
+      setErr(errorMessage(e, "보내지 못했어요."));
     } finally {
       setBusy(false);
     }
@@ -232,7 +232,7 @@ function EasyNote({ action, onClose }: { action: ActionItem; onClose: () => void
       await run("addActionNote", { actionId: action.id, text, photoDataUrl: photo });
       onClose();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "보내지 못했어요.");
+      setErr(errorMessage(e, "보내지 못했어요."));
     } finally {
       setBusy(false);
     }

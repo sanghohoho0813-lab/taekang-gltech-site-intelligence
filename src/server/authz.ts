@@ -5,6 +5,9 @@
  * 3) sanitizeResult: 명령 결과에서도 금액 정보 제거
  */
 import { hasMoney, stripMoney } from "@/lib/domain/redact";
+
+/** 현장 직원이 한 번에 넣을 수 있는 비용 1건 상한 */
+export const FIELD_COST_MAX = 100_000_000;
 import type { ActionItem, DemoDB, GeoStamp, SiteContract } from "@/lib/domain/types";
 import { canSeeStamp, hasCoords, locationPolicy, stripGeo } from "@/lib/domain/privacy";
 import { computeSignals } from "@/lib/domain/risk";
@@ -60,6 +63,9 @@ export function authorize(m: Member, name: CommandName, argsIn: unknown, db: Dem
     switch (name) {
       case "submitFieldReport":
         if (!sites.has(str(args.siteId))) throw new ForbiddenError("담당 현장에만 보고할 수 있습니다.");
+        // 현장 입력 1건 상한 1억 원 — 원 단위 실수(1만 배)가 그대로 손익에 들어가지 않게, 큰 금액은 본사가 입력 (D-66 점검 반영)
+        if (Array.isArray(args.costs) && (args.costs as { amount?: unknown }[]).some((c) => typeof c?.amount === "number" && c.amount > FIELD_COST_MAX))
+          throw new ForbiddenError("현장에서는 1건에 1억 원까지 넣을 수 있어요. 금액을 확인하거나 본사에 알려 주세요.");
         args.source = "FIELD";
         return args;
       case "voidReport": {

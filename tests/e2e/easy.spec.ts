@@ -60,7 +60,6 @@ test("현장 직원 쉬운 화면: 타자 없이 보고 → 홈 상태·기록 �
   await expect(page.getByTestId("cost-amount")).toHaveValue("200");
   await page.getByTestId("easy-next").click();
   await page.getByTestId("impact-unknown").click();
-  await page.getByTestId("easy-next").click();
   await page.getByTestId("reason-rework").click();
   const confirm = page.getByTestId("easy-confirm");
   await expect(confirm).toContainText("200만 원");
@@ -120,7 +119,6 @@ test("현장 직원 사진만 보내기 · 추가 비용만 알리기 · 쓰다 
   await expect(page.getByTestId("cost-readback")).toContainText("60만 원"); // 2명 × 1일 × 30만
   await page.getByTestId("easy-next").click();
   await page.getByTestId("impact-additional").click();
-  await page.getByTestId("easy-next").click();
   await page.getByTestId("reason-schedule").click();
   await page.getByTestId("submit-report").click();
   await expect(page.getByTestId("report-done")).toContainText("60만 원");
@@ -393,7 +391,6 @@ test("작업 인원(출력): 팀 고르기 → 인원 → 단체 사진 → 보�
   await expect(page.getByTestId("cost-readback")).toContainText("900만 원");
   await page.getByTestId("easy-next").click();
   await page.getByTestId("impact-additional").click();
-  await page.getByTestId("easy-next").click();
   await page.getByTestId("reason-quantity_increase").click();
   await page.getByTestId("submit-report").click();
   await expect(page.getByTestId("report-done")).toBeVisible();

@@ -7,13 +7,13 @@ import { CircleCheck, Clock3, HardHat } from "lucide-react";
 import { run } from "@/lib/data/store";
 import { useMe } from "@/lib/data/hooks";
 import { IS_LIVE } from "@/lib/mode";
-import { CommandError } from "@/lib/data/commands";
+import { CommandError, errorMessage } from "@/lib/data/commands";
 import { FIX_KIND_LABEL } from "@/lib/data/opsCommands";
 import type { AttendanceRequest, Site } from "@/lib/domain/types";
 import { todayIso } from "@/lib/domain/format";
 import { hhmm, shiftDate } from "@/lib/domain/attendance";
 import { uid } from "@/lib/domain/ids";
-import { Chip, Choice, EasyBar, EasyPageHead, EasyQuestion, SectionBar, AtBottom, NoSite } from "./ui";
+import { Chip, Choice, EasyBar, EasyPageHead, EasyQuestion, SectionBar, AtBottom, NoSite, useWizardActive } from "./ui";
 import { easyDate } from "./words";
 
 const REASONS = ["휴대폰 배터리가 꺼짐", "위치(GPS)가 안 잡힘", "깜빡하고 못 누름", "현장 밖에서 잘못 누름", "휴대폰을 두고 옴", "기타 (본사에 전화로 설명)"];
@@ -27,6 +27,8 @@ export function EasyFix() {
   const sites = useMemo<Site[]>(() => (!db ? [] : role === "field" && !IS_LIVE ? db.sites.filter((s) => s.fieldUserId === userId) : db.sites), [db, role, userId]);
   const [siteId, setSiteId] = useState(sites.length === 1 ? sites[0].id : "");
   const [stack, setStack] = useState<Step[]>([sites.length === 1 ? "date" : "site"]);
+  useWizardActive(stack.length > 1);
+  const [moreDays, setMoreDays] = useState(false);
   const today = todayIso();
   const [date, setDate] = useState(today);
   const [kind, setKind] = useState<AttendanceRequest["kind"] | "">("");
@@ -75,7 +77,7 @@ export function EasyFix() {
       await run("requestAttendanceFix", { siteId: site.id, workDate: date, kind, ...(needIn && inTime && inChanged ? { inTime } : {}), ...(needOut && outTime && outChanged ? { outTime } : {}), reason: reasons.join(", "), idempotencyKey: key });
       setDone(true);
     } catch (e) {
-      setErr(e instanceof CommandError || e instanceof Error ? e.message : "보내지 못했어요.");
+      setErr(errorMessage(e, "보내지 못했어요."));
     } finally {
       setBusy(false);
     }
@@ -134,10 +136,16 @@ export function EasyFix() {
       body = (
         <EasyQuestion title="언제 일인가요?" testId="fix-date">
           <div className="space-y-2.5">
-            {[0, 1, 2].map((d) => {
+            {/* 본사가 받는 범위(7일)만큼 — 월요일에 지난 금요일 건도 요청할 수 있게 (D-66) */}
+            {(moreDays ? [0, 1, 2, 3, 4, 5, 6, 7] : [0, 1, 2]).map((d) => {
               const v = shiftDate(today, -d);
-              return <Choice key={v} label={d === 0 ? `오늘 · ${easyDate(v)}` : d === 1 ? `어제 · ${easyDate(v)}` : `그제 · ${easyDate(v)}`} onClick={() => (setDate(v), go("kind"))} selected={date === v} testId={`fix-date-${d}`} />;
+              return <Choice key={v} label={d === 0 ? `오늘 · ${easyDate(v)}` : d === 1 ? `어제 · ${easyDate(v)}` : d === 2 ? `그제 · ${easyDate(v)}` : easyDate(v)} onClick={() => (setDate(v), go("kind"))} selected={date === v} testId={`fix-date-${d}`} />;
             })}
+            {!moreDays && (
+              <button type="button" onClick={() => setMoreDays(true)} className="press min-h-[3.4rem] w-full rounded-2xl border-2 border-dashed border-line-strong text-[1.05rem] font-bold text-ink-2" data-testid="fix-date-more">
+                더 지난 날 (일주일 전까지)
+              </button>
+            )}
           </div>
         </EasyQuestion>
       );
@@ -150,6 +158,8 @@ export function EasyFix() {
             {(Object.keys(FIX_KIND_LABEL) as AttendanceRequest["kind"][])
               .filter((k) => (rec ? k !== "missed_in" : k === "missed_in"))
               .filter((k) => !(k === "missed_out" && rec?.outAt))
+              // 오늘 아직 일하는 중이면 ‘퇴근을 못 눌렀어요’는 보이지 않게 (아직 퇴근 전)
+              .filter((k) => !(k === "missed_out" && date === today && rec && !rec.outAt))
               .map((k) => (
                 <Choice key={k} icon={<Clock3 size={24} />} label={FIX_KIND_LABEL[k]} onClick={() => (pickKind(k), go(k === "gps_issue" ? "reason" : "time"))} selected={kind === k} testId={`fix-kind-${k}`} />
               ))}

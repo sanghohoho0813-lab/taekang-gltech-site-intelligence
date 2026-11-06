@@ -10,7 +10,7 @@ import { Boxes, Camera, CircleCheck, HardHat, PackageCheck, Truck, Undo2, WifiOf
 import { run } from "@/lib/data/store";
 import { useMe } from "@/lib/data/hooks";
 import { IS_LIVE } from "@/lib/mode";
-import { CommandError } from "@/lib/data/commands";
+import { CommandError, errorMessage } from "@/lib/data/commands";
 import type { MaterialMoveKind, Site } from "@/lib/domain/types";
 import { activeItems, fmtQty, liveMoves, materialRows, MATERIAL_FLAG_LABEL, MOVE_LABEL } from "@/lib/domain/material";
 import { todayIso } from "@/lib/domain/format";
@@ -18,7 +18,7 @@ import { uid } from "@/lib/domain/ids";
 import { cx } from "@/components/ui/primitives";
 import { outboxAdd } from "@/lib/browser/outbox";
 import { useOutbox } from "./Outbox";
-import { Choice, EasyBar, EasyPageHead, EasyQuestion, SectionBar, easyTextareaCls, AtBottom, NoSite } from "./ui";
+import { Choice, EasyBar, EasyPageHead, EasyQuestion, SectionBar, easyTextareaCls, AtBottom, NoSite, useWizardActive } from "./ui";
 import { downscalePhoto } from "./photo";
 import { easyDate } from "./words";
 
@@ -39,6 +39,7 @@ export function EasyMaterial() {
   }, [db, role, userId]);
   const [siteId, setSiteId] = useState(sites.length === 1 ? sites[0].id : "");
   const [stack, setStack] = useState<Step[]>([sites.length === 1 ? "kind" : "site"]);
+  useWizardActive(stack.length > 1);
   const [kind, setKind] = useState<MaterialMoveKind>("install");
   // 사람이 고르기 전에는 아무것도 선택돼 보이지 않게
   const [picked, setPicked] = useState(false);
@@ -125,7 +126,7 @@ export function EasyMaterial() {
         // 끊기기 직전에 이미 저장된 기록
         setDone({ name: item.name, unit: item.unit, qty: n, kind, queued: false, already: true });
       } else {
-        setErr(e instanceof CommandError || e instanceof Error ? e.message : "보내지 못했어요. 다시 눌러 주세요.");
+        setErr(errorMessage(e, "보내지 못했어요. 다시 눌러 주세요."));
       }
     } finally {
       setBusy(false);
@@ -138,7 +139,7 @@ export function EasyMaterial() {
       await run("voidMaterialMove", { moveId, reason });
       setVoiding(null);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "취소하지 못했어요.");
+      setErr(errorMessage(e, "취소하지 못했어요."));
     }
   };
 
@@ -307,6 +308,15 @@ export function EasyMaterial() {
                 +{d}
               </button>
             ))}
+          </div>
+          {/* 잘못 눌렀을 때 키보드 없이 되돌리기 (D-66) */}
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" onClick={() => setQty((q) => String(Math.max(0, Math.round(((Number(q.replace(/,/g, "")) || 0) - 1) * 100) / 100) || ""))} className="press h-[3.4rem] rounded-2xl border-2 border-line-strong bg-surface text-[1.1rem] font-extrabold" data-testid="material-minus-1">
+              −1
+            </button>
+            <button type="button" onClick={() => setQty("")} className="press h-[3.4rem] rounded-2xl border-2 border-line-strong bg-surface text-[1.05rem] font-bold text-ink-2" data-testid="material-clear">
+              다시 넣기
+            </button>
           </div>
           {cur && (
             <p className="text-[1.02rem] text-ink-2">

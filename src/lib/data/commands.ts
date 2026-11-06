@@ -40,6 +40,16 @@ export interface Ctx {
   now?: Date;
 }
 
+/** 화면에 보여 줄 오류 문구 — 서버가 항목별로 알려 준 이유가 있으면 그것을 (‘입력값을 확인해주세요’만 보이던 문제 · D-66) */
+export function errorMessage(e: unknown, fallback = "처리하지 못했습니다. 다시 눌러 주세요."): string {
+  if (e instanceof CommandError) {
+    const detail = Object.values(e.fieldErrors ?? {}).filter((v) => typeof v === "string" && v.length >= 6);
+    if (detail.length) return [...new Set(detail)].join(" · ");
+    return e.message || fallback;
+  }
+  return e instanceof Error && e.message ? e.message : fallback;
+}
+
 export class CommandError extends Error {
   constructor(
     message: string,
@@ -168,6 +178,8 @@ export function submitFieldReport(db0: DemoDB, input: FieldReportInput, ctx: Ctx
   requireSite(db0, input.siteId);
   const costs = input.costs ?? [];
   if (!input.workDone?.trim() && costs.length === 0) errors.workDone = "오늘의 작업 내용을 입력하거나 비용을 추가해주세요.";
+  // ‘추가 비용’ 보고인데 비용이 0건이면 받지 않는다 (D-66 점검 반영)
+  if (input.kind === "cost" && costs.length === 0) errors.costs = "비용을 하나 이상 넣어 주세요.";
   if ((input.workDone ?? "").length > 500) errors.workDone = "작업 내용은 500자 이내";
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.reportDate ?? "")) errors.reportDate = "보고일을 선택해주세요.";
   else {
@@ -708,6 +720,10 @@ export function updatePartnerRequest(
   if (input.status === "answered" && !input.reply?.trim()) throw new CommandError("회신 내용을 입력해주세요.", "VALIDATION", { reply: "필수" });
   const at = nowIso(ctx);
   if (input.registerChangeOrder) {
+    // 요청 하나에 변경공사는 하나 — 검토·회신 단계에서 두 번 등록되던 문제 (D-66 점검 반영)
+    if (r.linkedChangeOrderId && db.changeOrders.some((c) => c.id === r.linkedChangeOrderId)) throw new CommandError("이 요청으로 이미 등록한 변경공사가 있습니다.", "DUPLICATE");
+    if (typeof input.registerChangeOrder.title !== "string") input.registerChangeOrder.title = "";
+    if (input.registerChangeOrder.title.length > 80) throw new CommandError("변경공사 제목은 80자 이내", "VALIDATION", { coTitle: "80자 이내" });
     validateAmount(input.registerChangeOrder.amount, "coAmount");
     const co: ChangeOrder = {
       id: uid("co"),

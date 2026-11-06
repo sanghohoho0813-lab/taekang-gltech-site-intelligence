@@ -132,7 +132,9 @@ function stamp(db: DemoDB, siteId: string, userId: string, input: Pick<CheckInpu
 }
 
 function recordConsent(db: DemoDB, input: { consent?: boolean; consentTerms?: unknown; sample?: unknown }, ctx: Ctx) {
-  if (!validSample(input.sample) || hasConsent(db, ctx.userId)) return;
+  // 위치가 막혀 좌표가 없어도 ‘동의’를 눌렀으면 동의는 기록한다 — 매번 다시 묻던 문제 (D-66 점검 반영)
+  if (hasConsent(db, ctx.userId)) return;
+  if (!validSample(input.sample) && !input.consent) return;
   if (!input.consent) throw new CommandError("위치를 기록하려면 먼저 동의가 필요합니다.", "VALIDATION", { consent: "동의 필요" });
   // 직원이 본 조건과 지금 규칙이 다르면(그 사이 대표가 바꿈) 동의로 기록하지 않고 다시 보여준다
   if (!sameTerms(input.consentTerms, currentTerms(db))) throw new CommandError("회사의 위치 기록 조건이 방금 바뀌었어요. 바뀐 내용을 읽고 다시 눌러 주세요.", "STATE", { consent: "조건 변경" });

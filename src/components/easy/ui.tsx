@@ -5,7 +5,7 @@
  * 원칙: 한 화면에 질문 하나 · 큰 글자(19px 이상) · 누르는 곳은 높이 64px 이상 · 고르는 방식(타자 최소) · 쉬운 말
  */
 import Link from "next/link";
-import { cloneElement, isValidElement, type ReactNode } from "react";
+import { cloneElement, isValidElement, type ReactNode, useEffect } from "react";
 import { Check, ChevronLeft, Loader2, Minus, Plus } from "lucide-react";
 import { cx } from "@/components/ui/primitives";
 
@@ -273,6 +273,21 @@ export function EasyPageHead({ title, sub, icon, children, testId }: { title?: R
 }
 
 /** 화면 아래 고정 버튼 (이전 · 다음) — 엄지로 누르기 쉬운 위치 */
+/**
+ * 입력 단계(2단계부터)에서는 현장 하단 메뉴를 숨긴다 — 작은 휴대폰에서 질문·답 버튼이 메뉴와 고정 버튼 뒤에 가려지던 문제 (D-66).
+ * 첫 단계에서는 메뉴가 보여 홈으로 돌아갈 수 있다.
+ */
+export function useWizardActive(active: boolean) {
+  useEffect(() => {
+    const el = document.documentElement;
+    if (active) el.dataset.wizard = "1";
+    else delete el.dataset.wizard;
+    return () => {
+      delete el.dataset.wizard;
+    };
+  }, [active]);
+}
+
 export function EasyBar({
   onBack,
   backLabel = "이전",
@@ -301,7 +316,7 @@ export function EasyBar({
   className?: string;
 }) {
   return (
-    <div className={cx("z-20 -mx-4 border-t border-line bg-surface/97 px-4 pb-3 pt-3 backdrop-blur", sticky && (embedded ? "sticky bottom-0" : "sticky bottom-[calc(4.9rem+env(safe-area-inset-bottom))] lg:bottom-0"), className)}>
+    <div className={cx("z-20 -mx-4 border-t border-line bg-surface/97 px-4 pb-3 pt-3 backdrop-blur", sticky && (embedded ? "sticky bottom-0" : "sticky bottom-[var(--fieldnav-h)] lg:bottom-0"), className)}>
       {hint && <p className="mb-2 text-center text-[0.98rem] font-semibold text-warn">{hint}</p>}
       <div className={cx("grid gap-2.5", onBack && onNext ? "grid-cols-[1fr_1.8fr]" : "grid-cols-1")}>
         {onBack && (

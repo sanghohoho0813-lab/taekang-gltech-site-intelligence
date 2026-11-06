@@ -167,7 +167,6 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     await expect(page.getByTestId("cost-readback")).toContainText("360만 원"); // 12공수 × 30만
     await page.getByTestId("easy-next").click();
     await page.getByTestId("impact-additional").click();
-    await page.getByTestId("easy-next").click();
     await page.getByTestId("reason-quantity_increase").click();
     await expect(page.getByTestId("easy-confirm")).toContainText("360만 원");
     await expect(page.getByTestId("easy-confirm")).toContainText("0% → 5%");

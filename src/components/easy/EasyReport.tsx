@@ -33,7 +33,7 @@ import { run } from "@/lib/data/store";
 import { useMe } from "@/lib/data/hooks";
 import { IS_LIVE } from "@/lib/mode";
 import { outboxAdd } from "@/lib/browser/outbox";
-import { CommandError, type CostLineInput } from "@/lib/data/commands";
+import { CommandError, type CostLineInput, errorMessage } from "@/lib/data/commands";
 import { DEMO_SCENARIO } from "@/lib/data/seed";
 import type { CostCategory, CostReason, GeoStamp, Site } from "@/lib/domain/types";
 import { geoText, judgeGeo, type GeoSample } from "@/lib/domain/geo";
@@ -42,7 +42,7 @@ import { todayIso } from "@/lib/domain/format";
 import { shiftDate } from "@/lib/domain/attendance";
 import { uid } from "@/lib/domain/ids";
 import { cx } from "@/components/ui/primitives";
-import { BigNumber, Chip, Choice, EasyBar, EasyPageHead, EasyQuestion, SectionBar, Stepper, VoiceHint, easyTextareaCls, AtBottom, NoSite } from "./ui";
+import { BigNumber, Chip, Choice, EasyBar, EasyPageHead, EasyQuestion, SectionBar, Stepper, VoiceHint, easyTextareaCls, AtBottom, NoSite, useWizardActive } from "./ui";
 import { DEFAULT_WORK, EASY_CATEGORY, EASY_CATEGORY_ORDER, EASY_REASON, EASY_REASON_ORDER, ISSUE_CHIPS, NO_WORK, easyDate, easyWon } from "./words";
 import { downscalePhoto } from "./photo";
 import { hasConsent } from "@/lib/domain/privacy";
@@ -142,6 +142,7 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
   const [photos, setPhotos] = useState<string[]>([]);
   const [memo, setMemo] = useState("");
   const [stack, setStack] = useState<StepId[]>(() => [firstStep(mode, !initialSite)]);
+  useWizardActive(stack.length > 1);
   const [discardAsk, setDiscardAsk] = useState(false);
   const [returnToConfirm, setReturnToConfirm] = useState(false);
   const [editingKey, setEditingKey] = useState<string | null>(null);
@@ -155,6 +156,8 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
   const [undone, setUndone] = useState(false);
   const [dateEdit, setDateEdit] = useState(false);
   const [rateOpen, setRateOpen] = useState(false);
+  /** 1천만 원 넘는 금액을 ‘맞다’고 확인한 비용 (비용 key:금액) */
+  const [bigOk, setBigOk] = useState("");
   // 보내는 곳 (위치 기록에 동의한 사람만, 확인 화면에서 1번)
   const consented = !!db && hasConsent(db, userId);
   const [geo, setGeo] = useState<{ sample?: GeoSample; noLocation?: GeoStamp["reason"] } | null>(null);
@@ -328,7 +331,7 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
         setNetFail(false);
         setDone({ costSum, already: true, siteName: site.shortName });
       } else {
-        setError(e instanceof Error ? e.message : "보내지 못했습니다. 다시 눌러 주세요.");
+        setError(errorMessage(e, "보내지 못했습니다. 다시 눌러 주세요."));
       }
     } finally {
       setSending(false);
@@ -392,7 +395,7 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
       setUndone(true);
       setUndoAsk(false);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "취소하지 못했습니다.");
+      setError(errorMessage(e, "취소하지 못했습니다."));
     }
   };
 
@@ -792,6 +795,7 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
       if (!editing) break;
       const won = costWon(editing);
       const labor = editing.category === "labor";
+      const bigAmount = !(labor && editing.byPeople) && won >= 10_000_000 && bigOk !== editing.key + ":" + editing.amountMan;
       body = (
         <EasyQuestion kicker={EASY_CATEGORY[editing.category].label} title={labor && editing.byPeople ? "몇 명이 며칠 일했나요?" : "대략 얼마 들었나요?"} help={labor && editing.byPeople ? "추가로 투입된 인원만 넣으세요." : "만 원 단위로 넣어요. 아래 버튼을 눌러 더해도 돼요."} testId="easy-cost-amt">
           {labor && (
@@ -853,12 +857,28 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
                   다시 넣기
                 </button>
               </div>
-              {editing.amountMan >= 10_000 && <BigNumber testId="cost-readback">{easyWon(won)}</BigNumber>}
+              {won > 0 && <BigNumber testId="cost-readback">{easyWon(won)}</BigNumber>}
+              {/* 원 단위로 넣으면(350000 → 35억) 1만 배가 된다 — 1천만 원 넘으면 한 번 더 확인 (D-66 점검 반영) */}
+              {bigAmount && (
+                <div className="space-y-2.5 rounded-2xl border-2 border-warn/50 bg-warn-bg p-4" role="alert" data-testid="cost-big-ask">
+                  <p className="text-[1.12rem] font-bold">{easyWon(won)}이 맞나요? 이 칸은 ‘만 원’ 단위예요.</p>
+                  <div className="grid gap-2">
+                    {editing.amountMan >= 1_000 && (
+                      <button type="button" onClick={() => setCost({ amountMan: Math.max(1, Math.round(editing.amountMan / 10_000)) })} className="press min-h-[3.4rem] rounded-full border-2 border-line-strong bg-surface text-[1.05rem] font-bold" data-testid="cost-big-fix">
+                        원 단위로 넣었어요 → {easyWon(Math.max(1, Math.round(editing.amountMan / 10_000)) * 10_000)}으로 고치기
+                      </button>
+                    )}
+                    <button type="button" onClick={() => setBigOk(editing.key + ":" + editing.amountMan)} className="press min-h-[3.4rem] rounded-full bg-surface text-[1.05rem] font-bold text-ink" data-testid="cost-big-ok">
+                      네, {easyWon(won)}이 맞아요
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </EasyQuestion>
       );
-      footer = bar({ onBack: back, onNext: () => go("cost-kind"), nextDisabled: won <= 0, hint: won <= 0 ? "금액을 넣어 주세요" : undefined });
+      footer = bar({ onBack: back, onNext: () => go("cost-kind"), nextDisabled: won <= 0 || bigAmount, hint: won <= 0 ? "금액을 넣어 주세요" : bigAmount ? "금액이 맞는지 위에서 눌러 주세요" : undefined });
       break;
     }
 
@@ -881,7 +901,11 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
                 selected={editing.impact === v}
                 onClick={() => {
                   setCost({ impact: v });
-                  go("cost-list");
+                  // 비용이 하나면 목록 화면을 건너뛴다 — 확인 화면에서 ‘비용 하나 더’를 누를 수 있다 (D-66: 7화면 → 5화면)
+                  if (d.costs.length <= 1) {
+                    if (d.reason && returnToConfirm) proceed("confirm");
+                    else go("cost-reason");
+                  } else go("cost-list");
                 }}
                 testId={`impact-${v}`}
               />
@@ -1036,8 +1060,20 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
                       </span>
                     ))}
                     <span className="mt-1 block font-bold">
-                      합계 <span className="num">{easyWon(costSum)}</span> · 이유: {d.reason ? EASY_REASON[d.reason] : "선택 안 함"}
+                      합계 <span className="num">{easyWon(costSum)}</span> · 이유: {d.reason ? EASY_REASON[d.reason] : "기타 (고르지 않음)"}
                     </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingKey(null);
+                        setReturnToConfirm(true);
+                        go("cost-cat");
+                      }}
+                      className="press mt-2 inline-flex min-h-12 items-center gap-1.5 rounded-full border-2 border-dashed border-active bg-active-soft px-4 text-[1.02rem] font-bold text-theme-ink"
+                      data-testid="confirm-cost-more"
+                    >
+                      <Plus size={18} aria-hidden /> 비용 하나 더
+                    </button>
                   </span>
                 ) : (
                   "없음"
@@ -1069,9 +1105,11 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
         nextLabel: netFail ? "다시 보내기" : "본사로 보내기",
         nextTestId: "submit-report",
         loading: sending,
-        nextDisabled: !site || !hasWork || (costLines.length > 0 && !d.reason),
-        hint: !hasWork ? "‘고치기’를 눌러 작업을 넣어 주세요" : undefined,
+        // 비용 이유는 고르지 않아도 보낼 수 있다 (안 고르면 ‘기타’) — 이어 쓰기에서 이유 없이 회색 버튼만 보이던 문제 (D-66)
+        nextDisabled: !site || !hasWork || (mode === "cost" && costLines.length === 0),
+        hint: mode === "cost" && costLines.length === 0 ? "비용을 하나 이상 넣어 주세요" : undefined,
       });
+      if (!hasWork) footer = bar({ onBack: stack.length > 1 ? back : onExit, backLabel: stack.length > 1 ? "이전" : "닫기", onNext: send, nextLabel: "본사로 보내기", nextTestId: "submit-report", nextDisabled: true, hint: "‘고치기’를 눌러 작업을 넣어 주세요" });
       break;
     }
   }

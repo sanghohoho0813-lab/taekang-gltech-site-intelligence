@@ -8,9 +8,11 @@ import type { DemoDB, WorkOrder } from "@/lib/domain/types";
 import { todayIso } from "@/lib/domain/format";
 import { cx } from "@/components/ui/primitives";
 import { Modal } from "@/components/ui/Modal";
+import { useToast } from "@/components/ui/Toast";
 import { Chip, VoiceHint, easyTextareaCls } from "./ui";
 import { dueText, easyDate } from "./words";
 import { downscalePhoto } from "./photo";
+import { errorMessage } from "@/lib/data/commands";
 
 export const WO_STATUS: Record<WorkOrder["status"], string> = {
   sent: "새 지시 — 확인해 주세요",
@@ -23,7 +25,7 @@ export const WO_STATUS: Record<WorkOrder["status"], string> = {
 
 export const openWorkOrders = (db: DemoDB, userId: string) => (db.workOrders ?? []).filter((w) => w.assigneeUserId === userId && !["done", "confirmed"].includes(w.status));
 
-const big = "press flex h-[3.9rem] w-full items-center justify-center gap-2 rounded-2xl text-[1.2rem] font-extrabold disabled:opacity-50";
+const big = "press flex h-[3.9rem] w-full items-center justify-center gap-2 rounded-2xl text-[1.2rem] font-extrabold disabled:bg-surface-3 disabled:text-ink-2 disabled:shadow-none";
 
 export function EasyWorkOrderCard({ db, wo }: { db: DemoDB; wo: WorkOrder }) {
   const [busy, setBusy] = useState(false);
@@ -37,7 +39,7 @@ export function EasyWorkOrderCard({ db, wo }: { db: DemoDB; wo: WorkOrder }) {
     try {
       await run("workOrderStep", { workOrderId: wo.id, action });
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "처리하지 못했어요.");
+      setErr(errorMessage(e, "처리하지 못했어요."));
     } finally {
       setBusy(false);
     }
@@ -94,6 +96,7 @@ const UNITS = ["개", "세트", "m", "㎡", "층", "곳"];
 const RESULT_CHIPS = ["지시대로 끝냈어요", "일부만 끝냈어요 (남은 작업 있음)", "사진으로 확인해 주세요"];
 
 function FinishModal({ wo, onClose }: { wo: WorkOrder; onClose: () => void }) {
+  const toast = useToast();
   const [picked, setPicked] = useState<string[]>([]);
   const [text, setText] = useState("");
   const [qtyN, setQtyN] = useState("");
@@ -109,9 +112,11 @@ function FinishModal({ wo, onClose }: { wo: WorkOrder; onClose: () => void }) {
     setBusy(true);
     try {
       await run("workOrderStep", { workOrderId: wo.id, action: "complete", note, qty, photoDataUrls: photos });
+      // 보낸 뒤 카드가 말없이 사라지지 않게 (D-66)
+      toast.push({ tone: "ok", title: "본사로 보냈어요", desc: `‘${wo.title}’ — 본사가 확인하면 알려 드려요.` });
       onClose();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "보내지 못했어요.");
+      setErr(errorMessage(e, "보내지 못했어요."));
     } finally {
       setBusy(false);
     }

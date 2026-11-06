@@ -108,7 +108,8 @@ export default function SiteDetailPage() {
           <div className="space-y-3 p-4">
             <div>
               <div className="flex flex-wrap items-center gap-1.5">
-                <HealthPill health={health} />
+                {/* 현장·발주처 화면은 금액이 빠진 자료라 위험 판정이 틀리게 나온다 → 본사만 표시 (D-66 점검 반영) */}
+                {canSeeMoney && <HealthPill health={health} />}
                 <Badge>{site.workType}</Badge>
                 <DemoBadge compact />
               </div>

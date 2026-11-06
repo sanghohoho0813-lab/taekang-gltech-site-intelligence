@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 /**
  * 출근·퇴근 (현장 직원 첫 화면 맨 위)
  * 누를 때 1번만 위치를 잡아 서버로 보낸다. 시각·현장 안/밖 판정은 서버가 한다.
@@ -8,7 +10,7 @@ import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, CircleCheck, Loader2, LogIn, LogOut, MapPin, MapPinOff, QrCode, ShieldCheck } from "lucide-react";
 import { run } from "@/lib/data/store";
 import { IS_LIVE } from "@/lib/mode";
-import { CommandError } from "@/lib/data/commands";
+import { CommandError, errorMessage } from "@/lib/data/commands";
 import type { DemoDB, GeoStamp, Site } from "@/lib/domain/types";
 import { distanceM, geoText, type GeoSample } from "@/lib/domain/geo";
 import { hhmm, minutesOf } from "@/lib/domain/attendance";
@@ -46,8 +48,15 @@ export function EasyAttendance({ db, userId, sites, autoQr }: { db: DemoDB; user
     const el = cardRef.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
-    if (r.top < 80 || r.bottom > window.innerHeight) el.scrollIntoView({ block: "center" });
+    // 카드가 화면보다 길면(큰 글씨·동의 안내) 가운데가 아니라 맨 위부터 보이게 — 제목·버튼이 모두 가려지던 문제 (D-66)
+    if (r.height > window.innerHeight - 120) el.scrollIntoView({ block: "start" });
+    else if (r.top < 80 || r.bottom > window.innerHeight) el.scrollIntoView({ block: "center" });
   }, [phase.k]);
+  // 두 번 눌러도 한 번만 — 두 번째 요청이 ‘출근 기록이 없습니다’ 오류를 띄우던 문제 (D-66)
+  const startLock = useRef(false);
+  const commitLock = useRef(false);
+  // 기록 직후 카드가 줄어들며 두 번째 손가락이 아래 링크를 누르지 않게 잠깐 높이를 유지
+  const [holdH, setHoldH] = useState<number | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const today = todayIso();
@@ -77,8 +86,13 @@ export function EasyAttendance({ db, userId, sites, autoQr }: { db: DemoDB; user
   }, [autoQr, sites.length]);
 
   if (sites.length === 0) return null;
+  // 오늘 아직 출근하지 않은 담당 현장 — 두 현장을 맡으면 A현장 퇴근 뒤 B현장 출근 (D-66)
+  const avail = sites.filter((s) => !mine.some((r) => r.siteId === s.id));
 
   const commit = async (mode: "in" | "out", site: Site, sample: GeoSample | null, reason?: GeoStamp["reason"], consent?: boolean, qrToken?: string) => {
+    if (commitLock.current) return;
+    commitLock.current = true;
+    const h = cardRef.current?.offsetHeight;
     setBusy(true);
     setErr(null);
     // 중복 방지 키를 처음부터 붙인다 — 응답만 끊긴 경우 휴대폰에 저장했다가 다시 보내도 한 번만 기록된다
@@ -96,6 +110,10 @@ export function EasyAttendance({ db, userId, sites, autoQr }: { db: DemoDB; user
       const ok = r.geo.status === "inside" && (!qrToken || qr?.status === "ok");
       const word = mode === "in" ? "출근" : "퇴근";
       const qrText = qrToken ? (qr?.status === "ok" ? " · 현장 QR 확인" : ` — ${QR_LABEL[qr?.status ?? "invalid"]}: ‘QR 다시 찍기’를 눌러 주세요`) : "";
+      if (h) {
+        setHoldH(h);
+        window.setTimeout(() => setHoldH(undefined), 900);
+      }
       setPhase({ k: "done", mode, tone: ok ? "ok" : "warn", text: ok ? `${word} 기록 완료${qrText}` : `${word} 기록 완료${qrText}${r.geo.status !== "inside" ? ` — 본사에 ‘${geoText(r.geo)}’로 표시됩니다` : ""}` });
     } catch (e) {
       if (IS_LIVE && e instanceof CommandError && e.code === "NETWORK") {
@@ -110,30 +128,37 @@ export function EasyAttendance({ db, userId, sites, autoQr }: { db: DemoDB; user
           return;
         }
       }
-      setErr(e instanceof CommandError || e instanceof Error ? e.message : "기록하지 못했습니다. 다시 눌러 주세요.");
+      setErr(errorMessage(e, "기록하지 못했습니다. 다시 눌러 주세요."));
       setPhase({ k: "idle" });
     } finally {
       setBusy(false);
+      commitLock.current = false;
     }
   };
 
   /** 위치를 잡고 → 현장을 정하고 → 현장 안이면 바로 기록, 아니면 한 번 더 묻는다 */
   const start = async (mode: "in" | "out", consent?: boolean) => {
-    setErr(null);
-    setPhase({ k: "locating", mode });
-    const loc = await locateOnce();
-    const sample = "sample" in loc ? loc.sample : null;
-    const reason = "error" in loc ? loc.error : undefined;
-    decide(mode, sample, reason, consent);
+    if (startLock.current) return;
+    startLock.current = true;
+    try {
+      setErr(null);
+      setPhase({ k: "locating", mode });
+      const loc = await locateOnce();
+      const sample = "sample" in loc ? loc.sample : null;
+      const reason = "error" in loc ? loc.error : undefined;
+      decide(mode, sample, reason, consent);
+    } finally {
+      startLock.current = false;
+    }
   };
 
   const decide = (mode: "in" | "out", sample: GeoSample | null, reason: GeoStamp["reason"] | undefined, consent?: boolean, chosen?: Site) => {
     let site: Site | undefined = mode === "out" ? openSite : chosen;
     if (mode === "in" && !site) {
-      if (sites.length === 1) site = sites[0];
+      if (avail.length === 1) site = avail[0];
       else if (sample) {
-        // 반경 안에 있는 가장 가까운 담당 현장
-        site = sites
+        // 반경 안에 있는 가장 가까운 담당 현장 (오늘 이미 출퇴근한 현장은 빼고)
+        site = avail
           .filter((s) => s.geo)
           .map((s) => ({ s, d: distanceM(s.geo!, sample) }))
           .filter((x) => x.d <= x.s.geo!.radiusM)
@@ -171,7 +196,7 @@ export function EasyAttendance({ db, userId, sites, autoQr }: { db: DemoDB; user
         await run("confirmQr", { siteId: site.id, qrToken: p.token });
         setPhase({ k: "done", mode: "in", tone: "ok", text: "현장 QR 확인 완료" });
       } catch (e) {
-        setErr(e instanceof Error ? e.message : "QR을 확인하지 못했습니다.");
+        setErr(errorMessage(e, "QR을 확인하지 못했습니다."));
       } finally {
         setBusy(false);
       }
@@ -229,7 +254,7 @@ export function EasyAttendance({ db, userId, sites, autoQr }: { db: DemoDB; user
     );
 
   const box = (children: React.ReactNode, tone: "plain" | "ok" | "warn" = "plain") => (
-    <section ref={cardRef} className={cx("scroll-mt-24 space-y-3 rounded-[1.75rem] border p-5 shadow-pop", tone === "ok" ? "border-ok/30 bg-ok-bg" : tone === "warn" ? "border-warn/40 bg-warn-bg" : "border-line bg-surface")} data-testid="att-card" aria-live="polite">
+    <section ref={cardRef} style={holdH ? { minHeight: holdH } : undefined} className={cx("scroll-mt-24 space-y-3 rounded-[1.75rem] border p-5 shadow-pop", tone === "ok" ? "border-ok/30 bg-ok-bg" : tone === "warn" ? "border-warn/40 bg-warn-bg" : "border-line bg-surface")} data-testid="att-card" aria-live="polite">
       {children}
     </section>
   );
@@ -260,14 +285,15 @@ export function EasyAttendance({ db, userId, sites, autoQr }: { db: DemoDB; user
           <ShieldCheck size={26} className="text-theme-ink" aria-hidden /> 위치 기록 동의
         </p>
         {reasked && <p className="rounded-xl bg-warn-bg px-3 py-2 text-[1.02rem] font-semibold">회사가 위치 기록 조건을 바꿔서 다시 여쭤봐요.</p>}
+        <p className="text-[1.05rem] text-ink-2">출퇴근을 누를 때만 위치를 한 번 기록해요. 아래 내용을 읽고 동의하면 눌러 주세요.</p>
+        <button type="button" onClick={() => (phase.qr ? void startQr(phase.qr, true) : void start(phase.mode, true))} className={cx(bigBtn, "bg-cta text-cta-text")} data-testid="att-consent-yes">
+          동의하고 {phase.mode === "in" ? "출근" : "퇴근"}하기
+        </button>
         <ul className="list-disc space-y-1.5 pl-5 text-[1.05rem] leading-relaxed text-ink" data-testid="att-consent-notice">
           {consentNotice(locationPolicy(db)).map((t) => (
             <li key={t}>{t}</li>
           ))}
         </ul>
-        <button type="button" onClick={() => (phase.qr ? void startQr(phase.qr, true) : void start(phase.mode, true))} className={cx(bigBtn, "bg-cta text-cta-text")} data-testid="att-consent-yes">
-          동의하고 {phase.mode === "in" ? "출근" : "퇴근"}하기
-        </button>
         <div className="grid grid-cols-2 gap-2.5">
           <button
             type="button"
@@ -312,7 +338,7 @@ export function EasyAttendance({ db, userId, sites, autoQr }: { db: DemoDB; user
         <p className="text-[1.3rem] font-extrabold">어느 현장에 출근하나요?</p>
         {phase.reason === "denied" && <DeniedHelp />}
         <div className="space-y-2.5">
-          {sites.map((s) => (
+          {(avail.length ? avail : sites).map((s) => (
             <Choice key={s.id} icon={<MapPin size={24} />} label={s.shortName} sub={s.workType} onClick={() => decide("in", phase.sample, phase.reason, phase.consent, s)} testId={`att-site-${s.id}`} />
           ))}
         </div>
@@ -336,13 +362,28 @@ export function EasyAttendance({ db, userId, sites, autoQr }: { db: DemoDB; user
           {phase.sample ? <AlertTriangle size={26} className="mt-0.5 shrink-0 text-warn" aria-hidden /> : <MapPinOff size={26} className="mt-0.5 shrink-0 text-warn" aria-hidden />} {title}
         </p>
         {phase.reason === "denied" && <DeniedHelp />}
-        <p className="text-[1.05rem] text-ink-2">현장에 도착했다면 ‘다시 위치 잡기’를 누르세요. 그대로 기록하면 본사 화면에 표시됩니다.</p>
-        <button type="button" onClick={() => start(phase.mode, phase.consent)} className={cx(bigBtn, "bg-cta text-cta-text")} data-testid="att-retry">
-          다시 위치 잡기
-        </button>
-        <button type="button" onClick={() => commit(phase.mode, phase.site, phase.sample, phase.reason, phase.consent)} disabled={busy} className="press min-h-[3.8rem] w-full rounded-full border-2 border-line-strong bg-surface text-[1.08rem] font-bold" data-testid="att-anyway">
-          이대로 {phase.mode === "in" ? "출근" : "퇴근"} 기록 (본사에 표시됨)
-        </button>
+        {phase.reason === "denied" ? (
+          // 휴대폰이 위치를 막으면 다시 잡아도 소용없다 → 기록이 큰 버튼 (D-66)
+          <>
+            <p className="text-[1.05rem] text-ink-2">위치 없이 기록하면 본사 화면에 ‘위치 없음’으로 표시돼요.</p>
+            <button type="button" onClick={() => commit(phase.mode, phase.site, phase.sample, phase.reason, phase.consent)} disabled={busy} className={cx(bigBtn, "bg-cta text-cta-text")} data-testid="att-anyway">
+              위치 없이 {phase.mode === "in" ? "출근" : "퇴근"} 기록
+            </button>
+            <button type="button" onClick={() => start(phase.mode, phase.consent)} className="press min-h-[3.8rem] w-full rounded-full border-2 border-line-strong bg-surface text-[1.08rem] font-bold" data-testid="att-retry">
+              위치 허용했어요 · 다시 잡기
+            </button>
+          </>
+        ) : (
+          <>
+            <p className="text-[1.05rem] text-ink-2">현장에 도착했다면 ‘다시 위치 잡기’를 누르세요. 그대로 기록하면 본사 화면에 표시됩니다.</p>
+            <button type="button" onClick={() => start(phase.mode, phase.consent)} className={cx(bigBtn, "bg-cta text-cta-text")} data-testid="att-retry">
+              다시 위치 잡기
+            </button>
+            <button type="button" onClick={() => commit(phase.mode, phase.site, phase.sample, phase.reason, phase.consent)} disabled={busy} className="press min-h-[3.8rem] w-full rounded-full border-2 border-line-strong bg-surface text-[1.08rem] font-bold" data-testid="att-anyway">
+              이대로 {phase.mode === "in" ? "출근" : "퇴근"} 기록 (본사에 표시됨)
+            </button>
+          </>
+        )}
         {demoBtn(phase.mode, phase.site)}
         <button type="button" onClick={() => setPhase({ k: "idle" })} className="press min-h-12 w-full rounded-xl text-[1.02rem] font-bold text-ink-2">
           취소
@@ -406,9 +447,17 @@ export function EasyAttendance({ db, userId, sites, autoQr }: { db: DemoDB; user
           </button>
         </>
       ) : closed.length > 0 ? (
-        <p className="text-[1.15rem] font-bold" data-testid="att-status">
-          오늘 근무 끝 · {closed.map((r) => `${hhmm(r.inAt)}~${hhmm(r.outAt!)} (${Math.floor((minutesOf(r) ?? 0) / 60)}시간 ${(minutesOf(r) ?? 0) % 60}분)`).join(", ")}
-        </p>
+        <>
+          <p className="text-[1.15rem] font-bold" data-testid="att-status">
+            오늘 근무 끝 · {closed.map((r) => `${hhmm(r.inAt)}~${hhmm(r.outAt!)} (${Math.floor((minutesOf(r) ?? 0) / 60)}시간 ${(minutesOf(r) ?? 0) % 60}분)`).join(", ")}
+          </p>
+          {avail.length > 0 && (
+            <button type="button" onClick={() => tap("in")} disabled={busy} className="press min-h-[3.8rem] w-full rounded-full border-2 border-line-strong bg-surface text-[1.12rem] font-bold" data-testid="att-in-other">
+              <LogIn size={22} className="mr-2 inline" aria-hidden />
+              다른 현장 출근하기
+            </button>
+          )}
+        </>
       ) : qrMode ? (
         <>
           {qrButton("QR 찍고 출근", "att-qr-file")}
@@ -434,9 +483,9 @@ export function EasyAttendance({ db, userId, sites, autoQr }: { db: DemoDB; user
 /** 출퇴근이 잘못됐을 때 — 근태 수정 요청으로 */
 export function FixLink() {
   return (
-    <a href="/field/fix" className="press flex min-h-12 w-full items-center justify-center rounded-xl text-[1.02rem] font-bold text-ink-2 underline underline-offset-4" data-testid="att-fix-link">
+    <Link href="/field/fix" className="press flex min-h-12 w-full items-center justify-center rounded-xl text-[1.02rem] font-bold text-ink-2 underline underline-offset-4" data-testid="att-fix-link">
       출퇴근이 잘못 찍혔나요? 수정 요청하기
-    </a>
+    </Link>
   );
 }
 

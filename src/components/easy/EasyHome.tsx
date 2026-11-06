@@ -17,6 +17,7 @@ import { OutboxTile } from "./Outbox";
 import { EasyAttendance, FixLink } from "./EasyAttendance";
 import { EASY_CATEGORY, easyDate, easyWon } from "./words";
 import { downscalePhoto } from "./photo";
+import { errorMessage } from "@/lib/data/commands";
 
 export function EasyHome() {
   const { db, role, userId, user } = useMe();
@@ -142,7 +143,7 @@ export function MyRecords({ db, userId, limit }: { db: DemoDB; userId: string; l
       setAsk(null);
       setMsg("보고를 취소했어요.");
     } catch (e) {
-      setMsg(e instanceof Error ? e.message : "취소하지 못했어요.");
+      setMsg(errorMessage(e, "취소하지 못했어요."));
     } finally {
       setBusy(null);
     }
@@ -189,7 +190,7 @@ export function MyRecords({ db, userId, limit }: { db: DemoDB; userId: string; l
                       <button type="button" onClick={() => setAsk(null)} className="press h-[3.3rem] rounded-xl border-2 border-line-strong text-[1.05rem] font-bold">
                         아니요
                       </button>
-                      <button type="button" onClick={() => cancel(r.id)} disabled={busy === r.id} className="press h-[3.3rem] rounded-xl bg-err text-[1.05rem] font-bold text-white disabled:opacity-50" data-testid="record-cancel-yes">
+                      <button type="button" onClick={() => cancel(r.id)} disabled={busy === r.id} className="press h-[3.3rem] rounded-xl bg-err text-[1.05rem] font-bold text-white disabled:bg-surface-3 disabled:text-ink-2 disabled:shadow-none" data-testid="record-cancel-yes">
                         네, 취소
                       </button>
                     </div>
@@ -249,7 +250,7 @@ function Supplement({ reportId, note }: { reportId: string; note?: string }) {
       await run("supplementReport", { reportId, text, ...(photo ? { photoDataUrls: [photo] } : {}) });
       setOpen(false);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "보내지 못했어요.");
+      setErr(errorMessage(e, "보내지 못했어요."));
     } finally {
       setBusy(false);
     }

@@ -237,13 +237,16 @@ function RequestForm({ siteId, disabled }: { siteId: string; disabled: boolean }
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [sent, setSent] = useState(false);
   return (
-    <Card id="request" data-testid="partner-form">
+    <Card id="request" className="scroll-mt-40" data-testid="partner-form">
       <CardHeader title="요청하기" sub="전화 없이 요청을 남기면 태강지엘텍 본사 요청함에 바로 접수됩니다" />
       {sent ? (
         <div className="anim-pop flex flex-col items-center gap-2 px-5 pb-6 pt-2 text-center" data-testid="partner-sent">
           <CircleCheck size={40} className="text-ok" />
           <p className="text-[1.05rem] font-bold">요청이 접수되었습니다</p>
-          <p className="text-[0.85rem] text-ink-3">처리 상태는 오른쪽 ‘내 요청’에서 확인할 수 있습니다.</p>
+          <p className="text-[0.85rem] text-ink-3">처리 상태는 ‘내 요청’에서 확인할 수 있습니다. 담당자가 답하면 그곳에 표시됩니다.</p>
+          <a href="#my-requests" className="press mt-1 inline-flex min-h-11 items-center rounded-full border border-line-strong px-4 text-[0.9rem] font-bold" data-testid="partner-sent-go">
+            내 요청 보기
+          </a>
           <Button
             className="mt-2"
             onClick={() => {
@@ -268,11 +271,14 @@ function RequestForm({ siteId, disabled }: { siteId: string; disabled: boolean }
               await run("createPartnerRequest", { idempotencyKey: key, siteId, title, description: desc, desiredDate: date, type, ...(goods ? { item, qty } : {}) });
               setSent(true);
               setErrors({});
-              toast.push({ tone: "ok", title: "요청을 접수했습니다", desc: "본사 ‘위험 분석·조치 > 요청함’에 표시됩니다." });
+              toast.push({ tone: "ok", title: "요청을 접수했습니다", desc: "태강지엘텍 담당자가 확인하면 ‘내 요청’에 답이 표시됩니다." });
+              document.getElementById("request")?.scrollIntoView({ block: "start", behavior: "smooth" });
             } catch (err) {
               if (err instanceof CommandError) {
                 setErrors(err.fieldErrors);
                 if (!Object.keys(err.fieldErrors).length) toast.push({ tone: "err", title: err.message });
+                // 빈칸 오류가 화면 위쪽 밖에 있어도 보이게 첫 오류 칸으로 (D-66)
+                else window.setTimeout(() => document.querySelector('#request [role="alert"]')?.scrollIntoView({ block: "center", behavior: "smooth" }), 50);
               }
             }
           }}

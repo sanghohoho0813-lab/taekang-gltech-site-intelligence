@@ -7,7 +7,7 @@ import { Camera, CircleCheck, HardHat, MapPin, Plus, Users, X } from "lucide-rea
 import { run } from "@/lib/data/store";
 import { useMe } from "@/lib/data/hooks";
 import { IS_LIVE } from "@/lib/mode";
-import { CommandError } from "@/lib/data/commands";
+import { CommandError, errorMessage } from "@/lib/data/commands";
 import type { GeoStamp, Site } from "@/lib/domain/types";
 import { geoText, judgeGeo, type GeoSample } from "@/lib/domain/geo";
 import { recentTeams } from "@/lib/domain/crew";
@@ -15,7 +15,7 @@ import { todayIso } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
 import { locateOnce } from "@/lib/geo/client";
 import { cx } from "@/components/ui/primitives";
-import { Choice, EasyBar, EasyPageHead, EasyQuestion, SectionBar, Stepper, VoiceHint, easyTextareaCls, AtBottom, NoSite } from "./ui";
+import { Choice, EasyBar, EasyPageHead, EasyQuestion, SectionBar, Stepper, VoiceHint, easyTextareaCls, AtBottom, NoSite, useWizardActive } from "./ui";
 import { downscalePhoto } from "./photo";
 import { easyDate } from "./words";
 import { hasConsent } from "@/lib/domain/privacy";
@@ -27,6 +27,7 @@ export function EasyCrew() {
   const sites = useMemo<Site[]>(() => (!db ? [] : role === "field" && !IS_LIVE ? db.sites.filter((s) => s.fieldUserId === userId) : db.sites), [db, role, userId]);
   const [siteId, setSiteId] = useState(sites.length === 1 ? sites[0].id : "");
   const [stack, setStack] = useState<Step[]>([sites.length === 1 ? "team" : "site"]);
+  useWizardActive(stack.length > 1);
   const [team, setTeam] = useState("");
   const [kind, setKind] = useState<"direct" | "subcontract">("subcontract");
   const [newTeam, setNewTeam] = useState(false);
@@ -84,7 +85,7 @@ export function EasyCrew() {
       const r = await run("reportCrew", { siteId: site.id, team, kind, headcount: count, ...(photo ? { photoDataUrl: photo } : {}), geo: geo ?? { noLocation: consented ? "timeout" : "skipped" }, idempotencyKey: key });
       setDone({ team, count, updated: r.updated });
     } catch (e) {
-      setErr(e instanceof CommandError || e instanceof Error ? e.message : "보내지 못했어요. 다시 눌러 주세요.");
+      setErr(errorMessage(e, "보내지 못했어요. 다시 눌러 주세요."));
     } finally {
       setBusy(false);
     }
