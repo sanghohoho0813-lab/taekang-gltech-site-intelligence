@@ -2,7 +2,7 @@
 import type { RoleId } from "@/lib/domain/types";
 import { IS_LIVE } from "@/lib/mode";
 
-export type GroupId = "ops" | "growth" | "ax" | "admin";
+export type GroupId = "portal" | "ops" | "growth" | "ax" | "admin";
 
 export interface NavItem {
   href: string;
@@ -25,6 +25,8 @@ export function navLabel(item: Pick<NavItem, "label" | "fieldLabel">, role: Role
 }
 
 export const GROUPS: { id: GroupId; label: string; color: string }[] = [
+  // 발주처 포털은 고객에게 보이는 화면이라 내부 메뉴(고객·정산)와 섞지 않고 맨 위에 따로 둔다 (D-67)
+  { id: "portal", label: "고객 화면", color: "var(--g-portal)" },
   { id: "ops", label: "운영", color: "var(--g-ops)" },
   { id: "growth", label: "고객·정산", color: "var(--g-growth)" },
   { id: "ax", label: "AX·성과", color: "var(--g-ax)" },
@@ -35,6 +37,7 @@ const INTERNAL: RoleId[] = ["ceo", "manager"];
 const ALL_INTERNAL: RoleId[] = ["ceo", "manager", "field"];
 
 export const NAV: NavItem[] = [
+  { href: "/partner", label: "발주처 포털", icon: "Handshake", group: "portal", roles: ["ceo", "manager", "partner"], desc: "발주처가 보는 화면 — 공정·공개 사진·요청 (내부 금액 없음)" },
   { href: "/dashboard", label: "대시보드", icon: "LayoutDashboard", group: "ops", roles: INTERNAL, alsoAccess: ["field"], desc: "전체 현장 손익·위험 한눈에" },
   { href: "/sites", label: "현장 관리", fieldLabel: "내 현장", icon: "Building2", group: "ops", roles: ALL_INTERNAL, desc: "현장별 손익·원가·공정" },
   { href: "/field", label: "현장 보고", fieldLabel: "홈", icon: "ClipboardPen", group: "ops", roles: ALL_INTERNAL, desc: "모바일 일보·추가 비용 입력" },
@@ -48,7 +51,6 @@ export const NAV: NavItem[] = [
   { href: "/my", label: "내 정보", icon: "UserRound", group: "ops", roles: ["field"], alsoAccess: ["ceo", "manager"], desc: "글자 크기·내가 보낸 보고·비밀번호" },
   { href: "/finance", label: "기성·수금", icon: "Wallet", group: "growth", roles: INTERNAL, desc: "계약·변경공사·기성·입금·미수" },
   { href: "/report", label: "대표 보고서", icon: "FileBarChart", group: "growth", roles: INTERNAL, desc: "실시간 손익 변화 보고" },
-  { href: "/partner", label: "발주처 포털", icon: "Handshake", group: "growth", roles: ["ceo", "manager", "partner"], desc: "발주처·협력사 상태 공유" },
   { href: "/insights", label: "위험 분석·조치", icon: "ShieldAlert", group: "ax", roles: INTERNAL, alsoAccess: ["field"], desc: "규칙 기반 진단 → 조치 → 결과" },
   { href: "/usage", label: "사용 현황", icon: "Activity", group: "ax", roles: INTERNAL, desc: "현장 직원 정착도·본사 응답 시간 (실사용 검증)" },
   { href: "/evidence", label: "실증 기록", icon: "BadgeCheck", group: "ax", roles: INTERNAL, desc: "조치 성과 기록·성과 지표·12주 계획" },

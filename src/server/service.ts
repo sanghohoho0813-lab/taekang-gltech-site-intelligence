@@ -168,8 +168,13 @@ export async function executeCommand(m: Member, name: unknown, args: unknown): P
 // ───────────── 사진 ─────────────
 
 export async function getPhoto(m: Member, id: string): Promise<{ mime: string; data: Uint8Array } | null> {
-  if (m.role === "partner") return null;
   const db = await getDb();
+  if (m.role === "partner") {
+    // 발주처는 본사가 공개한 본인 현장 사진만 (D-67)
+    const state = await db.transaction((tx) => loadState(tx, m.companyId));
+    const p = state.photos.find((x) => x.id === id);
+    if (!p || !p.shared || !m.partnerSiteIds.includes(p.siteId)) return null;
+  }
   const [row] = await db.query<{ mime: string; data: Uint8Array; site_id: string | null }>(
     `select mime, data, site_id from photo_blobs where id = $1 and company_id = $2`,
     [id, m.companyId],

@@ -213,7 +213,7 @@ export function AttendanceBoard() {
                 <p className="px-5 pb-5 text-[0.84rem] text-ink-3">배정된 현장 직원이 없습니다.</p>
               ) : (
                 <div tabIndex={0} role="region" aria-label="출퇴근 표 (가로 스크롤)" className="relative overflow-x-auto border-t border-line">
-                  <table className="w-full min-w-[34rem] text-[0.84rem]">
+                  <table className="stack-table w-full min-w-[34rem] text-[0.84rem]">
                     <thead>
                       <tr className="text-left text-[0.74rem] text-ink-3">
                         <th className="px-5 py-2 font-semibold">이름</th>
@@ -232,7 +232,7 @@ export function AttendanceBoard() {
                         const min = r ? minutesOf(r) : null;
                         return (
                           <tr key={u} className="border-t border-line align-top" data-testid="att-row" data-user={u}>
-                            <td className="px-5 py-2.5">
+                            <td className="stack-full px-5 py-2.5">
                               <span className="font-bold">{name(u)}</span>
                               {fl.map((f, i) => (
                                 <Badge key={i} tone="err" className="ml-1.5">
@@ -243,10 +243,10 @@ export function AttendanceBoard() {
                             </td>
                             {r ? (
                               <>
-                                <td className="py-2.5">
+                                <td className="py-2.5" data-label="출근">
                                   <span className="num font-semibold">{hhmm(r.inAt)}</span> <GeoChip g={r.inGeo} /> <MapA g={r.inGeo} /> <QrChip q={r.inQr} required={qrMode} />
                                 </td>
-                                <td className="py-2.5">
+                                <td className="py-2.5" data-label="퇴근">
                                   {r.outAt ? (
                                     <>
                                       <span className="num font-semibold">{hhmm(r.outAt)}</span> <GeoChip g={r.outGeo} label="본사 정정" /> <MapA g={r.outGeo} />
@@ -255,7 +255,7 @@ export function AttendanceBoard() {
                                     <span className={cx("text-[0.8rem] font-semibold", date < today ? "text-warn" : "text-ink-3")}>{date < today ? "퇴근 기록 없음" : "근무 중"}</span>
                                   )}
                                 </td>
-                                <td className="num py-2.5">{min === null ? "—" : `${Math.floor(min / 60)}시간 ${min % 60}분`}</td>
+                                <td className="num py-2.5" data-label="근무">{min === null ? "—" : `${Math.floor(min / 60)}시간 ${min % 60}분`}</td>
                                 <td className="py-2.5 pr-5 text-right">
                                   <Button size="sm" variant="ghost" icon={<Pencil size={14} />} onClick={() => setFix(r)} data-testid="att-fix">
                                     정정
@@ -263,7 +263,7 @@ export function AttendanceBoard() {
                                 </td>
                               </>
                             ) : (
-                              <td colSpan={4} className={cx("py-2.5 pr-5 text-[0.8rem] font-semibold", elsewhere(u) ? "text-ink-3" : "text-warn")}>
+                              <td colSpan={4} className={cx("stack-full py-2.5 pr-5 text-[0.8rem] font-semibold", elsewhere(u) ? "text-ink-3" : "text-warn")}>
                                 {elsewhere(u) ? `${db.sites.find((x) => x.id === elsewhere(u)!.siteId)?.shortName}에 출근` : date === today ? "아직 출근 기록 없음" : "출근 기록 없음"}
                               </td>
                             )}
@@ -321,7 +321,7 @@ export function AttendanceBoard() {
           <EmptyState title="이 달의 출퇴근 기록이 없습니다" />
         ) : (
           <div tabIndex={0} role="region" aria-label="출퇴근 표 (가로 스크롤)" className="relative overflow-x-auto border-t border-line">
-            <table className="w-full min-w-[36rem] text-[0.84rem]">
+            <table className="stack-table w-full min-w-[36rem] text-[0.84rem]">
               <thead>
                 <tr className="text-left text-[0.74rem] text-ink-3">
                   {["이름", "출근일수", "총 근무", "퇴근 누락", "현장 밖", "위치 없음", "QR 확인", "본사 정정"].map((h) => (
@@ -334,14 +334,14 @@ export function AttendanceBoard() {
               <tbody>
                 {month.map((m) => (
                   <tr key={m.userId} className="border-t border-line" data-testid="att-month-row">
-                    <td className="py-2 pl-5 pr-3 font-bold">{name(m.userId)}</td>
-                    <td className="num px-3 py-2">{m.days}일</td>
-                    <td className="num px-3 py-2">{(m.minutes / 60).toFixed(1)}시간</td>
-                    <td className={cx("num px-3 py-2", m.noCheckout > 0 && "font-bold text-warn")}>{m.noCheckout}</td>
-                    <td className={cx("num px-3 py-2", m.outside > 0 && "font-bold text-err")}>{m.outside}</td>
-                    <td className={cx("num px-3 py-2", m.noLocation > 0 && "font-bold text-warn")}>{m.noLocation}</td>
-                    <td className="num px-3 py-2">{m.qrOk}</td>
-                    <td className="num px-3 py-2">{m.corrected}</td>
+                    <td className="stack-full py-2 pl-5 pr-3 font-bold">{name(m.userId)}</td>
+                    <td className="num px-3 py-2" data-label="출근일수">{m.days}일</td>
+                    <td className="num px-3 py-2" data-label="총 근무">{(m.minutes / 60).toFixed(1)}시간</td>
+                    <td className={cx("num px-3 py-2", m.noCheckout > 0 && "font-bold text-warn")} data-label="퇴근 누락">{m.noCheckout}</td>
+                    <td className={cx("num px-3 py-2", m.outside > 0 && "font-bold text-err")} data-label="현장 밖">{m.outside}</td>
+                    <td className={cx("num px-3 py-2", m.noLocation > 0 && "font-bold text-warn")} data-label="위치 없음">{m.noLocation}</td>
+                    <td className="num px-3 py-2" data-label="QR 확인">{m.qrOk}</td>
+                    <td className="num px-3 py-2" data-label="본사 정정">{m.corrected}</td>
                   </tr>
                 ))}
               </tbody>

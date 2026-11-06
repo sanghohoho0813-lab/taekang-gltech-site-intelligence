@@ -42,7 +42,7 @@ import { todayIso } from "@/lib/domain/format";
 import { shiftDate } from "@/lib/domain/attendance";
 import { uid } from "@/lib/domain/ids";
 import { cx } from "@/components/ui/primitives";
-import { BigNumber, Chip, Choice, EasyBar, EasyPageHead, EasyQuestion, SectionBar, Stepper, VoiceHint, easyTextareaCls, AtBottom, NoSite, useWizardActive } from "./ui";
+import { BigNumber, Chip, Choice, EasyBar, EasyPageHead, EasyQuestion, SectionBar, Stepper, VoiceHint, easyTextareaCls, AtBottom, NoSite, useWizardActive, useStepHistory } from "./ui";
 import { DEFAULT_WORK, EASY_CATEGORY, EASY_CATEGORY_ORDER, EASY_REASON, EASY_REASON_ORDER, ISSUE_CHIPS, NO_WORK, easyDate, easyWon } from "./words";
 import { downscalePhoto } from "./photo";
 import { hasConsent } from "@/lib/domain/privacy";
@@ -143,6 +143,7 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
   const [memo, setMemo] = useState("");
   const [stack, setStack] = useState<StepId[]>(() => [firstStep(mode, !initialSite)]);
   useWizardActive(stack.length > 1);
+  useStepHistory(stack.length, () => setStack((x) => (x.length > 1 ? x.slice(0, -1) : x)), !embedded);
   const [discardAsk, setDiscardAsk] = useState(false);
   const [returnToConfirm, setReturnToConfirm] = useState(false);
   const [editingKey, setEditingKey] = useState<string | null>(null);
@@ -1080,6 +1081,24 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
                 ),
                 mode === "cost" ? "cost-list" : "cost",
               )}
+            {/* 추가 비용만 보낼 때도 영수증·현장 사진을 붙일 수 있게 — 화면을 늘리지 않고 확인 화면에서 바로 (D-67) */}
+            {mode === "cost" && (
+              <div className="border-b border-line py-3.5 last:border-b-0" data-testid="confirm-receipt">
+                <p className="text-[0.98rem] font-bold text-ink-2">영수증·현장 사진 (선택)</p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  {photos.map((p, i) => (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img key={i} src={p} alt={`사진 ${i + 1}`} className="size-16 rounded-lg object-cover" />
+                  ))}
+                  {photos.length < 3 && (
+                    <label className="press inline-flex min-h-12 cursor-pointer items-center gap-2 rounded-full border-2 border-line-strong bg-surface px-4 text-[1.02rem] font-bold">
+                      <Camera size={20} aria-hidden /> {photos.length ? "한 장 더" : "사진 찍기"}
+                      <input type="file" accept="image/*" capture="environment" className="sr-only" onChange={(e) => onFiles(e.target.files, e.currentTarget)} data-testid="receipt-camera" />
+                    </label>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
           {consented && (
             <p className="flex items-center gap-2 text-[1.02rem] text-ink-2" data-testid="confirm-geo">

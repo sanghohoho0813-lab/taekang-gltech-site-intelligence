@@ -55,7 +55,8 @@ function SlipCard({ s, url, phone }: { s: Slip; url: string; phone?: string }) {
       </p>
       {s.sites.length > 0 && <p className="text-[9.5pt] text-neutral-600">담당 {s.sites.join(", ")}</p>}
       <div className="mt-2.5 flex items-center gap-3">
-        <Qr text={url} />
+        {/* QR에 아이디를 넣어 두면 로그인 화면에 아이디가 채워져 비밀번호만 치면 된다 (장갑 낀 손 · D-67) */}
+        <Qr text={s.email ? `${url}?id=${encodeURIComponent(s.email)}` : url} />
         <div className="min-w-0 text-[10pt] leading-snug">
           <p className="font-bold">① 휴대폰 카메라로 QR을 찍으세요</p>
           <p className="mt-0.5 break-all text-[8.5pt] text-neutral-600">{url}</p>

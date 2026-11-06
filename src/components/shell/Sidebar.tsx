@@ -83,7 +83,7 @@ export function Sidebar({ compact }: { compact: boolean }) {
               ) : (
                 <div className="mx-3 mb-2 h-px bg-shell-line" aria-hidden />
               )}
-              <ul className="space-y-0.5">
+              <ul className={cx("space-y-0.5", g.id === "portal" && !compact && "rounded-xl border border-shell-line bg-shell-card p-1")}>
                 {list.map((item) => {
                   const active = isActivePath(pathname, item.href);
                   const badge = badgeFor(item.href);

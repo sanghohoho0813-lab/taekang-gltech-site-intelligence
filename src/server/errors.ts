@@ -52,9 +52,10 @@ export async function recordError(m: Pick<Member, "id" | "role" | "companyId">, 
              updated_at = now()`,
       [m.companyId, COLLECTION, id, JSON.stringify(data), now],
     );
+    // 오래 안 난 오류부터 정리 — 처음 기록된 순서(seq)로 지우면 지금도 반복되는 오래된 오류가 먼저 지워졌다 (D-67)
     await tx.query(
-      `delete from records where company_id = $1 and collection = $2 and seq < coalesce(
-         (select seq from records where company_id = $1 and collection = $2 order by seq desc offset ${MAX_ERROR_ROWS - 1} limit 1), 0)`,
+      `delete from records where company_id = $1 and collection = $2 and (updated_at, seq) < (
+         select updated_at, seq from records where company_id = $1 and collection = $2 order by updated_at desc, seq desc offset ${MAX_ERROR_ROWS - 1} limit 1)`,
       [m.companyId, COLLECTION],
     );
   });

@@ -83,7 +83,7 @@ export function EasyHome() {
         {sites.length > 0 && (
           <nav className="space-y-3" aria-label="할 일">
             <BigTile href="/field/report" tone="cta" icon={<ClipboardPen size={30} />} label="오늘 보고하기" sub="작업 · 사진 · 비용을 차례대로 물어봐요" testId="easy-go-report" />
-            <div className="grid grid-cols-2 gap-3">
+            <div className="tile-grid grid grid-cols-2 gap-3">
               <ActionTile href="/field/crew" tint="info" icon={<Users size={26} />} label="오늘 작업 인원 알리기" sub="팀별 인원과 단체 사진" testId="easy-go-crew" />
               <ActionTile
                 href="/my-actions"

@@ -5,7 +5,7 @@
  * 원칙: 한 화면에 질문 하나 · 큰 글자(19px 이상) · 누르는 곳은 높이 64px 이상 · 고르는 방식(타자 최소) · 쉬운 말
  */
 import Link from "next/link";
-import { cloneElement, isValidElement, type ReactNode, useEffect } from "react";
+import { cloneElement, isValidElement, type ReactNode, useEffect, useRef } from "react";
 import { Check, ChevronLeft, Loader2, Minus, Plus } from "lucide-react";
 import { cx } from "@/components/ui/primitives";
 
@@ -286,6 +286,46 @@ export function useWizardActive(active: boolean) {
       delete el.dataset.wizard;
     };
   }, [active]);
+}
+
+/**
+ * 휴대폰 ‘뒤로’ 버튼 = 이전 단계 (D-67) — 예전에는 뒤로를 누르면 쓰던 보고(사진 포함)가 통째로 닫혔다.
+ * 단계가 늘 때마다 같은 주소로 기록을 하나씩 쌓고, 뒤로(popstate)가 오면 한 단계 되돌린다.
+ * 화면 안 ‘이전’·처음으로 등으로 단계가 줄면 쌓아 둔 기록도 그만큼 되돌려 맞춘다(그때 오는 popstate는 무시).
+ */
+export function useStepHistory(depth: number, stepBack: () => void, enabled = true) {
+  const pushed = useRef(0);
+  const ignore = useRef(0);
+  const backRef = useRef(stepBack);
+  backRef.current = stepBack;
+  useEffect(() => {
+    if (!enabled) return;
+    const target = Math.max(0, depth - 1);
+    if (target > pushed.current) {
+      for (let i = pushed.current; i < target; i++) window.history.pushState(null, "", window.location.href);
+      pushed.current = target;
+    } else if (target < pushed.current) {
+      const n = pushed.current - target;
+      pushed.current = target;
+      ignore.current += 1;
+      window.history.go(-n);
+    }
+  }, [depth, enabled]);
+  useEffect(() => {
+    if (!enabled) return;
+    const onPop = () => {
+      if (ignore.current > 0) {
+        ignore.current -= 1;
+        return;
+      }
+      if (pushed.current > 0) {
+        pushed.current -= 1;
+        backRef.current();
+      }
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [enabled]);
 }
 
 export function EasyBar({

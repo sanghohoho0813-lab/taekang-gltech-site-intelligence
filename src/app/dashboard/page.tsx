@@ -177,7 +177,7 @@ function CeoDashboard() {
                     <th className="px-3 py-2.5 text-right" title="승인된 변경계약 포함">계약금액</th>
                     <th className="px-3 py-2.5 text-right">예상 총원가</th>
                     <th className="px-3 py-2.5 text-right">예상이익</th>
-                    <th className="whitespace-nowrap px-3 py-2.5 text-right">이익률 (계획→현재)</th>
+                    <th className="whitespace-nowrap px-3 py-2.5 text-right" title="계약 때 실행예산으로 잡은 이익률 → 지금 예상">이익률 (계약 계획 → 현재)</th>
                     <th className="px-3 py-2.5 w-36">공정률</th>
                     <th className="px-5 py-2.5">상태</th>
                   </tr>

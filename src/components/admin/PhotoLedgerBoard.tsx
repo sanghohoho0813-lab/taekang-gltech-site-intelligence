@@ -1,8 +1,13 @@
 "use client";
 
 /** 공사사진대장 — 현장 사진을 날짜순으로 모아 일자·공종·내용·촬영자를 붙이고, 고른 사진만 인쇄 (A4 한 장에 6장) */
+import Link from "next/link";
 import { useMemo, useState } from "react";
-import { Printer } from "lucide-react";
+import { Eye, EyeOff, Printer } from "lucide-react";
+import { dispatch, run } from "@/lib/data/store";
+import { samplePhotos } from "@/lib/domain/samplePhotos";
+import { errorMessage } from "@/lib/data/commands";
+import { useToast } from "@/components/ui/Toast";
 import { useMe } from "@/lib/data/hooks";
 import { PHOTO_KIND_LABEL, photoLedger, type LedgerEntry } from "@/lib/domain/photoLedger";
 import { shiftDate } from "@/lib/domain/attendance";
@@ -16,6 +21,8 @@ const SCREEN_LIMIT = 240;
 
 export function PhotoLedgerBoard() {
   const { db } = useMe();
+  const toast = useToast();
+  const [sharing, setSharing] = useState<string | null>(null);
   const sites = db?.sites ?? [];
   const [siteId, setSiteId] = useState("");
   const [range, setRange] = useState<"30" | "month" | "all">("30");
@@ -101,12 +108,40 @@ export function PhotoLedgerBoard() {
 
       {shown.length === 0 ? (
         <Card className="no-print">
-          <EmptyState title="이 기간에 사진이 없습니다" desc="현장소장이 ‘사진만 보내기’나 보고에서 사진을 올리면 여기에 쌓입니다." />
+          <EmptyState
+            title="이 기간에 사진이 없습니다"
+            desc="현장소장이 ‘사진만 보내기’나 보고에서 사진을 올리면 여기에 쌓입니다."
+            action={
+              !IS_LIVE ? (
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    // 시연판 전용 — ‘예시’라고 적힌 그림을 넣어 사진대장·발주처 공개를 보여 준다 (D-67)
+                    dispatch((d) => {
+                      const add = samplePhotos(site, todayIso(), "u-field").filter((p) => !d.photos.some((x) => x.id === p.id));
+                      return { db: { ...d, photos: [...d.photos, ...add], updatedAt: new Date().toISOString(), rev: d.rev + 1 }, result: add.length };
+                    });
+                    setRange("30");
+                  }}
+                  data-testid="ledger-sample"
+                >
+                  시연용 예시 사진 6장 넣기
+                </Button>
+              ) : undefined
+            }
+          />
         </Card>
       ) : (
         <Card className="no-print" data-testid="ledger-pick">
           <p className="px-5 pt-4 text-[0.84rem] text-ink-2">
             전체 {shown.length}장 · 인쇄 <b data-testid="ledger-count">{chosen.length}</b>장 — 사진을 누르면 빼고 넣습니다
+          </p>
+          {/* 발주처 공개 (D-67): 고른 사진만 발주처 포털 ‘공정 사진’에 보인다 — 내부 설명·찍은 사람은 보내지 않음 */}
+          <p className="px-5 pt-1 text-[0.8rem] text-ink-3" data-testid="ledger-shared-count">
+            발주처 공개 <b className="text-ink">{shown.filter((e) => e.photo.shared).length}</b>장 · 사진 아래 ‘발주처 공개’를 누르면 고객 화면에 보입니다 ·{" "}
+            <Link href="/partner#photos" className="font-bold text-theme-ink underline">
+              발주처 포털에서 보기
+            </Link>
           </p>
           <ul className="grid grid-cols-2 gap-2 p-4 @min-[700px]:grid-cols-4 @min-[1100px]:grid-cols-6">
             {shown.map((e) => {
@@ -119,6 +154,27 @@ export function PhotoLedgerBoard() {
                     <span className="block truncate px-1.5 py-1 text-[0.72rem] text-ink-2">
                       <span className="num">{e.date.slice(5).replace("-", "/")}</span> · {PHOTO_KIND_LABEL[e.kind]}
                     </span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={sharing === e.photo.id}
+                    onClick={async () => {
+                      setSharing(e.photo.id);
+                      try {
+                        await run("setPhotoShare", { photoIds: [e.photo.id], shared: !e.photo.shared, caption: e.stage });
+                        toast.push({ tone: "ok", title: e.photo.shared ? "발주처 공개를 껐습니다" : "발주처 포털에 공개했습니다", desc: e.photo.shared ? undefined : `설명: ${e.stage}` });
+                      } catch (err) {
+                        toast.push({ tone: "err", title: errorMessage(err, "바꾸지 못했습니다") });
+                      } finally {
+                        setSharing(null);
+                      }
+                    }}
+                    className={cx("press mt-1 inline-flex min-h-10 w-full items-center justify-center gap-1.5 rounded-lg border text-[0.76rem] font-bold", e.photo.shared ? "border-active bg-active-soft text-theme-ink" : "border-line text-ink-2")}
+                    aria-pressed={!!e.photo.shared}
+                    data-testid="ledger-share"
+                  >
+                    {e.photo.shared ? <Eye size={14} aria-hidden /> : <EyeOff size={14} aria-hidden />}
+                    {e.photo.shared ? "발주처 공개 중" : "발주처 공개"}
                   </button>
                 </li>
               );

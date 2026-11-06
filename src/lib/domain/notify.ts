@@ -89,5 +89,14 @@ export function noticesFor(before: DemoDB, after: DemoDB, actorId: string): Noti
     if (!prev) push({ to: hq, title: `고객 요청 · ${PARTNER_TYPE_LABEL[r.type]}`, body: `${site(r.siteId)} · ${clip(r.title)}`, url: "/insights#requests", tag: `pr-${r.id}` });
     else if (prev.status !== "answered" && r.status === "answered") push({ to: [r.partnerUserId], title: "태강지엘텍 회신 도착", body: clip(r.title), url: "/partner", tag: `pr-${r.id}` });
   }
+
+  // 발주처 포털 공정 사진 새로 공개 (D-67) — 그 현장을 볼 수 있는 발주처에게 현장마다 한 번
+  const wasShared = new Set(before.photos.filter((p) => p.shared).map((p) => p.id));
+  const newly = new Map<string, number>();
+  for (const p of after.photos) if (p.shared && !wasShared.has(p.id)) newly.set(p.siteId, (newly.get(p.siteId) ?? 0) + 1);
+  for (const [siteId, n] of newly) {
+    const partners = after.users.filter((u) => u.role === "partner" && !u.inactive && (u.partnerSiteIds ?? []).includes(siteId)).map((u) => u.id);
+    push({ to: partners, title: "새 공정 사진", body: `${site(siteId)} · 사진 ${n}장이 공개되었습니다`, url: "/partner#photos", tag: `ph-${siteId}` });
+  }
   return out;
 }

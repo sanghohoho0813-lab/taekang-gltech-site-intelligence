@@ -97,7 +97,7 @@ export default function ReportPage() {
       </Card>
 
       <Card className="print-card">
-        <CardHeader title="2. 현장별 변경 전후 손익" sub="단위 억 원 · 부가세 별도 · 승인 전 변경공사는 이익 미반영" />
+        <CardHeader title="2. 현장별 변경 전후 손익" sub={`시작 = ${BASE_LABEL} · 단위 억 원 · 부가세 별도 · 승인 전 변경공사는 이익 미반영`} />
         {/* 휴대폰: 현장마다 카드 (7칸 표는 이익·미수가 화면 밖으로 밀려 안 보였다 · D-66) */}
         <ul className="divide-y divide-line border-t border-line @min-[760px]:hidden print:hidden" data-testid="report-compare-cards">
           {db.sites.map((s) => {
@@ -136,9 +136,9 @@ export default function ReportPage() {
               <tr className="border-y border-line bg-surface-2 text-left text-[0.74rem] font-semibold text-ink-3">
                 <th className="px-5 py-2.5">현장</th>
                 <th className="px-3 py-2.5 text-right" title="승인된 변경계약 포함">계약금액</th>
-                <th className="px-3 py-2.5 text-right">예상 총원가 기준 → 현재</th>
-                <th className="px-3 py-2.5 text-right">예상이익 기준 → 현재</th>
-                <th className="px-3 py-2.5 text-right">이익률 기준 → 현재</th>
+                <th className="px-3 py-2.5 text-right">예상 총원가 (시작 → 현재)</th>
+                <th className="px-3 py-2.5 text-right">예상이익 (시작 → 현재)</th>
+                <th className="px-3 py-2.5 text-right">이익률 (시작 → 현재)</th>
                 <th className="px-3 py-2.5 text-right">승인 대기 변경</th>
                 <th className="px-5 py-2.5 text-right">미수금</th>
               </tr>

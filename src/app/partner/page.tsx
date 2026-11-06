@@ -20,6 +20,8 @@ import { Clock } from "@/components/shell/Clock";
 import { IS_LIVE } from "@/lib/mode";
 import { PushCard } from "@/components/PushCard";
 import { SampleDataBanner } from "@/components/shell/AppShell";
+import { partnerProgressFeed, sharedPhotos, PARTNER_FEED_DAYS } from "@/lib/domain/partnerFeed";
+import { todayIso } from "@/lib/domain/format";
 
 const FUTURE = [
   { title: "기성 확인 요청 (직발주 건축주)", items: ["기성 내역·진행 사진 온라인 확인", "확인 이력 보관", "확인 요청 알림"] },
@@ -126,6 +128,7 @@ function PartnerPortal({ db, partner, sites: mySites, preview }: { db: NonNullab
         <nav className="no-scrollbar flex gap-1.5 overflow-x-auto border-t border-line px-3 py-2 lg:hidden" aria-label="포털 메뉴 (모바일)">
           {[
             ["#status", "현장 현황"],
+            ["#photos", "공정 사진"],
             ["#request", "요청하기"],
             ["#my-requests", "내 요청"],
             ...(showFuture ? [["#next", "확장 예정"]] : []),
@@ -194,6 +197,8 @@ function PartnerPortal({ db, partner, sites: mySites, preview }: { db: NonNullab
             </ul>
           </Card>
         </section>
+
+        <SiteUpdates db={db} siteId={site.id} preview={preview} />
 
         <div className="grid gap-5 lg:grid-cols-2">
           <RequestForm siteId={site.id} disabled={preview} />
@@ -431,5 +436,63 @@ function FutureCards() {
         <ul className="list-disc space-y-1 pl-5 text-[0.88rem] text-ink-2">{open?.items.map((i) => <li key={i}>{i}</li>)}</ul>
       </Modal>
     </>
+  );
+}
+
+/** 공정 사진(본사가 공개한 것만) + 최근 2주 공정 변화 (D-67) */
+function SiteUpdates({ db, siteId, preview }: { db: NonNullable<ReturnType<typeof useMe>["db"]>; siteId: string; preview: boolean }) {
+  const [open, setOpen] = useState<string | null>(null);
+  const photos = sharedPhotos(db, siteId).slice(0, 24);
+  // 발주처 계정은 서버가 만든 공정 변화만 받는다 (보고 원문은 오지 않음). 본사 미리보기·시연은 같은 계산을 바로 한다.
+  const feed = db.partnerFeed?.[siteId] ?? partnerProgressFeed(db, siteId, todayIso());
+  const big = photos.find((p) => p.id === open);
+  return (
+    <section id="photos" className="grid scroll-mt-40 gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+      <Card data-testid="partner-photos">
+        <CardHeader title="공정 사진" sub={photos.length ? `태강지엘텍이 공개한 사진 ${photos.length}장 · 누르면 크게 보입니다` : "아직 공개된 사진이 없습니다"} />
+        {photos.length === 0 ? (
+          <EmptyState title="공개된 공정 사진이 없습니다" desc={preview ? "본사 사진대장에서 사진 아래 ‘발주처 공개’를 누르면 여기에 보입니다." : "태강지엘텍이 사진을 공개하면 여기에 표시됩니다."} />
+        ) : (
+          <ul className="grid grid-cols-2 gap-2 px-5 pb-5 sm:grid-cols-3">
+            {photos.map((p) => (
+              <li key={p.id}>
+                <button type="button" onClick={() => setOpen(p.id)} className="press block w-full overflow-hidden rounded-xl border border-line bg-surface-2 text-left" data-testid="partner-photo">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={p.dataUrl} alt={p.shared?.caption || "공정 사진"} loading="lazy" className="aspect-[4/3] w-full object-cover" />
+                  <span className="block truncate px-2 py-1.5 text-[0.76rem] text-ink-2">
+                    <span className="num">{fmtDate(p.createdAt)}</span>
+                    {p.shared?.caption ? ` · ${p.shared.caption}` : ""}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+      <Card data-testid="partner-feed">
+        <CardHeader title="최근 공정 변화" sub={`최근 ${PARTNER_FEED_DAYS}일 · 현장 보고로 바뀐 공정 진행률`} />
+        {feed.length === 0 ? (
+          <EmptyState title={`최근 ${PARTNER_FEED_DAYS}일 동안 바뀐 공정이 없습니다`} />
+        ) : (
+          <ul className="divide-y divide-line border-t border-line">
+            {feed.slice(0, 12).map((f) => (
+              <li key={`${f.date}-${f.stage}`} className="flex items-center justify-between gap-3 px-5 py-2.5 text-[0.86rem]" data-testid="partner-feed-item">
+                <span className="min-w-0">
+                  <span className="block font-semibold [overflow-wrap:anywhere]">{f.stage}</span>
+                  <span className="num block text-[0.76rem] text-ink-3">{fmtDate(f.date)}</span>
+                </span>
+                <b className="num shrink-0">
+                  {f.from}% → {f.to}%
+                </b>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+      <Modal open={!!big} onClose={() => setOpen(null)} title={big?.shared?.caption || "공정 사진"} description={big ? fmtDate(big.createdAt) : undefined} size="lg" footer={<Button onClick={() => setOpen(null)} icon={<X size={16} />}>닫기</Button>}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        {big && <img src={big.dataUrl} alt={big.shared?.caption || "공정 사진"} className="w-full rounded-xl" />}
+      </Modal>
+    </section>
   );
 }

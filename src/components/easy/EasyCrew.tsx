@@ -15,7 +15,7 @@ import { todayIso } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
 import { locateOnce } from "@/lib/geo/client";
 import { cx } from "@/components/ui/primitives";
-import { Choice, EasyBar, EasyPageHead, EasyQuestion, SectionBar, Stepper, VoiceHint, easyTextareaCls, AtBottom, NoSite, useWizardActive } from "./ui";
+import { Choice, EasyBar, EasyPageHead, EasyQuestion, SectionBar, Stepper, VoiceHint, easyTextareaCls, AtBottom, NoSite, useWizardActive, useStepHistory } from "./ui";
 import { downscalePhoto } from "./photo";
 import { easyDate } from "./words";
 import { hasConsent } from "@/lib/domain/privacy";
@@ -28,6 +28,7 @@ export function EasyCrew() {
   const [siteId, setSiteId] = useState(sites.length === 1 ? sites[0].id : "");
   const [stack, setStack] = useState<Step[]>([sites.length === 1 ? "team" : "site"]);
   useWizardActive(stack.length > 1);
+  useStepHistory(stack.length, () => setStack((x) => (x.length > 1 ? x.slice(0, -1) : x)));
   const [team, setTeam] = useState("");
   const [kind, setKind] = useState<"direct" | "subcontract">("subcontract");
   const [newTeam, setNewTeam] = useState(false);

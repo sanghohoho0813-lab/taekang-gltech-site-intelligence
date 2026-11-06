@@ -92,7 +92,8 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     const dlg = page.getByTestId("slip-dialog");
     await expect(dlg.getByTestId("slip-card")).toHaveCount(2);
     await expect(dlg.getByTestId("slip-password")).toHaveText([fieldTemp, partnerTemp]);
-    await expect(dlg.getByTestId("slip-qr").first()).toHaveAttribute("data-text", new URL("/login", page.url()).toString());
+    // QR에는 아이디가 들어 있다 (D-67): /login?id=…
+    await expect(dlg.getByTestId("slip-qr").first()).toHaveAttribute("data-text", new RegExp(`^${new URL("/login", page.url()).toString().replace(/[.?]/g, "\\$&")}\\?id=`));
     await dlg.getByRole("button", { name: "닫기" }).first().click();
     await page.getByTestId("admin-tab-sites").click();
     await page.getByTestId("site-new").click();

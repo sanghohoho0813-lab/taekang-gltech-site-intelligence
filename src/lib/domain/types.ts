@@ -418,6 +418,16 @@ export interface SitePhoto {
   caption: string;
   createdAt: string;
   createdBy: string;
+  /** 발주처 포털에 공개 (본사가 골라서 · D-67) — 공개 설명은 내부 설명과 따로 적는다 */
+  shared?: { at: string; by: string; caption: string };
+}
+
+/** 발주처 포털 ‘최근 공정 변화’ 한 줄 (금액 없음) */
+export interface PartnerFeedItem {
+  date: string;
+  stage: string;
+  from: number;
+  to: number;
 }
 
 export type ChangeOrderStatus = "review" | "submitted" | "approved" | "rejected";
@@ -654,6 +664,8 @@ export interface DemoDB {
   costEntries: CostEntry[];
   reports: FieldReport[];
   photos: SitePhoto[];
+  /** 발주처 화면 전용(서버가 만들어 보냄): 현장별 최근 공정 변화 — 보고 원문 없이 공정·진척만 */
+  partnerFeed?: Record<string, PartnerFeedItem[]>;
   changeOrders: ChangeOrder[];
   billings: ProgressBilling[];
   payments: PaymentReceived[];

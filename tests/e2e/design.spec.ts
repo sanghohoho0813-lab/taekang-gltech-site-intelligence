@@ -24,7 +24,7 @@ test("상세설계서: 8개 장 · 권한표·데이터 표 · 금액 없음 · 
   await expect(page.getByTestId("design-client")).toContainText("태강지엘텍");
   await expect(page.getByTestId("design-role")).toHaveCount(4);
   await expect(page.getByTestId("design-flow")).toHaveCount(4);
-  await expect(page.getByTestId("design-perm")).toHaveCount(53); // 명령 49 + 계정·백업 4
+  await expect(page.getByTestId("design-perm")).toHaveCount(54); // 명령 50 + 계정·백업 4
   await expect(page.getByTestId("design-collection")).toHaveCount(24);
   await expect(page.getByTestId("design-module")).toHaveCount(7);
   // 현장 직원은 기성 청구 불가, 출근은 본인만

@@ -33,6 +33,7 @@ export function AppShell({ children, compactSidebar }: { children: ReactNode; co
         <DesktopHeader />
         {role === "field" ? <FieldMobileHeader /> : <MobileHeader />}
         <main id="main" className="@container min-w-0 flex-1 pb-[calc(5.4rem+env(safe-area-inset-bottom))] lg:pb-10">
+          <OfflineBanner />
           <SampleDataBanner />
           <AccessGate>{children}</AccessGate>
         </main>
@@ -44,6 +45,28 @@ export function AppShell({ children, compactSidebar }: { children: ReactNode; co
 }
 
 /** 운영(LIVE) 서버인데 '가상 현장으로 시작'한 회사 — 실제 데이터로 오해하지 않도록 모든 화면·인쇄물에 표시 */
+/** 인터넷이 끊기면 화면 맨 위에 알린다 — 끊긴 줄 모르고 계속 누르다 실패하던 문제 (D-67) */
+export function OfflineBanner() {
+  const [offline, setOffline] = useState(false);
+  useEffect(() => {
+    const sync = () => setOffline(!navigator.onLine);
+    sync();
+    window.addEventListener("online", sync);
+    window.addEventListener("offline", sync);
+    return () => {
+      window.removeEventListener("online", sync);
+      window.removeEventListener("offline", sync);
+    };
+  }, []);
+  if (!offline) return null;
+  return (
+    <div role="status" aria-live="polite" className="no-print sticky top-0 z-30 border-b border-warn/40 bg-warn-bg px-4 py-2.5 text-center text-[0.95rem] font-bold text-ink" data-testid="offline-banner">
+      인터넷이 끊겼어요 —{" "}
+      {IS_LIVE ? "보고·출퇴근·자재 기록은 휴대폰에 보관했다가 연결되면 자동으로 보내요." : "시연판은 이 기기에 저장되어 계속 쓸 수 있어요."}
+    </div>
+  );
+}
+
 export function SampleDataBanner() {
   const db = useDb();
   if (!IS_LIVE || !db?.settings?.sampleData) return null;

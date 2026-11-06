@@ -13,6 +13,7 @@ import * as P from "./privacyCommands";
 import * as D from "./deviceCommands";
 import * as F from "./feedbackCommands";
 import * as M from "./materialCommands";
+import * as PT from "./portalCommands";
 
 type Ctx = C.Ctx;
 
@@ -54,6 +55,8 @@ export const COMMANDS = {
   setSiteMaterials: (db: DemoDB, a: { siteId: string; items: M.MaterialItemInput[] }, ctx: Ctx) => M.setSiteMaterials(db, a, ctx),
   recordMaterial: (db: DemoDB, a: M.MaterialMoveInput, ctx: Ctx) => M.recordMaterial(db, a, ctx),
   voidMaterialMove: (db: DemoDB, a: { moveId: string; reason: string }, ctx: Ctx) => M.voidMaterialMove(db, a, ctx),
+  // 발주처 포털 공개 사진 (D-67) — 본사만
+  setPhotoShare: (db: DemoDB, a: PT.PhotoShareInput, ctx: Ctx) => PT.setPhotoShare(db, a, ctx),
   // 본사–현장 소통
   requestAttendanceFix: (db: DemoDB, a: O.FixRequestInput, ctx: Ctx) => O.requestAttendanceFix(db, a, ctx),
   reviewAttendanceFix: (db: DemoDB, a: Parameters<typeof O.reviewAttendanceFix>[1], ctx: Ctx) => O.reviewAttendanceFix(db, a, ctx),

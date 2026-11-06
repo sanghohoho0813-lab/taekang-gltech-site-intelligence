@@ -63,6 +63,17 @@ export async function disablePush(): Promise<PushState> {
   return { kind: "off" };
 }
 
+/**
+ * 로그아웃할 때 이 휴대폰의 알림만 끈다 — 함께 쓰는 휴대폰에서 앞 사람 알림이 계속 오던 문제 (D-67).
+ * 이 기기에 구독이 없으면 아무것도 하지 않는다(다른 기기의 알림은 그대로).
+ */
+export async function unsubscribeThisDevice(): Promise<void> {
+  const sub = await currentSub().catch(() => null);
+  if (!sub) return;
+  await fetch("/api/push", { method: "DELETE", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify({ endpoint: sub.endpoint }) }).catch(() => {});
+  await sub.unsubscribe().catch(() => {});
+}
+
 export async function testPush(): Promise<number> {
   const r = await fetch("/api/push/test", { method: "POST", credentials: "same-origin" });
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "시험 알림을 보내지 못했습니다.");

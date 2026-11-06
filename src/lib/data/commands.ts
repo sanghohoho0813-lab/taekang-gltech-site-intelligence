@@ -85,11 +85,13 @@ export function touch(db: DemoDB, ctx: Ctx) {
   db.rev += 1;
   db.updatedAt = nowIso(ctx);
 }
+export const IDEMPOTENCY_KEEP = 3000;
 export function claimKey(db: DemoDB, key: string | undefined) {
   if (!key) return;
   if (db.idempotencyKeys.includes(key)) throw new CommandError("이미 저장된 요청입니다. (중복 저장 방지)", "DUPLICATE");
   db.idempotencyKeys.push(key);
-  if (db.idempotencyKeys.length > 500) db.idempotencyKeys.splice(0, db.idempotencyKeys.length - 500);
+  // 통신 불량으로 며칠 보관했다가 보내는 기록도 중복으로 막을 수 있게 넉넉히 (예전 500개는 하루 이틀 치 · D-67)
+  if (db.idempotencyKeys.length > IDEMPOTENCY_KEEP) db.idempotencyKeys.splice(0, db.idempotencyKeys.length - IDEMPOTENCY_KEEP);
 }
 export function requireSite(db: DemoDB, siteId: string) {
   const s = db.sites.find((x) => x.id === siteId);

@@ -279,6 +279,8 @@ export async function logout() {
   try {
     // 휴대폰에 저장해 둔 출퇴근의 위치 좌표는 지운다 (기록은 다음 로그인 때 ‘위치 없음’으로 보냄)
     await import("@/lib/browser/outbox").then((m) => m.scrubQueuedLocation()).catch(() => {});
+    // 이 휴대폰의 알림 구독은 로그아웃 전에 지운다 (로그인된 상태여야 서버에서 지울 수 있음 · D-67)
+    await import("@/lib/browser/push").then((m) => m.unsubscribeThisDevice()).catch(() => {});
     await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" });
   } finally {
     window.location.assign("/login");

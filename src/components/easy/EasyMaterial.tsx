@@ -18,7 +18,7 @@ import { uid } from "@/lib/domain/ids";
 import { cx } from "@/components/ui/primitives";
 import { outboxAdd } from "@/lib/browser/outbox";
 import { useOutbox } from "./Outbox";
-import { Choice, EasyBar, EasyPageHead, EasyQuestion, SectionBar, easyTextareaCls, AtBottom, NoSite, useWizardActive } from "./ui";
+import { Choice, EasyBar, EasyPageHead, EasyQuestion, SectionBar, easyTextareaCls, AtBottom, NoSite, useWizardActive, useStepHistory } from "./ui";
 import { downscalePhoto } from "./photo";
 import { easyDate } from "./words";
 
@@ -40,6 +40,7 @@ export function EasyMaterial() {
   const [siteId, setSiteId] = useState(sites.length === 1 ? sites[0].id : "");
   const [stack, setStack] = useState<Step[]>([sites.length === 1 ? "kind" : "site"]);
   useWizardActive(stack.length > 1);
+  useStepHistory(stack.length, () => setStack((x) => (x.length > 1 ? x.slice(0, -1) : x)));
   const [kind, setKind] = useState<MaterialMoveKind>("install");
   // 사람이 고르기 전에는 아무것도 선택돼 보이지 않게
   const [picked, setPicked] = useState(false);

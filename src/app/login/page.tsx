@@ -27,12 +27,19 @@ function LoginForm() {
   useEffect(() => {
     void api<{ needsSetup: boolean }>("/api/setup").then((r) => setNeedsSetup(!!r.data?.needsSetup));
     // 이 휴대폰에서 마지막으로 쓴 아이디를 미리 채워 둔다 (비밀번호는 저장하지 않음)
+    // 로그인 쪽지 QR로 들어오면 그 사람 아이디를 채운다 (D-67) — 없으면 이 휴대폰에서 마지막으로 쓴 아이디
+    const fromQr = params.get("id")?.trim().toLowerCase();
+    if (fromQr && /^[^\s@]{1,64}@[^\s@]{1,190}$/.test(fromQr)) {
+      setEmail(fromQr);
+      return;
+    }
     try {
       const last = localStorage.getItem(LAST_ID);
       if (last) setEmail(last);
     } catch {
       // 무시
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const submit = async (e: React.FormEvent) => {

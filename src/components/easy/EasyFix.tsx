@@ -13,7 +13,7 @@ import type { AttendanceRequest, Site } from "@/lib/domain/types";
 import { todayIso } from "@/lib/domain/format";
 import { hhmm, shiftDate } from "@/lib/domain/attendance";
 import { uid } from "@/lib/domain/ids";
-import { Chip, Choice, EasyBar, EasyPageHead, EasyQuestion, SectionBar, AtBottom, NoSite, useWizardActive } from "./ui";
+import { Chip, Choice, EasyBar, EasyPageHead, EasyQuestion, SectionBar, AtBottom, NoSite, useWizardActive, useStepHistory } from "./ui";
 import { easyDate } from "./words";
 
 const REASONS = ["휴대폰 배터리가 꺼짐", "위치(GPS)가 안 잡힘", "깜빡하고 못 누름", "현장 밖에서 잘못 누름", "휴대폰을 두고 옴", "기타 (본사에 전화로 설명)"];
@@ -28,6 +28,7 @@ export function EasyFix() {
   const [siteId, setSiteId] = useState(sites.length === 1 ? sites[0].id : "");
   const [stack, setStack] = useState<Step[]>([sites.length === 1 ? "date" : "site"]);
   useWizardActive(stack.length > 1);
+  useStepHistory(stack.length, () => setStack((x) => (x.length > 1 ? x.slice(0, -1) : x)));
   const [moreDays, setMoreDays] = useState(false);
   const today = todayIso();
   const [date, setDate] = useState(today);

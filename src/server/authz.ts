@@ -5,6 +5,7 @@
  * 3) sanitizeResult: 명령 결과에서도 금액 정보 제거
  */
 import { hasMoney, stripMoney } from "@/lib/domain/redact";
+import { partnerProgressFeed } from "@/lib/domain/partnerFeed";
 
 /** 현장 직원이 한 번에 넣을 수 있는 비용 1건 상한 */
 export const FIELD_COST_MAX = 100_000_000;
@@ -297,6 +298,12 @@ export function viewFor(m: Member, db: DemoDB, now = new Date()): DemoDB {
     sites: db.sites.filter((s) => sites.has(s.id)).map(({ materials: _m, ...s }) => (void _m, s)),
     contracts: [...sites].map(zeroContract),
     partnerRequests: db.partnerRequests.filter((r) => sites.has(r.siteId) && r.partnerUserId === m.id),
+    // 본사가 공개한 사진만 — 내부 설명·연결된 보고/조치·찍은 사람은 빼고 공개 설명만 (D-67)
+    photos: db.photos
+      .filter((p) => sites.has(p.siteId) && p.shared)
+      .map((p) => ({ id: p.id, siteId: p.siteId, dataUrl: p.dataUrl, caption: p.shared!.caption, createdAt: p.createdAt, createdBy: "", shared: { at: p.shared!.at, by: "", caption: p.shared!.caption } })),
+    // 최근 공정 변화 — 보고 원문 없이 공정·진척만 서버가 만들어 보낸다
+    partnerFeed: Object.fromEntries([...sites].map((id) => [id, partnerProgressFeed(db, id, kstDate(now.toISOString()))])),
     // 내부 운영 설정(일당 등)은 숨기고, 가상 데이터 회사라는 표시만 전달
     settings: db.settings?.sampleData ? { costApproval: "immediate", laborDayRate: 0, sampleData: true } : undefined,
     thresholds: hideMarginTargets(db.thresholds),

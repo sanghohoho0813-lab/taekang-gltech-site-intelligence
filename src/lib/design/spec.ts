@@ -74,6 +74,7 @@ export const COMMAND_SPEC: Record<CommandName, { label: string; group: CmdGroup;
   saveSite: { label: "현장 등록·수정 (계약·실행예산·담당·공정 단계)", group: "ops", allow: HQ },
   setSiteGeo: { label: "현장 위치·반경 등록", group: "ops", allow: HQ },
   setSiteMaterials: { label: "현장 주요 자재 품목·설계 수량 정하기", group: "ops", allow: HQ },
+  setPhotoShare: { label: "발주처 포털에 현장 사진 공개·비공개", group: "partner", allow: HQ },
   setCompanySettings: { label: "운영 설정 (본사 전화·기본 일당·반영 방식)", group: "ops", allow: HQ },
   setThresholds: { label: "위험 기준 (목표 이익률 등)", group: "ops", allow: HQ },
   importData: { label: "지난 자료 엑셀 가져오기 (기성·변경공사·출력·팀 단가·원가·자재 수량)", group: "ops", allow: HQ },
