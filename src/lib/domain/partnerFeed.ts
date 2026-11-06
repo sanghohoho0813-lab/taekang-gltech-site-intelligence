@@ -52,14 +52,45 @@ export function sharedPhotos(db: DemoDB, siteId: string) {
   return db.photos.filter((p) => p.siteId === siteId && p.shared && !reply.has(p.id) && !photoWithdrawn(db, p)).sort((a, b) => (b.shared!.at > a.shared!.at ? 1 : -1));
 }
 
-/** 하자보수 진행 (발주처용): 작업지시 상태 → 배정·보수 중·보수 완료. 담당자·메모는 빼고 단계·기한만 (D-68) */
-export function partnerRepairView(db: Pick<DemoDB, "workOrders">, r: Pick<PartnerRequest, "linkedWorkOrderId">): PartnerRepairView | undefined {
+/**
+ * 하자보수 진행 (발주처용): 작업지시 상태 → 배정·보수 중·마무리 확인 중·보수 완료. 담당자·메모는 빼고 단계·기한만 (D-68)
+ * ‘보수 완료’는 태강지엘텍이 확인했을 때만 — 작업지시 완료 확인, 또는 현장 완료 뒤 회신 (현장이 ‘일부만 끝냈어요’로 보내도 완료로 보이던 문제 · D-68 점검 반영)
+ */
+export function partnerRepairView(db: Pick<DemoDB, "workOrders">, r: Pick<PartnerRequest, "linkedWorkOrderId" | "history">): PartnerRepairView | undefined {
   if (!r.linkedWorkOrderId) return undefined;
-  const w = (db.workOrders ?? []).find((x) => x.id === r.linkedWorkOrderId);
-  if (!w) return undefined;
-  const stage: PartnerRepairView["stage"] = w.status === "done" || w.status === "confirmed" ? "done" : w.status === "in_progress" || w.status === "returned" ? "in_progress" : "assigned";
-  const at = [...w.history].reverse().find((h) => (stage === "done" ? h.to === "done" : stage === "in_progress" ? h.to === "in_progress" || h.to === "returned" : true))?.at ?? w.createdAt;
+  const found = (db.workOrders ?? []).find((x) => x.id === r.linkedWorkOrderId);
+  if (!found) return undefined;
+  const w = found;
+  const last = (pred: (h: (typeof w.history)[number]) => boolean) => [...w.history].reverse().find(pred)?.at;
+  let stage: PartnerRepairView["stage"];
+  let at: string;
+  if (w.status === "confirmed") {
+    stage = "done";
+    at = last((h) => h.to === "confirmed") ?? w.createdAt;
+  } else if (w.status === "done") {
+    const doneAt = last((h) => h.to === "done") ?? w.createdAt;
+    const answeredAfter = [...r.history].reverse().find((h) => h.status === "answered" && h.at >= doneAt && !(h.note ?? "").startsWith("발주처 확인"));
+    stage = answeredAfter ? "done" : "checking";
+    at = answeredAfter?.at ?? doneAt;
+  } else if (w.status === "in_progress" || w.status === "returned") {
+    stage = "in_progress";
+    at = last((h) => h.to === "in_progress" || h.to === "returned") ?? w.createdAt;
+  } else {
+    stage = "assigned";
+    at = w.createdAt;
+  }
   return { stage, ...(w.dueDate ? { dueDate: w.dueDate } : {}), at };
+}
+
+/** 발주처에게 보이는 하자보수 한 줄 상태 — 포털·월간 보고서가 같은 말을 쓴다 (D-68 점검 반영) */
+export const DEFECT_STEPS = ["접수", "보수 배정", "보수 중", "보수 완료", "확인 완료"] as const;
+export function defectProgress(r: Pick<PartnerRequest, "status" | "confirmedAt">, repair: PartnerRepairView | undefined): { step: number; label: string } {
+  if (r.confirmedAt) return { step: 4, label: "확인 완료" };
+  if (!repair) return { step: 0, label: r.status === "answered" ? "회신 완료" : r.status === "reviewing" ? "검토 중" : "접수" };
+  if (repair.stage === "done") return { step: 3, label: "보수 완료" };
+  if (repair.stage === "checking") return { step: 2, label: "보수 중 · 마무리 확인 중" };
+  if (repair.stage === "in_progress") return { step: 2, label: "보수 중" };
+  return { step: 1, label: "보수 배정" };
 }
 
 /** 이 기간(포함)의 날짜 — 월간 보고서용 */
@@ -82,7 +113,7 @@ export interface PartnerMonthly {
   requests: PartnerRequest[];
   counts: { received: number; answered: number; open: number; defects: number; repaired: number; confirmed: number };
   /** 다음 달에 걸친 미완료 공정 */
-  next: { name: string; startDate: string; endDate: string; progressPct: number }[];
+  next: { name: string; startDate: string; endDate: string; progressPct: number; late: boolean }[];
 }
 
 /** 발주처 월간 공정 보고서 (D-68) — 금액·사람 이름·보고 원문 없이 공정·공개 사진·요청 처리만 */
@@ -118,8 +149,9 @@ export function partnerMonthly(db: DemoDB, siteId: string, month: string, feed: 
   const [y, m] = month.split("-").map(Number);
   const nm = `${m === 12 ? y + 1 : y}-${String(m === 12 ? 1 : m + 1).padStart(2, "0")}`;
   const nr = monthRange(nm);
+  // 계획 기간이 지났는데 끝나지 않은 공정도 넣고 ‘계획보다 늦음’으로 (D-68 점검 반영)
   const next = (site?.stages ?? [])
-    .filter((s) => s.progressPct < 100 && s.startDate <= nr.to && s.endDate >= nr.from)
-    .map((s) => ({ name: s.name, startDate: s.startDate, endDate: s.endDate, progressPct: s.progressPct }));
+    .filter((s) => s.progressPct < 100 && s.startDate <= nr.to)
+    .map((s) => ({ name: s.name, startDate: s.startDate, endDate: s.endDate, progressPct: s.progressPct, late: s.endDate < nr.from }));
   return { month, from, to, stages, ...(overallRow && overallRow.from !== overallRow.to ? { overall: { from: overallRow.from, to: overallRow.to } } : {}), photos, requests, counts, next };
 }

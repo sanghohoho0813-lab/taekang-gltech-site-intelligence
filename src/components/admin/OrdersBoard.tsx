@@ -1,7 +1,9 @@
 "use client";
 
 /** 본사 — 지시·확인: 작업지시(지시→접수→진행→완료→확인/보완) · 현장 보고 확인/보완 요청 · 근태 수정 요청 승인/반려 */
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import Link from "next/link";
+import { Modal } from "@/components/ui/Modal";
 import { useSearchParams } from "next/navigation";
 import { Send } from "lucide-react";
 import { useMe } from "@/lib/data/hooks";
@@ -116,6 +118,11 @@ function useRun() {
 function Orders({ db }: { db: DemoDB }) {
   const go = useRun();
   const toast = useToast();
+  // 요청함 ‘작업지시 보기’로 오면 그 작업지시로 내려가 표시한다 (D-68 점검 반영)
+  const focusWo = useSearchParams().get("wo");
+  useEffect(() => {
+    if (focusWo) window.setTimeout(() => document.getElementById(`wo-${focusWo}`)?.scrollIntoView({ block: "center", behavior: "smooth" }), 150);
+  }, [focusWo]);
   const sites = db.sites.filter((s) => s.status === "active");
   const [f, setF] = useState({ siteId: sites[0]?.id ?? "", title: "", detail: "", dueDate: "", urgent: false, assignee: "" });
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -190,7 +197,7 @@ function Orders({ db }: { db: DemoDB }) {
               const late = w.dueDate && w.dueDate < today && !["done", "confirmed"].includes(w.status);
               const photos = (w.donePhotoIds ?? []).map((id) => db.photos.find((p) => p.id === id)).filter(Boolean);
               return (
-                <li key={w.id} className="space-y-1.5 px-5 py-3" data-testid="wo-row" data-status={w.status} data-wo={w.id}>
+                <li key={w.id} id={`wo-${w.id}`} className={cx("scroll-mt-24 space-y-1.5 px-5 py-3", focusWo === w.id && "bg-active-soft ring-2 ring-active ring-inset")} data-testid="wo-row" data-status={w.status} data-wo={w.id}>
                   <p className="flex flex-wrap items-center gap-1.5 text-[0.8rem] text-ink-3">
                     <b className="text-ink-2">{siteOf(db, w.siteId)}</b> → {nameOf(db, w.assigneeUserId)} · {fmtDate(w.createdAt.slice(0, 10))}
                     {w.dueDate && <span className={late ? "font-bold text-err" : ""}>· 기한 {fmtDate(w.dueDate)}{late ? " (지남)" : ""}</span>}
@@ -204,15 +211,11 @@ function Orders({ db }: { db: DemoDB }) {
                       완료 보고: {[w.doneQty, w.doneNote].filter(Boolean).join(" · ")}
                     </p>
                   )}
-                  {photos.length > 0 && (
-                    <div className="flex gap-1.5">
-                      {photos.map((p) => (
-                        <a key={p!.id} href={p!.dataUrl} target="_blank" rel="noreferrer noopener">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={p!.dataUrl} alt="완료 사진" className="size-14 rounded-md object-cover" />
-                        </a>
-                      ))}
-                    </div>
+                  {photos.length > 0 && <PhotoThumbs urls={photos.map((p) => p!.dataUrl)} label="완료 사진" />}
+                  {w.sourcePartnerRequestId && (
+                    <Link href="/insights#requests" className="inline-flex min-h-10 items-center text-[0.82rem] font-bold text-theme-ink underline" data-testid="wo-to-request">
+                      발주처 요청 보기 · {w.status === "done" || w.status === "confirmed" ? "보수 완료 회신하기" : "회신하기"} →
+                    </Link>
                   )}
                   {w.status === "returned" && w.returnNote && <p className="text-[0.82rem] font-semibold text-warn">보완 요청: {w.returnNote}</p>}
                   {w.status === "done" && (
@@ -274,16 +277,7 @@ function Reports({ db }: { db: DemoDB }) {
           </p>
         ))}
         {costs.length > 0 && <p className="text-[0.82rem] text-ink-2">비용 {costs.length}건{canSeeMoney ? ` · ${fmtMan(costs.reduce((a, e) => a + e.amount, 0))}` : ""}</p>}
-        {photos.length > 0 && (
-          <div className="flex gap-1.5">
-            {photos.map((p) => (
-              <a key={p!.id} href={p!.dataUrl} target="_blank" rel="noreferrer noopener">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={p!.dataUrl} alt="현장 사진" className="size-14 rounded-md object-cover" />
-              </a>
-            ))}
-          </div>
-        )}
+        {photos.length > 0 && <PhotoThumbs urls={photos.map((p) => p!.dataUrl)} label="현장 사진" />}
         {r.review?.status === "returned" && <p className="text-[0.82rem] font-semibold text-warn">보완 요청: {r.review.note} (현장 보완 대기)</p>}
         {actions && (
           <Decide
@@ -391,5 +385,24 @@ function OfflineCheck({ db, rec, userId, pending }: { db: DemoDB; rec: Attendanc
       })}
       <li className="text-ink-3">승인해도 ‘현장 밖’ 같은 위치 표시는 출퇴근 현황에 그대로 남습니다.</li>
     </ul>
+  );
+}
+
+/** 사진 작게 보기 → 누르면 이 화면 안에서 크게 (데이터 주소 사진이 새 창에서 안 열리던 문제 · D-68 점검 반영) */
+function PhotoThumbs({ urls, label }: { urls: string[]; label: string }) {
+  const [big, setBig] = useState<string | null>(null);
+  return (
+    <div className="flex gap-1.5">
+      {urls.map((u, i) => (
+        <button key={i} type="button" onClick={() => setBig(u)} className="press overflow-hidden rounded-md" aria-label={`${label} ${i + 1} 크게 보기`}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={u} alt="" className="size-14 object-cover" />
+        </button>
+      ))}
+      <Modal open={!!big} onClose={() => setBig(null)} title={label} size="lg">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        {big && <img src={big} alt={label} className="w-full rounded-xl" />}
+      </Modal>
+    </div>
   );
 }

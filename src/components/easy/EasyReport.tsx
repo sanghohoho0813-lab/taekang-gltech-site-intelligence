@@ -1039,21 +1039,36 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
         </div>
       );
       const hasWork = mode !== "full" || d.work.length > 0 || !!d.workText.trim() || !!linkedOrder;
-      const otherSiteToday = d.reportDate === todayIso() && checkedIn.size > 0 && !checkedIn.has(d.siteId) ? sites.filter((x) => checkedIn.has(x.id)).map((x) => x.shortName).join("·") || null : null;
+      const otherSite = d.reportDate === todayIso() && checkedIn.size > 0 && !checkedIn.has(d.siteId) ? sites.find((x) => checkedIn.has(x.id)) : undefined;
+      const otherSiteToday = otherSite ? { id: otherSite.id, name: otherSite.shortName } : null;
       body = (
+        <>
+        {otherSiteToday && (
+          <div className="mb-4 rounded-2xl border-2 border-warn/45 bg-warn-bg px-4 py-3 text-[1.05rem]" data-testid="confirm-other-site">
+            <p className="font-bold text-ink">
+              오늘 출근한 현장은 {otherSiteToday.name}이에요. {site?.shortName} 보고가 맞나요?
+            </p>
+            {!fixedSiteId && (
+              <button
+                type="button"
+                onClick={() => {
+                  // 적은 내용은 그대로 두고 현장만 옮긴다 — 공정 단계·작업지시처럼 현장마다 다른 답만 비운다 (모두 지워지던 문제 · D-68 점검 반영)
+                  try {
+                    localStorage.removeItem(DRAFT_KEY + d.siteId + ":" + mode);
+                  } catch {
+                    // 무시
+                  }
+                  setD((x) => ({ ...x, siteId: otherSiteToday.id, stages: {}, workOrderId: undefined, progress: null }));
+                }}
+                className="press mt-2 inline-flex min-h-12 items-center rounded-xl border-2 border-line-strong bg-surface px-3.5 text-[1rem] font-bold"
+                data-testid="confirm-move-site"
+              >
+                {otherSiteToday.name} 보고로 바꾸기
+              </button>
+            )}
+          </div>
+        )}
         <EasyQuestion title="이렇게 보낼까요?" help="맞으면 맨 아래 ‘본사로 보내기’를 누르세요." testId="easy-confirm">
-          {otherSiteToday && (
-            <div className="rounded-2xl border-2 border-warn/45 bg-warn-bg px-4 py-3 text-[1.05rem]" data-testid="confirm-other-site">
-              <p className="font-bold text-ink">
-                오늘 출근한 현장은 {otherSiteToday}이에요. {site?.shortName} 보고가 맞나요?
-              </p>
-              {!fixedSiteId && (
-                <button type="button" onClick={() => { setReturnToConfirm(false); go("site"); }} className="press mt-2 inline-flex min-h-12 items-center rounded-xl border-2 border-line-strong bg-surface px-3.5 text-[1rem] font-bold">
-                  현장 바꾸기
-                </button>
-              )}
-            </div>
-          )}
           <div className="rounded-2xl border-2 border-line bg-surface px-4">
             {row(
               "날짜",
@@ -1172,6 +1187,7 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
           )}
           {error && <p className="rounded-2xl bg-err-bg px-4 py-3 text-[1.05rem] font-semibold text-err">{error}</p>}
         </EasyQuestion>
+        </>
       );
       footer = bar({
         onBack: stack.length > 1 ? back : onExit,

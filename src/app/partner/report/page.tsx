@@ -13,7 +13,7 @@ import { useMe } from "@/lib/data/hooks";
 import { IS_LIVE } from "@/lib/mode";
 import { fmtDate, todayIso } from "@/lib/domain/format";
 import { PARTNER_STATUS_LABEL, PARTNER_TYPE_LABEL } from "@/lib/domain/labels";
-import { PARTNER_FEED_KEEP_DAYS, partnerMonthly, partnerProgressFeed, partnerRepairView } from "@/lib/domain/partnerFeed";
+import { PARTNER_FEED_KEEP_DAYS, defectProgress, partnerMonthly, partnerProgressFeed, partnerRepairView } from "@/lib/domain/partnerFeed";
 import type { DemoDB, PartnerRequest } from "@/lib/domain/types";
 import { Badge, Button, DemoBadge, EmptyState, PageSkeleton, ProgressBar, Segmented, cx, inputCls } from "@/components/ui/primitives";
 import { LogoMark } from "@/components/shell/Logo";
@@ -88,7 +88,7 @@ function Inner() {
                 </select>
               </span>
             )}
-            <Segmented label="보고 달" size="sm" value={month} onChange={(m) => go({ month: m })} options={months.map((m, i) => ({ value: m, label: i === 0 ? `이번 달 (${Number(m.slice(5))}월)` : `지난달 (${Number(m.slice(5))}월)`, testId: `report-month-${i}` }))} />
+            <Segmented label="보고 달" value={month} onChange={(m) => go({ month: m })} options={months.map((m, i) => ({ value: m, label: i === 0 ? `이번 달 (${Number(m.slice(5))}월)` : `지난달 (${Number(m.slice(5))}월)`, testId: `report-month-${i}` }))} />
             <span className="ml-auto flex items-center gap-2">
               <DemoBadge compact />
               <Button icon={<Printer size={17} />} onClick={() => window.print()} data-testid="report-print">
@@ -98,6 +98,11 @@ function Inner() {
           </div>
         </header>
         <main id="main" className="mx-auto max-w-[960px] px-4 py-6 print:max-w-none print:p-0">
+          {preview && (
+            <p className="no-print mb-3 rounded-xl bg-active-soft px-3.5 py-2 text-[0.84rem] font-semibold text-theme-ink" data-testid="report-preview">
+              관리자 미리보기 — ‘{partner.name} {partner.title}’에게 보이는 보고서입니다. 인쇄하면 발주처용 사본이 됩니다.
+            </p>
+          )}
           <Report db={db} siteId={site.id} month={month} partnerUserId={partner.id} preview={preview} today={today} />
         </main>
       </div>
@@ -111,6 +116,8 @@ function Report({ db, siteId, month, partnerUserId, preview, today }: { db: Demo
   const feed = useMemo(() => db.partnerFeed?.[siteId] ?? partnerProgressFeed(db, siteId, today, PARTNER_FEED_KEEP_DAYS), [db, siteId, today]);
   const r = useMemo(() => partnerMonthly(db, siteId, month, feed, partnerUserId), [db, siteId, month, feed, partnerUserId]);
   const current = month === today.slice(0, 7);
+  // 지난달을 골라도 ‘이번 달’이라고 쓰던 문제 — 달 이름으로 (D-68 점검 반영)
+  const mName = `${Number(month.slice(5, 7))}월`;
   return (
     <article className="rounded-2xl border border-line bg-surface p-6 shadow-card print:rounded-none print:border-0 print:p-0 print:shadow-none sm:p-8" data-testid="report-body">
       <header className="flex flex-wrap items-start justify-between gap-3 border-b-2 border-ink pb-4">
@@ -129,20 +136,24 @@ function Report({ db, siteId, month, partnerUserId, preview, today }: { db: Demo
       </header>
 
       <section className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4" aria-label="요약">
-        <Kpi label="전체 공정률 (현재)" value={`${site.progressPct}%`} sub={r.overall ? `이번 달 ${r.overall.from}% → ${r.overall.to}%` : undefined} testId="report-kpi-progress" />
-        <Kpi label="이번 달 진척 단계" value={`${r.stages.length}개`} testId="report-kpi-stages" />
-        <Kpi label="공개 공정 사진" value={`${r.photos.length}장`} testId="report-kpi-photos" />
+        <Kpi label="전체 공정률 (오늘 기준)" value={`${site.progressPct}%`} sub={r.overall ? `${mName} ${r.overall.from}% → ${r.overall.to}%` : undefined} testId="report-kpi-progress" />
+        <Kpi label={`${mName}에 진척된 단계`} value={`${r.stages.length}개`} testId="report-kpi-stages" />
+        <Kpi label={`${mName} 공개 사진`} value={`${r.photos.length}장`} testId="report-kpi-photos" />
         <Kpi label="요청 처리" value={`${r.counts.answered}건 회신`} sub={`접수 ${r.counts.received} · 진행 중 ${r.counts.open}`} testId="report-kpi-requests" />
       </section>
 
       <Section title="1. 공정 단계별 진행">
-        <table className="w-full table-fixed border-collapse text-[0.85rem]" data-testid="report-stages">
+        {site.stages.length === 0 ? (
+          <p className="text-[0.85rem] text-ink-3" data-testid="report-no-stages">이 현장에는 아직 공정 단계가 정해지지 않았습니다.</p>
+        ) : (
+        <div className="@container">
+        <table className="w-full border-collapse text-[0.85rem]" data-testid="report-stages">
           <thead>
             <tr className="border-b border-line text-left text-[0.76rem] text-ink-3">
-              <th className="w-[34%] py-2 font-semibold">공정 단계</th>
-              <th className="w-[26%] py-2 font-semibold">계획 기간</th>
-              <th className="w-[18%] py-2 text-right font-semibold">이번 달</th>
-              <th className="w-[22%] py-2 text-right font-semibold">현재</th>
+              <th className="py-2 font-semibold">공정 단계</th>
+              <th className="hidden py-2 font-semibold @min-[30rem]:table-cell print:table-cell">계획 기간</th>
+              <th className="whitespace-nowrap py-2 text-right font-semibold">{mName} 변화</th>
+              <th className="w-[26%] whitespace-nowrap py-2 text-right font-semibold">오늘 기준</th>
             </tr>
           </thead>
           <tbody>
@@ -151,23 +162,28 @@ function Report({ db, siteId, month, partnerUserId, preview, today }: { db: Demo
               return (
                 <tr key={st.id} className="border-b border-line/70 align-top" data-testid="report-stage-row">
                   <td className="py-2 pr-2 font-semibold [overflow-wrap:anywhere]">{st.name}</td>
-                  <td className="num py-2 pr-2 text-[0.78rem] text-ink-2">{fmtDate(st.startDate).slice(2)} ~ {fmtDate(st.endDate).slice(2)}</td>
-                  <td className="num py-2 text-right">{ch ? <b className="text-theme-ink">+{ch.to - ch.from}%p</b> : <span className="text-ink-3">—</span>}</td>
+                  <td className="num hidden whitespace-nowrap py-2 pr-2 text-[0.78rem] text-ink-2 @min-[30rem]:table-cell print:table-cell">{fmtDate(st.startDate).slice(2)} ~ {fmtDate(st.endDate).slice(2)}</td>
+                  <td className="num whitespace-nowrap py-2 text-right">{ch ? <b className={ch.to >= ch.from ? "text-theme-ink" : "text-err"}>{ch.to >= ch.from ? "+" : "−"}{Math.abs(ch.to - ch.from)}%p</b> : <span className="text-ink-3">—</span>}</td>
                   <td className="py-2 pl-2">
-                    <span className="num block text-right font-bold">{st.progressPct}%</span>
-                    <ProgressBar value={st.progressPct} className="mt-1" label={`${st.name} 진행률`} tone={st.progressPct === 100 ? "ok" : "theme"} />
+                    <span className="num block whitespace-nowrap text-right font-bold">{st.progressPct}%</span>
+                    <ProgressBar value={st.progressPct} className="mt-1 print:[print-color-adjust:exact] print:[-webkit-print-color-adjust:exact]" label={`${st.name} 진행률`} tone={st.progressPct === 100 ? "ok" : "theme"} />
                   </td>
                 </tr>
               );
             })}
           </tbody>
         </table>
-        <p className="mt-2 text-[0.74rem] text-ink-3">‘이번 달’은 현장 보고로 바뀐 진행률입니다. 공정률은 현장 기준이며 기성(대금 청구) 비율과 다를 수 있습니다.</p>
+        </div>
+        )}
+        {r.stages.length === 0 && site.stages.length > 0 && (
+          <p className="mt-2 text-[0.82rem] text-ink-2" data-testid="report-no-change">{mName}에 현장 보고로 바뀐 공정 진행률이 없습니다.{preview && !IS_LIVE ? " (시연: 현장 보고에서 공정 단계 진척을 바꾸면 들어갑니다)" : ""}</p>
+        )}
+        <p className="mt-2 text-[0.74rem] text-ink-3">‘{mName} 변화’는 현장 보고로 바뀐 진행률이며, 태강지엘텍 확인 전 보고도 포함합니다. 공정률은 현장 기준이며 기성(대금 청구) 비율과 다를 수 있습니다.</p>
       </Section>
 
       <Section title="2. 공정 사진" sub={r.photos.length ? `태강지엘텍이 공개한 사진 ${r.photos.length}장` : undefined}>
         {r.photos.length === 0 ? (
-          <p className="text-[0.85rem] text-ink-3" data-testid="report-no-photos">이 달에 공개된 공정 사진이 없습니다.{preview ? " 본사 사진대장에서 ‘발주처 공개’를 켜면 들어갑니다." : ""}</p>
+          <p className="text-[0.85rem] text-ink-3" data-testid="report-no-photos">{mName}에 공개된 공정 사진이 없습니다.{preview ? ` 본사 사진대장에서 ‘발주처 공개’를 켜면 들어갑니다${IS_LIVE ? "" : " (시연: 사진대장 ‘예시 사진 넣기’)"}.` : ""}</p>
         ) : (
           <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 print:grid-cols-3">
             {r.photos.map((p) => (
@@ -175,7 +191,7 @@ function Report({ db, siteId, month, partnerUserId, preview, today }: { db: Demo
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={p.dataUrl} alt={p.shared?.caption || "공정 사진"} className="aspect-[4/3] w-full bg-surface-2 object-cover print:object-contain" />
                 <p className="px-2 py-1.5 text-[0.78rem]">
-                  <span className="num block text-ink-3">{fmtDate(p.createdAt)}</span>
+                  <span className="num block whitespace-nowrap text-ink-3">{fmtDate(p.createdAt)}</span>
                   {p.shared?.caption && <span className="line-clamp-2 [overflow-wrap:anywhere]">{p.shared.caption}</span>}
                 </p>
               </li>
@@ -206,6 +222,7 @@ function Report({ db, siteId, month, partnerUserId, preview, today }: { db: Demo
                 <b className="[overflow-wrap:anywhere]">{n.name}</b>
                 <span className="num text-ink-2">
                   {fmtDate(n.startDate)} ~ {fmtDate(n.endDate)} · 현재 {n.progressPct}%
+                  {n.late && <b className="ml-1.5 text-warn" data-testid="report-next-late">계획보다 늦음</b>}
                 </span>
               </li>
             ))}
@@ -213,7 +230,7 @@ function Report({ db, siteId, month, partnerUserId, preview, today }: { db: Demo
         )}
       </Section>
 
-      <footer className="mt-6 border-t border-line pt-3 text-[0.74rem] leading-relaxed text-ink-3">
+      <footer className="mt-6 border-t border-line pt-3 text-[0.74rem] leading-relaxed text-ink-3 [break-before:avoid] [break-inside:avoid]">
         이 보고서에는 계약·공사비·기성 금액과 내부 메모가 들어가지 않습니다. 태강지엘텍 시스템에 기록된 현장 보고·공개 사진·요청 처리 기록으로 자동 작성했습니다.
         {!IS_LIVE && " DEMO 화면의 현장·사진·요청은 가상 시연 데이터입니다."}
       </footer>
@@ -223,7 +240,10 @@ function Report({ db, siteId, month, partnerUserId, preview, today }: { db: Demo
 
 function RequestRow({ db, r }: { db: DemoDB; r: PartnerRequest }) {
   const repair = db.partnerRepairs?.[r.id] ?? partnerRepairView(db, r);
-  const state = r.confirmedAt ? "확인 완료" : r.status === "answered" ? (r.type === "defect" ? "보수 회신" : "회신 완료") : repair ? ({ assigned: "보수 작업 배정", in_progress: "보수 중", done: "보수 완료" } as const)[repair.stage] : PARTNER_STATUS_LABEL[r.status];
+  // 포털과 같은 말 (D-68 점검 반영)
+  const prog = r.type === "defect" && repair ? defectProgress(r, repair) : null;
+  const state = prog ? prog.label : r.confirmedAt ? "확인 완료" : PARTNER_STATUS_LABEL[r.status];
+  const done = prog ? prog.step >= 3 : !!r.confirmedAt || r.status === "answered";
   return (
     <li className="flex flex-wrap items-start justify-between gap-2 py-2 text-[0.85rem]" data-testid="report-request">
       <span className="min-w-0">
@@ -234,7 +254,7 @@ function RequestRow({ db, r }: { db: DemoDB; r: PartnerRequest }) {
           {r.location ? ` · ${r.location}` : ""}
         </span>
       </span>
-      <Badge tone={r.confirmedAt || r.status === "answered" ? "ok" : "theme"}>{state}</Badge>
+      <Badge tone={done ? "ok" : "theme"}>{state}</Badge>
     </li>
   );
 }
@@ -251,8 +271,9 @@ function Kpi({ label, value, sub, testId }: { label: string; value: string; sub?
 
 function Section({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) {
   return (
-    <section className="mt-6 break-inside-avoid-page">
-      <h2 className="flex flex-wrap items-baseline gap-x-2 border-b border-line pb-1.5 text-[1.02rem] font-extrabold">
+    <section className="mt-6">
+      {/* 인쇄: 절 전체를 한 쪽에 묶지 않고 제목만 다음 내용과 붙인다 — 1쪽 절반이 비던 문제 (D-68 점검 반영) */}
+      <h2 className="flex flex-wrap items-baseline gap-x-2 border-b border-line pb-1.5 text-[1.02rem] font-extrabold [break-after:avoid]">
         {title}
         {sub && <span className="text-[0.78rem] font-semibold text-ink-3">{sub}</span>}
       </h2>

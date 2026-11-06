@@ -34,6 +34,7 @@ import { shiftDate } from "@/lib/domain/attendance";
 import { DECISION_METHOD } from "@/lib/domain/risk";
 import { uid } from "@/lib/domain/ids";
 import { IS_LIVE } from "@/lib/mode";
+import { partnerRepairView } from "@/lib/domain/partnerFeed";
 
 export interface Ctx {
   userId: string;
@@ -663,7 +664,7 @@ export function confirmProofEvent(db0: DemoDB, proofId: string, ctx: Ctx) {
 
 export function createPartnerRequest(
   db0: DemoDB,
-  input: { idempotencyKey: string; siteId: string; title: string; description: string; desiredDate?: string; type?: PartnerRequest["type"]; item?: string; qty?: string; location?: string; photoDataUrls?: string[] },
+  input: { idempotencyKey: string; siteId: string; title: string; description: string; desiredDate?: string; type?: PartnerRequest["type"]; item?: string; qty?: string; location?: string; photoDataUrls?: string[]; reopenedFrom?: string },
   ctx: Ctx,
 ) {
   const errors: Record<string, string> = {};
@@ -686,6 +687,11 @@ export function createPartnerRequest(
   if (type === "order" && !qty) errors.qty = "주문 수량을 입력해주세요.";
   if (qty.length > 30) errors.qty = "수량은 30자 이내";
   if (input.desiredDate && !/^\d{4}-\d{2}-\d{2}$/.test(input.desiredDate)) errors.desiredDate = "날짜 형식을 확인해주세요.";
+  // 이미 지난 희망일은 받지 않는다 — 본사 화면에서 말없이 빠지던 문제 (D-68 점검 반영)
+  else if (input.desiredDate && input.desiredDate < todayIso(ctx.now)) errors.desiredDate = "희망일은 오늘이나 그 뒤로 골라 주세요.";
+  // ‘아직 문제가 있어요’ 재요청: 본인이 보낸 같은 현장의 하자보수 요청만 (D-68 점검 반영)
+  const reopened = defect && typeof input.reopenedFrom === "string" ? db0.partnerRequests.find((x) => x.id === input.reopenedFrom) : undefined;
+  if (input.reopenedFrom && (!reopened || reopened.type !== "defect" || reopened.siteId !== input.siteId || reopened.partnerUserId !== ctx.userId)) throw new CommandError("다시 요청할 원래 요청을 찾을 수 없습니다.", "NOT_FOUND");
   const user = db0.users.find((u) => u.id === ctx.userId);
   if (user?.role === "partner" && !user.partnerSiteIds?.includes(input.siteId)) throw new CommandError("이 현장에 대한 요청 권한이 없습니다.", "STATE");
   requireSite(db0, input.siteId);
@@ -707,6 +713,7 @@ export function createPartnerRequest(
     ...(item ? { item } : {}),
     ...(qty ? { qty } : {}),
     ...(location ? { location } : {}),
+    ...(reopened ? { reopenedFrom: reopened.id } : {}),
     desiredDate: input.desiredDate || undefined,
     status: "received",
     createdAt: at,
@@ -747,7 +754,8 @@ export function updatePartnerRequest(
     if (share.length > 3 || share.some((id) => !allowed.has(id))) throw new CommandError("보수 작업지시의 완료 사진만 3장까지 보낼 수 있습니다.", "VALIDATION", { sharePhotoIds: "사진 확인" });
   }
   // 하자보수: 보수 전에 일정 안내로 회신했어도, 보수가 끝나면 보수 사진과 함께 한 번 더 회신할 수 있다 (D-68 점검 반영)
-  const followUp = r.status === "answered" && input.status === "answered" && r.type === "defect" && share.length > 0;
+  // (현장이 다시 끝냈는데 아직 회신하지 않은 경우 = ‘마무리 확인 중’도 사진 없이 다시 회신할 수 있다)
+  const followUp = r.status === "answered" && input.status === "answered" && r.type === "defect" && (share.length > 0 || partnerRepairView(db, r)?.stage === "checking");
   const order: PartnerRequestStatus[] = ["received", "reviewing", "answered"];
   if (!followUp && order.indexOf(input.status) <= order.indexOf(r.status)) throw new CommandError("이미 처리된 단계입니다.", "STATE");
   if (input.status === "answered" && !input.reply?.trim()) throw new CommandError("회신 내용을 입력해주세요.", "VALIDATION", { reply: "필수" });
@@ -778,11 +786,14 @@ export function updatePartnerRequest(
     r.reply = input.reply.trim();
     r.repliedBy = ctx.userId;
   }
+  // 접수 → 바로 회신: ‘검토 중’ 단계도 같은 시각으로 남긴다 (회신 창이 두 번 나눠 보내다 막히던 문제 · D-68 점검 반영)
+  if (input.status === "answered" && !r.history.some((h) => h.status === "reviewing")) r.history.push({ at, status: "reviewing", by: ctx.userId });
   r.history.push({ at, status: input.status, by: ctx.userId, note: input.reply?.trim() });
   if (share.length) {
     const caption = `보수 완료 · ${r.title}`.slice(0, 60);
     for (const p of db.photos) if (share.includes(p.id)) Object.assign(p, { shared: { at, by: ctx.userId, caption }, sharedOnce: true as const });
-    r.replyPhotoIds = share;
+    // 앞서 보낸 보수 사진도 그대로 그 발주처에게만 (목록에서 빠지면 ‘공정 사진’으로 섞여 보이므로 합친다)
+    r.replyPhotoIds = [...new Set([...(r.replyPhotoIds ?? []), ...share])];
   }
   const site = requireSite(db, r.siteId);
   log(db, ctx, "partner", `발주처 요청 ${PARTNER_STATUS_LABEL[input.status]}: ${site.shortName} · ${r.title}`, r.siteId, "/partner");
@@ -799,8 +810,8 @@ export function confirmPartnerRequest(db0: DemoDB, input: { requestId: string; n
   if (r.status !== "answered") throw new CommandError("회신을 받은 뒤에 확인할 수 있습니다.", "STATE");
   if (r.confirmedAt) throw new CommandError("이미 확인한 요청입니다.", "STATE");
   // 하자보수는 보수 작업이 끝난 뒤에 확인 (일정 안내 회신만 받고 ‘보수 확인’이 되던 문제 · D-68 점검 반영)
-  const wo = r.linkedWorkOrderId ? (db.workOrders ?? []).find((w) => w.id === r.linkedWorkOrderId) : undefined;
-  if (wo && wo.status !== "done" && wo.status !== "confirmed") throw new CommandError("보수가 끝난 뒤에 확인할 수 있습니다.", "STATE");
+  const repair = partnerRepairView(db, r);
+  if (repair && repair.stage !== "done") throw new CommandError("보수가 끝난 뒤에 확인할 수 있습니다.", "STATE");
   const note = typeof input.note === "string" ? input.note.trim() : "";
   if (note.length > 200) throw new CommandError("남길 말은 200자 이내", "VALIDATION", { note: "200자 이내" });
   const at = nowIso(ctx);

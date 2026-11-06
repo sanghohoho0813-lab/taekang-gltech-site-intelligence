@@ -8,7 +8,7 @@ import { AuthFrame } from "@/components/auth/AuthFrame";
 import { Notice } from "@/components/ui/primitives";
 import { BigLabel, HangulWarning, PasswordInput, bigInputCls } from "@/components/auth/BigInputs";
 import { api } from "@/lib/live/api";
-import { homeFor } from "@/lib/nav";
+import { canAccess, homeFor } from "@/lib/nav";
 import { safeNext } from "@/lib/live/safeNext";
 import type { RoleId } from "@/lib/domain/types";
 
@@ -34,6 +34,8 @@ function LoginForm() {
     const fromQr = params.get("id")?.trim().toLowerCase();
     if (fromQr && /^[^\s@]{1,64}@[^\s@]{1,190}$/.test(fromQr)) {
       setEmail(fromQr);
+      // 아이디가 채워졌으니 바로 비밀번호 칸으로 (D-68 점검 반영)
+      window.setTimeout(() => document.getElementById("l-pw")?.focus(), 50);
       return;
     }
     try {
@@ -74,7 +76,10 @@ function LoginForm() {
       // 무시
     }
     const { role, mustChangePassword } = r.data.me;
-    window.location.assign(mustChangePassword ? "/account?force=1" : (safeNext(params.get("next")) ?? homeFor(role)));
+    // 다른 사람으로 바꿔 로그인했거나, 그 역할이 못 여는 화면이면 ‘next’를 따르지 않고 그 사람의 첫 화면으로 (D-68 점검 반영)
+    const next = switching ? null : safeNext(params.get("next"));
+    const target = next && canAccess(role, next.split("?")[0].split("#")[0]) ? next : homeFor(role);
+    window.location.assign(mustChangePassword ? "/account?force=1" : target);
   };
 
   return (
@@ -90,16 +95,21 @@ function LoginForm() {
       )}
       {current && (
         <div className="mt-3 rounded-2xl border-2 border-line bg-surface-2 px-4 py-3.5 text-[1.05rem]" data-testid="login-current">
-          <p className="font-bold text-ink">이 휴대폰은 지금 {current.name}님으로 로그인되어 있어요.</p>
+          <p className="font-bold text-ink">이 기기는 지금 {current.name}님으로 로그인되어 있어요.</p>
           <button
             type="button"
-            onClick={() => window.location.assign(current.mustChangePassword ? "/account?force=1" : (safeNext(params.get("next")) ?? homeFor(current.role)))}
+            onClick={() => {
+              const next = safeNext(params.get("next"));
+              window.location.assign(current.mustChangePassword ? "/account?force=1" : next && canAccess(current.role, next.split("?")[0].split("#")[0]) ? next : homeFor(current.role));
+            }}
             className="press mt-2.5 inline-flex min-h-12 w-full items-center justify-center rounded-full border-2 border-line-strong bg-surface px-4 text-[1.08rem] font-extrabold"
             data-testid="login-continue"
           >
             {current.name}님으로 계속하기
           </button>
-          <p className="mt-2 text-[0.98rem] text-ink-2">다른 분이면 아래에 아이디·비밀번호를 넣으세요. 로그인되면 앞 사람은 이 휴대폰에서 로그아웃됩니다.</p>
+          {current.email.toLowerCase() !== email.trim().toLowerCase() && (
+            <p className="mt-2 text-[0.98rem] text-ink-2">다른 분이면 아래에 아이디·비밀번호를 넣으세요. 로그인되면 앞 사람은 이 기기에서 로그아웃됩니다.</p>
+          )}
         </div>
       )}
       <form onSubmit={submit} className="mt-3 space-y-5" noValidate data-testid="login-form">

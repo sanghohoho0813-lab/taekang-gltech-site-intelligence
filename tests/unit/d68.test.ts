@@ -98,10 +98,13 @@ describe("하자보수 → 작업지시 → 보수 완료 회신 → 발주처 �
     expect(v1.partnerRequests.find((r) => r.id === reqId)).not.toHaveProperty("linkedWorkOrderId");
     expect(v1.workOrders).toEqual([]);
     expect(JSON.stringify([v1.partnerRepairs, v1.partnerRequests])).not.toContain("u-field");
-    expect(viewFor(PARTNER, done.db, NOW).partnerRepairs?.[reqId]?.stage).toBe("done");
+    // 현장이 ‘다 했어요’를 보내도 본사 확인 전에는 ‘보수 완료’가 아니다 (D-68 점검 반영)
+    expect(viewFor(PARTNER, done.db, NOW).partnerRepairs?.[reqId]?.stage).toBe("checking");
     expect(JSON.stringify(viewFor(PARTNER, done.db, NOW).partnerRepairs)).not.toContain("실리콘");
+    const { answered } = fullLoop();
+    expect(viewFor(PARTNER, answered.db, NOW).partnerRepairs?.[reqId === answered.db.partnerRequests[0].id ? reqId : answered.db.partnerRequests[0].id]?.stage).toBe("done");
     // 본사·시연 화면은 같은 계산을 바로 한다
-    expect(partnerRepairView(done.db, done.db.partnerRequests.find((r) => r.id === reqId)!)?.stage).toBe("done");
+    expect(partnerRepairView(done.db, done.db.partnerRequests.find((r) => r.id === reqId)!)?.stage).toBe("checking");
   });
   it("회신과 함께 보낸 보수 사진은 그 발주처에게만 — 다른 발주처의 ‘공정 사진’에는 없다", () => {
     const base = fullLoop();
@@ -173,6 +176,37 @@ describe("발주처 월간 공정 보고서", () => {
 });
 
 describe("D-68 점검 반영", () => {
+  it("‘보수 완료’는 본사가 작업지시를 확인했거나 현장 완료 뒤 회신했을 때만 · 다시 보수하면 발주처 확인이 풀린다", async () => {
+    const { reviewWorkOrder } = await import("@/lib/data/opsCommands");
+    const { done, woId, reqId, answered } = fullLoop();
+    const req = (db: DemoDB) => db.partnerRequests.find((r) => r.id === reqId)!;
+    expect(partnerRepairView(done.db, req(done.db))?.stage).toBe("checking");
+    expect(() => confirmPartnerRequest(done.db, { requestId: reqId }, ctx("u-partner"))).toThrow(CommandError);
+    const ok = reviewWorkOrder(done.db, { workOrderId: woId, decision: "confirm" }, ctx("u-manager")).db;
+    expect(partnerRepairView(ok, req(ok))?.stage).toBe("done");
+    expect(partnerRepairView(answered.db, req(answered.db))?.stage).toBe("done");
+    // 발주처가 확인한 뒤 본사가 보완 요청 → 확인이 풀리고 ‘보수 중’
+    const confirmed = confirmPartnerRequest(answered.db, { requestId: reqId }, ctx("u-partner")).db;
+    const back = reviewWorkOrder(confirmed, { workOrderId: woId, decision: "return", note: "실리콘 다시" }, ctx("u-manager")).db;
+    expect(req(back).confirmedAt).toBeUndefined();
+    expect(req(back).history.at(-1)?.note).toMatch(/추가 보수/);
+    expect(partnerRepairView(back, req(back))?.stage).toBe("in_progress");
+    // 현장이 다시 끝내면 ‘마무리 확인 중’ → 사진 없이도 다시 회신할 수 있다
+    const again = workOrderStep(back, { workOrderId: woId, action: "complete", note: "재보수 완료" }, ctx("u-field", new Date(NOW.getTime() + 3_600_000))).db;
+    expect(partnerRepairView(again, req(again))?.stage).toBe("checking");
+    const re = updatePartnerRequest(again, reqId, { status: "answered", reply: "재보수를 마쳤습니다." }, ctx("u-manager", new Date(NOW.getTime() + 7_200_000))).db;
+    expect(partnerRepairView(re, req(re))?.stage).toBe("done");
+    expect(noticesFor(again, re, "u-manager").map((n) => n.title)).toEqual(["하자보수 회신 도착"]);
+  });
+  it("접수에서 바로 회신해도 ‘검토 중’ 단계가 남고, 다시 요청은 원래 요청과 이어진다 · 지난 희망일은 받지 않는다", () => {
+    const d = defect();
+    const r1 = updatePartnerRequest(d.db, d.result.requestId, { status: "answered", reply: "하자 아님 — 전화로 안내드렸습니다." }, ctx("u-manager")).db;
+    expect(r1.partnerRequests[0].history.map((h) => h.status)).toEqual(["received", "reviewing", "answered"]);
+    const again = createPartnerRequest(r1, { idempotencyKey: "re1", siteId: "site-a", type: "defect", title: "3층 거실 창 누수", description: "또 샙니다", location: "3층 302호", reopenedFrom: d.result.requestId }, ctx("u-partner"));
+    expect(again.db.partnerRequests.find((r) => r.id === again.result.requestId)!.reopenedFrom).toBe(d.result.requestId);
+    expect(() => createPartnerRequest(r1, { idempotencyKey: "re2", siteId: "site-a", type: "defect", title: "x", description: "y", location: "z", reopenedFrom: "nope" }, ctx("u-partner"))).toThrow(CommandError);
+    expect(() => createPartnerRequest(r1, { idempotencyKey: "re3", siteId: "site-a", type: "defect", title: "x", description: "y", location: "z", desiredDate: "2026-11-01" }, ctx("u-partner"))).toThrow(CommandError);
+  });
   it("보수 전에 일정 안내로 회신했어도, 보수가 끝나면 보수 사진을 한 번 더 보낼 수 있다 — 확인은 보수가 끝난 뒤에만", () => {
     const d = defect();
     const reqId = d.result.requestId;

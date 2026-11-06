@@ -508,12 +508,15 @@ export interface PartnerRequest {
   replyPhotoIds?: string[];
   confirmedAt?: string;
   confirmNote?: string;
+  /** ‘아직 문제가 있어요’로 다시 보낸 요청이면 원래 요청 (D-68 점검 반영) */
+  reopenedFrom?: string;
   history: { at: string; status: PartnerRequestStatus; by: string; note?: string }[];
 }
 
 /** 발주처 화면 전용(서버가 만들어 보냄): 하자보수 진행 — 작업지시의 담당자·메모 없이 단계·기한만 (D-68) */
 export interface PartnerRepairView {
-  stage: "assigned" | "in_progress" | "done";
+  /** checking = 현장은 끝냈다고 보고, 태강지엘텍 확인 전 (발주처에는 ‘보수 중 · 마무리 확인 중’) */
+  stage: "assigned" | "in_progress" | "checking" | "done";
   dueDate?: string;
   at: string;
 }

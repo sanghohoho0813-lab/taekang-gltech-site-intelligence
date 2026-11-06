@@ -21,6 +21,9 @@ export function fmtEok(v: number, opts: { digits?: number; unit?: boolean; fixed
   const abs = Math.abs(v);
   // 표 칸(fixed)은 소수 자리를 맞춘다 — ‘8.5’·‘12’·‘0.35’가 섞여 자릿수가 들쭉날쭉하던 문제 (D-68)
   const num = (n: number) => (opts.fixed ? n.toFixed(digits) : trimNum(n, digits));
+  // 표 칸: 0은 ‘—’, 0.01억 미만은 만 원으로 (‘0.00억’·‘<0.01억’이 읽기 어렵던 문제 · D-68 점검 반영)
+  if (opts.fixed && !unit && abs === 0) return "—";
+  if (opts.fixed && !unit && abs < 1_000_000) return sign + fmtMan(abs, { unit: false });
   // 단위 없이(‘단위 억 원’ 표) 쓸 때는 1억 미만도 억으로 — 한 표에 ‘8,060만’과 ‘1.5’가 섞이던 문제 (D-66)
   if (abs < 100_000_000) return unit ? sign + fmtMan(abs, { unit }) : abs > 0 && abs < 1_000_000 ? `${sign}<0.01억` : `${sign}${num(abs / 100_000_000)}억`;
   return `${sign}${num(abs / 100_000_000)}억${unit ? " 원" : ""}`;
@@ -58,7 +61,9 @@ export function fmtDelta(v: number, style: "eok" | "man" = "man"): string {
 
 export function fmtPct(v: number, digits = 1): string {
   if (!Number.isFinite(v)) return "—";
-  return `${trimNum(v, digits)}%`;
+  // 음수는 금액과 같은 ‘−’ 기호로 (한 줄에 ‘−0.30억’과 ‘-5.9%’가 섞이던 문제 · D-68 점검 반영)
+  const t = trimNum(v, digits);
+  return `${t.startsWith("-") ? (t === "-0" ? "0" : `−${t.slice(1)}`) : t}%`;
 }
 
 /** %p 증감: −4%p */

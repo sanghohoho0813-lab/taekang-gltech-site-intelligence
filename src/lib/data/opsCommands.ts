@@ -271,6 +271,16 @@ export function reviewWorkOrder(db0: DemoDB, input: { workOrderId: string; decis
   const at = nowIso(ctx);
   const to: WorkOrder["status"] = input.decision === "confirm" ? "confirmed" : "returned";
   db.workOrders[i] = { ...w, status: to, ...(to === "returned" ? { returnNote: note } : {}), history: [...w.history, { at, by: ctx.userId, to, ...(note ? { note } : {}) }] };
+  // 하자보수 작업지시를 다시 보수하게 하면, 발주처가 이미 ‘확인’했더라도 확인을 풀고 ‘추가 보수’로 남긴다 (D-68 점검 반영)
+  if (to === "returned" && w.sourcePartnerRequestId) {
+    const r = db.partnerRequests.find((x) => x.id === w.sourcePartnerRequestId);
+    if (r?.confirmedAt) {
+      delete r.confirmedAt;
+      delete r.confirmNote;
+      r.updatedAt = at;
+      r.history.push({ at, status: r.status, by: ctx.userId, note: "추가 보수 (본사 보완 요청)" });
+    }
+  }
   log(db, ctx, "order", `작업지시 ${to === "confirmed" ? "확인" : "보완 요청"} — ${w.title}${note ? ` · ${note}` : ""}`, w.siteId, "/orders");
   touch(db, ctx);
   return { db, result: { workOrderId: w.id, status: to } };

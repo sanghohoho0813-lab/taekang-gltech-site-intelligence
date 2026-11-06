@@ -62,6 +62,8 @@ export function Modal({
       window.history.pushState({ __modal: id }, "", window.location.href);
       const onPop = () => {
         if (popped) return;
+        // 위에 열렸던 창(사진 크게 보기 등)이 닫히며 내 기록으로 돌아온 것 — 나는 닫지 않는다 (함께 닫혀 입력이 사라지던 문제 · D-68 점검 반영)
+        if ((window.history.state as { __modal?: string } | null)?.__modal === id) return;
         popped = true;
         if (dismissRef.current) onCloseRef.current();
         else {

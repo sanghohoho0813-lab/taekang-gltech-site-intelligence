@@ -9,7 +9,7 @@ import { CommandError } from "@/lib/data/commands";
 import { PARTNER_STATUS_LABEL, PARTNER_TYPE_LABEL } from "@/lib/domain/labels";
 import { fmtDate, fmtDateTime, fmtRelative } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
-import type { DemoDB, PartnerRepairView, PartnerRequest, PartnerRequestStatus } from "@/lib/domain/types";
+import type { DemoDB, PartnerRequest, PartnerRequestStatus } from "@/lib/domain/types";
 import { Badge, Button, Card, CardHeader, DemoBadge, EmptyState, Field, Notice, PageSkeleton, ProgressBar, cx, inputCls } from "@/components/ui/primitives";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
@@ -20,7 +20,7 @@ import { Clock } from "@/components/shell/Clock";
 import { IS_LIVE } from "@/lib/mode";
 import { PushCard } from "@/components/PushCard";
 import { SampleDataBanner } from "@/components/shell/AppShell";
-import { partnerProgressFeed, partnerRepairView, sharedPhotos, PARTNER_FEED_DAYS } from "@/lib/domain/partnerFeed";
+import { DEFECT_STEPS, defectProgress, partnerProgressFeed, partnerRepairView, sharedPhotos, PARTNER_FEED_DAYS } from "@/lib/domain/partnerFeed";
 import { shiftDate } from "@/lib/domain/attendance";
 import { downscalePhoto } from "@/components/easy/photo";
 import { errorMessage } from "@/lib/data/commands";
@@ -132,11 +132,12 @@ function PartnerPortal({ db, partner, sites: mySites, preview }: { db: NonNullab
         {/* 휴대폰 메뉴: 손가락 크기(44px)·잘리지 않게 4개만 — ‘확장 예정’은 시연에서만 (D-65) */}
         <nav className="no-scrollbar flex gap-1.5 overflow-x-auto border-t border-line px-3 py-2 lg:hidden" aria-label="포털 메뉴 (모바일)">
           {[
-            ["#status", "현장 현황"],
-            ["#photos", "공정 사진"],
+            // 휴대폰 첫 화면에 다 보이게 자주 쓰는 순서로 (월간 보고서가 화면 밖에 있던 문제 · D-68 점검 반영)
             ["#request", "요청하기"],
             ["#my-requests", "내 요청"],
             [`/partner/report?site=${site.id}`, "월간 보고서"],
+            ["#photos", "공정 사진"],
+            ["#status", "현장 현황"],
             ...(showFuture ? [["#next", "확장 예정"]] : []),
             ["/help", "사용 안내"],
           ].map(([h, l]) => (
@@ -181,7 +182,15 @@ function PartnerPortal({ db, partner, sites: mySites, preview }: { db: NonNullab
             </div>
           </Card>
           <Card>
-            <CardHeader title="공정 진행 현황" sub="태강지엘텍이 승인·공개한 상태 정보" />
+            <CardHeader
+              title="공정 진행 현황"
+              sub="현장 보고 기준 (태강지엘텍 확인 전 보고 포함)"
+              right={
+                <Link href={`/partner/report?site=${site.id}`} className="press inline-flex min-h-11 items-center gap-1 rounded-xl border border-line-strong px-3 text-[0.84rem] font-bold" data-testid="partner-report-card-link">
+                  <FileText size={15} aria-hidden /> 월간 보고서
+                </Link>
+              }
+            />
             <div className="flex items-center gap-4 px-5">
               <Donut value={site.progressPct} label="전체 공정률" size={124} />
               <div className="text-[0.85rem]">
@@ -209,7 +218,7 @@ function PartnerPortal({ db, partner, sites: mySites, preview }: { db: NonNullab
         <div className="grid gap-5 lg:grid-cols-2">
           <RequestForm siteId={site.id} disabled={preview} draft={draft} />
           <div className="space-y-5">
-            <MyRequests db={db} requests={requests} preview={preview} onRedo={(r) => setDraft({ n: Date.now(), type: "defect", title: `[재요청] ${r.title}`.slice(0, 80), location: r.location ?? "", desc: "" })} />
+            <MyRequests db={db} requests={requests} preview={preview} onRedo={(r) => setDraft({ n: Date.now(), type: "defect", title: r.title.slice(0, 80), location: r.location ?? "", desc: "", reopenedFrom: r.id, fromTitle: r.title })} />
             {IS_LIVE && !preview && <PushCard size="compact" audience="partner" />}
           </div>
         </div>
@@ -234,7 +243,7 @@ function PartnerPortal({ db, partner, sites: mySites, preview }: { db: NonNullab
   );
 }
 
-type Draft = { n: number; type: PartnerRequest["type"]; title: string; location: string; desc: string };
+type Draft = { n: number; type: PartnerRequest["type"]; title: string; location: string; desc: string; reopenedFrom?: string; fromTitle?: string };
 
 function RequestForm({ siteId, disabled, draft }: { siteId: string; disabled: boolean; draft: Draft | null }) {
   const toast = useToast();
@@ -249,6 +258,7 @@ function RequestForm({ siteId, disabled, draft }: { siteId: string; disabled: bo
   const [photoBusy, setPhotoBusy] = useState(false);
   const goods = type === "quote" || type === "order";
   const defect = type === "defect";
+  const [reopen, setReopen] = useState<{ id: string; title: string } | null>(null);
   useEffect(() => {
     if (!draft) return;
     setSent(false);
@@ -257,6 +267,8 @@ function RequestForm({ siteId, disabled, draft }: { siteId: string; disabled: bo
     setLocation(draft.location);
     setDesc(draft.desc);
     setPhotos([]);
+    setErrors({});
+    setReopen(draft.reopenedFrom ? { id: draft.reopenedFrom, title: draft.fromTitle ?? draft.title } : null);
     setKey(uid("idem"));
     window.setTimeout(() => document.getElementById("request")?.scrollIntoView({ block: "start", behavior: "smooth" }), 30);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -287,6 +299,7 @@ function RequestForm({ siteId, disabled, draft }: { siteId: string; disabled: bo
               setDate("");
               setLocation("");
               setPhotos([]);
+              setReopen(null);
               setKey(uid("idem"));
             }}
           >
@@ -299,7 +312,7 @@ function RequestForm({ siteId, disabled, draft }: { siteId: string; disabled: bo
           onSubmit={async (e) => {
             e.preventDefault();
             try {
-              await run("createPartnerRequest", { idempotencyKey: key, siteId, title, description: desc, desiredDate: date, type, ...(goods ? { item, qty } : {}), ...(defect ? { location, photoDataUrls: photos } : {}) });
+              await run("createPartnerRequest", { idempotencyKey: key, siteId, title, description: desc, desiredDate: date, type, ...(goods ? { item, qty } : {}), ...(defect ? { location, photoDataUrls: photos, ...(reopen ? { reopenedFrom: reopen.id } : {}) } : {}) });
               setSent(true);
               setErrors({});
               toast.push({ tone: "ok", title: "요청을 접수했습니다", desc: "태강지엘텍 담당자가 확인하면 ‘내 요청’에 답이 표시됩니다." });
@@ -316,6 +329,12 @@ function RequestForm({ siteId, disabled, draft }: { siteId: string; disabled: bo
           noValidate
         >
           {disabled && <Notice tone="info">미리보기 모드에서는 요청을 등록할 수 없습니다. 위의 ‘발주처 역할로 전환’을 누르세요.</Notice>}
+          {reopen && defect && (
+            <Notice tone="info" title={`‘${reopen.title}’을 다시 요청합니다`}>
+              <span data-testid="partner-redo-notice">위치·제목을 채워 두었습니다. 지금 상태를 적고 사진을 다시 올린 뒤 ‘요청 보내기’를 누르세요.</span>{" "}
+              <button type="button" className="font-bold underline" onClick={() => setReopen(null)}>다시 요청 아님</button>
+            </Notice>
+          )}
           <Field label="요청 유형" htmlFor="p-type">
             <select id="p-type" className={inputCls} value={type} onChange={(e) => setType(e.target.value as PartnerRequest["type"])} disabled={disabled} data-testid="p-type">
               <option value="quote">견적 문의 (추가 공사·자재)</option>
@@ -355,7 +374,7 @@ function RequestForm({ siteId, disabled, draft }: { siteId: string; disabled: bo
                   <span key={i} className="relative">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={p} alt={`첨부 사진 ${i + 1}`} className="size-20 rounded-xl border border-line object-cover" />
-                    <button type="button" onClick={() => setPhotos((x) => x.filter((_, j) => j !== i))} className="press absolute -right-1.5 -top-1.5 grid size-8 place-items-center rounded-full bg-black/70 text-white" aria-label={`첨부 사진 ${i + 1} 빼기`}>
+                    <button type="button" onClick={() => setPhotos((x) => x.filter((_, j) => j !== i))} className="press absolute -right-2 -top-2 grid size-11 place-items-center rounded-full bg-black/70 text-white" aria-label={`첨부 사진 ${i + 1} 빼기`}>
                       <X size={15} />
                     </button>
                   </span>
@@ -395,7 +414,7 @@ function RequestForm({ siteId, disabled, draft }: { siteId: string; disabled: bo
           )}
           {goods && <p className="-mt-1 text-[0.76rem] text-ink-3">본사가 내용을 확인한 뒤 회신합니다. 금액·납기는 회신과 별도 견적서로 확정되며, 이 요청만으로 계약·주문이 성립하지 않습니다.</p>}
           <Field label={type === "order" ? "희망 납품·시공일 (선택)" : defect ? "보수 희망일 (선택)" : "희망 회신일 (선택)"} htmlFor="p-date" error={errors.desiredDate}>
-            <input id="p-date" type="date" className={inputCls} value={date} onChange={(e) => setDate(e.target.value)} disabled={disabled} />
+            <input id="p-date" type="date" min={todayIso()} className={inputCls} value={date} onChange={(e) => setDate(e.target.value)} disabled={disabled} />
           </Field>
           <div className="flex flex-wrap items-center justify-between gap-2">
             {IS_LIVE ? <span /> : <button
@@ -445,8 +464,6 @@ const PLACEHOLDER: Record<PartnerRequest["type"], { title: string; desc: string 
   other: { title: "제목을 적어주세요", desc: "요청 내용을 적어주세요." },
 };
 
-const REPAIR_LABEL: Record<PartnerRepairView["stage"], string> = { assigned: "보수 작업 배정", in_progress: "보수 중", done: "보수 완료" };
-
 function MyRequests({ db, requests, preview, onRedo }: { db: DemoDB; requests: PartnerRequest[]; preview: boolean; onRedo: (r: PartnerRequest) => void }) {
   const toast = useToast();
   const [big, setBig] = useState<{ src: string; title: string } | null>(null);
@@ -486,6 +503,9 @@ function MyRequests({ db, requests, preview, onRedo }: { db: DemoDB; requests: P
           {requests.map((r) => {
             const idx = STEPS.indexOf(r.status);
             const repair = db.partnerRepairs?.[r.id] ?? partnerRepairView(db, r);
+            // 하자보수는 한 줄 단계로: 접수 → 보수 배정 → 보수 중 → 보수 완료 → 확인 완료 (D-68 점검 반영)
+            const prog = r.type === "defect" && repair ? defectProgress(r, repair) : null;
+            const redo = requests.find((x) => x.reopenedFrom === r.id);
             return (
               <li key={r.id} className="rounded-2xl border border-line bg-surface-2 p-4" data-testid="partner-request-item" data-status={r.status} data-type={r.type}>
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -493,7 +513,9 @@ function MyRequests({ db, requests, preview, onRedo }: { db: DemoDB; requests: P
                     <span className="mr-1.5 text-[0.74rem] font-bold text-theme-ink" data-testid="partner-request-type">{PARTNER_TYPE_LABEL[r.type]}</span>
                     {r.title}
                   </p>
-                  <Badge tone={r.confirmedAt ? "ok" : r.status === "answered" ? "ok" : r.status === "reviewing" ? "theme" : "warn"}>{r.confirmedAt ? "확인 완료" : PARTNER_STATUS_LABEL[r.status]}</Badge>
+                  <Badge tone={prog ? (prog.step >= 3 ? "ok" : "theme") : r.confirmedAt || r.status === "answered" ? "ok" : r.status === "reviewing" ? "theme" : "warn"} data-testid="partner-request-badge">
+                    {prog ? prog.label : r.confirmedAt ? "확인 완료" : PARTNER_STATUS_LABEL[r.status]}
+                  </Badge>
                 </div>
                 {(r.item || r.qty) && (
                   <p className="mt-1 text-[0.8rem] text-ink-2">
@@ -508,7 +530,20 @@ function MyRequests({ db, requests, preview, onRedo }: { db: DemoDB; requests: P
                     {r.desiredDate ? ` · 보수 희망 ${fmtDate(r.desiredDate)}` : ""}
                   </p>
                 )}
+                {r.reopenedFrom && <p className="mt-1 text-[0.76rem] text-ink-3">앞서 보낸 요청을 다시 요청한 건입니다.</p>}
                 {thumbs(r.photoIds, "첨부한 하자 사진", "partner-request-photos")}
+                {prog ? (
+                  <ol className="mt-3 grid grid-cols-5 gap-0.5" aria-label="하자보수 단계" data-testid="partner-defect-steps" data-step={prog.step}>
+                    {DEFECT_STEPS.map((label, i) => (
+                      <li key={label} className="text-center">
+                        <span className={cx("mx-auto grid size-7 place-items-center rounded-full", i <= prog.step ? "bg-solid text-white" : "bg-surface-3 text-ink-3")}>
+                          {i < prog.step || prog.step === 4 ? <CircleCheck size={15} /> : <Clock3 size={15} />}
+                        </span>
+                        <span className="mt-1 block text-[0.7rem] font-bold leading-tight [word-break:keep-all]">{label}</span>
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
                 <ol className="mt-3 grid grid-cols-3 gap-1" aria-label="처리 단계">
                   {STEPS.map((s, i) => {
                     const h = r.history.find((x) => x.status === s);
@@ -523,9 +558,10 @@ function MyRequests({ db, requests, preview, onRedo }: { db: DemoDB; requests: P
                     );
                   })}
                 </ol>
+                )}
                 {repair && (
                   <p className={cx("mt-3 flex flex-wrap items-center gap-1.5 rounded-xl px-3 py-2 text-[0.82rem] font-semibold", repair.stage === "done" ? "bg-ok-bg text-ok" : "bg-active-soft text-theme-ink")} data-testid="partner-repair" data-stage={repair.stage}>
-                    <Wrench size={15} aria-hidden /> {REPAIR_LABEL[repair.stage]}
+                    <Wrench size={15} aria-hidden /> {defectProgress({ status: r.status }, repair).label}
                     <span className="num font-normal text-ink-2">
                       · {fmtRelative(repair.at)}
                       {repair.stage !== "done" && repair.dueDate ? ` · ${fmtDate(repair.dueDate)}까지 예정` : ""}
@@ -542,7 +578,7 @@ function MyRequests({ db, requests, preview, onRedo }: { db: DemoDB; requests: P
                   <p className="mt-2 text-[0.76rem] text-ink-3">접수 {fmtDateTime(r.createdAt)}</p>
                 )}
                 {r.status === "answered" && repair && repair.stage !== "done" && !r.confirmedAt && (
-                  <p className="mt-2 text-[0.78rem] text-ink-3" data-testid="partner-confirm-later">보수가 끝나면 ‘보수 확인했어요’를 누를 수 있습니다.</p>
+                  <p className="mt-2 text-[0.78rem] text-ink-3" data-testid="partner-confirm-later">태강지엘텍이 보수를 마무리하면 ‘보수 확인했어요’를 누를 수 있습니다.</p>
                 )}
                 {r.status === "answered" &&
                   (!repair || repair.stage === "done" || r.confirmedAt) &&
@@ -554,14 +590,19 @@ function MyRequests({ db, requests, preview, onRedo }: { db: DemoDB; requests: P
                   ) : (
                     !preview && (
                       <div className="mt-3 flex flex-wrap gap-2">
-                        <Button size="sm" variant="cta" icon={<CircleCheck size={15} />} disabled={busy === r.id} onClick={() => confirm(r)} data-testid="partner-confirm">
+                        <Button variant="cta" icon={<CircleCheck size={16} />} disabled={busy === r.id} onClick={() => confirm(r)} data-testid="partner-confirm">
                           {r.type === "defect" ? "보수 확인했어요" : "회신 확인했어요"}
                         </Button>
-                        {r.type === "defect" && (
-                          <Button size="sm" variant="ghost" icon={<RotateCcw size={15} />} onClick={() => onRedo(r)} data-testid="partner-redo">
-                            아직 문제가 있어요
-                          </Button>
-                        )}
+                        {r.type === "defect" &&
+                          (redo ? (
+                            <span className="self-center text-[0.8rem] font-semibold text-ink-3" data-testid="partner-redone">
+                              {fmtDate(redo.createdAt)} 다시 요청함
+                            </span>
+                          ) : (
+                            <Button variant="soft" icon={<RotateCcw size={16} />} onClick={() => onRedo(r)} data-testid="partner-redo">
+                              아직 문제가 있어요
+                            </Button>
+                          ))}
                       </div>
                     )
                   ))}

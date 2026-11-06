@@ -92,6 +92,7 @@ export function noticesFor(before: DemoDB, after: DemoDB, actorId: string): Noti
     else if (!prev.linkedWorkOrderId && r.linkedWorkOrderId) push({ to: [r.partnerUserId], title: "하자보수 작업 배정", body: clip(r.title), url: "/partner#my-requests", tag: `pr-${r.id}` });
     // 일정 안내로 먼저 회신한 하자보수에 보수 사진을 더 보냄 (D-68 점검 반영)
     else if (prev.status === "answered" && (r.replyPhotoIds ?? []).some((id) => !(prev.replyPhotoIds ?? []).includes(id))) push({ to: [r.partnerUserId], title: "보수 완료 사진 도착", body: clip(r.title), url: "/partner#my-requests", tag: `pr-${r.id}` });
+    else if (prev.status === "answered" && r.type === "defect" && r.reply !== prev.reply) push({ to: [r.partnerUserId], title: "하자보수 회신 도착", body: clip(r.title), url: "/partner#my-requests", tag: `pr-${r.id}` });
     // 발주처가 회신·보수 완료를 확인 (D-68)
     else if (!prev.confirmedAt && r.confirmedAt) push({ to: hq, title: "발주처 확인 완료", body: `${site(r.siteId)} · ${clip(r.title)}`, url: "/insights#requests", tag: `pr-${r.id}` });
   }

@@ -15,6 +15,7 @@ import { ACTION_STATUS_LABEL, PARTNER_STATUS_LABEL, PARTNER_TYPE_LABEL, RULE_LAB
 import { fmtDate, fmtDateTime, fmtMan, fmtRelative, todayIso } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
 import { worksOnSite } from "@/lib/domain/types";
+import { partnerRepairView } from "@/lib/domain/partnerFeed";
 import { errorMessage } from "@/lib/data/commands";
 import { run } from "@/lib/data/store";
 import type { DemoDB, PartnerRequest, RiskSignal } from "@/lib/domain/types";
@@ -159,7 +160,7 @@ function SignalItem({ db, s, onAssign }: { db: DemoDB; s: RiskSignal; onAssign: 
   );
 }
 
-const WO_STATE: Record<NonNullable<DemoDB["workOrders"]>[number]["status"], string> = { sent: "보냄", received: "현장 확인", in_progress: "보수 중", done: "완료 보고", confirmed: "완료 확인", returned: "보완 요청" };
+const WO_STATE: Record<NonNullable<DemoDB["workOrders"]>[number]["status"], string> = { sent: "현장에 보냄", received: "현장이 확인함", in_progress: "보수 중", done: "완료 보고 · 본사 확인 전", confirmed: "완료 확인", returned: "보완 요청" };
 
 function PhotoStrip({ db, ids, label, testId }: { db: DemoDB; ids?: string[]; label: string; testId: string }) {
   const [big, setBig] = useState<string | null>(null);
@@ -221,14 +222,19 @@ function PartnerInbox({ db }: { db: DemoDB }) {
                   </p>
                 )}
                 {r.location && <p className="text-[0.8rem] font-semibold text-ink" data-testid="request-location">위치: {r.location}</p>}
+                {r.reopenedFrom && (
+                  <p className="text-[0.78rem] font-semibold text-warn" data-testid="request-reopened">
+                    다시 요청 · 원래 요청: {db.partnerRequests.find((x) => x.id === r.reopenedFrom)?.title ?? "—"}
+                  </p>
+                )}
                 <p className="text-[0.8rem] text-ink-2">{r.description}</p>
                 <PhotoStrip db={db} ids={r.photoIds} label="발주처 사진" testId="request-photos" />
                 {wo && (
                   <p className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[0.78rem] text-ink-2" data-testid="request-wo" data-wo-status={wo.status}>
                     <Wrench size={14} aria-hidden /> 보수 작업지시 · {userLabel(db, wo.assigneeUserId)}
-                    <Badge tone={wo.status === "done" || wo.status === "confirmed" ? "ok" : wo.status === "returned" ? "err" : "theme"}>{WO_STATE[wo.status]}</Badge>
+                    <Badge tone={wo.status === "confirmed" ? "ok" : wo.status === "done" ? "warn" : wo.status === "returned" ? "err" : "theme"}>{WO_STATE[wo.status]}</Badge>
                     {wo.dueDate && <span className="num">기한 {fmtDate(wo.dueDate)}</span>}
-                    <Link href="/orders" className="font-bold text-theme-ink underline">작업지시 보기</Link>
+                    <Link href={`/orders?wo=${wo.id}`} className="font-bold text-theme-ink underline">작업지시 보기</Link>
                   </p>
                 )}
                 {r.reply && <p className="mt-1.5 rounded-lg bg-surface-2 px-2.5 py-1.5 text-[0.78rem] text-ink-2">회신: {r.reply}</p>}
@@ -269,10 +275,10 @@ function PartnerInbox({ db }: { db: DemoDB }) {
                   </div>
                 )}
                 {/* 일정 안내로 먼저 회신한 하자보수 — 보수가 끝나면 보수 사진을 한 번 더 보낸다 (D-68 점검 반영) */}
-                {r.status === "answered" && r.type === "defect" && wo && (wo.status === "done" || wo.status === "confirmed") && (wo.donePhotoIds?.length ?? 0) > 0 && !(r.replyPhotoIds?.length) && (
+                {r.status === "answered" && r.type === "defect" && partnerRepairView(db, r)?.stage === "checking" && (
                   <div className="mt-2.5">
                     <Button size="sm" variant="cta" icon={<Send size={15} />} onClick={() => setReply(r)} data-testid="request-send-photos">
-                      보수 완료 사진 보내기
+                      보수 완료 회신 보내기
                     </Button>
                   </div>
                 )}
@@ -295,7 +301,8 @@ function DefectOrderModal({ db, req, onClose }: { db: DemoDB; req: PartnerReques
   const [assignee, setAssignee] = useState(site?.fieldUserId && people.some((u) => u.id === site.fieldUserId) ? site.fieldUserId : (people[0]?.id ?? ""));
   const [due, setDue] = useState(req.desiredDate && req.desiredDate >= todayIso() ? req.desiredDate : "");
   const [urgent, setUrgent] = useState(false);
-  const [title, setTitle] = useState(`하자보수 · ${req.title}`.slice(0, 80));
+  // 현장 카드에 ‘하자보수’ 표시가 따로 붙으므로 제목에는 붙이지 않는다 (D-68 점검 반영)
+  const [title, setTitle] = useState(req.title.slice(0, 80));
   const [key] = useState(() => uid("idem"));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
@@ -338,6 +345,12 @@ function DefectOrderModal({ db, req, onClose }: { db: DemoDB; req: PartnerReques
     >
       <div className="space-y-3">
         <p className="rounded-lg bg-surface-2 px-3 py-2 text-[0.82rem] text-ink-2">{detail}</p>
+        {req.desiredDate && (
+          <p className="text-[0.8rem] font-semibold text-ink-2" data-testid="defect-order-desired">
+            발주처 보수 희망일: {fmtDate(req.desiredDate)}
+            {req.desiredDate < todayIso() ? " (지남)" : ""}
+          </p>
+        )}
         <PhotoStrip db={db} ids={req.photoIds} label="함께 가는 발주처 사진" testId="defect-order-photos" />
         <Field label="지시 제목" htmlFor="do-title" required error={errors.title}>
           <input id="do-title" className={inputCls} value={title} onChange={(e) => setTitle(e.target.value)} maxLength={80} />
@@ -374,7 +387,18 @@ function ReplyModal({ db, req, onClose }: { db: DemoDB; req: PartnerRequest; onC
   const woDone = !!wo && (wo.status === "done" || wo.status === "confirmed");
   const donePhotos = woDone ? (wo!.donePhotoIds ?? []).map((id) => db.photos.find((p) => p.id === id)).filter((p): p is NonNullable<typeof p> => !!p).slice(0, 3) : [];
   const followUp = req.status === "answered";
-  const [share, setShare] = useState<string[]>(() => donePhotos.map((p) => p.id));
+  const [share, setShare] = useState<string[]>(() => donePhotos.filter((p) => !(req.replyPhotoIds ?? []).includes(p.id)).map((p) => p.id));
+  // 현장이 끝냈다고 보낸 작업지시는 회신하면서 완료 확인도 함께 (요청함과 작업지시 화면 상태가 어긋나던 문제 · D-68 점검 반영)
+  const [confirmWo, setConfirmWo] = useState(wo?.status === "done");
+  const partial = !!wo && /일부/.test(`${wo.doneNote ?? ""}`);
+  const [busy, setBusy] = useState(false);
+  const PH: Partial<Record<PartnerRequest["type"], string>> = {
+    quote: "예) 실측 후 사양별 견적서를 별도로 보내드리겠습니다.",
+    order: "예) 자재 입고 일정 확인 후 납품·시공일을 안내드리겠습니다.",
+    change_review: "예) 변경 범위 확인했습니다. 단가 검토 후 11월 첫 주 변경견적 회신 드리겠습니다.",
+    schedule: "예) 11월 12일 오전 점검 가능합니다.",
+    defect: woDone ? "예) 보수를 마쳤습니다. 실리콘을 다시 시공하고 물을 뿌려 확인했습니다." : "예) 11월 10일 오전에 보수하러 방문하겠습니다.",
+  };
   const [register, setRegister] = useState(req.type === "change_review");
   const [amountText, setAmountText] = useState("");
   const [err, setErr] = useState("");
@@ -383,7 +407,7 @@ function ReplyModal({ db, req, onClose }: { db: DemoDB; req: PartnerRequest; onC
     <Modal
       open
       onClose={onClose}
-      title={followUp ? "보수 완료 사진 보내기" : "발주처 요청 회신"}
+      title={followUp ? "보수 완료 회신" : "발주처 요청 회신"}
       description={req.title}
       size="md"
       testId="reply-modal"
@@ -394,18 +418,24 @@ function ReplyModal({ db, req, onClose }: { db: DemoDB; req: PartnerRequest; onC
             variant="cta"
             icon={<Send size={16} />}
             data-testid="reply-confirm"
+            disabled={busy}
             onClick={async () => {
+              // 보내기 전에 빈칸부터 — 앞선 실패가 ‘검토 중’만 바꿔 두고 다음 보내기가 ‘이미 처리된 단계’로 막히던 문제 (D-68 점검 반영)
+              if (!text.trim()) {
+                setErr("회신 내용을 입력해주세요.");
+                return;
+              }
+              setBusy(true);
+              setErr("");
               try {
-                if (followUp && !share.length) {
-                  setErr("보낼 보수 사진을 골라 주세요.");
-                  return;
-                }
-                if (req.status === "received") await run("updatePartnerRequest", { requestId: req.id, patch: { status: "reviewing" } });
                 await run("updatePartnerRequest", { requestId: req.id, patch: { status: "answered", reply: text, registerChangeOrder: register && amount > 0 ? { title: req.title, amount } : undefined, ...(share.length ? { sharePhotoIds: share } : {}) } });
-                toast.push({ tone: "ok", title: "회신했습니다", desc: "발주처 포털에 ‘회신 완료’와 회신 내용이 표시됩니다." });
+                if (wo && wo.status === "done" && confirmWo) await run("reviewWorkOrder", { workOrderId: wo.id, decision: "confirm" }).catch(() => {});
+                toast.push({ tone: "ok", title: "회신했습니다", desc: req.type === "defect" && woDone ? "발주처 포털에 ‘보수 완료’와 회신이 표시됩니다." : "발주처 포털에 ‘회신 완료’와 회신 내용이 표시됩니다." });
                 onClose();
               } catch (e) {
                 setErr(e instanceof Error ? e.message : "실패");
+              } finally {
+                setBusy(false);
               }
             }}
           >
@@ -418,13 +448,23 @@ function ReplyModal({ db, req, onClose }: { db: DemoDB; req: PartnerRequest; onC
         <p className="rounded-lg bg-surface-2 px-3 py-2 text-[0.82rem] text-ink-2">
           <b className="mr-1">[{PARTNER_TYPE_LABEL[req.type]}]</b>
           {req.item ? `${req.item}${req.qty ? ` · ${req.qty}` : ""} — ` : ""}
+          {req.location ? `${req.location} — ` : ""}
           {req.description}
         </p>
+        {wo && woDone && (wo.doneNote || wo.doneQty) && (
+          <p className={cx("rounded-lg px-3 py-2 text-[0.82rem]", partial ? "bg-warn-bg text-ink" : "bg-ok-bg text-ink")} data-testid="reply-done-note">
+            <b>현장 완료 보고:</b> {[wo.doneQty, wo.doneNote].filter(Boolean).join(" · ")}
+            {partial && <span className="mt-0.5 block font-semibold text-warn">‘일부만 끝냈어요’로 보고됐습니다. 남은 작업을 확인한 뒤 회신하세요.</span>}
+          </p>
+        )}
+        {req.type === "defect" && !wo && (
+          <Notice tone="warn">작업지시 없이 회신합니다. 발주처에게는 ‘회신 완료’로 보이고 바로 확인할 수 있습니다 (하자가 아닌 경우·전화로 처리한 경우).</Notice>
+        )}
         {(req.type === "quote" || req.type === "order") && (
           <p className="text-[0.76rem] text-ink-3">회신 내용은 발주처에 그대로 보입니다. 금액·내부 원가는 적지 말고, 견적서는 별도로 보내세요.</p>
         )}
         <Field label="회신 내용 (발주처에 표시)" htmlFor="rp-text" required>
-          <textarea id="rp-text" rows={3} className={inputCls} value={text} onChange={(e) => setText(e.target.value)} maxLength={400} placeholder="예) 변경 범위 확인했습니다. 단가 검토 후 11월 첫 주 견적 회신 드리겠습니다." />
+          <textarea id="rp-text" rows={3} className={inputCls} value={text} onChange={(e) => setText(e.target.value)} maxLength={400} placeholder={PH[req.type] ?? "예) 확인했습니다. 담당자가 곧 연락드리겠습니다."} />
         </Field>
         {!IS_LIVE && (
         <button
@@ -446,7 +486,7 @@ function ReplyModal({ db, req, onClose }: { db: DemoDB; req: PartnerRequest; onC
         </button>
         )}
         {req.type === "defect" && wo && wo.status !== "done" && wo.status !== "confirmed" && (
-          <Notice tone="warn">보수 작업지시가 아직 끝나지 않았습니다 ({WO_STATE[wo.status]}). 지금은 일정 안내로 회신하고, 현장이 ‘다 했어요’로 사진을 보내면 요청함의 ‘보수 완료 사진 보내기’로 한 번 더 보내세요.</Notice>
+          <Notice tone="warn">현장 보수가 아직 끝나지 않았습니다 (지금: {WO_STATE[wo.status]}). 지금은 일정 안내로 회신하고, 현장이 ‘다 했어요’로 보내면 요청함의 ‘보수 완료 회신’으로 한 번 더 보내세요.</Notice>
         )}
         {donePhotos.length > 0 && (
           <fieldset className="rounded-xl border border-line bg-surface-2 p-3" data-testid="reply-share-photos">
@@ -462,6 +502,15 @@ function ReplyModal({ db, req, onClose }: { db: DemoDB; req: PartnerRequest; onC
             </div>
             <p className="mt-1.5 text-[0.72rem] text-ink-3">고른 사진은 요청한 발주처에게만 보입니다 (다른 발주처의 ‘공정 사진’에는 나오지 않음).</p>
           </fieldset>
+        )}
+        {wo && wo.status === "done" && (
+          <label className="flex items-start gap-2.5 text-[0.85rem]">
+            <input type="checkbox" checked={confirmWo} onChange={(e) => setConfirmWo(e.target.checked)} className="mt-1 size-4 accent-[var(--t-active)]" data-testid="reply-confirm-wo" />
+            <span>
+              <b>작업지시 완료 확인도 함께</b>
+              <span className="block text-[0.74rem] text-ink-3">끄면 작업지시는 ‘완료 보고 · 본사 확인 전’으로 남습니다.</span>
+            </span>
+          </label>
         )}
         {req.type === "change_review" && (
           <div className="rounded-xl border border-line bg-surface-2 p-3">
