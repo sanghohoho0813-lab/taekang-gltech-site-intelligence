@@ -93,6 +93,7 @@ function PartnerPortal({ db, partner, sites: mySites, preview }: { db: NonNullab
           </div>
           <nav className="ml-4 hidden items-center gap-1 lg:flex" aria-label="포털 메뉴">
             <a href="#status" className="press rounded-lg px-3 py-2 text-[0.85rem] font-bold text-ink hover:bg-surface-3">현장 현황</a>
+            <a href="#photos" className="press rounded-lg px-3 py-2 text-[0.85rem] font-bold text-ink hover:bg-surface-3">공정 사진</a>
             <a href="#request" className="press rounded-lg px-3 py-2 text-[0.85rem] font-bold text-ink hover:bg-surface-3">요청하기</a>
             <a href="#my-requests" className="press rounded-lg px-3 py-2 text-[0.85rem] font-bold text-ink hover:bg-surface-3">내 요청</a>
             {showFuture && (

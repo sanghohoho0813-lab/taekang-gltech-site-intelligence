@@ -40,7 +40,6 @@ export function EasyMaterial() {
   const [siteId, setSiteId] = useState(sites.length === 1 ? sites[0].id : "");
   const [stack, setStack] = useState<Step[]>([sites.length === 1 ? "kind" : "site"]);
   useWizardActive(stack.length > 1);
-  useStepHistory(stack.length, () => setStack((x) => (x.length > 1 ? x.slice(0, -1) : x)));
   const [kind, setKind] = useState<MaterialMoveKind>("install");
   // 사람이 고르기 전에는 아무것도 선택돼 보이지 않게
   const [picked, setPicked] = useState(false);
@@ -53,6 +52,8 @@ export function EasyMaterial() {
   const [err, setErr] = useState<string | null>(null);
   const [voiding, setVoiding] = useState<string | null>(null);
   const [done, setDone] = useState<{ name: string; unit: string; qty: number; kind: MaterialMoveKind; inQty?: number; installQty?: number; onSite?: number; flags?: string[]; queued?: boolean; already?: boolean } | null>(null);
+  // 보낸 뒤(완료 화면)에는 단계 기록을 접는다
+  useStepHistory(done ? 1 : stack.length, (d) => setStack((x) => x.slice(0, Math.max(1, d))));
   const step = stack[stack.length - 1];
   // 단계가 바뀌면 화면 맨 위(머리 띠)부터 보이게 (D-65)
   useEffect(() => {

@@ -90,11 +90,18 @@ export function noticesFor(before: DemoDB, after: DemoDB, actorId: string): Noti
     else if (prev.status !== "answered" && r.status === "answered") push({ to: [r.partnerUserId], title: "태강지엘텍 회신 도착", body: clip(r.title), url: "/partner", tag: `pr-${r.id}` });
   }
 
-  // 발주처 포털 공정 사진 새로 공개 (D-67) — 그 현장을 볼 수 있는 발주처에게 현장마다 한 번
-  const wasShared = new Set(before.photos.filter((p) => p.shared).map((p) => p.id));
+  // 발주처 포털 공정 사진 새로 공개 (D-67) — 처음 공개한 사진만, 같은 현장에서 30분 안에 이미 알렸으면 묶어서 다시 보내지 않는다 (D-67 점검 반영)
+  const beforeById = new Map(before.photos.map((p) => [p.id, p]));
   const newly = new Map<string, number>();
-  for (const p of after.photos) if (p.shared && !wasShared.has(p.id)) newly.set(p.siteId, (newly.get(p.siteId) ?? 0) + 1);
+  for (const p of after.photos) {
+    const prev = beforeById.get(p.id);
+    if (p.shared && !prev?.shared && !prev?.sharedOnce) newly.set(p.siteId, (newly.get(p.siteId) ?? 0) + 1);
+  }
   for (const [siteId, n] of newly) {
+    const nowShared = after.photos.filter((p) => p.siteId === siteId && p.shared);
+    const latest = nowShared.reduce((a, p) => (p.shared!.at > a ? p.shared!.at : a), "");
+    const recentlyNotified = before.photos.some((p) => p.siteId === siteId && p.shared && new Date(latest).getTime() - new Date(p.shared.at).getTime() < 30 * 60_000);
+    if (recentlyNotified) continue;
     const partners = after.users.filter((u) => u.role === "partner" && !u.inactive && (u.partnerSiteIds ?? []).includes(siteId)).map((u) => u.id);
     push({ to: partners, title: "새 공정 사진", body: `${site(siteId)} · 사진 ${n}장이 공개되었습니다`, url: "/partner#photos", tag: `ph-${siteId}` });
   }

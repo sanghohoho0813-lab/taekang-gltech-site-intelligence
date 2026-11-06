@@ -28,7 +28,6 @@ export function EasyFix() {
   const [siteId, setSiteId] = useState(sites.length === 1 ? sites[0].id : "");
   const [stack, setStack] = useState<Step[]>([sites.length === 1 ? "date" : "site"]);
   useWizardActive(stack.length > 1);
-  useStepHistory(stack.length, () => setStack((x) => (x.length > 1 ? x.slice(0, -1) : x)));
   const [moreDays, setMoreDays] = useState(false);
   const today = todayIso();
   const [date, setDate] = useState(today);
@@ -40,6 +39,8 @@ export function EasyFix() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  // 보낸 뒤(완료 화면)에는 단계 기록을 접는다
+  useStepHistory(done ? 1 : stack.length, (d) => setStack((x) => x.slice(0, Math.max(1, d))));
   const step = stack[stack.length - 1];
   // 단계가 바뀌면 화면 맨 위(머리 띠)부터 보이게 (D-65)
   useEffect(() => {

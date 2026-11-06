@@ -20,6 +20,7 @@ import { deliver } from "./push";
 import { noticesFor } from "@/lib/domain/notify";
 import { COLLECTIONS, loadState, persistState } from "./state";
 import { authorize, fieldSiteIds, ForbiddenError, sanitizeResult, viewFor } from "./authz";
+import { photoWithdrawn } from "@/lib/domain/partnerFeed";
 import { createSession, hashPassword, MEMBER_COLS, normalizeEmail, passwordProblem, toMember, type Member } from "./auth";
 
 export async function getView(m: Member): Promise<{ rev: number; db: DemoDB }> {
@@ -170,10 +171,11 @@ export async function executeCommand(m: Member, name: unknown, args: unknown): P
 export async function getPhoto(m: Member, id: string): Promise<{ mime: string; data: Uint8Array } | null> {
   const db = await getDb();
   if (m.role === "partner") {
-    // 발주처는 본사가 공개한 본인 현장 사진만 (D-67)
-    const state = await db.transaction((tx) => loadState(tx, m.companyId));
+    // 발주처는 본사가 공개한 본인 현장 사진만 (D-67) — 취소한 보고·자재 기록의 사진은 빼고. 같은 rev면 기억해 둔 데이터를 쓴다(사진마다 회사 전체를 다시 읽지 않게)
+    const rev = await currentRev(m.companyId);
+    const state = cachedState(m.companyId, rev) ?? (await db.transaction((tx) => loadState(tx, m.companyId)));
     const p = state.photos.find((x) => x.id === id);
-    if (!p || !p.shared || !m.partnerSiteIds.includes(p.siteId)) return null;
+    if (!p || !p.shared || !m.partnerSiteIds.includes(p.siteId) || photoWithdrawn(state, p)) return null;
   }
   const [row] = await db.query<{ mime: string; data: Uint8Array; site_id: string | null }>(
     `select mime, data, site_id from photo_blobs where id = $1 and company_id = $2`,

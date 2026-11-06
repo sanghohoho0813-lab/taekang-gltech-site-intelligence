@@ -290,37 +290,52 @@ export function useWizardActive(active: boolean) {
 
 /**
  * 휴대폰 ‘뒤로’ 버튼 = 이전 단계 (D-67) — 예전에는 뒤로를 누르면 쓰던 보고(사진 포함)가 통째로 닫혔다.
- * 단계가 늘 때마다 같은 주소로 기록을 하나씩 쌓고, 뒤로(popstate)가 오면 한 단계 되돌린다.
- * 화면 안 ‘이전’·처음으로 등으로 단계가 줄면 쌓아 둔 기록도 그만큼 되돌려 맞춘다(그때 오는 popstate는 무시).
+ * 단계마다 같은 주소로 기록을 쌓고 기록에 단계 번호(__wz)를 남긴다. 뒤로(popstate)가 오면 그 번호의 단계로 맞춘다.
+ * 보낸 뒤·처음으로·화면 안 ‘이전’으로 단계가 줄면 쌓인 기록을 그만큼 접는다(그때 오는 popstate는 무시).
+ * 새로고침하거나 다른 화면에 갔다가 돌아와 남은 기록(번호 > 1)은 처음 그릴 때 접는다 — ‘뒤로’가 여러 번 먹통이던 문제 (D-67 점검 반영).
  */
-export function useStepHistory(depth: number, stepBack: () => void, enabled = true) {
-  const pushed = useRef(0);
+const WZ = "__wz";
+export function useStepHistory(depth: number, setDepth: (d: number) => void, enabled = true) {
+  const cur = useRef(1);
   const ignore = useRef(0);
-  const backRef = useRef(stepBack);
-  backRef.current = stepBack;
+  const setRef = useRef(setDepth);
+  setRef.current = setDepth;
   useEffect(() => {
     if (!enabled) return;
-    const target = Math.max(0, depth - 1);
-    if (target > pushed.current) {
-      for (let i = pushed.current; i < target; i++) window.history.pushState(null, "", window.location.href);
-      pushed.current = target;
-    } else if (target < pushed.current) {
-      const n = pushed.current - target;
-      pushed.current = target;
+    const left = Number((window.history.state as Record<string, unknown> | null)?.[WZ] ?? 1);
+    if (left > 1) {
+      ignore.current += 1;
+      window.history.go(-(left - 1));
+    }
+    cur.current = 1;
+  }, [enabled]);
+  useEffect(() => {
+    if (!enabled) return;
+    if (depth > cur.current) {
+      for (let d = cur.current + 1; d <= depth; d++) window.history.pushState({ [WZ]: d }, "", window.location.href);
+      cur.current = depth;
+    } else if (depth < cur.current) {
+      const n = cur.current - depth;
+      cur.current = depth;
       ignore.current += 1;
       window.history.go(-n);
     }
   }, [depth, enabled]);
   useEffect(() => {
     if (!enabled) return;
-    const onPop = () => {
+    const onPop = (e: PopStateEvent) => {
       if (ignore.current > 0) {
         ignore.current -= 1;
         return;
       }
-      if (pushed.current > 0) {
-        pushed.current -= 1;
-        backRef.current();
+      const d = Number((e.state as Record<string, unknown> | null)?.[WZ] ?? 1);
+      if (d < cur.current) {
+        cur.current = d;
+        setRef.current(d);
+      } else if (d > cur.current) {
+        // 앞으로 가기는 지나온 답을 다시 만들 수 없어 제자리로 되돌린다
+        ignore.current += 1;
+        window.history.go(-(d - cur.current));
       }
     };
     window.addEventListener("popstate", onPop);

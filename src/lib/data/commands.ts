@@ -360,6 +360,8 @@ export function voidReport(db0: DemoDB, reportId: string, ctx: Ctx) {
   if (r.status === "voided") throw new CommandError("이미 되돌린 보고입니다.", "STATE");
   const before = siteFinancials(db0, r.siteId);
   r.status = "voided";
+  // 이 보고의 사진은 발주처 공개도 끈다 (D-67 점검 반영)
+  for (const p of db.photos) if (p.reportId === r.id && p.shared) delete p.shared;
   for (const id of r.costEntryIds) {
     const e = db.costEntries.find((x) => x.id === id);
     if (e && (e.status === "active" || e.status === "pending")) {

@@ -18,7 +18,9 @@ export function stripMoney(text: string): string {
     .replace(PROFIT_CLAUSE, "")
     .replace(MONEY, "")
     .replace(/\(\s*\)/g, "")
-    .replace(/\s+([,·)])/g, "$1")
+    .replace(/\s+([,)])/g, "$1")
+    .replace(/\s*·\s*/g, " · ")
+    .replace(/^\s*·\s*/, "")
     .replace(/\s{2,}/g, " ")
     .replace(/[\s→·,+]+$/g, "")
     .trim();

@@ -1,7 +1,8 @@
 /** D-67 발주처 포털 공개 사진·최근 공정 변화 */
 import { describe, expect, it } from "vitest";
 import { createSeed } from "@/lib/data/seed";
-import { submitFieldReport, CommandError } from "@/lib/data/commands";
+import { submitFieldReport, voidReport, CommandError } from "@/lib/data/commands";
+import { stripMoney } from "@/lib/domain/redact";
 import { setPhotoShare } from "@/lib/data/portalCommands";
 import { partnerProgressFeed, sharedPhotos } from "@/lib/domain/partnerFeed";
 import { noticesFor } from "@/lib/domain/notify";
@@ -85,5 +86,49 @@ describe("최근 공정 변화 (발주처용)", () => {
     const v = viewFor(PARTNER, r2.db, NOW);
     expect(v.partnerFeed?.["site-a"]).toEqual(feed);
     expect(JSON.stringify(v.partnerFeed)).not.toContain("작업");
+  });
+});
+
+describe("D-67 점검 반영", () => {
+  it("취소한 보고의 사진은 발주처 공개가 꺼지고, 공개 중 표시가 남아 있어도 발주처에게 가지 않는다", () => {
+    let db: DemoDB = withPhotos();
+    const a = db.photos.find((p) => p.siteId === "site-a")!;
+    db = setPhotoShare(db, { photoIds: [a.id], shared: true }, ctx("u-manager")).db;
+    const voided = voidReport(db, a.reportId!, ctx("u-manager")).db;
+    expect(voided.photos.find((p) => p.id === a.id)!.shared).toBeUndefined();
+    expect(viewFor(PARTNER, voided, NOW).photos).toHaveLength(0);
+    // 예전 데이터처럼 공개 표시가 남은 채 보고만 취소된 경우에도 빼고 보낸다
+    const stale = { ...voided, photos: voided.photos.map((p) => (p.id === a.id ? { ...p, shared: { at: NOW.toISOString(), by: "u-manager", caption: "x" } } : p)) };
+    expect(viewFor(PARTNER, stale, NOW).photos).toHaveLength(0);
+    expect(sharedPhotos(stale, "site-a")).toHaveLength(0);
+  });
+  it("현장 직원은 원가 수정으로 1억 상한을 넘길 수 없다", () => {
+    const db = createSeed(NOW);
+    expect(() => authorize(FIELD, "editCostEntry", { entryId: "x", patch: { amount: 4_000_000_000 } }, { ...db, costEntries: [{ ...db.costEntries[0], id: "x", createdBy: "u-field", siteId: "site-a", reviewedAt: undefined }] }, NOW)).toThrow(ForbiddenError);
+  });
+  it("공정 변화는 처음 값 → 마지막 값 (되돌아오면 표시 안 함)", () => {
+    const db0 = createSeed(NOW);
+    const st = db0.sites.find((s) => s.id === "site-a")!.stages.find((x) => x.progressPct >= 10 && x.progressPct < 90)!;
+    const p = st.progressPct;
+    let db = submitFieldReport(db0, { idempotencyKey: "g1", siteId: "site-a", reportDate: "2026-11-04", workDone: "작업", stageProgress: [{ stageId: st.id, progressPct: p + 10 }] }, ctx("u-field")).db;
+    db = submitFieldReport(db, { idempotencyKey: "g2", siteId: "site-a", reportDate: "2026-11-04", workDone: "정정", stageProgress: [{ stageId: st.id, progressPct: p + 5 }] }, ctx("u-field")).db;
+    expect(partnerProgressFeed(db, "site-a", "2026-11-04").find((f) => f.stage === st.name)).toMatchObject({ from: p, to: p + 5 });
+    db = submitFieldReport(db, { idempotencyKey: "g3", siteId: "site-a", reportDate: "2026-11-04", workDone: "원래대로", stageProgress: [{ stageId: st.id, progressPct: p }] }, ctx("u-field")).db;
+    expect(partnerProgressFeed(db, "site-a", "2026-11-04").find((f) => f.stage === st.name)).toBeUndefined();
+  });
+  it("한 번 공개했던 사진을 다시 켜거나, 30분 안에 같은 현장 사진을 더 공개하면 알림을 또 보내지 않는다", () => {
+    const base = withPhotos();
+    const a = base.photos.find((p) => p.siteId === "site-a")!;
+    const s1 = setPhotoShare(base, { photoIds: [a.id], shared: true }, ctx("u-manager")).db;
+    const off = setPhotoShare(s1, { photoIds: [a.id], shared: false }, ctx("u-manager")).db;
+    const on = setPhotoShare(off, { photoIds: [a.id], shared: true }, ctx("u-manager", new Date(NOW.getTime() + 60_000))).db;
+    expect(noticesFor(off, on, "u-manager")).toHaveLength(0);
+    // 같은 현장 두 번째 사진 (10분 뒤)
+    const withSecond = { ...s1, photos: [...s1.photos, { ...a, id: "ph-2", sharedOnce: undefined, shared: undefined }] };
+    const s2 = setPhotoShare(withSecond, { photoIds: ["ph-2"], shared: true }, ctx("u-manager", new Date(NOW.getTime() + 10 * 60_000))).db;
+    expect(noticesFor(withSecond, s2, "u-manager")).toHaveLength(0);
+  });
+  it("금액을 지운 문장의 가운뎃점 띄어쓰기", () => {
+    expect(stripMoney("A현장 현장보고 되돌리기 → 예상 총원가 8.5억 원 → 8.5억 원 · 공정률 45% → 40%")).toBe("A현장 현장보고 되돌리기 · 공정률 45% → 40%");
   });
 });

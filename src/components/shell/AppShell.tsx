@@ -60,7 +60,7 @@ export function OfflineBanner() {
   }, []);
   if (!offline) return null;
   return (
-    <div role="status" aria-live="polite" className="no-print sticky top-0 z-30 border-b border-warn/40 bg-warn-bg px-4 py-2.5 text-center text-[0.95rem] font-bold text-ink" data-testid="offline-banner">
+    <div role="status" aria-live="polite" className="no-print border-b border-warn/40 bg-warn-bg px-4 py-2.5 text-center text-[0.95rem] font-bold text-ink" data-testid="offline-banner">
       인터넷이 끊겼어요 —{" "}
       {IS_LIVE ? "보고·출퇴근·자재 기록은 휴대폰에 보관했다가 연결되면 자동으로 보내요." : "시연판은 이 기기에 저장되어 계속 쓸 수 있어요."}
     </div>

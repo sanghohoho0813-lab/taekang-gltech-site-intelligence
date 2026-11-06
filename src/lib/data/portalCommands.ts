@@ -26,6 +26,7 @@ export function setPhotoShare(db0: DemoDB, input: PhotoShareInput, ctx: Ctx) {
   for (const p of photos) {
     if (input.shared) {
       p!.shared = { at, by: ctx.userId, caption: caption || p!.shared?.caption || "" };
+      p!.sharedOnce = true;
       changed += 1;
     } else if (p!.shared) {
       delete p!.shared;

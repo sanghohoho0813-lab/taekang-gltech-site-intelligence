@@ -158,6 +158,8 @@ export function voidMaterialMove(db0: DemoDB, input: { moveId: string; reason: s
   const db = clone(db0);
   const at = nowIso(ctx);
   db.materialMoves = (db.materialMoves ?? []).map((m) => (m.id === m0.id ? { ...m, voided: { at, by: ctx.userId, reason } } : m));
+  // 이 기록의 사진은 발주처 공개도 끈다 (D-67 점검 반영)
+  db.photos = db.photos.map((p) => (p.materialMoveId === m0.id && p.shared ? (({ shared: _s, ...rest }) => (void _s, rest))(p) : p));
   const site = db.sites.find((s) => s.id === m0.siteId);
   const item = site?.materials?.find((i) => i.id === m0.itemId);
   log(db, ctx, "material", `${site?.shortName ?? ""} 자재 ${MOVE_LABEL[m0.kind]} 기록 취소 — ${item?.name ?? ""} ${fmtQty(m0.qty, item?.unit)} (사유: ${reason})`, m0.siteId, `/sites/${m0.siteId}?tab=material`);

@@ -420,6 +420,8 @@ export interface SitePhoto {
   createdBy: string;
   /** 발주처 포털에 공개 (본사가 골라서 · D-67) — 공개 설명은 내부 설명과 따로 적는다 */
   shared?: { at: string; by: string; caption: string };
+  /** 한 번이라도 공개한 적 있음 — 다시 공개할 때는 발주처 알림을 보내지 않는다 */
+  sharedOnce?: true;
 }
 
 /** 발주처 포털 ‘최근 공정 변화’ 한 줄 (금액 없음) */

@@ -143,7 +143,6 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
   const [memo, setMemo] = useState("");
   const [stack, setStack] = useState<StepId[]>(() => [firstStep(mode, !initialSite)]);
   useWizardActive(stack.length > 1);
-  useStepHistory(stack.length, () => setStack((x) => (x.length > 1 ? x.slice(0, -1) : x)), !embedded);
   const [discardAsk, setDiscardAsk] = useState(false);
   const [returnToConfirm, setReturnToConfirm] = useState(false);
   const [editingKey, setEditingKey] = useState<string | null>(null);
@@ -153,6 +152,8 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
   const [error, setError] = useState<string | null>(null);
   const [resume, setResume] = useState<Draft | null>(null);
   const [done, setDone] = useState<{ reportId?: string; pendingReview?: boolean; costSum: number; already?: boolean; queued?: boolean; siteName: string } | null>(null);
+  // 보낸 뒤(완료 화면)에는 단계 기록을 접는다
+  useStepHistory(done ? 1 : stack.length, (d) => setStack((x) => x.slice(0, Math.max(1, d))), !embedded);
   const [undoAsk, setUndoAsk] = useState(false);
   const [undone, setUndone] = useState(false);
   const [dateEdit, setDateEdit] = useState(false);

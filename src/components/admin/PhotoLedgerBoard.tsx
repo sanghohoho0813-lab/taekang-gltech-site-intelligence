@@ -161,7 +161,7 @@ export function PhotoLedgerBoard() {
                     onClick={async () => {
                       setSharing(e.photo.id);
                       try {
-                        await run("setPhotoShare", { photoIds: [e.photo.id], shared: !e.photo.shared, caption: e.stage });
+                        await run("setPhotoShare", { photoIds: [e.photo.id], shared: !e.photo.shared, caption: e.stage.slice(0, 60) });
                         toast.push({ tone: "ok", title: e.photo.shared ? "발주처 공개를 껐습니다" : "발주처 포털에 공개했습니다", desc: e.photo.shared ? undefined : `설명: ${e.stage}` });
                       } catch (err) {
                         toast.push({ tone: "err", title: errorMessage(err, "바꾸지 못했습니다") });

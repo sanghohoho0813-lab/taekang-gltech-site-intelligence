@@ -5,7 +5,7 @@
  * 3) sanitizeResult: 명령 결과에서도 금액 정보 제거
  */
 import { hasMoney, stripMoney } from "@/lib/domain/redact";
-import { partnerProgressFeed } from "@/lib/domain/partnerFeed";
+import { partnerProgressFeed, photoWithdrawn } from "@/lib/domain/partnerFeed";
 
 /** 현장 직원이 한 번에 넣을 수 있는 비용 1건 상한 */
 export const FIELD_COST_MAX = 100_000_000;
@@ -81,6 +81,9 @@ export function authorize(m: Member, name: CommandName, argsIn: unknown, db: Dem
         const e = entry(args.entryId);
         if (!e || e.createdBy !== m.id || !sites.has(e.siteId)) throw new ForbiddenError("본인이 입력한 원가만 고칠 수 있습니다.");
         if (e.reviewedAt) throw new ForbiddenError("본사가 이미 확인한 원가입니다. 바꾸려면 본사에 요청해주세요.");
+        // 원가 수정으로 현장 입력 상한(1억)을 넘기지 못하게 (D-67 점검 반영)
+        if (name === "editCostEntry" && typeof (args.patch as { amount?: unknown } | undefined)?.amount === "number" && (args.patch as { amount: number }).amount > FIELD_COST_MAX)
+          throw new ForbiddenError("현장에서는 1건에 1억 원까지 넣을 수 있어요. 금액을 확인하거나 본사에 알려 주세요.");
         return args;
       }
       case "setActionStatus":
@@ -300,7 +303,7 @@ export function viewFor(m: Member, db: DemoDB, now = new Date()): DemoDB {
     partnerRequests: db.partnerRequests.filter((r) => sites.has(r.siteId) && r.partnerUserId === m.id),
     // 본사가 공개한 사진만 — 내부 설명·연결된 보고/조치·찍은 사람은 빼고 공개 설명만 (D-67)
     photos: db.photos
-      .filter((p) => sites.has(p.siteId) && p.shared)
+      .filter((p) => sites.has(p.siteId) && p.shared && !photoWithdrawn(db, p))
       .map((p) => ({ id: p.id, siteId: p.siteId, dataUrl: p.dataUrl, caption: p.shared!.caption, createdAt: p.createdAt, createdBy: "", shared: { at: p.shared!.at, by: "", caption: p.shared!.caption } })),
     // 최근 공정 변화 — 보고 원문 없이 공정·진척만 서버가 만들어 보낸다
     partnerFeed: Object.fromEntries([...sites].map((id) => [id, partnerProgressFeed(db, id, kstDate(now.toISOString()))])),
