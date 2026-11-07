@@ -18,15 +18,18 @@ export const WARRANTY_LABEL: Record<WarrantyState, string> = {
 
 const dayDiff = (from: string, to: string) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
 
-/** 준공일 + n개월 − 1일 (예: 2026-11-30 + 24개월 → 2028-11-29) · 말일 넘침은 그 달 말일로 */
+/**
+ * 준공일 + n개월 − 1일 (예: 2026-11-30 + 24개월 → 2028-11-29).
+ * 끝나는 달에 같은 날이 없으면 그 달 말일 (민법 제160조 제3항 · 예: 1월 31일 + 1개월 → 2월 28일 · D-70 점검 반영)
+ */
 export function warrantyEnd(completedDate: string, months: number): string {
   const [y, m, d] = completedDate.split("-").map(Number);
   const total = m - 1 + months;
   const ty = y + Math.floor(total / 12);
   const tm = total % 12;
   const last = new Date(Date.UTC(ty, tm + 1, 0)).getUTCDate();
-  const end = new Date(Date.UTC(ty, tm, Math.min(d, last)) - 86_400_000);
-  return end.toISOString().slice(0, 10);
+  if (d > last) return new Date(Date.UTC(ty, tm, last)).toISOString().slice(0, 10);
+  return new Date(Date.UTC(ty, tm, d) - 86_400_000).toISOString().slice(0, 10);
 }
 
 export interface WarrantyStatus {

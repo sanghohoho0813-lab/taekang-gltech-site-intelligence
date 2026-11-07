@@ -57,7 +57,11 @@ export function WarrantyCard({ site, compact = false }: { site: Site; compact?: 
           </p>
         )}
         {w.state === "soon" && <p className="mt-1.5 text-[0.8rem] font-semibold text-warn">만료 전에 발주처와 함께 최종 점검하고 남은 하자를 정리하세요.</p>}
-        {w.state === "pending" && hq && <p className="mt-1.5 text-[0.8rem] text-ink-3">준공(인도)하면 준공일을 넣으세요. 그날부터 보증 기간을 셉니다.</p>}
+        {w.state === "pending" && hq && (
+          <p className={cx("mt-1.5 text-[0.8rem]", site.status === "completed" ? "font-semibold text-warn" : "text-ink-3")} data-testid="warranty-pending-hint">
+            {site.status === "completed" ? "현장이 ‘준공’ 상태입니다. 준공(인도)일을 넣어야 보증 기간이 시작됩니다." : "준공(인도)하면 준공일을 넣으세요. 그날부터 보증 기간을 셉니다."}
+          </p>
+        )}
         {w.state === "none" && hq && <p className="mt-1.5 text-[0.8rem] text-ink-3">계약서의 하자담보책임기간을 넣어 두면 하자 요청이 보증 기간 안인지 바로 보입니다.</p>}
         {hq && site.warranty?.note && <p className="mt-1.5 text-[0.8rem] text-ink-2">메모(내부): {site.warranty.note}</p>}
       </div>

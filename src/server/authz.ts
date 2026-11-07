@@ -268,7 +268,7 @@ export function viewFor(m: Member, db: DemoDB, now = new Date()): DemoDB {
       scope: "field",
       users,
       // 하자보증 본사 메모는 현장 휴대폰에 보내지 않는다 (D-70)
-      sites: db.sites.filter((s) => sites.has(s.id)).map((s) => (s.warranty?.note ? { ...s, warranty: { ...s.warranty, note: undefined } } : s)),
+      sites: db.sites.filter((s) => sites.has(s.id)).map((s) => (s.warranty ? { ...s, warranty: { months: s.warranty.months, ...(s.warranty.completedDate ? { completedDate: s.warranty.completedDate } : {}), setAt: "", setBy: "" } } : s)),
       // 계산 엔진이 깨지지 않도록 금액 0의 빈 계약만 둔다 (현장 화면은 금액을 표시하지 않음)
       contracts: [...sites].map(zeroContract),
       costEntries: db.costEntries.filter((e) => e.createdBy === m.id && sites.has(e.siteId) && (e.date >= since || e.status === "pending")),

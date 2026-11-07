@@ -8,7 +8,7 @@ import { siteFinancials, snapshotOf } from "@/lib/domain/calc";
 import { CATEGORY_LABEL, COST_CATEGORIES } from "@/lib/domain/labels";
 import { fmtEok, fmtMan, todayIso } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
-import { CommandError, MAX_AMOUNT, MAX_CONTRACT, claimKey, clone, log, nowIso, requireSite, touch, validateAmount, type Ctx } from "./commands";
+import { CommandError, MAX_AMOUNT, MAX_CONTRACT, claimKey, clone, log, nowIso, pastCalendarDate, requireSite, touch, validateAmount, type Ctx } from "./commands";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const STATUSES: SiteStatus[] = ["active", "hold", "completed"];
@@ -67,6 +67,9 @@ export function saveSite(db0: DemoDB, input: SaveSiteInput, ctx: Ctx) {
   const budgetSum = COST_CATEGORIES.reduce((s, c) => s + (nonNegInt(input.budgets?.[c]) ? input.budgets[c] : 0), 0);
   if (!errors["budgets.material"] && budgetSum <= 0) errors["budgets.material"] = "실행예산을 1개 항목 이상 입력해주세요.";
   if (input.signedDate && !DATE_RE.test(input.signedDate)) errors.signedDate = "계약일 형식";
+  // 착공일을 하자보증 준공일 뒤로 옮기지 않게 (D-70 점검 반영)
+  const wDone = input.id ? db0.sites.find((s) => s.id === input.id)?.warranty?.completedDate : undefined;
+  if (wDone && DATE_RE.test(input.startDate ?? "") && input.startDate > wDone) errors.startDate = `하자보증 준공일(${wDone})보다 늦을 수 없습니다.`;
   if (input.fieldUserId && !db0.users.some((u) => u.id === input.fieldUserId && u.role === "field")) errors.fieldUserId = "현장 담당자를 다시 선택해주세요.";
   if (input.managerUserId && !db0.users.some((u) => u.id === input.managerUserId && (u.role === "manager" || u.role === "ceo"))) errors.managerUserId = "본사 담당자를 다시 선택해주세요.";
   const stages = (input.stages ?? []).filter((s) => s.name?.trim());
@@ -336,22 +339,26 @@ export function setSiteWarranty(db0: DemoDB, input: WarrantyInput, ctx: Ctx) {
   if (input.clear === true) {
     if (!site.warranty) throw new CommandError("지울 하자보증 정보가 없습니다.", "STATE");
     delete site.warranty;
-    log(db, ctx, "site", `${site.shortName} 하자보증 정보 지움`, site.id, `/sites/${site.id}`);
+    log(db, ctx, "site", `${site.shortName} 하자보증 정보 지움`, site.id, `/sites/${site.id}?tab=requests`);
     touch(db, ctx);
     return { db, result: {} };
   }
   const errors: Record<string, string> = {};
-  const months = Number(input.months);
-  if (!Number.isInteger(months) || months < 1 || months > 120) errors.months = "보증 기간은 1~120개월로 넣어 주세요 (계약서 기준).";
+  // 형식이 틀린 값은 조용히 바꾸거나 버리지 않고 되돌려 보낸다 (D-70 점검 반영)
+  const months = input.months;
+  if (typeof months !== "number" || !Number.isInteger(months) || months < 1 || months > 120) errors.months = "보증 기간은 1~120개월로 넣어 주세요 (계약서 기준).";
+  if (input.completedDate !== undefined && input.completedDate !== null && typeof input.completedDate !== "string") errors.completedDate = "날짜 형식을 확인해 주세요.";
   const completed = typeof input.completedDate === "string" ? input.completedDate.trim() : "";
   if (completed && !DATE_RE.test(completed)) errors.completedDate = "날짜 형식을 확인해 주세요.";
   else if (completed && completed > todayIso(ctx.now)) errors.completedDate = "준공일은 오늘이나 그 전으로 넣어 주세요.";
+  else if (completed && !pastCalendarDate(completed, ctx)) errors.completedDate = "없는 날짜입니다. 다시 골라 주세요.";
   else if (completed && completed < site.startDate) errors.completedDate = "준공일이 착공일보다 빠릅니다.";
+  if (input.note !== undefined && input.note !== null && typeof input.note !== "string") errors.note = "메모 형식을 확인해 주세요.";
   const note = typeof input.note === "string" ? input.note.trim() : "";
   if (note.length > 80) errors.note = "메모는 80자 이내";
   if (Object.keys(errors).length) throw new CommandError("입력값을 확인해주세요.", "VALIDATION", errors);
-  site.warranty = { months, ...(completed ? { completedDate: completed } : {}), ...(note ? { note } : {}), setAt: nowIso(ctx), setBy: ctx.userId };
-  log(db, ctx, "site", `${site.shortName} 하자보증 ${months}개월${completed ? ` · 준공 ${completed}` : " · 준공 전"}`, site.id, `/sites/${site.id}`);
+  site.warranty = { months: months as number, ...(completed ? { completedDate: completed } : {}), ...(note ? { note } : {}), setAt: nowIso(ctx), setBy: ctx.userId };
+  log(db, ctx, "site", `${site.shortName} 하자보증 ${months}개월${completed ? ` · 준공 ${completed}` : " · 준공 전"}`, site.id, `/sites/${site.id}?tab=requests`);
   touch(db, ctx);
   return { db, result: {} };
 }

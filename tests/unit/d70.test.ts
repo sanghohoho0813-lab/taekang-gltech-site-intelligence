@@ -17,8 +17,13 @@ const FIELD = member("u-field", "field");
 describe("하자보증 기간 계산", () => {
   it("준공일 + n개월 − 1일, 말일 넘침은 그 달 말일", () => {
     expect(warrantyEnd("2026-11-30", 24)).toBe("2028-11-29");
-    expect(warrantyEnd("2026-01-31", 1)).toBe("2026-02-27");
-    expect(warrantyEnd("2024-02-29", 12)).toBe("2025-02-27");
+    // 끝나는 달에 같은 날이 없으면 그 달 말일 (D-70 점검 반영)
+    expect(warrantyEnd("2026-01-31", 1)).toBe("2026-02-28");
+    expect(warrantyEnd("2026-01-29", 1)).toBe("2026-02-28");
+    expect(warrantyEnd("2026-01-28", 1)).toBe("2026-02-27");
+    expect(warrantyEnd("2026-03-31", 1)).toBe("2026-04-30");
+    expect(warrantyEnd("2024-02-29", 12)).toBe("2025-02-28");
+    expect(warrantyEnd("2026-08-31", 6)).toBe("2027-02-28");
     expect(warrantyEnd("2026-03-01", 12)).toBe("2027-02-28");
   });
   it("상태: 미입력 → 준공 전 → 보증 중 → 만료 임박(60일) → 끝남", () => {
@@ -51,6 +56,12 @@ describe("하자보증 명령·권한·보내는 내용", () => {
     expect(() => setSiteWarranty(db, { siteId: "site-b", months: 12, completedDate: "2000-01-01" }, ctx("u-manager"))).toThrow(CommandError);
     expect(() => setSiteWarranty(db, { siteId: "site-b", months: 12, note: "가".repeat(81) }, ctx("u-manager"))).toThrow(CommandError);
     expect(() => setSiteWarranty(db, { siteId: "nope", months: 12 }, ctx("u-manager"))).toThrow(CommandError);
+    // 형식이 틀린 값 (점검 반영): 없는 날짜·숫자 날짜·참/거짓 개월·객체 메모
+    expect(() => setSiteWarranty(db, { siteId: "site-b", months: 12, completedDate: "2026-06-31" }, ctx("u-manager"))).toThrow(CommandError);
+    expect(() => setSiteWarranty(db, { siteId: "site-b", months: 12, completedDate: 20261101 as never }, ctx("u-manager"))).toThrow(CommandError);
+    expect(() => setSiteWarranty(db, { siteId: "site-b", months: true as never }, ctx("u-manager"))).toThrow(CommandError);
+    expect(() => setSiteWarranty(db, { siteId: "site-b", months: "24" as never }, ctx("u-manager"))).toThrow(CommandError);
+    expect(() => setSiteWarranty(db, { siteId: "site-b", months: 12, note: {} as never }, ctx("u-manager"))).toThrow(CommandError);
     const cleared = setSiteWarranty(ok, { siteId: "site-b", clear: true }, ctx("u-manager")).db;
     expect(cleared.sites.find((s) => s.id === "site-b")!.warranty).toBeUndefined();
     expect(() => authorize(FIELD, "setSiteWarranty", { siteId: "site-a", months: 12 }, db, NOW)).toThrow(ForbiddenError);
