@@ -315,6 +315,8 @@ test.describe("현장 QR 출근", () => {
   test("QR이 아닌 사진·다른 현장 QR은 출근되지 않는다", async ({ page, context }) => {
     await asField(page);
     await page.goto("/field");
+    // 화면이 시연 데이터를 저장소에 만들 때까지 기다린다 (먼저 읽으면 비어 있어 가끔 실패하던 문제)
+    await page.waitForFunction((dk) => !!localStorage.getItem(dk), DB);
     // 본사 설정: 현장 QR + GPS (DEMO 저장소)
     await page.evaluate(([dk]) => {
       const db = JSON.parse(localStorage.getItem(dk)!);
