@@ -6,6 +6,7 @@
  */
 import type { DemoDB, PartnerRepairView, PartnerRequest, Site, WorkOrder } from "./types";
 import { defectProgress, partnerRepairView } from "./partnerFeed";
+import { defectWarranty, type DefectWarranty } from "./warranty";
 
 const kst = (iso: string) => new Date(new Date(iso).getTime() + 9 * 3_600_000).toISOString().slice(0, 10);
 const dayDiff = (from: string, to: string) => Math.max(0, Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000));
@@ -45,6 +46,8 @@ export interface DefectRow {
   overdue: boolean;
   beforePhotoId?: string;
   afterPhotoId?: string;
+  /** 하자보증 기간 안·밖 (접수일 기준 · 보증 정보가 없으면 없음 · D-70) */
+  warranty?: DefectWarranty;
 }
 
 export function defectRows(db: DemoDB, today: string): DefectRow[] {
@@ -93,6 +96,7 @@ export function defectRows(db: DemoDB, today: string): DefectRow[] {
         days: dayDiff(receivedDate, repairedDate ?? today),
         // 보수가 끝난 뒤(회신만 남음)에는 기한 지남으로 보지 않는다
         overdue: open && !repairedDate && !!limit && limit < today,
+        warranty: defectWarranty(db.sites.find((s) => s.id === r.siteId), receivedDate),
         beforePhotoId: r.photoIds?.[0],
         // 보수 후 사진: 가장 최근에 회신으로 보낸 사진, 없으면 지금 끝난 작업지시의 사진 (되돌린 첫 시도 사진이 남던 문제 · D-69 점검 반영)
         afterPhotoId: r.replyPhotoIds?.at(-1) ?? (woDone ? wo!.donePhotoIds?.[0] : undefined),

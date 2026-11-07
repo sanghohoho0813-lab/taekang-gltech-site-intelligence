@@ -12,6 +12,9 @@ import { DEFECT_NEXT_LABEL, defectLedger, defectRows, defectStats, repairingLabe
 import { fmtDate, todayIso } from "@/lib/domain/format";
 import { shiftDate } from "@/lib/domain/attendance";
 import { IS_LIVE } from "@/lib/mode";
+import { DEFECT_WARRANTY_LABEL, warrantyStatus } from "@/lib/domain/warranty";
+import { WARRANTY_TONE, warrantyLine } from "@/components/admin/WarrantyCard";
+import { WARRANTY_LABEL } from "@/lib/domain/warranty";
 import { PageBody, PageHeader } from "@/components/shell/AppShell";
 import { StatCard } from "@/components/domain/Widgets";
 import { Badge, Button, Card, CardHeader, EmptyState, PageSkeleton, Segmented, cx, inputCls } from "@/components/ui/primitives";
@@ -54,6 +57,7 @@ export function DefectBoard() {
         <StatCard testId="defect-kpi-overdue" label="기한 지남" value={`${st.overdue}건`} sub="발주처 희망일·작업지시 기한 기준" icon={<AlarmClock size={20} />} group="ops" />
         <StatCard testId="defect-kpi-days" label="보수 완료까지" value={st.avgDays === null ? "—" : `평균 ${st.avgDays}일`} sub={st.repaired ? `보수한 ${st.repaired}건 기준 (접수 → 본사 확인)` : "아직 보수한 건 없음"} icon={<CircleCheck size={20} />} group="ax" />
       </div>
+      <WarrantyOverview />
       <div className="no-print flex flex-wrap items-center gap-2">
         <Segmented
           label="보기"
@@ -115,6 +119,11 @@ function DefectList({ rows, today, empty, emptyHint }: { rows: DefectRow[]; toda
                     <span>{r.partnerName}</span>
                     <span className="num">접수 {fmtDate(r.req.createdAt)}</span>
                     {r.req.reopenedFrom && <Badge tone="warn">다시 요청</Badge>}
+                    {r.warranty && (
+                      <Badge tone={r.warranty === "after" ? "warn" : r.warranty === "in" ? "ok" : "neutral"} data-testid="defect-warranty">
+                        {DEFECT_WARRANTY_LABEL[r.warranty]}
+                      </Badge>
+                    )}
                   </p>
                   <p className="mt-0.5 text-[0.98rem] font-bold [overflow-wrap:anywhere]">{r.req.title}</p>
                   {r.req.location && <p className="text-[0.84rem] font-semibold text-ink-2">위치: {r.req.location}</p>}
@@ -194,6 +203,7 @@ function Ledger({ rows, siteId, today }: { rows: DefectRow[]; siteId: string; to
             <p className="num text-ink-2">
               접수 {fmtDate(from)} ~ {fmtDate(to)} · {list.length}건
             </p>
+            {site && <p className="num text-ink-2" data-testid="defect-ledger-warranty">하자보증: {warrantyLine(site, today)}</p>}
             {!IS_LIVE && <p className="text-[0.72rem] font-bold text-[#7A5200]">DEMO · 가상 시연 데이터</p>}
           </div>
         </header>
@@ -232,6 +242,7 @@ function Ledger({ rows, siteId, today }: { rows: DefectRow[]; siteId: string; to
                       <td className="num px-1.5 py-1.5" data-label="접수">
                         {fmtDate(r.req.createdAt)}
                         <span className="block text-[0.72rem] text-ink-3">{r.partnerName}</span>
+                        {r.warranty && <span className="block text-[0.72rem] font-semibold text-ink-2">{DEFECT_WARRANTY_LABEL[r.warranty]}</span>}
                       </td>
                       <td className="px-1.5 py-1.5 [overflow-wrap:anywhere]" data-label="위치 · 하자 내용">
                         <b className="block">{r.req.title}</b>
@@ -277,5 +288,32 @@ function Ledger({ rows, siteId, today }: { rows: DefectRow[]; siteId: string; to
         </footer>
       </article>
     </>
+  );
+}
+
+/** 현장별 하자보증 한눈에 (D-70) — 만료 임박부터, 진행 중 하자 수와 함께 */
+function WarrantyOverview() {
+  const { db } = useMe();
+  if (!db) return null;
+  const today = todayIso();
+  const rows = db.sites
+    .map((s) => ({ s, w: warrantyStatus(s, today) }))
+    .sort((a, b) => ({ soon: 0, active: 1, pending: 2, expired: 3, none: 4 })[a.w.state] - ({ soon: 0, active: 1, pending: 2, expired: 3, none: 4 })[b.w.state] || (a.w.daysLeft ?? 9e9) - (b.w.daysLeft ?? 9e9));
+  return (
+    <Card className="no-print" data-testid="warranty-overview">
+      <CardHeader title="현장별 하자보증" sub="계약서 기준 보증 기간 · 현장 상세 ‘발주처·하자보증’ 탭에서 넣고 고칩니다" />
+      <ul className="divide-y divide-line border-t border-line">
+        {rows.map(({ s, w }) => (
+          <li key={s.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-2.5 text-[0.86rem]" data-testid="warranty-row" data-state={w.state}>
+            <b className="min-w-[4.5rem]">{s.shortName}</b>
+            <Badge tone={WARRANTY_TONE[w.state]}>{WARRANTY_LABEL[w.state]}</Badge>
+            <span className="num min-w-0 flex-1 text-ink-2">{warrantyLine(s, today)}</span>
+            <Link href={`/sites/${s.id}?tab=requests`} className="press inline-flex min-h-11 items-center rounded-xl px-2 text-[0.82rem] font-bold text-theme-ink underline" data-testid="warranty-row-edit">
+              {s.warranty ? "보기·고치기" : "보증 기간 넣기"}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </Card>
   );
 }

@@ -314,3 +314,44 @@ export function reviewCostEntry(db0: DemoDB, input: ReviewCostEntryInput, ctx: C
   touch(db, ctx);
   return { db, result: { before, after } };
 }
+
+// ───────────────────────── 하자보증 (D-70) ─────────────────────────
+
+export interface WarrantyInput {
+  siteId: string;
+  /** 보증 기간 (개월, 계약서 기준) */
+  months?: number;
+  /** 준공·인도일 (비우면 ‘준공 전’) */
+  completedDate?: string;
+  note?: string;
+  /** true면 보증 정보를 지운다 */
+  clear?: boolean;
+}
+
+export function setSiteWarranty(db0: DemoDB, input: WarrantyInput, ctx: Ctx) {
+  const site0 = db0.sites.find((s) => s.id === input.siteId);
+  if (!site0) throw new CommandError("현장을 찾을 수 없습니다.", "NOT_FOUND");
+  const db = clone(db0);
+  const site = db.sites.find((s) => s.id === input.siteId)!;
+  if (input.clear === true) {
+    if (!site.warranty) throw new CommandError("지울 하자보증 정보가 없습니다.", "STATE");
+    delete site.warranty;
+    log(db, ctx, "site", `${site.shortName} 하자보증 정보 지움`, site.id, `/sites/${site.id}`);
+    touch(db, ctx);
+    return { db, result: {} };
+  }
+  const errors: Record<string, string> = {};
+  const months = Number(input.months);
+  if (!Number.isInteger(months) || months < 1 || months > 120) errors.months = "보증 기간은 1~120개월로 넣어 주세요 (계약서 기준).";
+  const completed = typeof input.completedDate === "string" ? input.completedDate.trim() : "";
+  if (completed && !DATE_RE.test(completed)) errors.completedDate = "날짜 형식을 확인해 주세요.";
+  else if (completed && completed > todayIso(ctx.now)) errors.completedDate = "준공일은 오늘이나 그 전으로 넣어 주세요.";
+  else if (completed && completed < site.startDate) errors.completedDate = "준공일이 착공일보다 빠릅니다.";
+  const note = typeof input.note === "string" ? input.note.trim() : "";
+  if (note.length > 80) errors.note = "메모는 80자 이내";
+  if (Object.keys(errors).length) throw new CommandError("입력값을 확인해주세요.", "VALIDATION", errors);
+  site.warranty = { months, ...(completed ? { completedDate: completed } : {}), ...(note ? { note } : {}), setAt: nowIso(ctx), setBy: ctx.userId };
+  log(db, ctx, "site", `${site.shortName} 하자보증 ${months}개월${completed ? ` · 준공 ${completed}` : " · 준공 전"}`, site.id, `/sites/${site.id}`);
+  touch(db, ctx);
+  return { db, result: {} };
+}

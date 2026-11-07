@@ -122,7 +122,8 @@ function FieldMobileHeader() {
     <header className="no-print sticky top-[var(--demo-bar-h)] z-30 flex h-[4.1rem] items-center gap-2 border-b border-line bg-surface/95 px-3 backdrop-blur pt-[env(safe-area-inset-top)] lg:hidden" data-testid="mobile-header">
       <Link href="/field" className="flex min-h-11 min-w-0 items-center gap-2" aria-label="TAEKANG 처음 화면">
         <LogoMark size={28} />
-        <span className="truncate text-[0.95rem] font-extrabold tracking-[0.06em] text-ink">TAEKANG</span>
+        {/* 아주 큰 글씨의 작은 휴대폰에서는 글자 대신 로고만 — ‘T..’로 잘리던 문제 (D-70) */}
+        <span className="truncate text-[0.95rem] font-extrabold tracking-[0.06em] text-ink max-[400px]:[html[data-font=xl]_&]:hidden">TAEKANG</span>
       </Link>
       <DemoBadge compact />
       <div className="ml-auto flex items-center gap-2">

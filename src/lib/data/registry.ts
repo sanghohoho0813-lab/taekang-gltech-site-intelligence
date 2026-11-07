@@ -54,6 +54,7 @@ export const COMMANDS = {
   reportCrew: (db: DemoDB, a: T.CrewInput, ctx: Ctx) => T.reportCrew(db, a, ctx),
   // 자재 반입·설치 수량 (D-62) — 품목은 본사, 기록은 현장(담당 현장)·본사, 취소는 현장 본인 것만
   setSiteMaterials: (db: DemoDB, a: { siteId: string; items: M.MaterialItemInput[] }, ctx: Ctx) => M.setSiteMaterials(db, a, ctx),
+  setSiteWarranty: (db: DemoDB, a: A.WarrantyInput, ctx: Ctx) => A.setSiteWarranty(db, a, ctx),
   recordMaterial: (db: DemoDB, a: M.MaterialMoveInput, ctx: Ctx) => M.recordMaterial(db, a, ctx),
   voidMaterialMove: (db: DemoDB, a: { moveId: string; reason: string }, ctx: Ctx) => M.voidMaterialMove(db, a, ctx),
   // 발주처 포털 공개 사진 (D-67) — 본사만

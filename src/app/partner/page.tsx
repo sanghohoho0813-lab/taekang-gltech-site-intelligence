@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Send, CircleCheck, Clock3, Inbox, ChevronRight, Lock, Settings, LayoutDashboard, Sparkles, X, Camera, Wrench, FileText, RotateCcw } from "lucide-react";
+import { Send, CircleCheck, Clock3, Inbox, ChevronRight, Lock, Settings, LayoutDashboard, Sparkles, X, Camera, Wrench, FileText, RotateCcw, ShieldCheck } from "lucide-react";
+import { warrantyLine } from "@/components/admin/WarrantyCard";
+import { warrantyStatus } from "@/lib/domain/warranty";
 import { setPrefs, run } from "@/lib/data/store";
 import { useMe } from "@/lib/data/hooks";
 import { CommandError } from "@/lib/data/commands";
@@ -181,6 +183,12 @@ function PartnerPortal({ db, partner, sites: mySites, preview }: { db: NonNullab
               <p className="text-[0.78rem] font-semibold text-ink-3">{partner.name} {partner.title}님의 현장</p>
               <h1 className="mt-1 text-[1.35rem] font-extrabold leading-snug" data-testid="partner-site">{site.name}</h1>
               <p className="mt-1 text-[0.82rem] text-ink-3">{site.region} · {fmtDate(site.startDate)} ~ {fmtDate(site.endDate)} · <Clock compact /></p>
+              {/* 하자보증 (D-70) — 기간만, 본사 메모 없음 */}
+              {site.warranty && (
+                <p className="num mt-1.5 inline-flex items-center gap-1.5 rounded-lg bg-surface-2 px-2.5 py-1 text-[0.82rem] font-semibold text-ink-2" data-testid="partner-warranty">
+                  <ShieldCheck size={15} aria-hidden /> 하자보증: {warrantyLine(site, todayIso())}
+                </p>
+              )}
             </div>
           </Card>
           <Card>
@@ -218,7 +226,7 @@ function PartnerPortal({ db, partner, sites: mySites, preview }: { db: NonNullab
         <SiteUpdates db={db} siteId={site.id} preview={preview} />
 
         <div className="grid gap-5 lg:grid-cols-2">
-          <RequestForm siteId={site.id} disabled={preview} draft={draft} />
+          <RequestForm siteId={site.id} disabled={preview} draft={draft} warrantyState={warrantyStatus(site, todayIso()).state} />
           <div className="space-y-5">
             <MyRequests db={db} requests={requests} preview={preview} onRedo={(r) => setDraft({ n: Date.now(), type: "defect", title: r.title.slice(0, 80), location: r.location ?? "", desc: "", reopenedFrom: r.id, fromTitle: r.title })} />
             {IS_LIVE && !preview && <PushCard size="compact" audience="partner" />}
@@ -247,7 +255,7 @@ function PartnerPortal({ db, partner, sites: mySites, preview }: { db: NonNullab
 
 type Draft = { n: number; type: PartnerRequest["type"]; title: string; location: string; desc: string; reopenedFrom?: string; fromTitle?: string };
 
-function RequestForm({ siteId, disabled, draft }: { siteId: string; disabled: boolean; draft: Draft | null }) {
+function RequestForm({ siteId, disabled, draft, warrantyState }: { siteId: string; disabled: boolean; draft: Draft | null; warrantyState?: string }) {
   const toast = useToast();
   const [type, setType] = useState<PartnerRequest["type"]>("quote");
   const [title, setTitle] = useState("");
@@ -414,6 +422,7 @@ function RequestForm({ siteId, disabled, draft }: { siteId: string; disabled: bo
               </div>
               {errors.photos && <p role="alert" className="mt-1 text-[0.8rem] font-semibold text-err">{errors.photos}</p>}
               <p className="mt-1.5 text-[0.76rem] text-ink-3">사진은 태강지엘텍 담당자와 보수 작업자만 봅니다. 보수가 끝나면 ‘내 요청’에 처리 결과가 표시됩니다.</p>
+              {warrantyState === "expired" && <p className="mt-1 text-[0.76rem] font-semibold text-ink-2" data-testid="p-warranty-expired">이 현장은 하자보증 기간이 지났습니다. 요청은 그대로 접수되고, 태강지엘텍이 내용을 확인한 뒤 처리 방법을 안내합니다.</p>}
             </div>
           )}
           {goods && <p className="-mt-1 text-[0.76rem] text-ink-3">본사가 내용을 확인한 뒤 회신합니다. 금액·납기는 회신과 별도 견적서로 확정되며, 이 요청만으로 계약·주문이 성립하지 않습니다.</p>}

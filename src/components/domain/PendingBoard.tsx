@@ -9,6 +9,7 @@ import { laborAttentionCount } from "@/lib/domain/labor";
 import { shiftDate } from "@/lib/domain/attendance";
 import { readinessAll } from "@/lib/domain/readiness";
 import { defectRows } from "@/lib/domain/defects";
+import { warrantyStatus, WARRANTY_SOON_DAYS } from "@/lib/domain/warranty";
 import { IS_LIVE } from "@/lib/mode";
 import { Card, CardHeader, cx } from "@/components/ui/primitives";
 
@@ -24,6 +25,8 @@ export function PendingBoard({ db }: { db: DemoDB }) {
     { key: "partner", label: "회신 안 한 고객 요청 (견적·주문 등)", n: db.partnerRequests.filter((r) => r.status !== "answered" && r.type !== "defect").length, href: "/insights#requests" },
     // 하자보수: 작업지시·회신이 필요하거나, 현장이 끝냈는데 본사 확인·회신 전인 것 (D-69)
     { key: "defect", label: "하자보수 — 본사 할 일", n: defectRows(db, today).filter((r) => r.next === "assign" || r.next === "reply").length, href: "/defects" },
+    // 하자보증 만료 전 점검 (D-70)
+    { key: "warranty", label: `하자보증 만료 ${WARRANTY_SOON_DAYS}일 이내 현장 (최종 점검)`, n: db.sites.filter((s) => warrantyStatus(s, today).state === "soon").length, href: "/defects" },
     { key: "labor", label: "인건비 확인 필요 현장", n: laborAttentionCount(db, shiftDate(today, -29), today), href: "/labor" },
     { key: "feedback", label: "확인 전 현장 앱 의견", n: (db.feedback ?? []).filter((f) => f.status === "new").length, href: "/quality" },
     { key: "ready", label: "빠진 운영 자료 (현장 위치·담당·기성 이력 등)", n: readinessAll(db, today).missing, href: "/data" },

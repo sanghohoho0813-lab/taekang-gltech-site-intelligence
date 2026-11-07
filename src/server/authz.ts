@@ -267,7 +267,8 @@ export function viewFor(m: Member, db: DemoDB, now = new Date()): DemoDB {
       ...empty,
       scope: "field",
       users,
-      sites: db.sites.filter((s) => sites.has(s.id)),
+      // 하자보증 본사 메모는 현장 휴대폰에 보내지 않는다 (D-70)
+      sites: db.sites.filter((s) => sites.has(s.id)).map((s) => (s.warranty?.note ? { ...s, warranty: { ...s.warranty, note: undefined } } : s)),
       // 계산 엔진이 깨지지 않도록 금액 0의 빈 계약만 둔다 (현장 화면은 금액을 표시하지 않음)
       contracts: [...sites].map(zeroContract),
       costEntries: db.costEntries.filter((e) => e.createdBy === m.id && sites.has(e.siteId) && (e.date >= since || e.status === "pending")),
@@ -311,7 +312,8 @@ export function viewFor(m: Member, db: DemoDB, now = new Date()): DemoDB {
     scope: "partner",
     users: users.filter((u) => u.role !== "partner" || u.id === m.id).map((u) => (u.id === m.id ? { ...u, partnerSiteIds: m.partnerSiteIds } : u)),
     // 자재 품목·설계 수량(내부 운영 정보)은 빼고 보낸다 (D-62)
-    sites: db.sites.filter((s) => sites.has(s.id)).map(({ materials: _m, ...s }) => (void _m, s)),
+    // 하자보증은 기간·준공일만 — 본사 메모·입력한 사람은 빼고 (D-70)
+    sites: db.sites.filter((s) => sites.has(s.id)).map(({ materials: _m, warranty, ...s }) => (void _m, warranty ? { ...s, warranty: { months: warranty.months, ...(warranty.completedDate ? { completedDate: warranty.completedDate } : {}), setAt: "", setBy: "" } } : s)),
     contracts: [...sites].map(zeroContract),
     // 작업지시 번호(내부)는 빼고, 보수 진행은 partnerRepairs로 단계·기한만 (D-68)
     partnerRequests: myRequests.map(({ linkedWorkOrderId: _w, ...r }) => (void _w, r)),

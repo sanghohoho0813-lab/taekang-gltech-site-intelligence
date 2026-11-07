@@ -74,6 +74,7 @@ export const COMMAND_SPEC: Record<CommandName, { label: string; group: CmdGroup;
   saveSite: { label: "현장 등록·수정 (계약·실행예산·담당·공정 단계)", group: "ops", allow: HQ },
   setSiteGeo: { label: "현장 위치·반경 등록", group: "ops", allow: HQ },
   setSiteMaterials: { label: "현장 주요 자재 품목·설계 수량 정하기", group: "ops", allow: HQ },
+  setSiteWarranty: { label: "현장 하자보증 기간·준공일 정하기 (계약서 기준 · 금액 없음)", group: "partner", allow: HQ },
   setPhotoShare: { label: "발주처 포털에 현장 사진 공개·비공개", group: "partner", allow: HQ },
   setCompanySettings: { label: "운영 설정 (본사 전화·기본 일당·반영 방식)", group: "ops", allow: HQ },
   setThresholds: { label: "위험 기준 (목표 이익률 등)", group: "ops", allow: HQ },
@@ -108,7 +109,7 @@ export interface CollectionSpec {
   keep: string;
 }
 export const COLLECTION_SPEC: Record<CollectionName, CollectionSpec> = {
-  sites: { label: "현장", holds: "현장명·발주처·공사 기간·공정률·공정 단계·담당·출퇴근 위치와 반경·주요 자재 품목(설계 수량)", field: "담당 현장만", partner: "공개된 현장만 (자재 품목은 빼고)", keep: "준공 뒤에도 보관" },
+  sites: { label: "현장", holds: "현장명·발주처·공사 기간·공정률·공정 단계·담당·출퇴근 위치와 반경·주요 자재 품목(설계 수량)·하자보증 기간·준공일(금액 없음)", field: "담당 현장만 (하자보증 메모 빼고)", partner: "공개된 현장만 (자재 품목·하자보증 메모 빼고)", keep: "준공 뒤에도 보관" },
   contracts: { label: "계약", holds: "원 계약 금액·계약일·실행예산 합계", field: "금액 0으로 바꿔 보냄", partner: "금액 0으로 바꿔 보냄", keep: "보관" },
   budgets: { label: "실행예산", holds: "공종(자재·노무·외주·장비·경비)별 실행예산", field: DATA_NONE, partner: DATA_NONE, keep: "보관" },
   forecasts: { label: "잔여 예상 원가", holds: "공종별 앞으로 더 들 비용 (본사 추정)", field: DATA_NONE, partner: DATA_NONE, keep: "보관" },

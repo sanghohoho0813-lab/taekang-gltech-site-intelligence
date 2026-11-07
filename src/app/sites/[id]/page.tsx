@@ -19,6 +19,7 @@ import { todayIso } from "@/lib/domain/format";
 import { useFrameCommand } from "@/components/device/frameCommands";
 import { CostEntryList } from "@/components/domain/CostEntryList";
 import { MaterialTab } from "@/components/admin/MaterialTab";
+import { WarrantyCard } from "@/components/admin/WarrantyCard";
 import { simulateApprovedClaims, type SiteFinancials } from "@/lib/domain/calc";
 import { receivableAging } from "@/lib/domain/risk";
 import { fmtDate, fmtDateTime, fmtEok, fmtMan, fmtManNum, fmtPct, fmtPp, fmtRelative } from "@/lib/domain/format";
@@ -75,7 +76,7 @@ export default function SiteDetailPage() {
     { id: "reports", label: "보고·사진" },
     { id: "contract", label: "계약·변경", money: true },
     { id: "billing", label: "기성·입금", money: true },
-    { id: "requests", label: "발주처 요청" },
+    { id: "requests", label: "발주처·하자보증" },
     { id: "history", label: "이력" },
   ];
   const visibleTabs = tabs.filter((t) => !t.money || canSeeMoney);
@@ -651,6 +652,9 @@ function BillingTab({ db, site, f }: { db: DemoDB; site: Site; f: SiteFinancials
 function RequestsTab({ db, site }: { db: DemoDB; site: Site }) {
   const reqs = db.partnerRequests.filter((r) => r.siteId === site.id);
   return (
+    <div className="space-y-5">
+    {/* 하자보증 (D-70) — 발주처 요청과 같은 탭에서 */}
+    <WarrantyCard site={site} />
     <Card>
       <CardHeader title="발주처·협력사 요청함" sub="발주처 포털에서 등록된 요청" right={<Link href="/insights#requests"><Button size="sm" icon={<Handshake size={15} />}>요청 처리</Button></Link>} />
       {reqs.length === 0 ? (
@@ -671,6 +675,7 @@ function RequestsTab({ db, site }: { db: DemoDB; site: Site }) {
         </ul>
       )}
     </Card>
+    </div>
   );
 }
 

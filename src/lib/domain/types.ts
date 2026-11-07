@@ -69,6 +69,19 @@ export interface Site {
   geo?: SiteGeo;
   /** 수량을 챙길 주요 자재 (본사가 정함 · D-62) — 수량만, 단가·금액 없음 */
   materials?: MaterialItem[];
+  /** 하자보증 (D-70) — 계약서 기준 보증 개월과 준공(인도)일. 금액(보증금·증권 금액)은 넣지 않는다 */
+  warranty?: SiteWarranty;
+}
+
+export interface SiteWarranty {
+  /** 보증 기간 (개월, 계약서 기준) */
+  months: number;
+  /** 준공·인도일 — 보증 시작. 없으면 ‘준공 전’ */
+  completedDate?: string;
+  /** 본사 메모 (예: 계약서 제12조, 보증증권 번호) — 발주처에는 보내지 않는다 */
+  note?: string;
+  setAt: string;
+  setBy: string;
 }
 
 /** 현장 주요 자재 품목 (예: 커튼월 유닛 EA · 로이유리 장) */

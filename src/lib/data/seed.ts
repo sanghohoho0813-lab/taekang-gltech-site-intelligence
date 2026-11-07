@@ -586,6 +586,8 @@ function seedAttendance(db: DemoDB, now: Date) {
     "site-b": [{ id: "mat-b-glass", name: "단열유리 (복층)", unit: "장", plannedQty: 460 }],
   };
   db.sites = db.sites.map((s) => (MAT[s.id] ? { ...s, materials: MAT[s.id] } : s));
+  // 하자보증 (가상 · D-70) — A현장만 계약서 기준 24개월을 넣어 둠(준공 전). 시연에서 준공일을 넣으면 보증 기간이 시작된다
+  db.sites = db.sites.map((s) => (s.id === "site-a" ? { ...s, warranty: { months: 24, note: "가상 계약서 하자담보 조항 (DEMO)", setAt: dayOffset(now, -60), setBy: "u-manager" } } : s));
   const mv = (id: string, siteId: string, itemId: string, kind: "in" | "install", qty: number, day: number, hm: string, note?: string) => ({ id, siteId, itemId, kind, qty, workDate: kstDate(day), at: at(kstDate(day), hm), by: "u-field", ...(note ? { note } : {}) });
   db.materialMoves = [
     mv("mm-seed-a1", "site-a", "mat-a-unit", "in", 96, -40, "09:10", "이전 반입 누계 (가상)"),
