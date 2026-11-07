@@ -67,7 +67,7 @@ export function CardHeader({ title, sub, right, className }: { title: ReactNode;
 }
 
 type Tone = "neutral" | "ok" | "warn" | "err" | "info" | "theme" | "demo" | "dark";
-export function Badge({ tone = "neutral", children, className, icon }: { tone?: Tone; children: ReactNode; className?: string; icon?: ReactNode }) {
+export function Badge({ tone = "neutral", children, className, icon, ...rest }: { tone?: Tone; children: ReactNode; className?: string; icon?: ReactNode } & Omit<React.HTMLAttributes<HTMLSpanElement>, "children" | "className">) {
   const tones: Record<Tone, string> = {
     neutral: "bg-surface-3 text-ink-2 border-line",
     ok: "bg-ok-bg text-ok border-ok/20",
@@ -79,7 +79,7 @@ export function Badge({ tone = "neutral", children, className, icon }: { tone?: 
     dark: "bg-ink text-white border-ink",
   };
   return (
-    <span className={cx("inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[0.75rem] font-semibold leading-5 whitespace-nowrap", tones[tone], className)}>
+    <span {...rest} className={cx("inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[0.75rem] font-semibold leading-5 whitespace-nowrap", tones[tone], className)}>
       {icon}
       {children}
     </span>

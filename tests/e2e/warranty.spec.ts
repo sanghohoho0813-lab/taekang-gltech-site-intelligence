@@ -18,7 +18,7 @@ async function freshStart(page: Page, prefs: Record<string, unknown> = {}) {
 const asRole = (page: Page, role: string) => page.evaluate(([pk, r]) => localStorage.setItem(pk, JSON.stringify({ ...JSON.parse(localStorage.getItem(pk)!), role: r })), [PREFS, role] as const);
 const kstDaysAgo = (n: number) => new Date(Date.now() + 9 * 3_600_000 - n * 86_400_000).toISOString().slice(0, 10);
 
-test("하자보증: 준공 전(시연 24개월) → 준공일·12개월 넣어 만료 임박 → 처리 대기·하자보수 현황·발주처 포털", async ({ page }) => {
+test("하자보증: 준공 전(시연 24개월) → 준공일·5개월 넣어 만료 임박 → 처리 대기·하자보수 현황·발주처 포털", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await freshStart(page);
   await page.goto("/sites/site-a?tab=requests");
@@ -26,8 +26,9 @@ test("하자보증: 준공 전(시연 24개월) → 준공일·12개월 넣어 �
   await expect(card).toHaveAttribute("data-state", "pending");
   await expect(card.getByTestId("warranty-line")).toContainText("준공 후 2년");
   await card.getByTestId("warranty-edit").click();
-  await page.getByTestId("warranty-months").fill("12");
-  await page.getByTestId("warranty-completed").fill(kstDaysAgo(330));
+  // 착공 뒤 날짜로: 120일 전 준공 + 5개월 → 만료까지 약 30일
+  await page.getByTestId("warranty-months").fill("5");
+  await page.getByTestId("warranty-completed").fill(kstDaysAgo(120));
   await page.getByTestId("warranty-save").click();
   await expect(card).toHaveAttribute("data-state", "soon");
   await expect(card.getByTestId("warranty-line")).toContainText("일 남음");
