@@ -358,7 +358,7 @@ export function setSiteWarranty(db0: DemoDB, input: WarrantyInput, ctx: Ctx) {
   if (note.length > 80) errors.note = "메모는 80자 이내";
   if (Object.keys(errors).length) throw new CommandError("입력값을 확인해주세요.", "VALIDATION", errors);
   site.warranty = { months: months as number, ...(completed ? { completedDate: completed } : {}), ...(note ? { note } : {}), setAt: nowIso(ctx), setBy: ctx.userId };
-  log(db, ctx, "site", `${site.shortName} 하자보증 ${months}개월${completed ? ` · 준공 ${completed}` : " · 준공 전"}`, site.id, `/sites/${site.id}?tab=requests`);
+  log(db, ctx, "site", `${site.shortName} 하자보증 ${months}개월${completed ? ` · 준공 ${completed.replace(/-/g, ".")}` : " · 준공 전"}`, site.id, `/sites/${site.id}?tab=requests`);
   touch(db, ctx);
   return { db, result: {} };
 }

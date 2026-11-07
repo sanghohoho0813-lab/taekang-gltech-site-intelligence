@@ -3,6 +3,7 @@
  * 법정 기간을 단정하지 않는다: 기간은 본사가 계약서를 보고 넣는다. 금액(보증금·증권 금액)은 다루지 않는다.
  */
 import type { Site } from "./types";
+import { fmtDate } from "./format";
 
 export type WarrantyState = "none" | "pending" | "active" | "soon" | "expired";
 /** 만료 전 점검을 챙길 기간 */
@@ -68,4 +69,25 @@ export function defectWarranty(site: Pick<Site, "warranty"> | undefined, receive
 /** “2년” · “18개월” */
 export function monthsText(months: number): string {
   return months % 12 === 0 ? `${months / 12}년` : `${months}개월`;
+}
+
+/** 본사 화면 한 줄 — “2028.11.29까지 (752일 남음)” (상태 배지와 같이 쓸 때는 상태 말을 빼고 · D-70 점검 반영) */
+export function warrantyLine(site: Pick<Site, "warranty">, today: string, opts: { withState?: boolean } = {}): string {
+  const w = warrantyStatus(site, today);
+  const prefix = opts.withState === false ? "" : `${WARRANTY_LABEL[w.state]} · `;
+  if (w.state === "none") return "하자보증 기간 미입력";
+  if (w.state === "pending") return `준공 후 ${monthsText(w.months!)} (준공일 입력 전)`;
+  if (w.state === "expired") return `${opts.withState === false ? "" : "보증 끝남 · "}${fmtDate(w.endDate!)}까지였음`;
+  return `${prefix}${fmtDate(w.endDate!)}까지 (${w.daysLeft === 0 ? "오늘 만료" : `${w.daysLeft}일 남음`})`;
+}
+
+/**
+ * 발주처·인쇄물용 — 계약서 기준임을 밝히고 날짜만 (남은 날은 종이에서 낡으므로 넣지 않는다 · D-70 점검 반영)
+ * 예: “하자보증(계약서 기준): 준공 2026.10.08부터 2년 · 2028.10.07까지”
+ */
+export function warrantyClientLine(site: Pick<Site, "warranty">): string | null {
+  const w = site.warranty;
+  if (!w) return null;
+  if (!w.completedDate) return `하자보증(계약서 기준): 준공(인도)일부터 ${monthsText(w.months)}`;
+  return `하자보증(계약서 기준): 준공 ${fmtDate(w.completedDate)}부터 ${monthsText(w.months)} · ${fmtDate(warrantyEnd(w.completedDate, w.months))}까지`;
 }

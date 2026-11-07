@@ -3,8 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Send, CircleCheck, Clock3, Inbox, ChevronRight, Lock, Settings, LayoutDashboard, Sparkles, X, Camera, Wrench, FileText, RotateCcw, ShieldCheck } from "lucide-react";
-import { warrantyLine } from "@/components/admin/WarrantyCard";
-import { warrantyStatus } from "@/lib/domain/warranty";
+import { warrantyClientLine, warrantyStatus } from "@/lib/domain/warranty";
 import { setPrefs, run } from "@/lib/data/store";
 import { useMe } from "@/lib/data/hooks";
 import { CommandError } from "@/lib/data/commands";
@@ -185,8 +184,8 @@ function PartnerPortal({ db, partner, sites: mySites, preview }: { db: NonNullab
               <p className="mt-1 text-[0.82rem] text-ink-3">{site.region} · {fmtDate(site.startDate)} ~ {fmtDate(site.endDate)} · <Clock compact /></p>
               {/* 하자보증 (D-70) — 기간만, 본사 메모 없음 */}
               {site.warranty && (
-                <p className="num mt-1.5 inline-flex items-center gap-1.5 rounded-lg bg-surface-2 px-2.5 py-1 text-[0.82rem] font-semibold text-ink-2" data-testid="partner-warranty">
-                  <ShieldCheck size={15} aria-hidden /> 하자보증: {warrantyLine(site, todayIso())}
+                <p className="num mt-1.5 inline-flex max-w-full items-center gap-1.5 rounded-lg bg-surface-2 px-2.5 py-1 text-[0.82rem] font-semibold text-ink-2" data-testid="partner-warranty">
+                  <ShieldCheck size={15} aria-hidden className="shrink-0" /> <span className="[overflow-wrap:anywhere]">{warrantyClientLine(site)}</span>
                 </p>
               )}
             </div>
@@ -227,7 +226,8 @@ function PartnerPortal({ db, partner, sites: mySites, preview }: { db: NonNullab
 
         <div className="grid gap-5 lg:grid-cols-2">
           <RequestForm siteId={site.id} disabled={preview} draft={draft} warrantyState={warrantyStatus(site, todayIso()).state} />
-          <div className="space-y-5">
+          {/* min-w-0: 긴 버튼이 칸을 밀어 화면이 옆으로 밀리던 문제 (D-70 점검 반영) */}
+          <div className="min-w-0 space-y-5">
             <MyRequests db={db} requests={requests} preview={preview} onRedo={(r) => setDraft({ n: Date.now(), type: "defect", title: r.title.slice(0, 80), location: r.location ?? "", desc: "", reopenedFrom: r.id, fromTitle: r.title })} />
             {IS_LIVE && !preview && <PushCard size="compact" audience="partner" />}
           </div>
@@ -619,7 +619,7 @@ function MyRequests({ db, requests, preview, onRedo }: { db: DemoDB; requests: P
                       </Button>
                     )}
                     {r.type === "defect" && (
-                      <Button variant="soft" icon={<RotateCcw size={16} />} onClick={() => onRedo(r)} data-testid="partner-redo">
+                      <Button variant="soft" icon={<RotateCcw size={16} />} onClick={() => onRedo(r)} className="h-auto min-h-11 whitespace-normal py-2 text-left" data-testid="partner-redo">
                         {r.confirmedAt ? "같은 곳에 또 문제가 생겼어요" : "아직 문제가 있어요"}
                       </Button>
                     )}

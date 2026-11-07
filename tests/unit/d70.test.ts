@@ -4,7 +4,7 @@ import { createSeed } from "@/lib/data/seed";
 import { CommandError, createPartnerRequest } from "@/lib/data/commands";
 import { setSiteWarranty } from "@/lib/data/adminCommands";
 import { defectRows } from "@/lib/domain/defects";
-import { defectWarranty, warrantyEnd, warrantyStatus } from "@/lib/domain/warranty";
+import { defectWarranty, warrantyClientLine, warrantyEnd, warrantyStatus } from "@/lib/domain/warranty";
 import { authorize, viewFor, ForbiddenError } from "@/server/authz";
 import type { Member } from "@/server/auth";
 
@@ -34,6 +34,11 @@ describe("하자보증 기간 계산", () => {
     expect(warrantyStatus(w, "2026-11-10")).toMatchObject({ state: "soon", daysLeft: 60 });
     expect(warrantyStatus(w, "2027-01-09")).toMatchObject({ state: "soon", daysLeft: 0 });
     expect(warrantyStatus(w, "2027-01-10")).toMatchObject({ state: "expired", daysLeft: -1 });
+  });
+  it("발주처·인쇄물 문구: 계약서 기준·날짜만 (남은 날 없음)", () => {
+    expect(warrantyClientLine({})).toBeNull();
+    expect(warrantyClientLine({ warranty: { months: 24, setAt: "", setBy: "" } })).toBe("하자보증(계약서 기준): 준공(인도)일부터 2년");
+    expect(warrantyClientLine({ warranty: { months: 18, completedDate: "2026-10-08", setAt: "", setBy: "" } })).toBe("하자보증(계약서 기준): 준공 2026.10.08부터 18개월 · 2028.04.07까지");
   });
   it("하자 요청의 보증 안/밖은 접수일 기준 (준공 전 접수 · 기간 안 · 기간 밖)", () => {
     const site = { warranty: { months: 12, completedDate: "2026-01-10", setAt: "", setBy: "" } };

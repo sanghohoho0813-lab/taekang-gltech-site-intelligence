@@ -43,7 +43,10 @@ test("하자보증: 준공 전(시연 24개월) → 준공일·5개월 넣어 �
   // 발주처 포털: 기간만 (본사 메모 없음)
   await asRole(page, "partner");
   await page.goto("/partner");
-  await expect(page.getByTestId("partner-warranty")).toContainText("만료 임박");
+  // 발주처에게는 계약서 기준·날짜만 (남은 날·내부 상태 말 없음 · D-70 점검 반영)
+  await expect(page.getByTestId("partner-warranty")).toContainText("하자보증(계약서 기준)");
+  await expect(page.getByTestId("partner-warranty")).toContainText("5개월");
+  await expect(page.getByTestId("partner-warranty")).not.toContainText("남음");
   await expect(page.getByTestId("partner-portal")).not.toContainText("가상 계약서 하자담보 조항");
 });
 
@@ -56,6 +59,14 @@ test("하자보증 입력 검사: 개월 0·미래 준공일은 저장되지 않
   await page.getByTestId("warranty-save").click();
   await expect(page.getByText("1~120개월")).toBeVisible();
   await page.keyboard.press("Escape");
+  // 지우기는 한 번 더 확인 (A현장 시연 보증 24개월)
+  await page.goto("/sites/site-a?tab=requests");
+  await page.getByTestId("warranty-edit").click();
+  await page.getByTestId("warranty-clear").click();
+  await expect(page.getByTestId("warranty-clear")).toHaveText("정말 지우기");
+  await expect(page.getByTestId("warranty-card")).toHaveAttribute("data-state", "pending");
+  await page.getByTestId("warranty-clear").click();
+  await expect(page.getByTestId("warranty-card")).toHaveAttribute("data-state", "none");
   await asRole(page, "field");
   await page.goto("/sites/site-a?tab=requests");
   await expect(page.getByTestId("warranty-card")).toBeVisible();

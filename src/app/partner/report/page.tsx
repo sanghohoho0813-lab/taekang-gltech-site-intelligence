@@ -17,7 +17,7 @@ import { PARTNER_FEED_KEEP_DAYS, defectProgress, partnerMonthly, partnerProgress
 import type { DemoDB, PartnerRequest } from "@/lib/domain/types";
 import { Badge, Button, DemoBadge, EmptyState, PageSkeleton, ProgressBar, Segmented, cx, inputCls } from "@/components/ui/primitives";
 import { LogoMark } from "@/components/shell/Logo";
-import { warrantyLine } from "@/components/admin/WarrantyCard";
+import { warrantyClientLine } from "@/lib/domain/warranty";
 import { SampleDataBanner } from "@/components/shell/AppShell";
 
 const monthOf = (d: string) => d.slice(0, 7);
@@ -133,7 +133,8 @@ function Report({ db, siteId, month, partnerUserId, preview, today }: { db: Demo
         <div className="text-right text-[0.85rem]">
           <p className="font-bold" data-testid="report-site-name">{site.name}</p>
           <p className="num text-ink-2" data-testid="report-month">{monthLabel(month)} ({fmtDate(r.from)} ~ {fmtDate(current ? today : r.to)}{current ? " · 작성일 기준" : ""})</p>
-          {site.warranty && <p className="num text-[0.78rem] text-ink-2" data-testid="report-warranty">하자보증: {warrantyLine(site, today)}</p>}
+          {/* 지난달 보고서에서도 맞게 — 남은 날 없이 날짜만, 계약서 기준임을 밝힌다 (D-70 점검 반영) */}
+          {site.warranty && <p className="num text-[0.78rem] text-ink-2" data-testid="report-warranty">{warrantyClientLine(site)}</p>}
           {!IS_LIVE && <p className="mt-0.5 text-[0.74rem] font-bold text-[#7A5200]">DEMO · 가상 시연 데이터</p>}
         </div>
       </header>
