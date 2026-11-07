@@ -75,7 +75,7 @@ export function monthsText(months: number): string {
 export function warrantyLine(site: Pick<Site, "warranty">, today: string, opts: { withState?: boolean } = {}): string {
   const w = warrantyStatus(site, today);
   const prefix = opts.withState === false ? "" : `${WARRANTY_LABEL[w.state]} · `;
-  if (w.state === "none") return "하자보증 기간 미입력";
+  if (w.state === "none") return opts.withState === false ? "계약서 기준 기간을 아직 넣지 않았습니다" : "하자보증 기간 미입력";
   if (w.state === "pending") return `준공 후 ${monthsText(w.months!)} (준공일 입력 전)`;
   if (w.state === "expired") return `${opts.withState === false ? "" : "보증 끝남 · "}${fmtDate(w.endDate!)}까지였음`;
   return `${prefix}${fmtDate(w.endDate!)}까지 (${w.daysLeft === 0 ? "오늘 만료" : `${w.daysLeft}일 남음`})`;
