@@ -27,6 +27,27 @@ export function partnerProgressFeed(db: DemoDB, siteId: string, today: string, d
   return [...byKey.values()].filter((f) => f.from !== f.to).sort((a, b) => (a.date === b.date ? a.stage.localeCompare(b.stage) : b.date.localeCompare(a.date)));
 }
 
+/** 본사용 공정 변화 기록 (D-71) — 발주처 월간 보고서와 같은 계산, 날짜별로 묶고 엑셀로 옮긴 지난 기록인지 표시 (최근 날짜부터) */
+export interface ProgressHistoryDay {
+  date: string;
+  changes: { stage: string; from: number; to: number }[];
+  /** 그날 기록이 모두 엑셀로 옮긴 지난 기록 */
+  imported: boolean;
+}
+export function progressHistory(db: DemoDB, siteId: string, today: string): ProgressHistoryDay[] {
+  const feed = partnerProgressFeed(db, siteId, today, 3660);
+  const field = new Set(db.reports.filter((r) => r.siteId === siteId && r.status !== "voided" && !r.importBatchId && ((r.stages?.length ?? 0) > 0 || r.progress)).map((r) => r.reportDate));
+  const days = new Map<string, ProgressHistoryDay>();
+  for (const f of feed) {
+    const d = days.get(f.date) ?? { date: f.date, changes: [], imported: !field.has(f.date) };
+    d.changes.push({ stage: f.stage, from: f.from, to: f.to });
+    days.set(f.date, d);
+  }
+  // 전체 공정률은 맨 앞에
+  for (const d of days.values()) d.changes.sort((a, b) => (a.stage === "전체 공정률" ? -1 : b.stage === "전체 공정률" ? 1 : 0));
+  return [...days.values()].sort((a, b) => b.date.localeCompare(a.date));
+}
+
 /** 취소한 보고·자재 기록의 사진은 공개하지 않는다 (D-67 점검 반영) */
 export function photoWithdrawn(db: Pick<DemoDB, "reports" | "materialMoves">, p: SitePhoto): boolean {
   if (p.reportId && db.reports.find((r) => r.id === p.reportId)?.status === "voided") return true;

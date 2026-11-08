@@ -102,6 +102,12 @@ export async function smokeCheck(baseUrl, fetchFn = fetch) {
   const foreign = await get("/api/commands", { method: "POST", headers: { "Content-Type": "application/json", Origin: "https://evil.example" }, body: "{}" });
   if (foreign.status === 403) add("ok", "origin", "다른 사이트에서 보낸 쓰기 요청 차단");
   else add("error", "origin", `다른 사이트에서 보낸 쓰기 요청이 차단되지 않습니다 (HTTP ${foreign.status})`);
+  // 매일 점검 예약 작업 (D-71): 비밀값 없이 부르면 거절돼야 한다 — 401이면 설정됨, 503이면 비밀값 없음
+  const cron = await get("/api/cron/daily");
+  if (cron.status === 401) add("ok", "cron", "매일 점검(하자보증 만료 알림) 예약 작업: 비밀값 없이는 거절됨");
+  else if (cron.status === 503) add("warn", "cron", "매일 점검 비밀값(CRON_SECRET)이 없습니다 — 하자보증 만료 알림이 가지 않습니다");
+  else if (cron.status === 404 && health?.mode !== "live") add("warn", "cron", "시연 빌드에는 매일 점검이 없습니다");
+  else add("error", "cron", `매일 점검 주소가 비밀값 없이 열립니다 (HTTP ${cron.status})`);
 
   // 4) 화면 접근: 로그인 안 한 사람은 로그인 화면으로
   const home = await get("/dashboard");

@@ -78,7 +78,7 @@ export const COMMAND_SPEC: Record<CommandName, { label: string; group: CmdGroup;
   setPhotoShare: { label: "발주처 포털에 현장 사진 공개·비공개", group: "partner", allow: HQ },
   setCompanySettings: { label: "운영 설정 (본사 전화·기본 일당·반영 방식)", group: "ops", allow: HQ },
   setThresholds: { label: "위험 기준 (목표 이익률 등)", group: "ops", allow: HQ },
-  importData: { label: "지난 자료 엑셀 가져오기 (기성·변경공사·출력·팀 단가·원가·자재 수량)", group: "ops", allow: HQ },
+  importData: { label: "지난 자료 엑셀 가져오기 (기성·변경공사·출력·팀 단가·원가·자재 수량·공정 진행 이력)", group: "ops", allow: HQ },
   undoImport: { label: "가져오기 취소 (7일 안)", group: "ops", allow: HQ },
   createKiosk: { label: "현장 QR 태블릿 등록", group: "ops", allow: HQ },
   revokeKiosk: { label: "현장 QR 태블릿 해제", group: "ops", allow: HQ },
@@ -131,7 +131,7 @@ export const COLLECTION_SPEC: Record<CollectionName, CollectionSpec> = {
   crewChecks: { label: "작업 인원(출력)", holds: "팀·직영/외주·인원·단체 사진·위치 판정", field: "담당 현장 최근 60일", partner: DATA_NONE, keep: "보관" },
   attendanceRequests: { label: "근태 수정 요청", holds: "날짜·무엇이 잘못됐는지·요청 시각·사유·승인/반려", field: "본인 것", partner: DATA_NONE, keep: "보관" },
   workOrders: { label: "작업지시", holds: "지시 내용·받는 사람·기한·접수→진행→완료→확인 이력·작업량·사진", field: "본인에게 온 것", partner: DATA_NONE, keep: "보관" },
-  importBatches: { label: "자료 가져오기 기록", holds: "종류·건수·건너뛴 행·취소 여부", field: DATA_NONE, partner: DATA_NONE, keep: "보관" },
+  importBatches: { label: "자료 가져오기 기록", holds: "종류·건수·건너뛴 행·취소 여부 (공정 진행 이력은 ‘자료 이관’ 표시가 붙은 확인된 현장 보고로 들어감 · 지금 공정률은 그대로)", field: DATA_NONE, partner: DATA_NONE, keep: "보관" },
   materialMoves: { label: "자재 반입·설치", holds: "품목·반입/설치·수량·날짜·사진·메모·취소 사유 (금액 없음)", field: "담당 현장 것 (누계가 맞도록 기간 제한 없음)", partner: DATA_NONE, keep: "보관 (취소는 지우지 않고 표시)" },
 };
 
@@ -217,7 +217,7 @@ export const MODULES: { no: string; name: string; routes: string[]; note: string
   { no: "04", name: "공정·투입 원가", routes: ["/sites", "/schedule", "/labor", "/finance"], note: "현장 손익·공정 일정·투입 인건비 추정 vs 실제·기성·변경공사·자재 설치율·기성 청구 지연 표시" },
   { no: "05", name: "대표자 통합 현황판", routes: ["/dashboard", "/report", "/insights"], note: "처리 대기·현장별 손익·위험 신호(규칙 기반)·대표 보고서" },
   { no: "06", name: "고객·협력사 초기화면", routes: ["/partner", "/partner/report", "/defects"], note: "공개 현장 진행·공정 사진·견적 문의·주문 요청·하자보수(사진·보수 진행·확인·본사 하자보수 현황·관리대장)·월간 공정 보고서 (내부 금액 비노출)" },
-  { no: "07", name: "기존 프로그램 일부 기능", routes: ["/data"], note: "엑셀 가져오기 6종(기성·입금 / 변경공사 / 출력 / 팀 단가 / 원가 / 자재 반입·설치)·내려받기 — 합의 항목은 계약에 따라 확정" },
+  { no: "07", name: "기존 프로그램 일부 기능", routes: ["/data"], note: "엑셀 가져오기 7종(기성·입금 / 변경공사 / 출력 / 팀 단가 / 원가 / 자재 반입·설치 / 공정 진행 이력)·내려받기 — 합의 항목은 계약에 따라 확정" },
 ];
 
 /** 보안·개인정보 설계 */
@@ -229,4 +229,5 @@ export const SECURITY: { title: string; text: string }[] = [
   { title: "개인위치정보", text: "동의한 직원만 좌표를 저장한다. 보관 기간이 지나면 좌표를 자동 삭제하고, 좌표 열람 범위(대표만 / 대표·관리자)는 대표가 정한다. 직원은 자기 기록을 보고 동의를 철회할 수 있다." },
   { title: "이력", text: "누가·언제·무엇을 바꿨는지 활동 이력에 남고 지워지지 않는다. 출퇴근 정정·근태 승인·사용자 관리도 모두 남는다." },
   { title: "웹 보안", text: "보안 헤더(외부 스크립트·다른 사이트 안에 넣기 차단), 다른 사이트에서 보낸 쓰기 요청 차단, 로그인 실패·요청 횟수 제한." },
+  { title: "매일 점검", text: "매일 아침 서버 예약 작업이 보관 기간 지난 위치 좌표를 지우고 하자보증 만료 60·30·7일 전 알림을 본사에 보낸다. 예약 작업 주소는 비밀값이 맞아야만 동작하고, 결과에는 회사·현장 이름 없이 건수만 남긴다." },
 ];

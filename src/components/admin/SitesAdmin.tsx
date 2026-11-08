@@ -6,7 +6,8 @@ import { Building2, Gauge, Pencil, Plus, Trash2, TrendingUp } from "lucide-react
 import type { CostCategory, DemoDB, Site, SiteStatus } from "@/lib/domain/types";
 import { COST_CATEGORIES, CATEGORY_LABEL } from "@/lib/domain/labels";
 import { siteFinancials } from "@/lib/domain/calc";
-import { fmtEok, fmtMan, fmtPct, fmtPp, todayIso } from "@/lib/domain/format";
+import { fmtDate, fmtEok, fmtMan, fmtPct, fmtPp, todayIso } from "@/lib/domain/format";
+import { monthsText, warrantyEnd } from "@/lib/domain/warranty";
 import { uid } from "@/lib/domain/ids";
 import { run } from "@/lib/data/store";
 import { CommandError } from "@/lib/data/commands";
@@ -130,6 +131,9 @@ function SiteFormModal({ db, site, onClose }: { db: DemoDB; site: Site | null; o
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [key] = useState(() => uid("idem"));
+  // 준공으로 바꾸면 하자보증 준공(인도)일도 같이 (보증 기간은 있는데 준공일이 비어 있을 때 · D-71)
+  const [wDone, setWDone] = useState(() => todayIso());
+  const askWarrantyStart = f.status === "completed" && !!site?.warranty && !site.warranty.completedDate;
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value });
 
   const budgetNums = Object.fromEntries(COST_CATEGORIES.map((c) => [c, toWon(budgets[c]) || 0])) as Record<CostCategory, number>;
@@ -159,6 +163,7 @@ function SiteFormModal({ db, site, onClose }: { db: DemoDB; site: Site | null; o
         contractAmount: Number.isFinite(contractNum) ? contractNum : 0,
         budgets: budgetNums,
         stages: stages.filter((s) => s.name.trim()).map(({ id, name, startDate, endDate, progressPct, base }) => ({ id, name, startDate, endDate, progressPct, ...(id && base !== undefined ? { basePct: base } : {}) })),
+        ...(askWarrantyStart && wDone ? { warrantyCompletedDate: wDone } : {}),
         idempotencyKey: site ? undefined : key,
       });
       toast.push({ tone: "ok", title: r.created ? "현장을 등록했습니다" : "현장 정보를 저장했습니다", desc: f.shortName });
@@ -220,6 +225,26 @@ function SiteFormModal({ db, site, onClose }: { db: DemoDB; site: Site | null; o
           <Field label="준공 예정일" htmlFor="sf-end" required error={errors.endDate}>
             <input id="sf-end" type="date" className={inputCls} value={f.endDate} onChange={set("endDate")} />
           </Field>
+          {f.status === "completed" && site && (
+            <div className="rounded-xl border border-line bg-surface-2 px-3.5 py-3 sm:col-span-2" data-testid="sf-warranty">
+              {askWarrantyStart ? (
+                <Field
+                  label={`준공(인도)일 — 하자보증 ${monthsText(site.warranty!.months)} 시작 (계약서 기준)`}
+                  htmlFor="sf-warranty-done"
+                  error={errors.warrantyCompletedDate}
+                  hint={wDone ? `보증 기간: ${fmtDate(wDone)} ~ ${fmtDate(warrantyEnd(wDone, site.warranty!.months))} · 비우면 나중에 현장 상세에서 넣습니다` : "비우면 나중에 현장 상세 ‘발주처·하자보증’에서 넣습니다"}
+                >
+                  <input id="sf-warranty-done" type="date" max={todayIso()} min={f.startDate} className={inputCls} value={wDone} onChange={(e) => setWDone(e.target.value)} data-testid="sf-warranty-done" />
+                </Field>
+              ) : site.warranty?.completedDate ? (
+                <p className="text-[0.82rem] text-ink-2">
+                  하자보증: 준공 {fmtDate(site.warranty.completedDate)}부터 {monthsText(site.warranty.months)} · {fmtDate(warrantyEnd(site.warranty.completedDate, site.warranty.months))}까지 — 고치려면 현장 상세 ‘발주처·하자보증’
+                </p>
+              ) : (
+                <p className="text-[0.82rem] text-ink-2">하자보증 기간(계약서 기준)을 아직 넣지 않았습니다. 현장 상세 ‘발주처·하자보증’에서 넣으면 만료 전에 본사로 알림이 갑니다.</p>
+              )}
+            </div>
+          )}
           <Field label="현장 담당 (현장소장)" htmlFor="sf-field" error={errors.fieldUserId} hint={fieldUsers.length ? "이 사람이 휴대폰으로 현장 보고를 합니다" : "현장직원 계정을 먼저 만드세요 (사용자 탭)"}>
             <select id="sf-field" className={inputCls} value={f.fieldUserId} onChange={set("fieldUserId")}>
               <option value="">지정 안 함</option>

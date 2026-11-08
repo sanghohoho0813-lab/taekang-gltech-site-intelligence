@@ -52,6 +52,22 @@ export function warrantyStatus(site: Pick<Site, "warranty">, today: string): War
   return { state, months: w.months, startDate: w.completedDate, endDate, daysLeft };
 }
 
+/** 만료 알림 단계 — 남은 날이 이 값 이하가 되면 본사 휴대폰으로 한 번씩 (D-71) */
+export const WARRANTY_NOTICE_DAYS = [60, 30, 7] as const;
+
+/**
+ * 오늘 보낼 만료 알림 — 남은 날이 들어가는 가장 가까운 단계 하나, 이미 보냈으면 없음.
+ * 예: 45일 남음 → 60일 단계, 25일 남음 → 30일 단계 (60일 단계를 놓쳤어도 지난 알림은 보내지 않는다), 끝났으면 없음
+ */
+export function warrantyNoticeDue(site: Pick<Site, "warranty">, today: string): { days: number; endDate: string; daysLeft: number } | null {
+  const w = warrantyStatus(site, today);
+  if ((w.state !== "soon" && w.state !== "active") || w.daysLeft === undefined) return null;
+  const step = [...WARRANTY_NOTICE_DAYS].sort((a, b) => a - b).find((d) => w.daysLeft! <= d);
+  if (step === undefined) return null;
+  if ((site.warranty?.notices ?? []).some((n) => n.days <= step)) return null;
+  return { days: step, endDate: w.endDate!, daysLeft: w.daysLeft };
+}
+
 /** 하자 요청이 보증 기간 안인지 (접수일 기준) — 준공 전 접수는 ‘시공 중’ */
 export type DefectWarranty = "in" | "before" | "after";
 export const DEFECT_WARRANTY_LABEL: Record<DefectWarranty, string> = {

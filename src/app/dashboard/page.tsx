@@ -43,7 +43,7 @@ function CeoDashboard() {
     .map((s) => ({ s, f: fin[s.id], h: siteHealth(signals, s.id) }))
     .filter(({ h }) => (tab === "all" ? true : tab === "risk" ? h === "high" || h === "medium" : h === "ok" || h === "low"));
   // 최근 것부터 (자료를 가져오거나 시연 데이터가 섞여도 순서가 맞게 · D-69 점검 반영)
-  const recentReports = db.reports.filter((r) => r.status === "submitted").sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 4);
+  const recentReports = db.reports.filter((r) => r.status === "submitted" && !r.importBatchId).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 4);
   const longReceivable = signals.filter((s) => s.rule === "RECEIVABLE_OVERDUE").length;
 
   return (

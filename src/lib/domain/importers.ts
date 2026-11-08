@@ -2,7 +2,7 @@
  * 실제 자료 이관 (계약 3단계 ‘실제 자료 연결’) — 엑셀에서 저장한 CSV를 검증·미리보기·반영하는 순수 함수.
  * 브라우저(미리보기)와 서버(반영 직전 재검증)가 같은 함수를 쓴다. 서버는 브라우저가 보낸 행을 믿지 않고 원문을 다시 검사한다.
  *
- * 종류: 기성·입금 / 변경공사 / 작업 인원(출력) 이력 / 팀 단가 / 원가 / 자재 반입·설치 이력(D-63 · 수량만)
+ * 종류: 기성·입금 / 변경공사 / 작업 인원(출력) 이력 / 팀 단가 / 원가 / 자재 반입·설치 이력(D-63 · 수량만) / 공정 진행 이력(D-71 · 금액 없음)
  * - 열 이름은 한글·영문 모두 받는다 (예: 현장 = site = site_code)
  * - 현장은 현장코드·약칭·현장명 중 하나로 찾는다
  * - DB에 이미 같은 기록이 있으면 ‘중복’으로 건너뛴다 (같은 파일을 두 번 올려도 두 번 들어가지 않게)
@@ -25,9 +25,11 @@ export interface ChangeRow { line: number; siteId: string; title: string; amount
 export interface CrewRow { line: number; siteId: string; date: string; team: string; kind: CrewCheck["kind"]; headcount: number }
 export interface RateRow { line: number; team: string; dayRate: number; before?: number }
 export interface MaterialRow { line: number; siteId: string; date: string; kind: MaterialMoveKind; itemId: string; itemName: string; unit: string; qty: number; note: string }
+/** 공정 진행 이력 한 줄 — 그날까지의 누계 진행률. stageId가 없으면 현장 전체 공정률. from은 바로 앞 기록 값 (D-71) */
+export interface ProgressRow { line: number; siteId: string; date: string; stageId: string | null; stageName: string; pct: number; from: number; note: string }
 export interface CostRow { line: number; siteId: string; date: string; category: CostCategory; amount: number; impact: Exclude<ForecastImpact, "baseline">; reason: CostReason; note: string }
 
-export type ImportRow = BillingRow | ChangeRow | CrewRow | RateRow | CostRow | MaterialRow;
+export type ImportRow = BillingRow | ChangeRow | CrewRow | RateRow | CostRow | MaterialRow | ProgressRow;
 
 export interface ImportPlan {
   kind: ImportKind;
@@ -161,7 +163,25 @@ export const IMPORT_SPECS: Record<ImportKind, { title: string; desc: string; col
       ["A현장", "2026-10-21", "설치", "커튼월 유닛 (예시)", "12", ""],
     ],
   },
+  progress: {
+    title: "공정 진행 이력",
+    desc: "지난 날짜별 공정 단계 진행률(누계 %). 공사일보·발주처 월간 보고서의 ‘공정 변화’로 이어집니다. 지금 공정률은 바꾸지 않습니다 (금액 없음).",
+    columns: [
+      SITE_COL,
+      { key: "date", label: "날짜", aliases: ["날짜", "일자", "기준일", "작업일", "date"], required: true, desc: "YYYY-MM-DD (착공일부터 어제까지)", example: "2026-09-30" },
+      { key: "stage", label: "공정 단계", aliases: ["공정 단계", "공정단계", "단계", "공정", "공종", "stage"], required: true, desc: "현장에 정해 둔 공정 단계 이름 그대로 · 현장 전체 공정률은 ‘전체’", example: "커튼월 유닛 설치" },
+      { key: "pct", label: "진행률", aliases: ["진행률", "진행률(%)", "누계", "누계(%)", "누계진행률", "공정률", "공정률(%)", "pct", "progress"], required: true, desc: "그날까지의 누계 0~100 (정수 %, 35% · 0.35도 받음)", example: "35" },
+      { key: "note", label: "메모", aliases: ["메모", "비고", "작업내용", "작업 내용", "note"], required: false, desc: "200자 이내 · 공사일보 ‘작업 내용’으로 들어감", example: "3층 서측 유닛 설치" },
+    ],
+    sample: [
+      ["현장", "날짜", "공정 단계", "진행률", "메모"],
+      ["A현장", "2026-09-15", "커튼월 유닛 설치 (예시)", "20", "2층 유닛 설치 (예시)"],
+      ["A현장", "2026-09-30", "커튼월 유닛 설치 (예시)", "35", ""],
+    ],
+  },
 };
+/** 현장 전체 공정률을 뜻하는 단계 이름 */
+const OVERALL_STAGE = new Set(["전체", "전체공정률", "현장전체", "전체공정", "공정률", "total", "overall"]);
 const MATERIAL_KIND_IN: Record<string, MaterialMoveKind> = { 반입: "in", 입고: "in", 들어옴: "in", in: "in", 설치: "install", 시공: "install", 사용: "install", install: "install" };
 
 const norm = (s: string) => s.replace(/^﻿/, "").trim().toLowerCase().replace(/\s+/g, "");
@@ -173,6 +193,20 @@ export function parseWonCell(v: string): number {
   if (t.includes(",") && !/^\d{1,3}(,\d{3})+$/.test(t)) return NaN;
   const raw = t.replace(/,/g, "");
   return /^\d+$/.test(raw) ? Number(raw) : NaN;
+}
+
+/**
+ * 진행률(%): 35 · 35% · 엑셀 백분율 서식(0.35 → 35). 정수 %만 — 그 외는 NaN (D-71)
+ * 0과 1 사이 소수는 백분율 서식으로 보고 100을 곱한다 (1은 1%)
+ */
+export function parsePctCell(v: string): number {
+  const t = v.replace(/\s/g, "");
+  const pctMark = t.endsWith("%");
+  const raw = pctMark ? t.slice(0, -1) : t;
+  if (!/^\d+(\.\d+)?$/.test(raw)) return NaN;
+  let n = Number(raw);
+  if (!pctMark && raw.includes(".") && n > 0 && n < 1) n = Math.round(n * 10_000) / 100;
+  return Number.isInteger(n) ? n : NaN;
 }
 
 /** 수량: 천 단위 쉼표와 소수점(.)만 — ‘1,5’(유럽식 소수)를 15로 읽지 않게 (D-66) */
@@ -366,6 +400,22 @@ export function planImport(db: DemoDB, kind: ImportKind, text: string, today: st
       if (!(qty > 0) || qty > 1_000_000) err("수량", "수량은 0보다 큰 숫자 (소수 둘째 자리까지 · 100만 이하)");
       const note = noteOf();
       if (plan.errors.length === before && site && date && mk && item) plan.rows.push({ line, siteId: site.id, date, kind: mk, itemId: item.id, itemName: item.name, unit: item.unit, qty, note });
+    } else if (kind === "progress") {
+      const site = siteOf();
+      const date = dateOf("date", "날짜");
+      // 오늘 진행은 현장 보고로 — 오늘 날짜를 넣으면 현장 홈에 ‘오늘 보고 보냄’으로 잘못 보인다
+      if (date && validDate(date) && date >= today) err("날짜", "어제까지의 기록만 넣을 수 있습니다 (오늘 진행은 현장 보고로 남기세요)");
+      if (site && date && validDate(date) && date < site.startDate) err("날짜", `${site.shortName} 착공일(${site.startDate}) 전 날짜입니다`);
+      const stageRef = get("stage").replace(/\s+/g, " ");
+      const overall = OVERALL_STAGE.has(norm(stageRef));
+      const stage = site && !overall ? site.stages.find((x) => norm(x.name) === norm(stageRef)) : undefined;
+      if (!stageRef) err("공정 단계", "공정 단계를 적어주세요 (현장 전체는 ‘전체’)");
+      else if (site && !overall && !stage) err("공정 단계", `‘${stageRef}’ 단계가 ${site.shortName}에 없습니다 — 현장 관리의 공정 단계 이름 그대로 적어 주세요 (현장 전체는 ‘전체’)`);
+      const pct = parsePctCell(get("pct"));
+      if (!Number.isInteger(pct) || pct < 0 || pct > 100) err("진행률", "진행률은 0~100 정수 (%)");
+      const note = noteOf();
+      if (plan.errors.length === before && site && date && (overall || stage))
+        plan.rows.push({ line, siteId: site.id, date, stageId: overall ? null : stage!.id, stageName: overall ? "전체 공정률" : stage!.name, pct, from: 0, note });
     } else if (kind === "cost") {
       const site = siteOf();
       const date = dateOf("date", "날짜");
@@ -416,6 +466,8 @@ export function planImport(db: DemoDB, kind: ImportKind, text: string, today: st
   }
   plan.rows = keep;
 
+  if (kind === "progress") checkProgressChain(db, plan);
+
   // 기성·입금: 현장별 입금 합계가 기성 합계를 넘으면 미수금이 음수가 된다
   if (kind === "billing") {
     for (const s of db.sites) {
@@ -437,6 +489,67 @@ export function planImport(db: DemoDB, kind: ImportKind, text: string, today: st
 
 const won = (n: number) => `${Math.round(n / 10_000).toLocaleString("ko-KR")}만 원`;
 
+/** 공정 진행 기록 한 점 (이미 있는 현장 보고) — 그날 시작 값(from)과 끝 값(to) */
+interface ProgressPoint { date: string; at: string; from: number; to: number }
+
+/** 이미 있는 현장 보고에서 이 단계(없으면 현장 전체)의 진척 기록 — 날짜·보낸 순서대로 */
+export function progressPoints(db: Pick<DemoDB, "reports">, siteId: string, stageId: string | null): ProgressPoint[] {
+  const out: ProgressPoint[] = [];
+  for (const r of db.reports) {
+    if (r.siteId !== siteId || r.status === "voided") continue;
+    const c = stageId ? r.stages?.find((x) => x.stageId === stageId) : r.progress;
+    if (c) out.push({ date: r.reportDate, at: r.createdAt, from: c.from, to: c.to });
+  }
+  return out.sort((a, b) => a.date.localeCompare(b.date) || a.at.localeCompare(b.at));
+}
+
+/**
+ * 공정 진행 이력 앞뒤 맞추기 (D-71): 누계는 날짜가 지나며 줄지 않아야 하고, 뒤에 있는 현장 보고의 시작 값·지금 공정률보다 높을 수 없다.
+ * 앞 기록과 같은 값(변화 없음)은 넣지 않는다. from은 바로 앞 기록 값 (처음이면 0).
+ */
+function checkProgressChain(db: DemoDB, plan: ImportPlan) {
+  const rows = plan.rows as ProgressRow[];
+  // 같은 날 같은 단계에 다른 값 두 개 → 어느 쪽인지 알 수 없다
+  const firstOf = new Map<string, ProgressRow>();
+  for (const r of rows) {
+    const k = `${r.siteId}|${r.date}|${r.stageId ?? "*"}`;
+    const f = firstOf.get(k);
+    if (f && f.pct !== r.pct) plan.errors.push({ line: r.line, field: "진행률", message: `${f.line}행과 같은 날 같은 단계인데 진행률이 다릅니다 (${f.pct}% / ${r.pct}%)` });
+    else if (!f) firstOf.set(k, r);
+  }
+  const groups = new Map<string, ProgressRow[]>();
+  for (const r of rows) {
+    const k = `${r.siteId}|${r.stageId ?? "*"}`;
+    groups.set(k, [...(groups.get(k) ?? []), r]);
+  }
+  const unchanged = new Set<ProgressRow>();
+  for (const list of groups.values()) {
+    const { siteId, stageId } = list[0];
+    const site = db.sites.find((s) => s.id === siteId)!;
+    const current = stageId ? (site.stages.find((x) => x.id === stageId)?.progressPct ?? 0) : site.progressPct;
+    const existing = progressPoints(db, siteId, stageId);
+    let prevRow: ProgressRow | undefined;
+    for (const r of [...list].sort((a, b) => a.date.localeCompare(b.date) || a.line - b.line)) {
+      if (prevRow && prevRow.date === r.date) continue; // 같은 날 두 번 (위에서 오류 또는 중복)
+      const prevE = existing.filter((p) => p.date < r.date).at(-1);
+      const nextE = existing.find((p) => p.date > r.date);
+      const prev = prevRow && (!prevE || prevRow.date > prevE.date) ? { date: prevRow.date, pct: prevRow.pct } : prevE ? { date: prevE.date, pct: prevE.to } : undefined;
+      const fromPct = prev?.pct ?? 0;
+      if (r.pct < fromPct) plan.errors.push({ line: r.line, field: "진행률", message: `앞선 기록(${prev!.date} ${fromPct}%)보다 낮습니다 — 진행률은 그날까지의 누계로 적어 주세요` });
+      else if (nextE && r.pct > nextE.from) plan.errors.push({ line: r.line, field: "진행률", message: `뒤의 현장 보고(${nextE.date} 시작 ${nextE.from}%)보다 높습니다` });
+      else if (!nextE && r.pct > current) plan.errors.push({ line: r.line, field: "진행률", message: `지금 ${r.stageName}(${current}%)보다 높습니다 — 현장 관리에서 지금 공정률을 먼저 맞춰 주세요` });
+      r.from = fromPct;
+      if (r.pct === fromPct) unchanged.add(r);
+      prevRow = r;
+    }
+  }
+  if (unchanged.size) {
+    for (const r of unchanged) plan.duplicates.push({ line: r.line, text: `${r.date} ${r.stageName} ${r.pct}% — 앞 기록과 같아 변화 없음` });
+    plan.rows = rows.filter((r) => !unchanged.has(r));
+    plan.duplicates.sort((a, b) => a.line - b.line);
+  }
+}
+
 /** 같은 파일 안 중복 판단 열쇠 — DB 중복 판단(duplicateOf)과 같은 기준 */
 function rowKey(kind: ImportKind, r: ImportRow): string | null {
   if (kind === "billing") { const b = r as BillingRow; return `${b.siteId}|${b.kind}|${b.date}|${b.amount}`; }
@@ -444,6 +557,7 @@ function rowKey(kind: ImportKind, r: ImportRow): string | null {
   if (kind === "crew") { const c = r as CrewRow; return `${c.siteId}|${c.date}|${c.team.toLowerCase()}`; }
   if (kind === "material") { const m = r as MaterialRow; return `${m.siteId}|${m.itemId}|${m.kind}|${m.date}|${m.qty}`; }
   if (kind === "cost") { const c = r as CostRow; return `${c.siteId}|${c.date}|${c.category}|${c.amount}|${c.note}`; }
+  if (kind === "progress") { const p = r as ProgressRow; return `${p.siteId}|${p.date}|${p.stageId ?? "*"}|${p.pct}`; }
   return null;
 }
 
@@ -465,6 +579,12 @@ function duplicateOf(db: DemoDB, kind: ImportKind, r: ImportRow): string | null 
     const m = r as MaterialRow;
     if ((db.materialMoves ?? []).some((x) => !x.voided && x.siteId === m.siteId && x.itemId === m.itemId && x.kind === m.kind && x.workDate === m.date && x.qty === m.qty))
       return `${m.date} ${m.itemName} ${m.kind === "in" ? "반입" : "설치"} ${m.qty} ${m.unit} — 이미 있음`;
+  }
+  if (kind === "progress") {
+    const p = r as ProgressRow;
+    // 그날 이 단계 기록이 이미 있으면 (현장 보고·앞서 가져온 기록) 그대로 둔다
+    const same = progressPoints(db, p.siteId, p.stageId).find((x) => x.date === p.date);
+    if (same) return `${p.date} ${p.stageName} — 그날 기록이 이미 있음 (${same.from}% → ${same.to}% 유지)`;
   }
   if (kind === "cost") {
     const c = r as CostRow;
@@ -501,6 +621,12 @@ function summarize(db: DemoDB, kind: ImportKind, rows: ImportRow[]): ImportPlan[
       const m = list as MaterialRow[];
       // 수량만 — 금액(amount)은 넣지 않는다
       return { siteId, label: `${name} — 반입 ${m.filter((x) => x.kind === "in").length}건 · 설치 ${m.filter((x) => x.kind === "install").length}건 (품목 ${new Set(m.map((x) => x.itemId)).size}개)`, count: m.length };
+    }
+    if (kind === "progress") {
+      const p = list as ProgressRow[];
+      const dates = [...new Set(p.map((x) => x.date))].sort();
+      // 금액 없음 — 날짜 수·단계 수·기간만
+      return { siteId, label: `${name} — ${dates.length}개 날짜 · 단계 ${new Set(p.map((x) => x.stageId ?? "*")).size}개 (${dates[0]} ~ ${dates.at(-1)})`, count: p.length };
     }
     const c = list as CostRow[];
     return { siteId, label: `${name} — 원가 ${c.length}건`, count: c.length, amount: c.reduce((a, x) => a + x.amount, 0) };

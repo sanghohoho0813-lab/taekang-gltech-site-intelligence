@@ -86,13 +86,14 @@ export function dailyLog(db: DemoDB, site: Site, date: string): DailyLog {
   const gaps: string[] = [];
   if (!reports.length) gaps.push("이 날 현장 보고가 없습니다 — 작업 내용·사진이 비어 있습니다");
   if (!crew.length) gaps.push("작업 인원(출력) 보고가 없습니다");
-  if (reports.length && !photos.length) gaps.push("사진이 없습니다");
+  if (reports.some((r) => !r.importBatchId) && !photos.length) gaps.push("사진이 없습니다");
   return {
     site,
     date,
     weekday: weekdayOf(date),
     reports,
-    writers: uniq(reports.map((r) => user(r.createdBy)?.name ?? "")),
+    // 엑셀로 옮긴 지난 기록은 넣은 사람이 아니라 ‘자료 이관’으로 (D-71)
+    writers: uniq(reports.map((r) => (r.importBatchId ? "자료 이관" : (user(r.createdBy)?.name ?? "")))),
     crew,
     crewTotal: crew.reduce((a, c) => a + c.headcount, 0),
     staff,

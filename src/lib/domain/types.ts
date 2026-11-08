@@ -82,6 +82,8 @@ export interface SiteWarranty {
   note?: string;
   setAt: string;
   setBy: string;
+  /** 보낸 만료 알림 단계 (만료 60·30·7일 전 — 단계마다 한 번 · D-71). 기간·준공일을 고치면 다시 센다 */
+  notices?: { days: number; at: string }[];
 }
 
 /** 현장 주요 자재 품목 (예: 커튼월 유닛 EA · 로이유리 장) */
@@ -238,7 +240,7 @@ export interface CrewCheck {
   importBatchId?: string;
 }
 
-export type ImportKind = "billing" | "change" | "crew" | "rates" | "cost" | "material";
+export type ImportKind = "billing" | "change" | "crew" | "rates" | "cost" | "material" | "progress";
 
 /** 자료 가져오기 1회 — 7일 안에는 통째로 취소할 수 있도록 이전 값을 함께 남긴다 */
 export interface ImportBatch {
@@ -374,6 +376,8 @@ export interface FieldReport {
   progress?: { from: number; to: number };
   /** 이 보고로 작업지시가 ‘진행 중’이 됐으면 그 전 상태 (되돌리기용 · D-65) */
   workOrderFrom?: "sent" | "received";
+  /** 엑셀로 옮긴 지난 공정 진행 기록 (D-71) — 지금 공정률은 바꾸지 않았고, 활용 통계·검수 근거에는 넣지 않는다 */
+  importBatchId?: string;
 }
 
 /** 근태 수정 요청 (GPS 실패·출퇴근 누락·잘못 찍힘) — 직원이 사유와 함께 요청, 본사가 승인·반려 */

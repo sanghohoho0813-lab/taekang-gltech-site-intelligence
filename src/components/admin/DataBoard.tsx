@@ -7,7 +7,7 @@ import { CircleAlert, CircleCheck, CircleDashed, Download, FileUp, Undo2, Upload
 import { useMe, userLabel } from "@/lib/data/hooks";
 import { run } from "@/lib/data/store";
 import { CommandError } from "@/lib/data/commands";
-import { CSV_ENCODING_HINT, IMPORT_SPECS, importTemplate, importTemplateXlsx, planImport, type ImportKind } from "@/lib/domain/importers";
+import { CSV_ENCODING_HINT, IMPORT_SPECS, importTemplate, importTemplateXlsx, planImport, type ImportKind, type ProgressRow } from "@/lib/domain/importers";
 import { tsvToCsv } from "@/lib/domain/csv";
 import { readinessAll, type ReadyFix, type ReadyItem, type ReadyStatus } from "@/lib/domain/readiness";
 import { fmtDateTime, fmtMan, todayIso } from "@/lib/domain/format";
@@ -19,7 +19,7 @@ import { PageBody, PageHeader } from "@/components/shell/AppShell";
 import { Badge, Button, Card, CardHeader, Notice, PageSkeleton, Segmented, cx, inputCls } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/Toast";
 
-const KINDS: ImportKind[] = ["billing", "change", "crew", "rates", "cost", "material"];
+const KINDS: ImportKind[] = ["billing", "change", "crew", "rates", "cost", "material", "progress"];
 const IMPORT_FIX: Partial<Record<ReadyFix, ImportKind>> = { billing: "billing", change: "change", crew: "crew", rates: "rates", cost: "cost" };
 const STATUS_ICON: Record<ReadyStatus, React.ReactNode> = {
   ok: <CircleCheck size={16} className="text-ok" aria-label="준비됨" />,
@@ -42,7 +42,7 @@ export function DataBoard() {
     <PageBody>
       <PageHeader
         title="자료 이관·점검"
-        desc="진행 중 현장의 지난 기성·변경공사·출력·원가를 엑셀(CSV)로 한 번에 넣고, 현장별로 운영에 필요한 자료가 빠짐없이 들어왔는지 확인합니다."
+        desc="진행 중 현장의 지난 기성·변경공사·출력·원가·공정 진행을 엑셀(CSV)로 한 번에 넣고, 현장별로 운영에 필요한 자료가 빠짐없이 들어왔는지 확인합니다."
       />
       <Card data-testid="ready-board">
         <CardHeader
@@ -146,7 +146,7 @@ function ImportCard({ kind, setKind }: { kind: ImportKind; setKind: (k: ImportKi
   const [rebaseline, setRebaseline] = useState(true);
   const [busy, setBusy] = useState(false);
   const [key, setKey] = useState(() => uid("idem"));
-  const [done, setDone] = useState<{ added: number; skipped: number; kind: ImportKind } | null>(null);
+  const [done, setDone] = useState<{ added: number; skipped: number; kind: ImportKind; siteIds: string[] } | null>(null);
   const spec = IMPORT_SPECS[kind];
   const plan = useMemo(() => (db && text.trim() ? planImport(db, kind, text, todayIso()) : null), [db, kind, text]);
   if (!db) return null;
@@ -165,7 +165,7 @@ function ImportCard({ kind, setKind }: { kind: ImportKind; setKind: (k: ImportKi
     setBusy(true);
     try {
       const r = await run("importData", { kind, text, idempotencyKey: key, rebaseline });
-      setDone({ added: r.added, skipped: r.skipped, kind });
+      setDone({ added: r.added, skipped: r.skipped, kind, siteIds: r.siteIds });
       toast.push({ tone: "ok", title: `${spec.title} ${r.added}건을 넣었습니다`, desc: r.skipped ? `이미 있던 ${r.skipped}건은 건너뛰었습니다` : undefined });
       reset();
     } catch (e) {
@@ -182,6 +182,8 @@ function ImportCard({ kind, setKind }: { kind: ImportKind; setKind: (k: ImportKi
     rates: { href: "/labor", label: "투입·인건비에서 확인" },
     cost: { href: "/sites", label: "현장 관리 → 원가에서 확인" },
     material: { href: "/sites", label: "현장 관리 → 현장 상세 ‘자재’에서 확인" },
+    // 한 현장만 넣었으면 그 현장의 공정 화면으로 바로 (D-71)
+    progress: done?.siteIds.length === 1 ? { href: `/sites/${done.siteIds[0]}?tab=progress`, label: "현장 상세 ‘공정’ → 공정 변화 기록에서 확인" } : { href: "/sites", label: "현장 관리 → 현장 상세 ‘공정’에서 확인" },
   };
   return (
     <Card data-testid="import-card">
@@ -320,6 +322,20 @@ function ImportCard({ kind, setKind }: { kind: ImportKind; setKind: (k: ImportKi
                     </li>
                   ))}
                 </ul>
+                {kind === "progress" && (
+                  // 들어갈 공정 변화를 날짜 순으로 미리 (앞 기록 → 이 값)
+                  <ul className="mt-2 space-y-0.5 text-[0.8rem] text-ink-3" data-testid="import-progress-rows">
+                    {[...(plan.rows as ProgressRow[])]
+                      .sort((a, b) => a.date.localeCompare(b.date) || a.line - b.line)
+                      .slice(0, 8)
+                      .map((r) => (
+                        <li key={r.line} className="num">
+                          {r.date} · {db.sites.find((x) => x.id === r.siteId)?.shortName} · {r.stageName} {r.from}% → <b className="text-ink-2">{r.pct}%</b>
+                        </li>
+                      ))}
+                    {plan.rows.length > 8 && <li>… 외 {plan.rows.length - 8}건</li>}
+                  </ul>
+                )}
                 {moneyKind && (
                   <label className="mt-3 flex items-start gap-2.5 text-[0.84rem]">
                     <input type="checkbox" checked={rebaseline} onChange={(e) => setRebaseline(e.target.checked)} className="mt-1 size-4 accent-[var(--t-active)]" data-testid="import-rebaseline" />

@@ -81,7 +81,7 @@ const kstDate = (iso: string) => new Date(new Date(iso).getTime() + 9 * H).toISO
 export function fieldUsage(db: DemoDB, user: DemoUser, from: string, to: string): FieldUsage {
   const inRange = (d: string) => d >= from && d <= to;
   const att = (db.attendance ?? []).filter((r) => r.userId === user.id && inRange(r.workDate));
-  const reports = db.reports.filter((r) => r.createdBy === user.id && r.status !== "voided" && inRange(r.reportDate));
+  const reports = db.reports.filter((r) => r.createdBy === user.id && r.status !== "voided" && !r.importBatchId && inRange(r.reportDate));
   const crew = (db.crewChecks ?? []).filter((c) => c.by === user.id && !c.imported && inRange(c.workDate));
   const orders = (db.workOrders ?? []).filter((w) => w.assigneeUserId === user.id && inRange(kstDate(w.createdAt)));
   const fixes = (db.attendanceRequests ?? []).filter((q) => q.userId === user.id && inRange(q.workDate));
@@ -154,7 +154,8 @@ export function responseStats(db: DemoDB, from: string, to: string, now: Date): 
     const open = items.filter((i) => !i.end);
     return { key, label, targetHours, medianHours: median(doneH), n: doneH.length, open: open.length, overdue: open.filter((i) => hours(i.start, nowIso) > targetHours).length };
   };
-  const reports = db.reports.filter((r) => r.status !== "voided" && inRange(r.createdAt));
+  // 엑셀로 옮긴 지난 공정 기록은 ‘현장 보고 확인’ 처리 시간에 넣지 않는다 (D-71)
+  const reports = db.reports.filter((r) => r.status !== "voided" && !r.importBatchId && inRange(r.createdAt));
   const fixes = (db.attendanceRequests ?? []).filter((q) => inRange(q.createdAt));
   const orders = (db.workOrders ?? []).filter((w) => inRange(w.createdAt));
   const doneAt = (w: (typeof orders)[number]) => [...w.history].reverse().find((h) => h.to === "done")?.at;

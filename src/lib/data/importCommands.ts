@@ -2,12 +2,12 @@
  * 실제 자료 가져오기 명령 (계약 3단계 ‘실제 자료 연결’). 서버는 브라우저 미리보기를 믿지 않고 CSV 원문을 다시 검증한다.
  * 중복(이미 있는 기록)은 건너뛰고, 오류가 한 줄이라도 있으면 아무것도 넣지 않는다 (전부 아니면 전무).
  */
-import type { ChangeOrder, CrewCheck, DemoDB, FinancialSnapshot, ImportBatch } from "@/lib/domain/types";
+import type { ChangeOrder, CrewCheck, DemoDB, FieldReport, FinancialSnapshot, ImportBatch } from "@/lib/domain/types";
 import { DEFAULT_SETTINGS } from "@/lib/domain/types";
 import { siteFinancials, snapshotOf } from "@/lib/domain/calc";
 import { fmtMan, todayIso } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
-import { IMPORT_SPECS, planImport, type BillingRow, type ChangeRow, type CostRow, type CrewRow, type ImportKind, type MaterialRow, type RateRow } from "@/lib/domain/importers";
+import { IMPORT_SPECS, planImport, type BillingRow, type ChangeRow, type CostRow, type CrewRow, type ImportKind, type MaterialRow, type ProgressRow, type RateRow } from "@/lib/domain/importers";
 import { CommandError, claimKey, clone, log, nowIso, touch, type Ctx } from "./commands";
 
 export interface ImportDataInput {
@@ -91,6 +91,41 @@ export function importData(db0: DemoDB, input: ImportDataInput, ctx: Ctx) {
       sites.add(r.siteId);
       db.materialMoves.push({ id: uid("mm"), siteId: r.siteId, itemId: r.itemId, kind: r.kind, qty: r.qty, workDate: r.date, note: r.note || "자료 가져오기", at: isoOf(r.date), by: ctx.userId, imported: true, importBatchId: batchId });
     }
+  } else if (plan.kind === "progress") {
+    // 지난 공정 진행 기록 — 현장·날짜마다 ‘본사 확인한 보고’ 한 건으로 (공사일보·발주처 월간 보고서가 같은 기록을 읽는다)
+    // 지금 공정률·단계 진행률은 바꾸지 않는다 (이력만 · D-71)
+    const byDay = new Map<string, ProgressRow[]>();
+    for (const r of plan.rows as ProgressRow[]) {
+      sites.add(r.siteId);
+      const k = `${r.siteId}|${r.date}`;
+      byDay.set(k, [...(byDay.get(k) ?? []), r]);
+    }
+    const added: FieldReport[] = [];
+    for (const [k, list] of byDay) {
+      const [siteId, date] = k.split("|");
+      const overall = list.find((r) => !r.stageId);
+      const notes = [...new Set(list.map((r) => r.note.trim()).filter(Boolean))];
+      added.push({
+        id: uid("rpt"),
+        siteId,
+        reportDate: date,
+        workDone: notes.length ? notes.join(" · ") : "지난 공정 진행 기록",
+        issues: "",
+        tomorrowPlan: "",
+        photoIds: [],
+        costEntryIds: [],
+        createdBy: ctx.userId,
+        createdAt: isoOf(date),
+        status: "submitted",
+        stages: list.filter((r) => r.stageId).map((r) => ({ stageId: r.stageId!, name: r.stageName, from: r.from, to: r.pct })),
+        ...(overall ? { progress: { from: overall.from, to: overall.pct } } : {}),
+        review: { status: "confirmed", at, by: ctx.userId, note: "자료 가져오기" },
+        importBatchId: batchId,
+      });
+    }
+    // 보고 목록은 새것이 앞 — 지난 기록은 뒤에, 오래된 것일수록 더 뒤에
+    added.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    db.reports = [...db.reports, ...added];
   } else if (plan.kind === "cost") {
     for (const r of plan.rows as CostRow[]) {
       sites.add(r.siteId);
@@ -217,6 +252,10 @@ export function undoImport(db0: DemoDB, input: { batchId: string }, ctx: Ctx) {
       db.settings = { ...(db.settings ?? DEFAULT_SETTINGS), teamRates: (b0.prevTeamRates ?? []).map((t) => ({ ...t })) };
     }
     if (!db.settings.teamRates?.length) delete db.settings.teamRates;
+  } else if (b0.kind === "progress") {
+    // 지난 기록만 지운다 — 지금 공정률은 가져올 때 바꾸지 않았으므로 되돌릴 것이 없다
+    removed = db.reports.filter((r) => mine(r) && r.status !== "voided").reduce((a, r) => a + (r.stages?.length ?? 0) + (r.progress ? 1 : 0), 0);
+    db.reports = db.reports.filter((r) => !mine(r));
   } else if (b0.kind === "cost") {
     for (const e of db.costEntries.filter(mine)) {
       if (e.status === "voided") continue;

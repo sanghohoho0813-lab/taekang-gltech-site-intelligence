@@ -10,6 +10,7 @@ import { AUDIT_LIMIT, auditRange, type AuditFilter } from "@/lib/domain/audit";
 import { COMMANDS, isCommandName, type CommandName } from "@/lib/data/registry";
 import { CommandError } from "@/lib/data/commands";
 import { applyLocationRetention } from "@/lib/data/privacyCommands";
+import { runDailyChecks } from "@/lib/data/dailyJobs";
 import { recordError } from "./errors";
 import { cachedEntry, cachedState, rememberState } from "./stateCache";
 import { ROLE_LABEL } from "@/lib/domain/labels";
@@ -164,6 +165,42 @@ export async function executeCommand(m: Member, name: unknown, args: unknown): P
   // 저장이 끝난 뒤에 알림 — 실패해도 명령 결과에는 영향 없음
   if (notices.length) await deliver(m.companyId, notices).catch((e) => console.error("[push]", e));
   return response;
+}
+
+// ───────────── 매일 점검 (서버 예약 작업 · D-71) ─────────────
+
+/**
+ * 회사마다: 보관 기간이 지난 위치 좌표 지우기 + 하자보증 만료 알림. 한 회사가 실패해도 다음 회사는 계속한다.
+ * 돌려주는 값은 숫자만 (회사 이름·현장 이름 없음 — 예약 작업 기록에 남으므로)
+ */
+export async function runDailyJobs(now = new Date()): Promise<{ companies: number; changed: number; warrantyNotices: number; pushed: number; failed: number }> {
+  const db = await getDb();
+  const companies = await db.query<{ id: string }>(`select id from companies order by id`);
+  let changed = 0;
+  let warrantyNotices = 0;
+  let pushed = 0;
+  let failed = 0;
+  for (const { id } of companies) {
+    try {
+      const done = await db.transaction(async (tx) => {
+        await tx.query(`select rev from companies where id = $1 for update`, [id]);
+        const loaded = await loadState(tx, id);
+        const retained = applyLocationRetention(loaded, now);
+        const out = runDailyChecks(retained, now);
+        if (out.db === loaded) return null;
+        await persistState(tx, id, loaded, out.db);
+        return out;
+      });
+      if (!done) continue;
+      changed += 1;
+      warrantyNotices += done.warranty.length;
+      if (done.notices.length) pushed += (await deliver(id, done.notices).catch((e) => (console.error("[push]", e), { sent: 0 }))).sent;
+    } catch (e) {
+      failed += 1;
+      console.error("[daily]", e);
+    }
+  }
+  return { companies: companies.length, changed, warrantyNotices, pushed, failed };
 }
 
 // ───────────── 사진 ─────────────

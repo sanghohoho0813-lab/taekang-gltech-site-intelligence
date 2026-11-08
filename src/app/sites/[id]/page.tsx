@@ -20,6 +20,7 @@ import { useFrameCommand } from "@/components/device/frameCommands";
 import { CostEntryList } from "@/components/domain/CostEntryList";
 import { MaterialTab } from "@/components/admin/MaterialTab";
 import { WarrantyCard } from "@/components/admin/WarrantyCard";
+import { ProgressHistory } from "@/components/admin/ProgressHistory";
 import { simulateApprovedClaims, type SiteFinancials } from "@/lib/domain/calc";
 import { receivableAging } from "@/lib/domain/risk";
 import { fmtDate, fmtDateTime, fmtEok, fmtMan, fmtManNum, fmtPct, fmtPp, fmtRelative } from "@/lib/domain/format";
@@ -202,7 +203,7 @@ export default function SiteDetailPage() {
       <div className="anim-fade-up" key={tab}>
         {tab === "overview" && <OverviewTab db={db} site={site} f={f} canSeeMoney={canSeeMoney} />}
         {tab === "cost" && <CostTab db={db} site={site} f={f} canSeeMoney={canSeeMoney} />}
-        {tab === "progress" && <ProgressTab site={site} f={f} canSeeMoney={canSeeMoney} />}
+        {tab === "progress" && <ProgressTab db={db} site={site} f={f} canSeeMoney={canSeeMoney} />}
         {tab === "material" && <MaterialTab db={db} site={site} />}
         {tab === "reports" && <ReportsTab db={db} site={site} />}
         {tab === "contract" && canSeeMoney && <ContractTab db={db} site={site} f={f} />}
@@ -369,7 +370,7 @@ function FieldSiteSummary({ db, site }: { db: DemoDB; site: Site }) {
 }
 
 function OverviewTab({ db, site, f, canSeeMoney }: { db: DemoDB; site: Site; f: SiteFinancials; canSeeMoney: boolean }) {
-  const reports = db.reports.filter((r) => r.siteId === site.id && r.status === "submitted").sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 3);
+  const reports = db.reports.filter((r) => r.siteId === site.id && r.status === "submitted" && !r.importBatchId).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 3);
   return (
     <div className="grid gap-5 @min-[900px]:grid-cols-2">
       <Card>
@@ -488,8 +489,9 @@ function CostTab({ db, site, f, canSeeMoney }: { db: DemoDB; site: Site; f: Site
   );
 }
 
-function ProgressTab({ site, f, canSeeMoney }: { site: Site; f: SiteFinancials; canSeeMoney: boolean }) {
+function ProgressTab({ db, site, f, canSeeMoney }: { db: DemoDB; site: Site; f: SiteFinancials; canSeeMoney: boolean }) {
   return (
+    <div className="space-y-5">
     <Card>
       <CardHeader title="공정 진행" sub={canSeeMoney ? `물리적 공정률 ${site.progressPct}% · 원가 진척률 ${fmtPct(f.costProgressPct)} (차이 ${fmtPp(f.costProgressPct - site.progressPct)})` : `공정률 ${site.progressPct}%`} />
       <ul className="divide-y divide-line px-5 pb-3">
@@ -515,11 +517,14 @@ function ProgressTab({ site, f, canSeeMoney }: { site: Site; f: SiteFinancials; 
         ))}
       </ul>
     </Card>
+    <ProgressHistory db={db} site={site} />
+    </div>
   );
 }
 
 function ReportsTab({ db, site }: { db: DemoDB; site: Site }) {
-  const reports = db.reports.filter((r) => r.siteId === site.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  // 엑셀로 옮긴 지난 공정 기록은 ‘공정’ 탭의 공정 변화 기록에서 본다 — 보고·사진 목록은 실제 현장 보고만 (D-71)
+  const reports = db.reports.filter((r) => r.siteId === site.id && !r.importBatchId).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   return (
     <Card>
       <CardHeader title="현장 보고·사진" sub={IS_LIVE ? "현장 보고에 첨부된 사진" : "사진은 이 브라우저 DEMO 저장소에 저장된 첨부만 표시"} />

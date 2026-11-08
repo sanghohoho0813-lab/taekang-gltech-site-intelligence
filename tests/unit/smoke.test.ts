@@ -28,6 +28,7 @@ function server(over: Over = {}) {
     "/api/admin/members": { status: 401 },
     "/api/client-error": { status: 401 },
     "/api/commands": { status: 401 },
+    "/api/cron/daily": { status: 401 },
     "/dashboard": { status: 307, headers: { location: "/login" } },
     "/api/setup": { body: { needsSetup: false, codeRequired: true } },
     "/sw.js": { headers: { "cache-control": "no-cache, max-age=0" } },
@@ -48,7 +49,12 @@ describe("배포 후 점검", () => {
     const cs = await smokeCheck("https://taekang.example", server());
     const { errors, text } = smokeSummary(cs);
     expect(errors, text).toBe(0);
-    expect(levels(cs)).toMatchObject({ https: "ok", mode: "ok", db: "ok", push: "ok", csp: "ok", headers: "ok", hsts: "ok", auth: "ok", origin: "ok", redirect: "ok", setup: "ok", sw: "ok", manifest: "ok" });
+    expect(levels(cs)).toMatchObject({ https: "ok", mode: "ok", db: "ok", push: "ok", csp: "ok", headers: "ok", hsts: "ok", auth: "ok", origin: "ok", redirect: "ok", setup: "ok", sw: "ok", manifest: "ok", cron: "ok" });
+  });
+
+  it("매일 점검 예약 작업: 비밀값 없음은 경고, 비밀값 없이 열리면 오류 (D-71)", async () => {
+    expect(levels(await smokeCheck("https://t.example", server({ "/api/cron/daily": { status: 503 } }))).cron).toBe("warn");
+    expect(levels(await smokeCheck("https://t.example", server({ "/api/cron/daily": { status: 200 } }))).cron).toBe("error");
   });
 
   it("DEMO 빌드·DB 끊김·http·CSP 없음은 오류", async () => {

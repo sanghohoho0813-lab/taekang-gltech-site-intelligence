@@ -98,7 +98,7 @@ export function AttendanceBoard() {
   const records = (db.attendance ?? []).filter((r) => r.workDate === date);
   const sites = db.sites.filter((s) => s.status === "active" || records.some((r) => r.siteId === s.id));
   const name = (id: string) => db.users.find((u) => u.id === id)?.name ?? "알 수 없음";
-  const reports = db.reports.filter((r) => r.reportDate === date || r.createdAt.slice(0, 10) === date).filter((r) => r.status !== "voided");
+  const reports = db.reports.filter((r) => r.reportDate === date || r.createdAt.slice(0, 10) === date).filter((r) => r.status !== "voided" && !r.importBatchId);
   const monthFrom = `${date.slice(0, 8)}01`;
   const month = periodSummary(db, monthFrom, date);
   const elsewhere = (u: string) => records.find((r) => r.userId === u);

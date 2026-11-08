@@ -71,6 +71,12 @@ export function checkEnv(env) {
     add(subj.startsWith("mailto:") || subj.startsWith("https://") ? "ok" : "warn", "push", subj ? "휴대폰 알림 설정됨" : "휴대폰 알림 설정됨 — VAPID_SUBJECT(mailto:담당 이메일)를 넣는 것을 권장합니다");
   }
 
+  // 매일 점검 예약 작업 (하자보증 만료 알림·위치 좌표 자동 삭제 · D-71) — 없으면 예약 작업이 거절되고 나머지는 동작
+  const cron = (env.CRON_SECRET ?? "").trim();
+  if (!cron) add("warn", "cron", "CRON_SECRET이 없습니다 — 매일 점검(하자보증 만료 알림)이 돌지 않습니다 (16자 이상 임의 문자열)");
+  else if (cron.length < 16) add("warn", "cron", "CRON_SECRET이 짧습니다 — 16자 이상이어야 매일 점검이 돕니다");
+  else add("ok", "cron", "매일 점검 비밀값 설정됨");
+
   if (env.DB_POOL_MAX !== undefined && env.DB_POOL_MAX !== "") {
     const n = Number(env.DB_POOL_MAX);
     if (!Number.isInteger(n) || n < 1 || n > 20) add("warn", "pool-max", "DB_POOL_MAX는 1~20 사이 정수 (기본 5)");

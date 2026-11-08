@@ -959,4 +959,39 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
       }
     }
   });
+
+  // 현장 상태를 바꾸므로 맨 끝에 (D-71)
+  test("하자보증(D-71): 현장 ‘준공’으로 바꾸며 준공일 → 매일 점검(비밀값 필요)이 만료 30일 전 알림 기록 · 발주처에는 알림 기록 없음", async ({ browser }) => {
+    const page = await login(browser, CEO.email, CEO.password);
+    const r = await page.request.post("/api/commands", { data: { name: "setSiteWarranty", args: { siteId, months: 1 } } });
+    expect(r.status()).toBe(200);
+    await page.goto("/admin?tab=sites");
+    await page.getByTestId("admin-site-row").filter({ hasText: "물류센터" }).getByTestId("site-edit").click();
+    const form = page.getByTestId("site-form");
+    await form.locator("#sf-status").selectOption("completed");
+    await expect(form.getByTestId("sf-warranty")).toContainText("하자보증 1개월 시작");
+    const today = await form.getByTestId("sf-warranty-done").inputValue();
+    expect(today).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    await form.getByTestId("site-save").click();
+    await expect(form).toHaveCount(0);
+    let site = (await (await page.request.get("/api/state")).json()).db.sites.find((s: { id: string }) => s.id === siteId);
+    expect(site).toMatchObject({ status: "completed", warranty: { months: 1, completedDate: today } });
+    // 매일 점검: 비밀값 없으면 거절, 맞으면 숫자만
+    expect((await page.request.get("/api/cron/daily")).status()).toBe(401);
+    const cron = await page.request.get("/api/cron/daily", { headers: { authorization: `Bearer ${process.env.E2E_CRON_SECRET}` } });
+    expect(cron.status()).toBe(200);
+    const body = await cron.json();
+    expect(body).toMatchObject({ ok: true, companies: 1, warrantyNotices: 1, failed: 0 });
+    expect(JSON.stringify(body)).not.toContain("물류센터");
+    site = (await (await page.request.get("/api/state")).json()).db.sites.find((s: { id: string }) => s.id === siteId);
+    expect(site.warranty.notices.map((n: { days: number }) => n.days)).toEqual([60, 30]);
+    // 두 번째 점검은 아무것도 보내지 않는다
+    expect(await (await page.request.get("/api/cron/daily", { headers: { authorization: `Bearer ${process.env.E2E_CRON_SECRET}` } })).json()).toMatchObject({ warrantyNotices: 0 });
+    await page.goto(`/sites/${siteId}?tab=requests`);
+    await expect(page.getByTestId("warranty-card")).toHaveAttribute("data-state", "soon");
+    await expect(page.getByTestId("warranty-notices")).toContainText("보낸 알림: 30일 전");
+    const partner = await login(browser, PARTNER.email, PARTNER.password);
+    const pst = (await (await partner.request.get("/api/state")).json()).db;
+    expect(JSON.stringify(pst.sites)).not.toContain("notices");
+  });
 });

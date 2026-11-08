@@ -11,7 +11,8 @@ import { useMe } from "@/lib/data/hooks";
 import { errorMessage } from "@/lib/data/commands";
 import { fmtDate, todayIso } from "@/lib/domain/format";
 import type { Site } from "@/lib/domain/types";
-import { WARRANTY_LABEL, monthsText, warrantyLine, warrantyStatus, type WarrantyState } from "@/lib/domain/warranty";
+import { WARRANTY_LABEL, WARRANTY_NOTICE_DAYS, monthsText, warrantyLine, warrantyStatus, type WarrantyState } from "@/lib/domain/warranty";
+import { IS_LIVE } from "@/lib/mode";
 import { Badge, Button, Card, CardHeader, Field, Notice, cx, inputCls } from "@/components/ui/primitives";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
@@ -27,6 +28,10 @@ export function WarrantyCard({ site, compact = false }: { site: Site; compact?: 
   const today = todayIso();
   const w = warrantyStatus(site, today);
   const hq = role === "ceo" || role === "manager";
+  // 실제로 보낸 알림: 같은 때 함께 표시한 단계(늦게 켜서 건너뛴 단계)는 가장 가까운 단계 하나로 (D-71)
+  const sent = Object.values(
+    (site.warranty?.notices ?? []).reduce<Record<string, { days: number; at: string }>>((acc, n) => ((acc[n.at] = !acc[n.at] || n.days < acc[n.at].days ? n : acc[n.at]), acc), {}),
+  ).sort((a, b) => a.at.localeCompare(b.at));
   return (
     <Card data-testid="warranty-card" data-state={w.state}>
       <CardHeader
@@ -58,6 +63,12 @@ export function WarrantyCard({ site, compact = false }: { site: Site; compact?: 
           </p>
         )}
         {w.state === "none" && hq && <p className="mt-1.5 text-[0.8rem] text-ink-3">계약서의 하자담보책임기간을 넣어 두면 하자 요청이 보증 기간 안인지 바로 보입니다.</p>}
+        {hq && (w.state === "active" || w.state === "soon") && (
+          <p className="mt-1.5 text-[0.78rem] text-ink-3" data-testid="warranty-notices">
+            만료 {WARRANTY_NOTICE_DAYS.join("·")}일 전에 본사 휴대폰으로 한 번씩 알립니다{IS_LIVE ? "" : " (실제 운영판)"}
+            {sent.length > 0 && <> · 보낸 알림: {sent.map((n) => `${n.days}일 전 (${fmtDate(n.at)})`).join(", ")}</>}
+          </p>
+        )}
         {hq && site.warranty?.note && <p className="mt-1.5 text-[0.8rem] text-ink-2">메모(내부): {site.warranty.note}</p>}
       </div>
       {edit && <WarrantyModal site={site} onClose={() => setEdit(false)} />}

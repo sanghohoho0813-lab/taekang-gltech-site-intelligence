@@ -40,6 +40,8 @@ export interface SaveSiteInput {
   /** basePct: 수정 창을 열 때의 공정률 — 그 뒤 현장이 바꿨고 이 창에서는 손대지 않았으면 현장 값을 지킨다 (D-65 점검 반영) */
   stages?: { id?: string; name: string; startDate: string; endDate: string; progressPct?: number; basePct?: number }[];
   illustration?: Site["illustration"];
+  /** ‘준공’으로 바꿀 때 하자보증 준공(인도)일 — 보증 기간은 넣었는데 준공일이 비어 있을 때만 (D-71) */
+  warrantyCompletedDate?: string;
   idempotencyKey?: string;
 }
 
@@ -70,6 +72,18 @@ export function saveSite(db0: DemoDB, input: SaveSiteInput, ctx: Ctx) {
   // 착공일을 하자보증 준공일 뒤로 옮기지 않게 (D-70 점검 반영)
   const wDone = input.id ? db0.sites.find((s) => s.id === input.id)?.warranty?.completedDate : undefined;
   if (wDone && DATE_RE.test(input.startDate ?? "") && input.startDate > wDone) errors.startDate = `하자보증 준공일(${wDone})보다 늦을 수 없습니다.`;
+  // 현장 ‘준공’ ↔ 하자보증 준공일 (D-71): 보증 기간이 있고 준공일이 비어 있을 때만 같이 넣는다 — 이미 있는 준공일은 현장 상세에서 고친다
+  const wSite = input.id ? db0.sites.find((s) => s.id === input.id) : undefined;
+  const wDate = input.warrantyCompletedDate;
+  if (wDate !== undefined && wDate !== null && wDate !== "") {
+    if (typeof wDate !== "string" || !DATE_RE.test(wDate)) errors.warrantyCompletedDate = "날짜 형식을 확인해 주세요.";
+    else if (input.status !== "completed") errors.warrantyCompletedDate = "현장 상태가 ‘준공’일 때만 넣을 수 있습니다.";
+    else if (!wSite?.warranty) errors.warrantyCompletedDate = "하자보증 기간을 먼저 넣어 주세요 (현장 상세 ‘발주처·하자보증’).";
+    else if (wSite.warranty.completedDate) errors.warrantyCompletedDate = "이미 준공일이 있습니다 — 현장 상세 ‘발주처·하자보증’에서 고치세요.";
+    else if (wDate > todayIso(ctx.now)) errors.warrantyCompletedDate = "준공일은 오늘이나 그 전으로 넣어 주세요.";
+    else if (!pastCalendarDate(wDate, ctx)) errors.warrantyCompletedDate = "없는 날짜입니다. 다시 골라 주세요.";
+    else if (DATE_RE.test(input.startDate ?? "") && wDate < input.startDate) errors.warrantyCompletedDate = "준공일이 착공일보다 빠릅니다.";
+  }
   if (input.fieldUserId && !db0.users.some((u) => u.id === input.fieldUserId && u.role === "field")) errors.fieldUserId = "현장 담당자를 다시 선택해주세요.";
   if (input.managerUserId && !db0.users.some((u) => u.id === input.managerUserId && (u.role === "manager" || u.role === "ceo"))) errors.managerUserId = "본사 담당자를 다시 선택해주세요.";
   const stages = (input.stages ?? []).filter((s) => s.name?.trim());
@@ -135,6 +149,8 @@ export function saveSite(db0: DemoDB, input: SaveSiteInput, ctx: Ctx) {
       illustration: input.illustration ?? site.illustration,
     });
   }
+  const warrantyStart = !isNew && site.warranty && !site.warranty.completedDate && typeof wDate === "string" && wDate ? wDate : null;
+  if (warrantyStart) site.warranty = { ...site.warranty!, completedDate: warrantyStart, setAt: at, setBy: ctx.userId };
 
   // 계약 — 원 계약금액과 실행예산 합계(계획 이익률의 기준)
   const contract = db.contracts.find((c) => c.siteId === id);
@@ -164,7 +180,7 @@ export function saveSite(db0: DemoDB, input: SaveSiteInput, ctx: Ctx) {
     "site",
     isNew
       ? `${shortName} 현장 등록 — 계약 ${fmtEok(input.contractAmount)} · 실행예산 ${fmtEok(budgetSum)}`
-      : `${shortName} 현장 정보 수정${prevAmount !== undefined && prevAmount !== input.contractAmount ? ` — 원 계약 ${fmtEok(prevAmount)} → ${fmtEok(input.contractAmount)}` : ""}`,
+      : `${shortName} 현장 정보 수정${prevAmount !== undefined && prevAmount !== input.contractAmount ? ` — 원 계약 ${fmtEok(prevAmount)} → ${fmtEok(input.contractAmount)}` : ""}${warrantyStart ? ` · 하자보증 준공 ${warrantyStart.replace(/-/g, ".")}부터` : ""}`,
     id,
     `/sites/${id}`,
   );
@@ -357,7 +373,10 @@ export function setSiteWarranty(db0: DemoDB, input: WarrantyInput, ctx: Ctx) {
   const note = typeof input.note === "string" ? input.note.trim() : "";
   if (note.length > 80) errors.note = "메모는 80자 이내";
   if (Object.keys(errors).length) throw new CommandError("입력값을 확인해주세요.", "VALIDATION", errors);
-  site.warranty = { months: months as number, ...(completed ? { completedDate: completed } : {}), ...(note ? { note } : {}), setAt: nowIso(ctx), setBy: ctx.userId };
+  // 기간·준공일이 그대로면 보낸 만료 알림 기록도 그대로 (메모만 고쳐도 같은 알림이 다시 가지 않게 · D-71)
+  const prev = site.warranty;
+  const keepNotices = prev?.notices?.length && prev.months === months && (prev.completedDate ?? "") === completed ? { notices: prev.notices } : {};
+  site.warranty = { months: months as number, ...(completed ? { completedDate: completed } : {}), ...(note ? { note } : {}), setAt: nowIso(ctx), setBy: ctx.userId, ...keepNotices };
   log(db, ctx, "site", `${site.shortName} 하자보증 ${months}개월${completed ? ` · 준공 ${completed.replace(/-/g, ".")}` : " · 준공 전"}`, site.id, `/sites/${site.id}?tab=requests`);
   touch(db, ctx);
   return { db, result: {} };

@@ -103,7 +103,7 @@ export function launchReport(db: DemoDB, members: MemberInfo[] | null): LaunchRe
       const consent = consentState(db, user.id).state;
       const firstLogin: PersonLaunch["firstLogin"] = !members ? "unknown" : m ? (m.mustChangePassword ? "pending" : "done") : "unknown";
       const firstIn = firstOf((db.attendance ?? []).filter((r) => r.userId === user.id).map((r) => r.workDate));
-      const firstReport = firstOf(db.reports.filter((r) => r.createdBy === user.id && r.status !== "voided").map((r) => r.reportDate));
+      const firstReport = firstOf(db.reports.filter((r) => r.createdBy === user.id && r.status !== "voided" && !r.importBatchId).map((r) => r.reportDate));
       const todo: string[] = [];
       if (!mySites.length) todo.push("담당 현장 지정");
       if (firstLogin === "pending") todo.push("첫 로그인(새 비밀번호)");

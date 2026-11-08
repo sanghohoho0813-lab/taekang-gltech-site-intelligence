@@ -375,15 +375,16 @@ export function voidReport(db0: DemoDB, reportId: string, ctx: Ctx) {
   const after = siteFinancials(db, r.siteId);
   const site = requireSite(db, r.siteId);
   // 이 보고로 바뀐 공정률·공정 단계·작업지시도 되돌린다 — 그 뒤 다른 사람이 바꾸지 않았을 때만 (D-65 점검 반영)
+  // 엑셀로 옮긴 지난 기록은 지금 공정률을 바꾼 적이 없으므로 기록만 취소한다 (D-71)
   const undone: string[] = [];
-  for (const c of r.stages ?? []) {
+  for (const c of r.importBatchId ? [] : (r.stages ?? [])) {
     const st = site.stages.find((x) => x.id === c.stageId);
     if (st && st.progressPct === c.to) {
       site.stages = site.stages.map((x) => (x.id === c.stageId ? { ...x, progressPct: c.from } : x));
       undone.push(`${c.name} ${c.to}% → ${c.from}%`);
     }
   }
-  if (r.progress && site.progressPct === r.progress.to) {
+  if (!r.importBatchId && r.progress && site.progressPct === r.progress.to) {
     site.progressPct = r.progress.from;
     undone.push(`공정률 ${r.progress.to}% → ${r.progress.from}%`);
   }

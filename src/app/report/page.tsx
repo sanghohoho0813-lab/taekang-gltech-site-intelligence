@@ -31,7 +31,7 @@ export default function ReportPage() {
   if (!db || !total || !base) return <PageSkeleton />;
 
   const sessionEntries = db.costEntries.filter((e) => e.source !== "SEED").sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  const sessionReports = db.reports.filter((r) => !r.id.startsWith("rpt-seed")).slice(0, 10);
+  const sessionReports = db.reports.filter((r) => !r.id.startsWith("rpt-seed") && !r.importBatchId).slice(0, 10);
   const doneActions = db.actions.filter((a) => a.status === "done");
   const openActions = db.actions.filter((a) => ["recommended", "assigned", "in_progress", "on_hold"].includes(a.status));
   const unhandled = signals.filter((s) => !db.actions.some((a) => a.signalKey === s.key && a.status !== "dismissed"));

@@ -54,7 +54,8 @@ export function acceptanceItems(db: DemoDB, stage: StageNo, from: string, to: st
   const inD = (d: string | undefined) => !!d && d >= from && d <= to;
   const field = db.users.filter((u) => u.role === "field" && !u.inactive);
   const att = (db.attendance ?? []).filter((r) => inD(r.workDate));
-  const reports = db.reports.filter((r) => r.status !== "voided" && inR(r.createdAt));
+  // 검수 근거는 실제 현장 보고만 — 엑셀로 옮긴 지난 공정 기록은 빼고 (D-71)
+  const reports = db.reports.filter((r) => r.status !== "voided" && !r.importBatchId && inR(r.createdAt));
   const orders = (db.workOrders ?? []).filter((w) => inR(w.createdAt));
   // 직원이 직접 낸 요청만 S2 근거로 센다 — 통신 불량 자동 요청은 따로 (리뷰 반영 D-55)
   const allFixes = (db.attendanceRequests ?? []).filter((q) => inR(q.createdAt));
