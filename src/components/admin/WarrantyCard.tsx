@@ -11,7 +11,7 @@ import { useMe } from "@/lib/data/hooks";
 import { errorMessage } from "@/lib/data/commands";
 import { fmtDate, todayIso } from "@/lib/domain/format";
 import type { Site } from "@/lib/domain/types";
-import { WARRANTY_LABEL, WARRANTY_NOTICE_DAYS, monthsText, warrantyLine, warrantyStatus, type WarrantyState } from "@/lib/domain/warranty";
+import { WARRANTY_LABEL, monthsText, warrantyLine, warrantyNextNotice, warrantyStatus, type WarrantyState } from "@/lib/domain/warranty";
 import { IS_LIVE } from "@/lib/mode";
 import { Badge, Button, Card, CardHeader, Field, Notice, cx, inputCls } from "@/components/ui/primitives";
 import { Modal } from "@/components/ui/Modal";
@@ -29,6 +29,7 @@ export function WarrantyCard({ site, compact = false }: { site: Site; compact?: 
   const w = warrantyStatus(site, today);
   const hq = role === "ceo" || role === "manager";
   // 실제로 보낸 알림: 같은 때 함께 표시한 단계(늦게 켜서 건너뛴 단계)는 가장 가까운 단계 하나로 (D-71)
+  const next = warrantyNextNotice(site, today);
   const sent = Object.values(
     (site.warranty?.notices ?? []).reduce<Record<string, { days: number; at: string }>>((acc, n) => ((acc[n.at] = !acc[n.at] || n.days < acc[n.at].days ? n : acc[n.at]), acc), {}),
   ).sort((a, b) => a.at.localeCompare(b.at));
@@ -64,9 +65,12 @@ export function WarrantyCard({ site, compact = false }: { site: Site; compact?: 
         )}
         {w.state === "none" && hq && <p className="mt-1.5 text-[0.8rem] text-ink-3">계약서의 하자담보책임기간을 넣어 두면 하자 요청이 보증 기간 안인지 바로 보입니다.</p>}
         {hq && (w.state === "active" || w.state === "soon") && (
+          // 다음 알림이 언제인지 날짜로 (이미 지난 단계를 약속하지 않게 · D-71 점검 반영)
           <p className="mt-1.5 text-[0.78rem] text-ink-3" data-testid="warranty-notices">
-            만료 {WARRANTY_NOTICE_DAYS.join("·")}일 전에 본사 휴대폰으로 한 번씩 알립니다{IS_LIVE ? "" : " (실제 운영판)"}
-            {sent.length > 0 && <> · 보낸 알림: {sent.map((n) => `${n.days}일 전 (${fmtDate(n.at)})`).join(", ")}</>}
+            만료 알림(대표·공무 휴대폰):{" "}
+            {next ? (next.now ? `다음 아침 점검 때 (${next.daysLeft === 0 ? "오늘 만료" : `만료 ${next.daysLeft}일 전`})` : `다음 ${fmtDate(next.date)} (만료 ${next.days}일 전)`) : "남은 알림 없음"}
+            {sent.length > 0 && <> · 보낸 알림: {sent.map((n) => `${n.days}일 전 단계 (${fmtDate(n.at)})`).join(", ")}</>}
+            {!IS_LIVE && <span className="whitespace-nowrap"> · 시연판은 보내지 않음</span>}
           </p>
         )}
         {hq && site.warranty?.note && <p className="mt-1.5 text-[0.8rem] text-ink-2">메모(내부): {site.warranty.note}</p>}

@@ -53,7 +53,7 @@ export function GlobalSearch({ className }: { className?: string }) {
         if (r.title.toLowerCase().includes(k)) out.push({ href: "/insights#requests", label: r.title, sub: "발주처 요청", kind: "요청" });
     }
     for (const r of db.reports)
-      if (r.status === "submitted" && (r.workDone + r.issues).toLowerCase().includes(k))
+      if (r.status === "submitted" && !r.importBatchId && (r.workDone + r.issues).toLowerCase().includes(k))
         out.push({ href: `/sites/${r.siteId}`, label: r.workDone.slice(0, 40), sub: `현장보고 · ${r.reportDate}`, kind: "보고" });
     return out.filter((o) => canAccess(role, o.href.split("#")[0])).slice(0, 8);
   }, [db, q, role]);

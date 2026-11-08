@@ -8,7 +8,7 @@ import { siteFinancials, snapshotOf } from "@/lib/domain/calc";
 import { fmtMan, todayIso } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
 import { IMPORT_SPECS, planImport, type BillingRow, type ChangeRow, type CostRow, type CrewRow, type ImportKind, type MaterialRow, type ProgressRow, type RateRow } from "@/lib/domain/importers";
-import { CommandError, claimKey, clone, log, nowIso, touch, type Ctx } from "./commands";
+import { CommandError, claimKey, clone, log, nowIso, touch, unlinkImportedProgress, type Ctx } from "./commands";
 
 export interface ImportDataInput {
   kind: ImportKind;
@@ -45,6 +45,7 @@ export function importData(db0: DemoDB, input: ImportDataInput, ctx: Ctx) {
   const at = nowIso(ctx);
   const sites = new Set<string>();
   const batchId = uid("imp");
+  const relinked: NonNullable<ImportBatch["relinked"]> = [];
 
   if (plan.kind === "billing") {
     for (const r of plan.rows as BillingRow[]) {
@@ -109,7 +110,8 @@ export function importData(db0: DemoDB, input: ImportDataInput, ctx: Ctx) {
         id: uid("rpt"),
         siteId,
         reportDate: date,
-        workDone: notes.length ? notes.join(" · ") : "지난 공정 진행 기록",
+        // 메모가 없으면 비워 둔다 — ‘지난 공정 진행 기록’ 같은 자리 글이 공사일보 작업 내용으로 찍히던 문제 (D-71 점검 반영)
+        workDone: notes.join(" · ").slice(0, 500),
         issues: "",
         tomorrowPlan: "",
         photoIds: [],
@@ -126,6 +128,15 @@ export function importData(db0: DemoDB, input: ImportDataInput, ctx: Ctx) {
     // 보고 목록은 새것이 앞 — 지난 기록은 뒤에, 오래된 것일수록 더 뒤에
     added.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     db.reports = [...db.reports, ...added];
+    // 바로 뒤의 앞선 이관 기록은 시작 값을 새 값으로 다시 잇는다 (더 이른 날짜를 나중에 넣어도 변화가 맞게)
+    for (const r of plan.rows as ProgressRow[]) {
+      if (!r.relink) continue;
+      const rep = db.reports.find((x) => x.id === r.relink!.reportId);
+      const c = rep ? (r.stageId ? rep.stages?.find((x) => x.stageId === r.stageId) : rep.progress) : undefined;
+      if (!rep || !c) continue;
+      relinked.push({ reportId: rep.id, stageId: r.stageId, old: c.from, next: r.relink.from });
+      c.from = r.relink.from;
+    }
   } else if (plan.kind === "cost") {
     for (const r of plan.rows as CostRow[]) {
       sites.add(r.siteId);
@@ -174,21 +185,24 @@ export function importData(db0: DemoDB, input: ImportDataInput, ctx: Ctx) {
     siteIds: [...sites],
     ...(rebased.length ? { baselineDelta } : {}),
     ...(plan.kind === "rates" ? { prevTeamRates: (db0.settings?.teamRates ?? []).map((t) => ({ ...t })), rateTeams: (plan.rows as RateRow[]).map((r) => r.team) } : {}),
+    ...(relinked.length ? { relinked } : {}),
   };
   db.importBatches = [batch, ...(db.importBatches ?? [])].slice(0, 100);
 
   const names = [...sites].map((id) => db.sites.find((s) => s.id === id)?.shortName ?? id);
+  const unchanged = plan.unchanged ?? 0;
+  const dups = plan.duplicates.length - unchanged;
   const amountNote = plan.summary.some((s) => s.amount) && plan.kind !== "crew" && plan.kind !== "material" ? ` · 합계 ${fmtMan(plan.summary.reduce((a, s) => a + (s.amount ?? 0), 0))}` : "";
   log(
     db,
     ctx,
     "import",
-    `자료 가져오기 — ${IMPORT_SPECS[plan.kind].title} ${plan.rows.length}건${names.length ? ` (${names.join(", ")})` : ""}${amountNote}${plan.duplicates.length ? ` · 중복 ${plan.duplicates.length}건 건너뜀` : ""}${rebased.length ? " · 손익 기준선 재설정" : ""}`,
+    `자료 가져오기 — ${IMPORT_SPECS[plan.kind].title} ${plan.rows.length}건${names.length ? ` (${names.join(", ")})` : ""}${amountNote}${dups ? ` · 중복 ${dups}건 건너뜀` : ""}${unchanged ? ` · 변화 없는 ${unchanged}건 뺌` : ""}${rebased.length ? " · 손익 기준선 재설정" : ""}`,
     sites.size === 1 ? [...sites][0] : undefined,
     "/data",
   );
   touch(db, ctx);
-  return { db, result: { batchId, added: plan.rows.length, skipped: plan.duplicates.length, siteIds: [...sites], rebased } };
+  return { db, result: { batchId, added: plan.rows.length, skipped: plan.duplicates.length, unchanged, siteIds: [...sites], rebased } };
 }
 
 function renumberRounds(db: DemoDB, siteIds: Iterable<string>) {
@@ -255,6 +269,17 @@ export function undoImport(db0: DemoDB, input: { batchId: string }, ctx: Ctx) {
   } else if (b0.kind === "progress") {
     // 지난 기록만 지운다 — 지금 공정률은 가져올 때 바꾸지 않았으므로 되돌릴 것이 없다
     removed = db.reports.filter((r) => mine(r) && r.status !== "voided").reduce((a, r) => a + (r.stages?.length ?? 0) + (r.progress ? 1 : 0), 0);
+    // 다시 이었던 앞선 이관 기록의 시작 값을 되돌린다 (그 사이 다른 값으로 바뀌지 않았을 때만)
+    for (const l of b0.relinked ?? []) {
+      const rep = db.reports.find((x) => x.id === l.reportId);
+      const c = rep ? (l.stageId ? rep.stages?.find((x) => x.stageId === l.stageId) : rep.progress) : undefined;
+      if (c && c.from === l.next) c.from = l.old;
+    }
+    // 뒤에 나중 묶음의 기록이 이어져 있으면 앞 값으로 다시 잇고 뺀다 (늦은 날짜부터)
+    for (const r of db.reports.filter((x) => mine(x) && x.status !== "voided").sort((a, b) => b.reportDate.localeCompare(a.reportDate) || b.createdAt.localeCompare(a.createdAt))) {
+      unlinkImportedProgress(db, r);
+      db.reports = db.reports.filter((x) => x.id !== r.id);
+    }
     db.reports = db.reports.filter((r) => !mine(r));
   } else if (b0.kind === "cost") {
     for (const e of db.costEntries.filter(mine)) {

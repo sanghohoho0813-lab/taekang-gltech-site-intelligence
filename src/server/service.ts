@@ -17,7 +17,7 @@ import { ROLE_LABEL } from "@/lib/domain/labels";
 import { createSeed } from "@/lib/data/seed";
 import { uid } from "@/lib/domain/ids";
 import { getDb, type Tx } from "./sql";
-import { deliver } from "./push";
+import { deliver, pushReady } from "./push";
 import { noticesFor } from "@/lib/domain/notify";
 import { COLLECTIONS, loadState, persistState } from "./state";
 import { authorize, fieldSiteIds, ForbiddenError, sanitizeResult, viewFor } from "./authz";
@@ -186,7 +186,8 @@ export async function runDailyJobs(now = new Date()): Promise<{ companies: numbe
         await tx.query(`select rev from companies where id = $1 for update`, [id]);
         const loaded = await loadState(tx, id);
         const retained = applyLocationRetention(loaded, now);
-        const out = runDailyChecks(retained, now);
+        // 알림 키가 없으면 하자보증 만료 알림은 건너뛴다 (‘보낸 알림’으로 남지 않게) — 위치 좌표 정리는 그대로
+        const out = pushReady() ? runDailyChecks(retained, now) : { db: retained, notices: [], warranty: [], changed: false };
         if (out.db === loaded) return null;
         await persistState(tx, id, loaded, out.db);
         return out;

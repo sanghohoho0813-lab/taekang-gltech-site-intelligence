@@ -98,6 +98,19 @@ describe("매일 점검 — 하자보증 만료 알림", () => {
     expect(await svc.runDailyJobs(shift(end, -30))).toMatchObject({ changed: 1, warrantyNotices: 1, pushed: 2 });
     expect(sent[0].payload.title).toBe("하자보증 만료 30일 전");
   });
+
+  it("알림 키가 없으면 ‘보낸 알림’으로 남기지 않고, 켜진 뒤 첫 점검에 보낸다", async () => {
+    push.setPushSender(null);
+    expect(await svc.runDailyJobs(shift(end, -7))).toMatchObject({ warrantyNotices: 0, pushed: 0 });
+    expect((await svc.getView(ceo)).db.sites.find((s) => s.id === "site-b")!.warranty!.notices!.map((n) => n.days)).toEqual([60, 30]);
+    push.setPushSender(async (sub, payload) => {
+      sent.push({ endpoint: sub.endpoint, payload: JSON.parse(payload) });
+      return { statusCode: 201 };
+    });
+    sent.length = 0;
+    expect(await svc.runDailyJobs(shift(end, -6))).toMatchObject({ warrantyNotices: 1, pushed: 2 });
+    expect(sent[0].payload.title).toBe("하자보증 만료 6일 전");
+  });
 });
 
 describe("예약 작업 주소 /api/cron/daily", () => {

@@ -2,7 +2,7 @@
 
 /** 본사 — 자료 이관·점검 (계약 3단계 ‘실제 자료 연결’): 현장별 준비 점검 + 엑셀(CSV) 가져오기 */
 import Link from "next/link";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CircleAlert, CircleCheck, CircleDashed, Download, FileUp, Undo2, Upload } from "lucide-react";
 import { useMe, userLabel } from "@/lib/data/hooks";
 import { run } from "@/lib/data/store";
@@ -31,6 +31,12 @@ export function DataBoard() {
   const { db } = useMe();
   const [kind, setKind] = useState<ImportKind>("billing");
   const importRef = useRef<HTMLDivElement>(null);
+  // 다른 화면에서 ‘/data?kind=progress#import’로 오면 그 종류를 골라 가져오기 칸으로 (D-71 점검 반영)
+  useEffect(() => {
+    const k = new URLSearchParams(window.location.search).get("kind");
+    if (k && k in IMPORT_SPECS) setKind(k as ImportKind);
+    if (k || window.location.hash === "#import") setTimeout(() => importRef.current?.scrollIntoView({ block: "start" }), 300);
+  }, [db !== null]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!db) return <PageSkeleton />;
   const today = todayIso();
   const r = readinessAll(db, today);
@@ -89,7 +95,7 @@ export function DataBoard() {
           ))}
         </div>
       </Card>
-      <div ref={importRef} className="scroll-mt-24">
+      <div ref={importRef} id="import" className="scroll-mt-24">
         <ImportCard kind={kind} setKind={setKind} />
       </div>
       <BatchList />
@@ -146,7 +152,7 @@ function ImportCard({ kind, setKind }: { kind: ImportKind; setKind: (k: ImportKi
   const [rebaseline, setRebaseline] = useState(true);
   const [busy, setBusy] = useState(false);
   const [key, setKey] = useState(() => uid("idem"));
-  const [done, setDone] = useState<{ added: number; skipped: number; kind: ImportKind; siteIds: string[] } | null>(null);
+  const [done, setDone] = useState<{ added: number; skipped: number; unchanged: number; kind: ImportKind; siteIds: string[] } | null>(null);
   const spec = IMPORT_SPECS[kind];
   const plan = useMemo(() => (db && text.trim() ? planImport(db, kind, text, todayIso()) : null), [db, kind, text]);
   if (!db) return null;
@@ -165,8 +171,9 @@ function ImportCard({ kind, setKind }: { kind: ImportKind; setKind: (k: ImportKi
     setBusy(true);
     try {
       const r = await run("importData", { kind, text, idempotencyKey: key, rebaseline });
-      setDone({ added: r.added, skipped: r.skipped, kind, siteIds: r.siteIds });
-      toast.push({ tone: "ok", title: `${spec.title} ${r.added}건을 넣었습니다`, desc: r.skipped ? `이미 있던 ${r.skipped}건은 건너뛰었습니다` : undefined });
+      const unchanged = r.unchanged ?? 0;
+      setDone({ added: r.added, skipped: r.skipped - unchanged, unchanged, kind, siteIds: r.siteIds });
+      toast.push({ tone: "ok", title: `${spec.title} ${r.added}건을 넣었습니다`, desc: [r.skipped - unchanged ? `이미 있던 ${r.skipped - unchanged}건은 건너뜀` : "", unchanged ? `변화 없는 ${unchanged}건은 넣지 않음` : ""].filter(Boolean).join(" · ") || undefined });
       reset();
     } catch (e) {
       toast.push({ tone: "err", title: e instanceof CommandError ? e.message : "가져오지 못했습니다" });
@@ -183,7 +190,7 @@ function ImportCard({ kind, setKind }: { kind: ImportKind; setKind: (k: ImportKi
     cost: { href: "/sites", label: "현장 관리 → 원가에서 확인" },
     material: { href: "/sites", label: "현장 관리 → 현장 상세 ‘자재’에서 확인" },
     // 한 현장만 넣었으면 그 현장의 공정 화면으로 바로 (D-71)
-    progress: done?.siteIds.length === 1 ? { href: `/sites/${done.siteIds[0]}?tab=progress`, label: "현장 상세 ‘공정’ → 공정 변화 기록에서 확인" } : { href: "/sites", label: "현장 관리 → 현장 상세 ‘공정’에서 확인" },
+    progress: done?.siteIds.length === 1 ? { href: `/sites/${done.siteIds[0]}?tab=progress`, label: "현장 상세 ‘공정’ → 공정 진행 이력에서 확인" } : { href: "/sites", label: "현장 관리 → 현장 상세 ‘공정’에서 확인" },
   };
   return (
     <Card data-testid="import-card">
@@ -198,7 +205,18 @@ function ImportCard({ kind, setKind }: { kind: ImportKind; setKind: (k: ImportKi
           />
         </div>
         <p className="text-[0.86rem] text-ink-2">{spec.desc}</p>
-        <div tabIndex={0} role="region" aria-label="양식 열 설명 (가로 스크롤)" className="relative overflow-x-auto rounded-xl border border-line">
+        {/* 휴대폰: 열 설명을 세로 목록으로 (표가 옆으로 잘려 ‘예’ 칸이 안 보이던 문제 · D-71 점검 반영) */}
+        <ul className="divide-y divide-line rounded-xl border border-line @min-[560px]:hidden" data-testid="import-columns-list">
+          {spec.columns.map((c) => (
+            <li key={c.key} className="px-3 py-2 text-[0.82rem]">
+              <b>{c.label}</b>
+              {c.required ? <span className="text-err"> *</span> : <span className="text-ink-3"> (선택)</span>}
+              <span className="block text-ink-2">{c.desc}</span>
+              {c.example && <span className="num block text-[0.76rem] text-ink-3">예) {c.example}</span>}
+            </li>
+          ))}
+        </ul>
+        <div tabIndex={0} role="region" aria-label="양식 열 설명 (가로 스크롤)" className="relative hidden overflow-x-auto rounded-xl border border-line @min-[560px]:block">
           <table className="w-full min-w-[34rem] text-[0.8rem]">
             <thead>
               <tr className="bg-surface-2 text-left text-ink-3">
@@ -222,13 +240,13 @@ function ImportCard({ kind, setKind }: { kind: ImportKind; setKind: (k: ImportKi
           </table>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button size="sm" icon={<Download size={15} />} onClick={() => downloadBytes(`양식_${spec.title.replace(/[^\w가-힣]/g, "")}.xlsx`, importTemplateXlsx(kind), XLSX_MIME)} data-testid="import-template">
+          <Button size="sm" icon={<Download size={15} />} onClick={() => downloadBytes(`양식_${spec.title.replace(/[^\w가-힣]/g, "")}.xlsx`, importTemplateXlsx(kind, db), XLSX_MIME)} className="[@media(pointer:coarse)]:min-h-11" data-testid="import-template">
             엑셀 양식 내려받기
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => downloadCsv(`양식_${spec.title.replace(/[^\w가-힣]/g, "")}.csv`, importTemplate(kind))} data-testid="import-template-csv">
+          <Button size="sm" variant="ghost" onClick={() => downloadCsv(`양식_${spec.title.replace(/[^\w가-힣]/g, "")}.csv`, importTemplate(kind))} className="[@media(pointer:coarse)]:min-h-11" data-testid="import-template-csv">
             CSV 양식
           </Button>
-          <Button size="sm" variant="soft" icon={<Upload size={15} />} onClick={() => fileRef.current?.click()} data-testid="import-file-btn">
+          <Button size="sm" variant="soft" icon={<Upload size={15} />} onClick={() => fileRef.current?.click()} className="[@media(pointer:coarse)]:min-h-11" data-testid="import-file-btn">
             엑셀·CSV 파일 올리기
           </Button>
           <input
@@ -297,7 +315,7 @@ function ImportCard({ kind, setKind }: { kind: ImportKind; setKind: (k: ImportKi
               </Notice>
             )}
             {plan.duplicates.length > 0 && (
-              <Notice tone="warn" title={`이미 있는 기록 ${plan.duplicates.length}건은 건너뜁니다`}>
+              <Notice tone="warn" title={plan.unchanged ? `넣지 않는 줄 ${plan.duplicates.length}건 (이미 있는 기록 ${plan.duplicates.length - plan.unchanged} · 변화 없음 ${plan.unchanged})` : `이미 있는 기록 ${plan.duplicates.length}건은 건너뜁니다`}>
                 <ul className="mt-1 space-y-0.5 text-[0.8rem]" data-testid="import-dups">
                   {plan.duplicates.slice(0, 8).map((d) => (
                     <li key={d.line}>
@@ -323,14 +341,14 @@ function ImportCard({ kind, setKind }: { kind: ImportKind; setKind: (k: ImportKi
                   ))}
                 </ul>
                 {kind === "progress" && (
-                  // 들어갈 공정 변화를 날짜 순으로 미리 (앞 기록 → 이 값)
+                  // 들어갈 공정 변화를 날짜 순으로 미리 (앞 기록 → 이 값 · 단계의 첫 줄은 ‘첫 기록’)
                   <ul className="mt-2 space-y-0.5 text-[0.8rem] text-ink-3" data-testid="import-progress-rows">
                     {[...(plan.rows as ProgressRow[])]
                       .sort((a, b) => a.date.localeCompare(b.date) || a.line - b.line)
                       .slice(0, 8)
                       .map((r) => (
                         <li key={r.line} className="num">
-                          {r.date} · {db.sites.find((x) => x.id === r.siteId)?.shortName} · {r.stageName} {r.from}% → <b className="text-ink-2">{r.pct}%</b>
+                          {r.date} · {db.sites.find((x) => x.id === r.siteId)?.shortName} · {r.stageName} {r.first ? <><b className="text-ink-2">{r.pct}%</b> (첫 기록)</> : <>{r.from}% → <b className="text-ink-2">{r.pct}%</b></>}
                         </li>
                       ))}
                     {plan.rows.length > 8 && <li>… 외 {plan.rows.length - 8}건</li>}
@@ -354,9 +372,9 @@ function ImportCard({ kind, setKind }: { kind: ImportKind; setKind: (k: ImportKi
           </div>
         )}
         {done && (
-          <Notice tone="ok" title={`${IMPORT_SPECS[done.kind].title} ${done.added}건을 넣었습니다${done.skipped ? ` (중복 ${done.skipped}건 건너뜀)` : ""}`}>
+          <Notice tone="ok" title={`${IMPORT_SPECS[done.kind].title} ${done.added}건을 넣었습니다${done.skipped ? ` (중복 ${done.skipped}건 건너뜀)` : ""}${done.unchanged ? ` (변화 없는 ${done.unchanged}건 뺌)` : ""}`}>
             <span data-testid="import-done">
-              활동 이력에 남았습니다. 잘못 넣었다면 해당 화면에서 취소·수정하세요.{" "}
+              활동 이력에 남았습니다. 잘못 넣었으면 아래 ‘최근 가져오기’에서 7일 안에 통째로 취소할 수 있습니다.{" "}
               <Link href={after[done.kind].href} className="font-bold text-theme-ink underline">
                 {after[done.kind].label}
               </Link>
@@ -411,17 +429,18 @@ function BatchList() {
                 <Badge tone="neutral">취소됨</Badge>
               ) : canUndo ? (
                 confirm === b.id ? (
-                  <span className="flex items-center gap-1.5">
-                    <span className="text-[0.78rem] font-semibold text-err">정말 취소할까요?</span>
-                    <Button size="sm" variant="ghost" onClick={() => setConfirm(null)}>
-                      아니요
+                  // 무엇이 지워지는지 말하고, ‘취소’ 두 뜻(창 닫기·지우기)이 섞이지 않게 (D-71 점검 반영)
+                  <span className="flex basis-full flex-wrap items-center justify-end gap-1.5 @min-[560px]:basis-auto" data-testid="import-undo-ask">
+                    <span className="text-[0.78rem] font-semibold text-err">{IMPORT_SPECS[b.kind].title} {b.count}건을 되돌릴까요?{b.kind === "progress" ? " 공정 진행 이력·공사일보·발주처 보고서에서 빠집니다." : ""}</span>
+                    <Button size="sm" variant="ghost" onClick={() => setConfirm(null)} className="[@media(pointer:coarse)]:min-h-11">
+                      그대로 두기
                     </Button>
-                    <Button size="sm" variant="danger" loading={busy} onClick={() => undo(b.id)} data-testid="import-undo-confirm">
-                      취소하기
+                    <Button size="sm" variant="danger" loading={busy} onClick={() => undo(b.id)} className="[@media(pointer:coarse)]:min-h-11" data-testid="import-undo-confirm">
+                      {b.count}건 되돌리기
                     </Button>
                   </span>
                 ) : (
-                  <Button size="sm" variant="ghost" icon={<Undo2 size={15} />} onClick={() => setConfirm(b.id)} data-testid="import-undo">
+                  <Button size="sm" variant="ghost" icon={<Undo2 size={15} />} onClick={() => setConfirm(b.id)} className="[@media(pointer:coarse)]:min-h-11" data-testid="import-undo">
                     가져오기 취소
                   </Button>
                 )
@@ -462,7 +481,7 @@ function BackupCard() {
             전체 자료 내려받기 (JSON)
           </Button>
         )}
-        <p className="min-w-[14rem] flex-1 basis-full text-[0.8rem] text-ink-3 @min-[760px]:basis-auto">
+        <p className="min-w-0 flex-1 basis-full text-[0.8rem] text-ink-3 @min-[760px]:basis-auto @min-[760px]:min-w-[14rem]">
           현장·원가·기성·변경공사·출퇴근·보고·작업 인원·지시·요청·이력이 모두 들어갑니다. 비밀번호·로그인 정보·QR 단말기 비밀값은 넣지 않고, 사진 원본은 크기 때문에 빠집니다(사진은 DB 전체 백업으로 보관).
         </p>
       </div>

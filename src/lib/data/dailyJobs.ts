@@ -22,6 +22,8 @@ export interface DailyResult {
 
 export function runDailyChecks(db0: DemoDB, now: Date): DailyResult {
   const today = todayIso(now);
+  // 받을 본사 사람이 없으면 ‘보냄’으로 남기지 않는다 (나중에 생기면 그때 보냄 · D-71 점검 반영)
+  if (!hqUsers(db0).length) return { db: db0, changed: false, notices: [], warranty: [] };
   const due = db0.sites.map((s) => ({ s, d: warrantyNoticeDue(s, today) })).filter((x) => x.d);
   if (!due.length) return { db: db0, changed: false, notices: [], warranty: [] };
   const db = clone(db0);
@@ -39,8 +41,7 @@ export function runDailyChecks(db0: DemoDB, now: Date): DailyResult {
     site.warranty = { ...w, notices: [...(w.notices ?? []), ...add].sort((a, b) => b.days - a.days) };
     const left = d!.daysLeft === 0 ? "오늘 만료" : `${d!.daysLeft}일 남음`;
     log(db, ctx, "site", `${site.shortName} 하자보증 만료 알림 (${fmtDate(d!.endDate)}까지 · ${left}) — 본사에 보냄`, site.id, `/sites/${site.id}?tab=requests`);
-    if (hq.length)
-      notices.push({
+    notices.push({
         to: hq,
         title: d!.daysLeft === 0 ? "하자보증 오늘 만료" : `하자보증 만료 ${d!.daysLeft}일 전`,
         body: `${site.shortName} · ${fmtDate(d!.endDate)}까지 — 발주처와 최종 점검을 잡고 남은 하자를 정리해 주세요`,

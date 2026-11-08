@@ -51,7 +51,10 @@ describe("공사일보 자동 작성", () => {
     const d = dailyLog(db, db.sites.find((s) => s.id === "site-a")!, TODAY);
     expect(d.weekday).toBe("수");
     expect(d.work).toContain("3층 남측 커튼월 유닛 8개 설치");
-    expect(d.stages).toHaveLength(1);
+    // 공정 단계 1개 + 현장 전체 공정률이 바뀌었으면 그것도 (D-71)
+    expect(d.stages.filter((x) => x.name !== "전체 공정률")).toHaveLength(1);
+    const rep = db.reports.find((x) => x.reportDate === TODAY && x.workDone.includes("커튼월"))!;
+    expect(d.stages.some((x) => x.name === "전체 공정률")).toBe(!!rep.progress);
     expect(d.crew.map((c) => [c.team, c.headcount, c.photo])).toEqual([
       ["유리 설치팀", 4, true],
       ["실링팀", 2, false],

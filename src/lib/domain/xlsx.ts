@@ -153,7 +153,16 @@ function richText(inner: string): string {
 /** 엑셀 기본 날짜·시간 서식 번호 (한국어 등 동아시아 서식 27~36, 50~58 포함) */
 const BUILTIN_DATE = new Set([14, 15, 16, 17, 22, 27, 28, 29, 30, 31, 36, 50, 51, 52, 53, 54, 57, 58]);
 const BUILTIN_TIME = new Set([18, 19, 20, 21, 32, 33, 34, 35, 45, 46, 47, 55, 56]);
-const builtinKind = (id: number): "date" | "time" | "datetime" | null => (id === 22 ? "datetime" : BUILTIN_TIME.has(id) ? "time" : BUILTIN_DATE.has(id) ? "date" : null);
+/** 칸 서식 종류 — 날짜·시간, 또는 백분율(엑셀 100% = 값 1 · D-71) */
+type CellKind = "date" | "time" | "datetime" | "pct" | null;
+const builtinKind = (id: number): CellKind => (id === 22 ? "datetime" : BUILTIN_TIME.has(id) ? "time" : BUILTIN_DATE.has(id) ? "date" : id === 9 || id === 10 ? "pct" : null);
+
+/** 서식 문자열이 백분율인가 (따옴표 안 글자·\% 는 빼고 % 가 남는지) — 날짜가 아닐 때만 */
+export function cellKind(code: string): CellKind {
+  const d = dateKind(code);
+  if (d) return d;
+  return /%/.test(code.replace(/"[^"]*"/g, "").replace(/\\./g, "").split(";")[0]) ? "pct" : null;
+}
 
 /** 서식 문자열이 날짜/시간인가: 따옴표 글자·\x·[색상/지역] 을 빼고 y·d·m·h·s 가 남는지 */
 export function dateKind(code: string): "date" | "time" | "datetime" | null {
@@ -231,7 +240,7 @@ export async function readXlsx(input: ArrayBuffer | Uint8Array): Promise<XlsxShe
   if (sst) for (const m of sst.matchAll(/<si\b[^>]*?(?:\/>|>([\s\S]*?)<\/si>)/g)) shared.push(richText(m[1] ?? ""));
 
   // 셀 서식 → 날짜 종류
-  const xfDate: ("date" | "time" | "datetime" | null)[] = [];
+  const xfDate: CellKind[] = [];
   const styles = await zip.text("xl/styles.xml");
   if (styles) {
     const fmts = new Map<number, string>();
@@ -243,7 +252,7 @@ export async function readXlsx(input: ArrayBuffer | Uint8Array): Promise<XlsxShe
     for (const m of xfs.matchAll(/<xf\b[^>]*?\/?>/g)) {
       const id = Number(attrs(m[0]).numFmtId ?? 0);
       const code = fmts.get(id);
-      xfDate.push(code !== undefined ? dateKind(code) : builtinKind(id));
+      xfDate.push(code !== undefined ? cellKind(code) : builtinKind(id));
     }
   }
 
@@ -270,7 +279,7 @@ function resolvePath(baseDir: string, target: string): string {
   return out.join("/");
 }
 
-function sheetRows(xml: string, shared: string[], xfDate: ("date" | "time" | "datetime" | null)[], date1904: boolean): string[][] {
+function sheetRows(xml: string, shared: string[], xfDate: CellKind[], date1904: boolean): string[][] {
   const data = /<sheetData\b[^>]*>([\s\S]*?)<\/sheetData>/.exec(xml)?.[1] ?? "";
   const rows: string[][] = [];
   let nextRow = 1;
@@ -304,7 +313,9 @@ function sheetRows(xml: string, shared: string[], xfDate: ("date" | "time" | "da
       else if (v !== undefined && v !== "") {
         const kind = xfDate[Number(ca.s ?? 0)] ?? null;
         const n = Number(v);
-        text = kind && Number.isFinite(n) ? serialToDate(n, kind, date1904) : numText(v);
+        // 백분율 서식 칸은 화면에 보이는 대로 ‘100%’ (값 1을 1로 읽어 100%가 1%가 되던 문제 · D-71 점검 반영)
+        if (!kind || !Number.isFinite(n)) text = numText(v);
+        else text = kind === "pct" ? `${numText(String(n * 100))}%` : serialToDate(n, kind, date1904);
       }
       while (cells.length < col) cells.push("");
       cells[col] = text;

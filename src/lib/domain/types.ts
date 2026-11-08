@@ -258,6 +258,8 @@ export interface ImportBatch {
   /** 팀 단가 가져오기: 이 묶음이 넣은 팀 이름 — 취소하면 이 팀들만 이전 값으로 (D-66) */
   rateTeams?: string[];
   prevTeamRates?: { team: string; dayRate: number }[];
+  /** 공정 진행 이력: 이 묶음이 시작 값을 다시 이은 앞선 이관 기록 (취소하면 old로 되돌림 · D-71) */
+  relinked?: { reportId: string; stageId: string | null; old: number; next: number }[];
   undoneAt?: string;
   undoneBy?: string;
 }

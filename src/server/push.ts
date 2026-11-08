@@ -40,6 +40,10 @@ export function vapid(): { publicKey: string; privateKey: string; subject: strin
 }
 
 let testSender: Sender | null = null;
+/** 알림을 실제로 보낼 수 있는가 (키가 있거나 테스트 발송 함수) — 매일 점검이 보내지 못할 알림을 ‘보냄’으로 남기지 않게 (D-71) */
+export function pushReady(): boolean {
+  return !!vapid() || !!testSender;
+}
 /** 테스트에서 실제 발송 대신 쓸 함수 (null이면 실제 발송) */
 export function setPushSender(fn: Sender | null) {
   testSender = fn;

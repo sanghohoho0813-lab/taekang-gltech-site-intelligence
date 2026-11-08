@@ -64,7 +64,10 @@ function Inner() {
   const today = todayIso();
   const thisMonth = monthOf(today);
   const months = [thisMonth, prevMonth(thisMonth)];
-  const month = months.includes(q.get("month") ?? "") ? q.get("month")! : thisMonth;
+  const asked = q.get("month");
+  const month = months.includes(asked ?? "") ? asked! : thisMonth;
+  // 이번 달·지난달만 — 다른 달 주소로 들어오면 조용히 이번 달을 보여 주지 않고 알린다 (D-71 점검 반영)
+  const outOfRange = !!asked && !months.includes(asked);
   const site = sites.find((s) => s.id === q.get("site")) ?? sites[0];
   const go = (patch: { site?: string; month?: string }) => {
     const p = new URLSearchParams({ site: patch.site ?? site.id, month: patch.month ?? month });
@@ -100,6 +103,11 @@ function Inner() {
           </div>
         </header>
         <main id="main" className="mx-auto max-w-[960px] px-4 py-6 print:max-w-none print:p-0">
+          {outOfRange && (
+            <p className="no-print mb-3 rounded-xl bg-warn-bg px-3.5 py-2 text-[0.84rem] font-semibold text-ink-2" data-testid="report-month-range">
+              보고서는 이번 달과 지난달만 볼 수 있습니다 — {Number(month.slice(5))}월 보고서를 보여 드립니다. 그 전 기록은 태강지엘텍에 요청해 주세요.
+            </p>
+          )}
           {preview && (
             <p className="no-print mb-3 rounded-xl bg-active-soft px-3.5 py-2 text-[0.84rem] font-semibold text-theme-ink" data-testid="report-preview">
               관리자 미리보기 — ‘{partner.name} {partner.title}’에게 보이는 보고서입니다. 인쇄하면 발주처용 사본이 됩니다.
@@ -180,9 +188,9 @@ function Report({ db, siteId, month, partnerUserId, preview, today }: { db: Demo
         </div>
         )}
         {r.stages.length === 0 && site.stages.length > 0 && (
-          <p className="mt-2 text-[0.82rem] text-ink-2" data-testid="report-no-change">{mName}에 현장 보고로 바뀐 공정 진행률이 없습니다.{preview && !IS_LIVE ? " (시연: 현장 보고에서 공정 단계 진척을 바꾸면 들어갑니다)" : ""}</p>
+          <p className="mt-2 text-[0.82rem] text-ink-2" data-testid="report-no-change">{mName}에 바뀐 공정 진행률이 없습니다.{preview && !IS_LIVE ? " (시연: 현장 보고에서 공정 단계 진척을 바꾸면 들어갑니다)" : ""}</p>
         )}
-        <p className="mt-2 text-[0.74rem] text-ink-3">‘{mName} 변화’는 현장 보고로 바뀐 진행률이며, 태강지엘텍 확인 전 보고도 포함합니다. 공정률은 현장 기준이며 기성(대금 청구) 비율과 다를 수 있습니다.</p>
+        <p className="mt-2 text-[0.74rem] text-ink-3">‘{mName} 변화’는 현장 보고·공정 기록으로 바뀐 진행률이며, 태강지엘텍 확인 전 보고도 포함합니다. 공정률은 현장 기준이며 기성(대금 청구) 비율과 다를 수 있습니다.</p>
       </Section>
 
       <Section title="2. 공정 사진" sub={r.photos.length ? `태강지엘텍이 공개한 사진 ${r.photos.length}장` : undefined}>

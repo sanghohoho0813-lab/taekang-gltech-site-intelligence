@@ -4,7 +4,7 @@
 import { useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight, Printer } from "lucide-react";
 import { useMe } from "@/lib/data/hooks";
-import { dailyLog, weekStart, weeklyLog, weekdayOf, type DailyLog, type WeeklyLog } from "@/lib/domain/dailylog";
+import { dailyLog, stageChangeText, weekStart, weeklyLog, weekdayOf, type DailyLog, type WeeklyLog } from "@/lib/domain/dailylog";
 import { shiftDate } from "@/lib/domain/attendance";
 import { fmtQty, MOVE_LABEL } from "@/lib/domain/material";
 import { CATEGORY_LABEL } from "@/lib/domain/labels";
@@ -173,7 +173,7 @@ function DayDoc({ d }: { d: DailyLog }) {
               <td className={td}>{d.writers.join(", ") || "—"}</td>
               <th className={th}>본사 확인</th>
               <td className={td} data-testid="daily-review">
-                {d.review.status === "confirmed" ? `${d.review.by ?? ""} ${d.review.at ? fmtDateTime(d.review.at) : ""}` : d.review.status === "returned" ? "보완 요청" : "미확인"}
+                {d.review.status === "confirmed" ? `${d.review.by ?? ""} ${d.review.at ? fmtDateTime(d.review.at) : ""}` : d.review.status === "returned" ? "보완 요청" : d.importedOnly ? "— (지난 기록 엑셀 이관)" : "미확인"}
               </td>
             </tr>
           </tbody>
@@ -191,7 +191,7 @@ function DayDoc({ d }: { d: DailyLog }) {
           )}
           {d.stages.length > 0 && (
             <p className="mt-1.5 text-[0.84rem] text-ink-2" data-testid="daily-stages">
-              공정 진척: {d.stages.map((s) => `${s.name} ${s.from}% → ${s.to}%`).join(" · ")}
+              공정 진척: {d.stages.map((s) => `${s.name} ${stageChangeText(s)}`).join(" · ")}
             </p>
           )}
         </Section>
@@ -383,7 +383,7 @@ function WeekDoc({ w, today }: { w: WeeklyLog; today: string }) {
           <ul className="list-disc space-y-0.5 pl-5 text-[0.9rem]">
             {w.stages.map((s) => (
               <li key={s.name}>
-                {s.name}: {s.from}% → <b>{s.to}%</b>
+                {s.name}: {s.from === s.to ? <><b>{s.to}%</b> (첫 기록)</> : <>{s.from}% → <b>{s.to}%</b></>}
               </li>
             ))}
           </ul>

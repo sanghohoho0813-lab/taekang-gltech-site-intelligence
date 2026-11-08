@@ -523,7 +523,7 @@ function ProgressTab({ db, site, f, canSeeMoney }: { db: DemoDB; site: Site; f: 
 }
 
 function ReportsTab({ db, site }: { db: DemoDB; site: Site }) {
-  // 엑셀로 옮긴 지난 공정 기록은 ‘공정’ 탭의 공정 변화 기록에서 본다 — 보고·사진 목록은 실제 현장 보고만 (D-71)
+  // 엑셀로 옮긴 지난 공정 기록은 ‘공정’ 탭의 공정 진행 이력에서 본다 — 보고·사진 목록은 실제 현장 보고만 (D-71)
   const reports = db.reports.filter((r) => r.siteId === site.id && !r.importBatchId).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   return (
     <Card>

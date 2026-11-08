@@ -33,11 +33,17 @@ export interface DailyLog {
   orders: { title: string; event: string; note?: string }[];
   photos: SitePhoto[];
   review: { status: "confirmed" | "returned" | "none"; by?: string; at?: string };
+  /** 그날 기록이 모두 엑셀로 옮긴 지난 공정 기록 — 본사 확인·빠진 자료를 따지지 않는다 (D-71) */
+  importedOnly: boolean;
   /** 보고가 없거나 비어 있는 경우 안내 */
   gaps: string[];
 }
 
 const WEEKDAY = ["일", "월", "화", "수", "목", "금", "토"];
+/** 엑셀로 옮긴 지난 기록 표시 (공사일보 작성자·공정 진행 이력 꼬리표 · D-71) */
+export const IMPORTED_LABEL = "엑셀 이관";
+/** 공정 진척 한 줄 — 첫 기록(앞 기록 없음)은 ‘0%에서 올랐다’로 보이지 않게 (D-71 점검 반영) */
+export const stageChangeText = (c: { from: number; to: number }) => (c.from === c.to ? `${c.to}% (첫 기록)` : `${c.from}% → ${c.to}%`);
 export const weekdayOf = (d: string) => WEEKDAY[new Date(`${d}T12:00:00Z`).getUTCDay()];
 const kstDate = (iso: string) => new Date(new Date(iso).getTime() + 9 * 3_600_000).toISOString().slice(0, 10);
 const uniq = (xs: string[]) => [...new Set(xs.map((x) => x.trim()).filter(Boolean))];
@@ -63,13 +69,13 @@ export function dailyLog(db: DemoDB, site: Site, date: string): DailyLog {
     );
   const doneToday = (db.workOrders ?? []).filter((w) => w.siteId === site.id && w.history.some((h) => h.to === "done" && kstDate(h.at) === date));
   const work = uniq([...reports.map((r) => r.workDone), ...doneToday.map((w) => `${w.title}${w.doneQty ? ` (${w.doneQty})` : ""} — 작업지시 완료`)]);
-  const stages = reports.flatMap((r) => r.stages ?? []);
-  // 같은 단계가 하루에 여러 번 바뀌면 처음 → 마지막
+  // 같은 단계가 하루에 여러 번 바뀌면 처음 → 마지막 · 현장 전체 공정률도 함께 (전체만 바뀐 날 공사일보가 비던 문제 · D-71 점검 반영)
   const byStage = new Map<string, { name: string; from: number; to: number }>();
-  for (const s of stages) {
-    const prev = byStage.get(s.stageId);
-    byStage.set(s.stageId, prev ? { ...prev, to: s.to } : { name: s.name, from: s.from, to: s.to });
-  }
+  for (const r of reports)
+    for (const s of [...(r.stages ?? []), ...(r.progress ? [{ stageId: "*", name: "전체 공정률", ...r.progress }] : [])]) {
+      const prev = byStage.get(s.stageId);
+      byStage.set(s.stageId, prev ? { ...prev, to: s.to } : { name: s.name, from: s.from, to: s.to });
+    }
   const entryIds = new Set(reports.flatMap((r) => r.costEntryIds));
   const materials = db.costEntries
     .filter((e) => entryIds.has(e.id) && e.status !== "voided" && e.status !== "rejected" && e.category !== "labor" && e.category !== "overhead")
@@ -81,19 +87,22 @@ export function dailyLog(db: DemoDB, site: Site, date: string): DailyLog {
     ...movesOn(db, site.id, date).flatMap(({ move }) => (move.photoId ? [move.photoId] : [])),
   ]);
   const photos = db.photos.filter((p) => photoIds.has(p.id));
-  const reviewed = reports.filter((r) => r.review);
+  // 본사 확인은 실제 현장 보고만 — 가져온 지난 기록의 ‘확인’이 공사일보 확인자·날짜를 덮지 않게 (D-71 점검 반영)
+  const reviewed = reports.filter((r) => r.review && !r.importBatchId);
+  const importedOnly = reports.length > 0 && reports.every((r) => r.importBatchId);
   const lastReview = reviewed.map((r) => r.review!).sort((a, b) => a.at.localeCompare(b.at)).at(-1);
   const gaps: string[] = [];
+  // 엑셀로 옮긴 지난 기록만 있는 날(앱 쓰기 전) — 출력·사진이 없는 것이 당연하므로 빠진 자료로 따지지 않는다
   if (!reports.length) gaps.push("이 날 현장 보고가 없습니다 — 작업 내용·사진이 비어 있습니다");
-  if (!crew.length) gaps.push("작업 인원(출력) 보고가 없습니다");
+  if (!importedOnly && !crew.length) gaps.push("작업 인원(출력) 보고가 없습니다");
   if (reports.some((r) => !r.importBatchId) && !photos.length) gaps.push("사진이 없습니다");
   return {
     site,
     date,
     weekday: weekdayOf(date),
     reports,
-    // 엑셀로 옮긴 지난 기록은 넣은 사람이 아니라 ‘자료 이관’으로 (D-71)
-    writers: uniq(reports.map((r) => (r.importBatchId ? "자료 이관" : (user(r.createdBy)?.name ?? "")))),
+    // 엑셀로 옮긴 지난 기록은 넣은 사람이 아니라 ‘엑셀 이관’으로, 실제 작성자를 앞에 (D-71)
+    writers: uniq([...reports.filter((r) => !r.importBatchId).map((r) => user(r.createdBy)?.name ?? ""), ...(reports.some((r) => r.importBatchId) ? [IMPORTED_LABEL] : [])]),
     crew,
     crewTotal: crew.reduce((a, c) => a + c.headcount, 0),
     staff,
@@ -106,6 +115,7 @@ export function dailyLog(db: DemoDB, site: Site, date: string): DailyLog {
     orders,
     photos,
     review: lastReview ? { status: lastReview.status, by: user(lastReview.by)?.name, at: lastReview.at } : { status: "none" },
+    importedOnly,
     gaps,
   };
 }
@@ -137,19 +147,21 @@ export function weeklyLog(db: DemoDB, site: Site, from: string): WeeklyLog {
   const byStage = new Map<string, { name: string; from: number; to: number }>();
   for (const d of days)
     for (const r of d.reports)
-      for (const s of r.stages ?? []) {
+      for (const s of [...(r.stages ?? []), ...(r.progress ? [{ stageId: "*", name: "전체 공정률", ...r.progress }] : [])]) {
         const prev = byStage.get(s.stageId);
         byStage.set(s.stageId, prev ? { ...prev, to: s.to } : { name: s.name, from: s.from, to: s.to });
       }
+  // ‘현장 보고 N일’은 실제 현장 보고만 (엑셀로 옮긴 지난 기록 제외 · D-71 점검 반영)
+  const real = (d: DailyLog) => d.reports.filter((r) => !r.importBatchId).length;
   const nextFrom = shiftDate(to, 1);
   const nextTo = shiftDate(to, 7);
   return {
     site,
     from,
     to,
-    days: days.map((d) => ({ date: d.date, weekday: d.weekday, crewTotal: d.crewTotal, staff: d.staff.length, reports: d.reports.length, photos: d.photos.length, work: d.work[0] ?? "" })),
+    days: days.map((d) => ({ date: d.date, weekday: d.weekday, crewTotal: d.crewTotal, staff: d.staff.length, reports: real(d), photos: d.photos.length, work: d.work[0] ?? "" })),
     crewTotal: days.reduce((a, d) => a + d.crewTotal, 0),
-    reportDays: days.filter((d) => d.reports.length).length,
+    reportDays: days.filter((d) => real(d) > 0).length,
     stages: [...byStage.values()],
     issues: days.flatMap((d) => d.issues.map((text) => ({ date: d.date, text }))),
     openOrders: (db.workOrders ?? []).filter((w) => w.siteId === site.id && w.status !== "confirmed").map((w) => ({ title: w.title, status: w.status, dueDate: w.dueDate })),

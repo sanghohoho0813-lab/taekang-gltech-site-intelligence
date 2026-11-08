@@ -27,24 +27,55 @@ export function partnerProgressFeed(db: DemoDB, siteId: string, today: string, d
   return [...byKey.values()].filter((f) => f.from !== f.to).sort((a, b) => (a.date === b.date ? a.stage.localeCompare(b.stage) : b.date.localeCompare(a.date)));
 }
 
-/** 본사용 공정 변화 기록 (D-71) — 발주처 월간 보고서와 같은 계산, 날짜별로 묶고 엑셀로 옮긴 지난 기록인지 표시 (최근 날짜부터) */
+/** 본사용 공정 진행 이력 (D-71) — 발주처 월간 보고서와 같은 규칙(같은 날 같은 단계는 처음 값 → 마지막 값), 날짜별로, 엑셀로 옮긴 기록인지 단계마다 표시 (최근 날짜부터) */
+export interface ProgressHistoryChange {
+  stage: string;
+  from: number;
+  to: number;
+  /** 엑셀로 옮긴 지난 기록 */
+  imported: boolean;
+  /** 앞 기록이 없는 첫 기록 (from = to) — ‘올랐다’가 아니라 그날 값 */
+  first: boolean;
+}
 export interface ProgressHistoryDay {
   date: string;
-  changes: { stage: string; from: number; to: number }[];
+  changes: ProgressHistoryChange[];
   /** 그날 기록이 모두 엑셀로 옮긴 지난 기록 */
   imported: boolean;
 }
 export function progressHistory(db: DemoDB, siteId: string, today: string): ProgressHistoryDay[] {
-  const feed = partnerProgressFeed(db, siteId, today, 3660);
-  const field = new Set(db.reports.filter((r) => r.siteId === siteId && r.status !== "voided" && !r.importBatchId && ((r.stages?.length ?? 0) > 0 || r.progress)).map((r) => r.reportDate));
-  const days = new Map<string, ProgressHistoryDay>();
-  for (const f of feed) {
-    const d = days.get(f.date) ?? { date: f.date, changes: [], imported: !field.has(f.date) };
-    d.changes.push({ stage: f.stage, from: f.from, to: f.to });
-    days.set(f.date, d);
+  const site = db.sites.find((s) => s.id === siteId);
+  const order = new Map((site?.stages ?? []).map((st, i) => [st.id, i]));
+  const reports = db.reports
+    .map((r, i) => ({ r, i }))
+    .filter(({ r }) => r.siteId === siteId && r.status !== "voided" && r.reportDate <= today)
+    .sort((a, b) => a.r.createdAt.localeCompare(b.r.createdAt) || b.i - a.i)
+    .map(({ r }) => r);
+  const byKey = new Map<string, ProgressHistoryChange & { date: string; key: string }>();
+  for (const r of reports) {
+    const imp = !!r.importBatchId;
+    const changes = [...(r.stages ?? []).map((c) => ({ key: c.stageId, stage: c.name, from: c.from, to: c.to })), ...(r.progress ? [{ key: "*", stage: "전체 공정률", from: r.progress.from, to: r.progress.to }] : [])];
+    for (const c of changes) {
+      const k = `${r.reportDate}|${c.key}`;
+      const cur = byKey.get(k);
+      byKey.set(k, cur ? { ...cur, to: c.to, imported: cur.imported && imp } : { date: r.reportDate, ...c, imported: imp, first: imp && c.from === c.to });
+    }
   }
-  // 전체 공정률은 맨 앞에
-  for (const d of days.values()) d.changes.sort((a, b) => (a.stage === "전체 공정률" ? -1 : b.stage === "전체 공정률" ? 1 : 0));
+  const days = new Map<string, ProgressHistoryDay>();
+  for (const c of byKey.values()) {
+    if (c.from === c.to && !c.first) continue;
+    const d = days.get(c.date) ?? { date: c.date, changes: [], imported: true };
+    d.changes.push({ stage: c.stage, from: c.from, to: c.to, imported: c.imported, first: c.first && c.from === c.to });
+    (d.changes as (ProgressHistoryChange & { key?: string })[]).at(-1)!.key = c.key;
+    days.set(c.date, d);
+  }
+  for (const d of days.values()) {
+    d.imported = d.changes.every((c) => c.imported);
+    // 전체 공정률 먼저, 그다음 현장 공정 단계 순서
+    const rank = (c: ProgressHistoryChange & { key?: string }) => (c.key === "*" ? -1 : (order.get(c.key ?? "") ?? 99));
+    d.changes.sort((a, b) => rank(a) - rank(b));
+    for (const c of d.changes as (ProgressHistoryChange & { key?: string })[]) delete c.key;
+  }
   return [...days.values()].sort((a, b) => b.date.localeCompare(a.date));
 }
 

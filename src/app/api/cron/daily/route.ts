@@ -27,7 +27,8 @@ export async function GET(req: NextRequest) {
   if (!same(req.headers.get("authorization") ?? "", `Bearer ${secret}`)) return json({ error: "권한이 없습니다." }, 401);
   try {
     const r = await runDailyJobs(new Date());
-    return json({ ok: r.failed === 0, ...r });
+    // 한 회사라도 실패하면 500 — 예약 작업 기록에 실패로 남게
+    return json({ ok: r.failed === 0, ...r }, r.failed ? 500 : 200);
   } catch (e) {
     console.error("[cron]", e);
     return json({ ok: false, error: "점검 중 오류가 났습니다." }, 500);

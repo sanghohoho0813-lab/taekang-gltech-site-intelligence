@@ -133,7 +133,8 @@ function SiteFormModal({ db, site, onClose }: { db: DemoDB; site: Site | null; o
   const [key] = useState(() => uid("idem"));
   // 준공으로 바꾸면 하자보증 준공(인도)일도 같이 (보증 기간은 있는데 준공일이 비어 있을 때 · D-71)
   const [wDone, setWDone] = useState(() => todayIso());
-  const askWarrantyStart = f.status === "completed" && !!site?.warranty && !site.warranty.completedDate;
+  // ‘준공’으로 바꿀 때만 — 이미 준공인 현장을 고칠 때 오늘 날짜가 들어가지 않게 (D-71 점검 반영)
+  const askWarrantyStart = f.status === "completed" && site?.status !== "completed" && !!site?.warranty && !site.warranty.completedDate;
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value });
 
   const budgetNums = Object.fromEntries(COST_CATEGORIES.map((c) => [c, toWon(budgets[c]) || 0])) as Record<CostCategory, number>;
@@ -236,6 +237,8 @@ function SiteFormModal({ db, site, onClose }: { db: DemoDB; site: Site | null; o
                 >
                   <input id="sf-warranty-done" type="date" max={todayIso()} min={f.startDate} className={inputCls} value={wDone} onChange={(e) => setWDone(e.target.value)} data-testid="sf-warranty-done" />
                 </Field>
+              ) : site.warranty && !site.warranty.completedDate ? (
+                <p className="text-[0.82rem] text-ink-2">하자보증 준공일이 아직 없습니다 — 현장 상세 ‘발주처·하자보증’에서 넣어 주세요.</p>
               ) : site.warranty?.completedDate ? (
                 <p className="text-[0.82rem] text-ink-2">
                   하자보증: 준공 {fmtDate(site.warranty.completedDate)}부터 {monthsText(site.warranty.months)} · {fmtDate(warrantyEnd(site.warranty.completedDate, site.warranty.months))}까지 — 고치려면 현장 상세 ‘발주처·하자보증’

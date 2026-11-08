@@ -19,7 +19,8 @@ export function TodayReports({ db }: { db: DemoDB }) {
   if (sites.length === 0) return null;
   const pending = db.costEntries.filter((e) => e.status === "pending").length;
   const rows = sites.map((s) => {
-    const reports = db.reports.filter((r) => r.siteId === s.id && r.status !== "voided");
+    // 엑셀로 옮긴 지난 기록은 ‘마지막 보고’로 치지 않는다 (보고 끊긴 날수가 가려지던 문제 · D-71 점검 반영)
+    const reports = db.reports.filter((r) => r.siteId === s.id && r.status !== "voided" && !r.importBatchId);
     const todays = reports.filter((r) => r.reportDate === today);
     const last = reports.map((r) => r.reportDate).sort().at(-1);
     const photos = todays.reduce((n, r) => n + r.photoIds.length, 0);

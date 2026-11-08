@@ -129,8 +129,9 @@ export function MyRecords({ db, userId, limit }: { db: DemoDB; userId: string; l
   const [busy, setBusy] = useState<string | null>(null);
   const [ask, setAsk] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  // 엑셀로 옮긴 지난 기록은 ‘내가 보낸 보고’가 아니다 — 본사가 넣은 이관 기록이 여기서 한 건씩 취소되지 않게 (D-71 점검 반영)
   const reports = db.reports
-    .filter((r) => r.createdBy === userId)
+    .filter((r) => r.createdBy === userId && !r.importBatchId)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     .slice(0, limit ?? 30);
   if (reports.length === 0) return <p className="rounded-2xl border-2 border-line bg-surface px-4 py-4 text-[1.08rem] text-ink-2">아직 보낸 보고가 없어요.</p>;

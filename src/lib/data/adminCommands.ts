@@ -78,6 +78,8 @@ export function saveSite(db0: DemoDB, input: SaveSiteInput, ctx: Ctx) {
   if (wDate !== undefined && wDate !== null && wDate !== "") {
     if (typeof wDate !== "string" || !DATE_RE.test(wDate)) errors.warrantyCompletedDate = "날짜 형식을 확인해 주세요.";
     else if (input.status !== "completed") errors.warrantyCompletedDate = "현장 상태가 ‘준공’일 때만 넣을 수 있습니다.";
+    // 이미 준공 상태인 현장을 고칠 때마다 오늘 날짜가 들어가지 않게 — ‘준공’으로 바꿀 때만 (D-71 점검 반영)
+    else if (wSite?.status === "completed") errors.warrantyCompletedDate = "이미 준공 상태인 현장입니다 — 준공일은 현장 상세 ‘발주처·하자보증’에서 넣어 주세요.";
     else if (!wSite?.warranty) errors.warrantyCompletedDate = "하자보증 기간을 먼저 넣어 주세요 (현장 상세 ‘발주처·하자보증’).";
     else if (wSite.warranty.completedDate) errors.warrantyCompletedDate = "이미 준공일이 있습니다 — 현장 상세 ‘발주처·하자보증’에서 고치세요.";
     else if (wDate > todayIso(ctx.now)) errors.warrantyCompletedDate = "준공일은 오늘이나 그 전으로 넣어 주세요.";

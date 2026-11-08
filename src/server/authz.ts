@@ -250,7 +250,8 @@ export function viewFor(m: Member, db: DemoDB, now = new Date()): DemoDB {
     const actionIds = new Set(actions.map((a) => a.id));
     // 같은 현장 동료의 보고·작업 인원 기록은 보되, 동료가 보낸 위치 좌표는 빼고 보낸다 (D-43)
     const others = withoutOthersCoords({ ...db, attendance: [] }, m.id);
-    const reports = others.reports.filter((r) => sites.has(r.siteId) && (r.reportDate >= since || (r.createdBy === m.id && r.review?.status === "returned")));
+    // 엑셀로 옮긴 지난 공정 기록(본사 메모 포함)은 현장 휴대폰에 보내지 않는다 — 현장 화면은 쓰지 않는다 (D-71 점검 반영)
+    const reports = others.reports.filter((r) => sites.has(r.siteId) && !r.importBatchId && (r.reportDate >= since || (r.createdBy === m.id && r.review?.status === "returned")));
     const crewChecks = (others.crewChecks ?? []).filter((c) => sites.has(c.siteId) && c.workDate >= since);
     const workOrders = (db.workOrders ?? []).filter((w) => w.assigneeUserId === m.id && (w.status !== "confirmed" || kstDate(w.createdAt) >= since));
     const photoRefs = new Set([

@@ -353,6 +353,22 @@ export function voidCostEntry(db0: DemoDB, entryId: string, reason: string, ctx:
   return { db, result: { before, after } };
 }
 
+/**
+ * 엑셀로 옮긴 지난 공정 기록 한 건을 빼기 전에, 바로 뒤의 이관 기록이 이 기록 값에서 시작했으면 앞 값에서 시작하도록 다시 잇는다 (D-71 점검 반영)
+ * — 이 기록이 첫 기록이었으면 뒤 기록이 첫 기록(그날 값)이 된다. 현장 보고(이관 아님)는 건드리지 않는다.
+ */
+export function unlinkImportedProgress(db: DemoDB, r: FieldReport) {
+  const keyed = [...(r.stages ?? []).map((c) => ({ key: c.stageId as string | null, c })), ...(r.progress ? [{ key: null as string | null, c: r.progress }] : [])];
+  for (const { key, c } of keyed) {
+    const next = db.reports
+      .filter((x) => x.id !== r.id && x.siteId === r.siteId && x.status !== "voided" && (x.reportDate > r.reportDate || (x.reportDate === r.reportDate && x.createdAt > r.createdAt)) && (key ? x.stages?.some((s) => s.stageId === key) : !!x.progress))
+      .sort((a, b) => a.reportDate.localeCompare(b.reportDate) || a.createdAt.localeCompare(b.createdAt))[0];
+    if (!next?.importBatchId) continue;
+    const nc = key ? next.stages!.find((s) => s.stageId === key)! : next.progress!;
+    if (nc.from === c.to) nc.from = c.from === c.to ? nc.to : c.from;
+  }
+}
+
 /** 현장보고 전체 되돌리기 (보고에 포함된 원가 이벤트를 모두 무효 처리) */
 export function voidReport(db0: DemoDB, reportId: string, ctx: Ctx) {
   const db = clone(db0);
@@ -360,6 +376,7 @@ export function voidReport(db0: DemoDB, reportId: string, ctx: Ctx) {
   if (!r) throw new CommandError("현장보고를 찾을 수 없습니다.", "NOT_FOUND");
   if (r.status === "voided") throw new CommandError("이미 되돌린 보고입니다.", "STATE");
   const before = siteFinancials(db0, r.siteId);
+  if (r.importBatchId) unlinkImportedProgress(db, r);
   r.status = "voided";
   // 이 보고의 사진은 발주처 공개도 끈다 (D-67 점검 반영)
   for (const p of db.photos) if (p.reportId === r.id && p.shared) delete p.shared;

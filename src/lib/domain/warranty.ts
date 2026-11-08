@@ -68,6 +68,21 @@ export function warrantyNoticeDue(site: Pick<Site, "warranty">, today: string): 
   return { days: step, endDate: w.endDate!, daysLeft: w.daysLeft };
 }
 
+/**
+ * 다음 만료 알림 — 지금 보낼 단계가 있으면 그것(다음 아침 점검 때), 아니면 다음 단계와 그 날짜. 끝났거나 남은 단계가 없으면 없음 (D-71 점검 반영)
+ */
+export function warrantyNextNotice(site: Pick<Site, "warranty">, today: string): { days: number; date: string; now: boolean; daysLeft: number } | null {
+  const due = warrantyNoticeDue(site, today);
+  if (due) return { days: due.days, date: today, now: true, daysLeft: due.daysLeft };
+  const w = warrantyStatus(site, today);
+  if ((w.state !== "soon" && w.state !== "active") || w.daysLeft === undefined) return null;
+  const sent = site.warranty?.notices ?? [];
+  const step = [...WARRANTY_NOTICE_DAYS].sort((a, b) => b - a).find((d) => d < w.daysLeft! && !sent.some((n) => n.days <= d));
+  if (step === undefined) return null;
+  const date = new Date(Date.parse(`${w.endDate}T00:00:00Z`) - step * 86_400_000).toISOString().slice(0, 10);
+  return { days: step, date, now: false, daysLeft: step };
+}
+
 /** 하자 요청이 보증 기간 안인지 (접수일 기준) — 준공 전 접수는 ‘시공 중’ */
 export type DefectWarranty = "in" | "before" | "after";
 export const DEFECT_WARRANTY_LABEL: Record<DefectWarranty, string> = {

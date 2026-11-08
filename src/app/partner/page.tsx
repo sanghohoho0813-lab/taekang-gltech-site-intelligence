@@ -693,7 +693,7 @@ function SiteUpdates({ db, siteId, preview }: { db: NonNullable<ReturnType<typeo
         )}
       </Card>
       <Card data-testid="partner-feed">
-        <CardHeader title="최근 공정 변화" sub={`최근 ${PARTNER_FEED_DAYS}일 · 현장 보고로 바뀐 공정 진행률`} />
+        <CardHeader title="최근 공정 변화" sub={`최근 ${PARTNER_FEED_DAYS}일 · 현장 보고·공정 기록으로 바뀐 공정 진행률`} />
         {feed.length === 0 ? (
           <EmptyState title={`최근 ${PARTNER_FEED_DAYS}일 동안 바뀐 공정이 없습니다`} desc={preview ? "현장 보고에서 공정 단계 진척을 바꾸면 이곳에 날짜별로 보입니다." : undefined} />
         ) : (
