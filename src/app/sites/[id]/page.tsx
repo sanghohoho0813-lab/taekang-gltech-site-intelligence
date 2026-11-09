@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { isFrameContext } from "@/lib/data/store";
 import { useEffect, useState } from "react";
-import { ClipboardPen, ChevronLeft, MapPin, CalendarDays, Info, Handshake, ShieldAlert, Image as ImageIcon } from "lucide-react";
+import { ClipboardPen, ChevronLeft, MapPin, CalendarDays, Info, Handshake, ShieldAlert, Image as ImageIcon, FileText } from "lucide-react";
 import { useMe, useSignals, siteHealth, useFinancials, userLabel } from "@/lib/data/hooks";
 import { PageBody } from "@/components/shell/AppShell";
 import { Badge, Button, Card, CardHeader, CountUp, DemoBadge, EmptyState, KeyValue, Notice, PageSkeleton, ProgressBar, SeverityBadge, cx } from "@/components/ui/primitives";
@@ -660,6 +660,8 @@ function RequestsTab({ db, site }: { db: DemoDB; site: Site }) {
     <div className="space-y-5">
     {/* 하자보증 (D-70) — 발주처 요청과 같은 탭에서 */}
     <WarrantyCard site={site} />
+    {/* 준공 보고서 (D-72) — 발주처 제출용, 본사만 */}
+    <CompletionCard site={site} />
     <Card>
       <CardHeader title="발주처·협력사 요청함" sub="발주처 포털에서 등록된 요청" right={<Link href="/insights#requests"><Button size="sm" icon={<Handshake size={15} />}>요청 처리</Button></Link>} />
       {reqs.length === 0 ? (
@@ -681,6 +683,27 @@ function RequestsTab({ db, site }: { db: DemoDB; site: Site }) {
       )}
     </Card>
     </div>
+  );
+}
+
+function CompletionCard({ site }: { site: Site }) {
+  const { role } = useMe();
+  if (role !== "ceo" && role !== "manager") return null;
+  const done = !!site.warranty?.completedDate;
+  return (
+    <Card data-testid="completion-card">
+      <CardHeader
+        title="준공 보고서 (발주처 제출용)"
+        sub={done ? "공사 기간 전체 — 공정 단계별 완료일·월별 공정률·공개 사진·하자 처리·하자보증 · 금액 없음" : "준공 전에는 작성일 기준 ‘중간 정리’로 나옵니다 · 금액 없음"}
+        right={
+          <Link href={`/sites/${site.id}/completion`} data-testid="completion-open">
+            <Button size="sm" variant={done ? "cta" : "soft"} icon={<FileText size={15} />}>
+              {done ? "준공 보고서" : "중간 정리 보기"}
+            </Button>
+          </Link>
+        }
+      />
+    </Card>
   );
 }
 

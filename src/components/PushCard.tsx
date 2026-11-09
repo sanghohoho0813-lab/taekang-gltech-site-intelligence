@@ -8,8 +8,8 @@ import { disablePush, enablePush, pushState, testPush, type PushState } from "@/
 import { cx } from "@/components/ui/primitives";
 
 const WHAT = {
-  field: "본사 작업지시, 보고 보완 요청, 근태 수정 승인·반려가 오면 휴대폰에 바로 알려드려요.",
-  hq: "현장 문제 보고, 추가 비용 보고, 작업지시 완료, 근태 수정 요청, 고객 요청이 오면 알려드려요.",
+  field: "본사 작업지시, 보고 보완 요청, 근태 수정 승인·반려가 오면 휴대폰에 바로 알려드려요. 아침에는 오늘 기한 작업지시를 알려드려요.",
+  hq: "현장 문제 보고, 추가 비용 보고, 작업지시 완료, 근태 수정 요청, 고객 요청이 오면 알려드려요. 아침에는 확인할 일을 한 번에 요약해 드려요.",
   partner: "태강지엘텍 회신이 도착하면 알려드려요.",
 };
 

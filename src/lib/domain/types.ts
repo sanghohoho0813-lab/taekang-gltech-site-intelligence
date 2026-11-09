@@ -691,6 +691,10 @@ export interface CompanySettings {
   teamRates?: { team: string; dayRate: number }[];
   /** 개인위치정보 보관 기간·볼 수 있는 사람 (없으면 기간 미정·대표와 관리자) */
   location?: LocationPolicy;
+  /** 아침 알림 (본사 요약·현장 오늘 할 일) — false면 끔, 없으면 켬 (D-72) */
+  morningBrief?: boolean;
+  /** 아침 알림을 마지막으로 보낸 날 (한국 날짜 · 같은 날 두 번 안 보내게) */
+  briefSentOn?: string;
 }
 
 export const DEFAULT_SETTINGS: CompanySettings = { costApproval: "immediate", laborDayRate: 300_000 };

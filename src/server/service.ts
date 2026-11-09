@@ -173,11 +173,12 @@ export async function executeCommand(m: Member, name: unknown, args: unknown): P
  * 회사마다: 보관 기간이 지난 위치 좌표 지우기 + 하자보증 만료 알림. 한 회사가 실패해도 다음 회사는 계속한다.
  * 돌려주는 값은 숫자만 (회사 이름·현장 이름 없음 — 예약 작업 기록에 남으므로)
  */
-export async function runDailyJobs(now = new Date()): Promise<{ companies: number; changed: number; warrantyNotices: number; pushed: number; failed: number }> {
+export async function runDailyJobs(now = new Date()): Promise<{ companies: number; changed: number; warrantyNotices: number; briefs: number; pushed: number; failed: number }> {
   const db = await getDb();
   const companies = await db.query<{ id: string }>(`select id from companies order by id`);
   let changed = 0;
   let warrantyNotices = 0;
+  let briefs = 0;
   let pushed = 0;
   let failed = 0;
   for (const { id } of companies) {
@@ -187,7 +188,7 @@ export async function runDailyJobs(now = new Date()): Promise<{ companies: numbe
         const loaded = await loadState(tx, id);
         const retained = applyLocationRetention(loaded, now);
         // 알림 키가 없으면 하자보증 만료 알림은 건너뛴다 (‘보낸 알림’으로 남지 않게) — 위치 좌표 정리는 그대로
-        const out = pushReady() ? runDailyChecks(retained, now) : { db: retained, notices: [], warranty: [], changed: false };
+        const out = pushReady() ? runDailyChecks(retained, now) : { db: retained, notices: [], warranty: [], brief: { hq: 0, field: 0 }, changed: false };
         if (out.db === loaded) return null;
         await persistState(tx, id, loaded, out.db);
         return out;
@@ -195,13 +196,14 @@ export async function runDailyJobs(now = new Date()): Promise<{ companies: numbe
       if (!done) continue;
       changed += 1;
       warrantyNotices += done.warranty.length;
+      briefs += done.brief.hq + done.brief.field;
       if (done.notices.length) pushed += (await deliver(id, done.notices).catch((e) => (console.error("[push]", e), { sent: 0 }))).sent;
     } catch (e) {
       failed += 1;
       console.error("[daily]", e);
     }
   }
-  return { companies: companies.length, changed, warrantyNotices, pushed, failed };
+  return { companies: companies.length, changed, warrantyNotices, briefs, pushed, failed };
 }
 
 // ───────────── 사진 ─────────────

@@ -298,7 +298,9 @@ const kstNoon = (date: string) => new Date(`${date}T03:00:00Z`);
 const shift = (date: string, days: number) => new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
 /** B현장: 2026-06-01 준공 · 6개월 → 2026-11-30까지 */
 function withWarranty(months = 6, completedDate = "2026-06-01") {
-  return setSiteWarranty(createSeed(NOW), { siteId: "site-b", months, completedDate }, ctx()).db;
+  const db = setSiteWarranty(createSeed(NOW), { siteId: "site-b", months, completedDate }, ctx()).db;
+  // 아침 알림(D-72)은 끄고 하자보증 알림만 본다
+  return { ...db, settings: { ...db.settings!, morningBrief: false } };
 }
 
 describe("하자보증 만료 알림 — 단계", () => {

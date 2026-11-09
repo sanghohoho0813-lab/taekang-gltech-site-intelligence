@@ -259,6 +259,8 @@ export function setCompanySettings(db0: DemoDB, input: CompanySettingsInput, ctx
   if (input.laborDayRate !== undefined && (!Number.isInteger(input.laborDayRate) || input.laborDayRate < 10_000 || input.laborDayRate > 5_000_000)) errors.laborDayRate = "일당은 1만~500만 원 사이 정수";
   if (input.companyName !== undefined && (!input.companyName.trim() || input.companyName.length > 60)) errors.companyName = "회사명 (60자 이내)";
   if (input.attendanceMode !== undefined && input.attendanceMode !== "gps" && input.attendanceMode !== "qr") errors.attendanceMode = "출근 방식을 선택해주세요.";
+  if (input.morningBrief !== undefined && typeof input.morningBrief !== "boolean") errors.morningBrief = "아침 알림 켜기·끄기를 골라 주세요.";
+  if (input.briefSentOn !== undefined) errors.briefSentOn = "바꿀 수 없는 값입니다.";
   if (input.teamRates !== undefined) {
     if (!Array.isArray(input.teamRates) || input.teamRates.length > 60) errors.teamRates = "팀 단가 목록을 확인해주세요.";
     else
@@ -281,9 +283,12 @@ export function setCompanySettings(db0: DemoDB, input: CompanySettingsInput, ctx
     ...((input.helpPhone !== undefined ? phone : prev.helpPhone) ? { helpPhone: input.helpPhone !== undefined ? phone : prev.helpPhone } : {}),
     // 개인위치정보 규칙은 여기서 바꾸지 않는다 (대표 전용 setLocationPolicy · D-43)
     ...(prev.location ? { location: prev.location } : {}),
+    // 아침 알림: 끈 경우만 남긴다(기본 켬) · 보낸 날 기록은 매일 점검만 바꾼다 (D-72)
+    ...((input.morningBrief ?? prev.morningBrief) === false ? { morningBrief: false } : {}),
+    ...(prev.briefSentOn ? { briefSentOn: prev.briefSentOn } : {}),
   };
   if (input.companyName) db.company = { ...db.company, name: input.companyName.trim() };
-  log(db, ctx, "settings", `운영 설정 변경 — 원가 반영: ${db.settings.costApproval === "review" ? "본사 공무 확인 후" : "저장 즉시"} · 기본 일당 ${fmtMan(db.settings.laborDayRate)} · 출근 ${db.settings.attendanceMode === "qr" ? "현장 QR+GPS" : "GPS"}`);
+  log(db, ctx, "settings", `운영 설정 변경 — 원가 반영: ${db.settings.costApproval === "review" ? "본사 공무 확인 후" : "저장 즉시"} · 기본 일당 ${fmtMan(db.settings.laborDayRate)} · 출근 ${db.settings.attendanceMode === "qr" ? "현장 QR+GPS" : "GPS"}${(prev.morningBrief === false) !== (db.settings.morningBrief === false) ? ` · 아침 알림 ${db.settings.morningBrief === false ? "끔" : "켬"}` : ""}`);
   touch(db, ctx);
   return { db, result: { settings: db.settings } };
 }

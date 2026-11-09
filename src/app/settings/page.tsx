@@ -21,6 +21,7 @@ import { ResetDialog } from "@/components/device/DemoBar";
 import { AiReadyButton } from "@/components/domain/Widgets";
 import { IS_LIVE } from "@/lib/mode";
 import { PushCard } from "@/components/PushCard";
+import { MorningBriefCard } from "@/components/admin/MorningBriefCard";
 import { PrivacyAdmin } from "@/components/admin/PrivacyAdmin";
 import { downloadCsv } from "@/lib/browser/download";
 import { readCsvFile } from "@/lib/browser/readCsv";
@@ -111,6 +112,9 @@ export default function SettingsPage() {
           </div>
         </Card>
       )}
+
+      {/* 아침 알림 — 실제 운영에서는 ‘운영 관리 → 운영 설정’ (D-72) */}
+      {!IS_LIVE && isManager && <MorningBriefCard db={db} />}
 
       {/* 개인위치정보 규칙 — 실제 운영에서는 ‘운영 관리 → 개인위치정보’ (D-43) */}
       {!IS_LIVE && isManager && <PrivacyAdmin db={db} role={role} />}

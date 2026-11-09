@@ -9,6 +9,7 @@ import { SitesAdmin } from "@/components/admin/SitesAdmin";
 import { MembersAdmin } from "@/components/admin/MembersAdmin";
 import { ReviewAdmin } from "@/components/admin/ReviewAdmin";
 import { SettingsAdmin } from "@/components/admin/SettingsAdmin";
+import { MorningBriefCard } from "@/components/admin/MorningBriefCard";
 import { PrivacyAdmin } from "@/components/admin/PrivacyAdmin";
 
 type Tab = "sites" | "members" | "review" | "settings" | "privacy";
@@ -40,7 +41,12 @@ function AdminInner() {
       {tab === "sites" && <SitesAdmin db={db} />}
       {tab === "members" && <MembersAdmin db={db} me={{ id: userId, role }} />}
       {tab === "review" && <ReviewAdmin db={db} />}
-      {tab === "settings" && <SettingsAdmin db={db} />}
+      {tab === "settings" && (
+        <>
+          <SettingsAdmin db={db} />
+          <MorningBriefCard db={db} />
+        </>
+      )}
       {tab === "privacy" && <PrivacyAdmin db={db} role={role} />}
     </PageBody>
   );

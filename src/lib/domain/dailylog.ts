@@ -164,7 +164,12 @@ export function weeklyLog(db: DemoDB, site: Site, from: string): WeeklyLog {
     reportDays: days.filter((d) => real(d) > 0).length,
     stages: [...byStage.values()],
     issues: days.flatMap((d) => d.issues.map((text) => ({ date: d.date, text }))),
-    openOrders: (db.workOrders ?? []).filter((w) => w.siteId === site.id && w.status !== "confirmed").map((w) => ({ title: w.title, status: w.status, dueDate: w.dueDate })),
+    // 그 주 말일 기준 미결 작업지시 — 그때까지 만든 것 중 그때 상태가 ‘확인’이 아닌 것 (지난 주 보고서에 오늘 미결이 찍히던 문제 · D-72)
+    openOrders: (db.workOrders ?? [])
+      .filter((w) => w.siteId === site.id && kstDate(w.createdAt) <= to)
+      .map((w) => ({ w, status: [...w.history].reverse().find((h) => kstDate(h.at) <= to)?.to ?? "sent" }))
+      .filter((x) => x.status !== "confirmed")
+      .map(({ w, status }) => ({ title: w.title, status, dueDate: w.dueDate })),
     materials: (() => {
       const week = liveMoves(db, site.id).filter((m) => m.workDate >= from && m.workDate <= to);
       const sum = (itemId: string, kind: "in" | "install") => roundQty(week.filter((m) => m.itemId === itemId && m.kind === kind).reduce((a, m) => a + m.qty, 0));

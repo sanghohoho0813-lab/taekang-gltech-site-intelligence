@@ -68,6 +68,8 @@ beforeAll(async () => {
   const { db } = await svc.getView(ceo);
   const b = db.sites.find((s) => s.id === "site-b")!;
   await svc.executeCommand(ceo, "setSiteWarranty", { siteId: "site-b", months: 6, completedDate: b.startDate });
+  // 하자보증 알림만 보려고 아침 알림(D-72)은 끈다 — 아침 알림은 아래 따로
+  await svc.executeCommand(ceo, "setCompanySettings", { morningBrief: false });
   end = warrantyEnd(b.startDate, 6);
 });
 
@@ -110,6 +112,32 @@ describe("매일 점검 — 하자보증 만료 알림", () => {
     sent.length = 0;
     expect(await svc.runDailyJobs(shift(end, -6))).toMatchObject({ warrantyNotices: 1, pushed: 2 });
     expect(sent[0].payload.title).toBe("하자보증 만료 6일 전");
+  });
+});
+
+describe("매일 점검 — 아침 알림 (D-72)", () => {
+  it("본사 요약은 대표·공무에게, 현장 ‘오늘 할 일’은 그 사람에게만 · 같은 날 다시 안 감 · 금액 없음", async () => {
+    const field = await loginAs("field@demo.local");
+    const fs = fakeSub();
+    await push.saveSubscription(field, fs);
+    await svc.executeCommand(ceo, "setCompanySettings", { morningBrief: true });
+    // 다음 월요일 (일요일은 쉼)
+    const d = new Date(Date.now() + 9 * 3_600_000);
+    d.setUTCDate(d.getUTCDate() + ((8 - d.getUTCDay()) % 7 || 7));
+    const monday = d.toISOString().slice(0, 10);
+    await svc.executeCommand(manager, "createWorkOrder", { siteId: "site-a", title: "3층 실링 보수", assigneeUserId: field.id, dueDate: monday });
+    sent.length = 0;
+    const r = await svc.runDailyJobs(new Date(`${monday}T00:30:00Z`));
+    expect(r.briefs).toBeGreaterThanOrEqual(3);
+    const brief = sent.filter((x) => x.payload.tag.startsWith("brief"));
+    expect(brief.filter((x) => x.payload.tag === "brief-hq").map((x) => x.endpoint).sort()).toEqual([subs.ceo, subs.manager].sort());
+    expect(brief.filter((x) => x.payload.tag === "brief-field").map((x) => x.endpoint)).toEqual([fs.endpoint]);
+    expect(brief.find((x) => x.payload.tag === "brief-field")!.payload).toMatchObject({ url: "/my-actions" });
+    expect(JSON.stringify(brief)).not.toMatch(/\d\s*원|억/);
+    expect(brief.some((x) => x.endpoint === subs.partner)).toBe(false);
+    sent.length = 0;
+    expect((await svc.runDailyJobs(new Date(`${monday}T05:00:00Z`))).briefs).toBe(0);
+    expect(sent.filter((x) => x.payload.tag.startsWith("brief"))).toHaveLength(0);
   });
 });
 
