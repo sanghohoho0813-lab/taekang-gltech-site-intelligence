@@ -26,6 +26,8 @@ test("아침 알림: 설정에서 오늘 보낼 내용 미리보기(본사·현�
   await expect(card).toHaveAttribute("data-on", "1");
   await expect(card.getByTestId("brief-status")).toContainText("시연판은 실제로 보내지 않습니다");
   await expect(card.getByTestId("brief-preview-hq")).toContainText("오늘 아침 확인할 일");
+  // 휴대폰에 보일 문구 그대로
+  await expect(card.getByTestId("brief-push-hq")).toContainText("오늘 아침 확인할 일");
   await expect(card.getByTestId("brief-preview-hq")).not.toContainText(/\d\s*원|억/);
   await card.getByTestId("brief-toggle").click();
   await expect(card).toHaveAttribute("data-on", "0");
@@ -54,8 +56,11 @@ test("준공 보고서: 준공 전 ‘중간 정리’ → 준공일 넣으면 �
   await page.getByTestId("warranty-save").click();
   await expect(page.getByTestId("completion-open")).toContainText("준공 보고서");
   await page.getByTestId("completion-open").click();
-  await expect(body).toContainText("준공 보고서");
+  // 준공일은 넣었지만 공정률이 100%가 아니면 ‘준공 보고서’가 아니라 ‘공사 정리 보고서’ + 화면 안내 (인쇄에는 안 나옴)
+  await expect(page.getByTestId("completion-title")).toHaveText("공사 정리 보고서");
+  await expect(page.getByTestId("completion-unfinished")).toBeVisible();
   await expect(page.getByTestId("completion-not-done")).toHaveCount(0);
+  await expect(page.getByTestId("completion-sign")).toContainText("담당");
   await expect(page.getByTestId("completion-overview")).toContainText("계약서 기준");
   const pdf = await page.pdf({ format: "A4", printBackground: true, margin: { top: "12mm", bottom: "12mm", left: "12mm", right: "12mm" } });
   expect((pdf.toString("latin1").match(/\/Type\s*\/Page[^s]/g) ?? []).length).toBeLessThanOrEqual(5);

@@ -1,7 +1,7 @@
 /**
- * 아침 알림 (D-72) — 매일 아침 점검이 하루 한 번 보낸다. 같은 내용을 화면 ‘아침 알림 미리보기’도 보여 준다.
- * - 본사(대표·공무): 어제 출근했는데 보고가 없는 현장 + 오늘 손댈 처리 대기 (대시보드 ‘처리 대기’와 같은 계산)
- * - 현장 직원: 내 작업지시 중 오늘 기한·기한 지남·보완 요청, 본사가 보완을 요청한 내 보고
+ * 아침 알림 (D-72) — 매일 아침 7시 30분 점검이 하루 한 번 보낸다. 같은 내용을 화면 ‘아침 알림 미리보기’도 보여 준다.
+ * - 본사(대표·공무): 지난 근무일(월요일이면 토·일) 출근했는데 보고가 없는 현장 + 매일 손댈 처리 대기 (대시보드 ‘처리 대기’와 같은 계산 · 인건비·앱 의견·운영 자료는 빼고)
+ * - 현장 직원: 내 작업지시 중 새 지시·오늘 기한·기한 지남·보완 요청, 본사가 보완을 요청한 내 보고
  * - 할 일이 없으면 보내지 않는다. 일요일은 쉰다. 잠금화면에 보이므로 금액은 넣지 않는다.
  */
 import type { DemoDB } from "./types";
@@ -29,7 +29,8 @@ export function missingReportSites(db: DemoDB, date: string): { siteId: string; 
   return db.sites
     .filter((s) => s.status === "active")
     .filter((s) => (db.attendance ?? []).some((a) => a.siteId === s.id && a.workDate === date) || (db.crewChecks ?? []).some((c) => c.siteId === s.id && c.workDate === date && !c.imported))
-    .filter((s) => !db.reports.some((r) => r.siteId === s.id && r.reportDate === date && r.status !== "voided" && !r.importBatchId))
+    // 사진만·비용만 보낸 것은 그날 보고로 치지 않는다 (현장 홈 ‘오늘 보고’와 같은 기준 · D-65·D-72 점검 반영)
+    .filter((s) => !db.reports.some((r) => r.siteId === s.id && r.reportDate === date && r.status !== "voided" && !r.importBatchId && !r.kind))
     .map((s) => ({ siteId: s.id, name: s.shortName }));
 }
 
@@ -48,20 +49,36 @@ export interface HqBrief {
 
 const clip = (s: string, n = 110) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
-/** 본사 아침 알림 — 어제(일요일이면 토요일) 보고 빠진 현장 + 처리 대기 */
+const WD = ["일", "월", "화", "수", "목", "금", "토"];
+/** 11/07(토) */
+export const shortDay = (date: string) => `${date.slice(5, 7)}/${date.slice(8, 10)}(${WD[weekday(date)]})`;
+
+/** 아침 알림이 돌아볼 날 — 어제, 월요일이면 토·일 둘 다 (일요일 출근을 놓치지 않게 · D-72 점검 반영) */
+export function briefLookback(today: string): string[] {
+  return weekday(today) === 1 ? [shiftDate(today, -2), shiftDate(today, -1)] : [shiftDate(today, -1)];
+}
+
+/** 본사 아침 알림 — 지난 근무일 보고 빠진 현장 + 매일 손댈 처리 대기 */
 export function hqBrief(db: DemoDB, today: string, live: boolean): HqBrief {
-  const yesterday = shiftDate(today, weekday(today) === 1 ? -2 : -1);
-  const missing = missingReportSites(db, yesterday);
   const lines: BriefLine[] = [];
-  if (missing.length) lines.push({ key: "missing", label: `${yesterday.slice(5).replace("-", "/")} 출근했는데 보고 없는 현장 (${missing.map((m) => m.name).join(", ")})`, n: missing.length, href: "/daily" });
+  const parts: string[] = [];
+  for (const day of briefLookback(today)) {
+    const missing = missingReportSites(db, day);
+    if (!missing.length) continue;
+    const names = missing.map((m) => m.name);
+    lines.push({ key: `missing-${day}`, label: `${shortDay(day)} 출근했는데 보고 없는 현장 (${names.join(", ")})`, n: missing.length, href: `/daily?date=${day}` });
+    parts.push(`${shortDay(day)} 보고 없는 현장 ${missing.length}곳(${names.join("·")})`);
+  }
   const items = pendingItems(db, today, live);
   for (const k of HQ_KEYS) {
     const it = items.find((x) => x.key === k);
-    if (it?.n) lines.push({ key: k, label: SHORT[k] ?? it.label, n: it.n, href: it.href });
+    if (it?.n) {
+      lines.push({ key: k, label: SHORT[k] ?? it.label, n: it.n, href: it.href });
+      parts.push(`${SHORT[k] ?? it.label} ${it.n}건`);
+    }
   }
   const total = lines.reduce((a, l) => a + l.n, 0);
-  const body = clip(lines.map((l) => (l.key === "missing" ? `보고 없는 현장 ${l.n}곳(${missing.map((m) => m.name).join("·")})` : `${l.label} ${l.n}건`)).join(" · "));
-  return { lines, total, title: `오늘 아침 확인할 일 ${total}건`, body };
+  return { lines, total, title: `오늘 아침 확인할 일 ${total}건`, body: clip(parts.join(" · ")) };
 }
 
 export interface FieldBrief {
@@ -81,11 +98,16 @@ export function fieldBriefs(db: DemoDB, today: string): FieldBrief[] {
     .map((u) => {
       const mine = open.filter((w) => w.assigneeUserId === u.id);
       const returned = mine.filter((w) => w.status === "returned");
-      const dueToday = mine.filter((w) => w.status !== "returned" && w.dueDate === today);
-      const late = mine.filter((w) => w.status !== "returned" && !!w.dueDate && w.dueDate < today);
-      // 보완 요청 뒤 덧붙이지 않은 내 보고
-      const reports = db.reports.filter((r) => r.createdBy === u.id && r.status !== "voided" && r.review?.status === "returned" && !(r.supplements ?? []).some((s) => s.at > r.review!.at));
+      // 아직 ‘확인했어요’를 누르지 않은 새 지시는 따로 — 본사에는 ‘미접수’로 보이는 것 (D-72 점검 반영)
+      const fresh = mine.filter((w) => w.status === "sent");
+      const working = mine.filter((w) => w.status === "received" || w.status === "in_progress");
+      const dueToday = working.filter((w) => w.dueDate === today);
+      const late = working.filter((w) => !!w.dueDate && w.dueDate < today);
+      // 보완 요청 뒤 덧붙이지 않은 내 보고 — 지금 담당 현장 것만 (휴대폰에 안 보이는 보고를 매일 알리지 않게 · D-72 점검 반영)
+      const mySites = new Set(db.sites.filter((s) => s.fieldUserId === u.id || (u.siteIds ?? []).includes(s.id)).map((s) => s.id));
+      const reports = db.reports.filter((r) => r.createdBy === u.id && mySites.has(r.siteId) && r.status !== "voided" && r.review?.status === "returned" && !(r.supplements ?? []).some((s) => s.at > r.review!.at));
       const lines: BriefLine[] = [
+        { key: "new", label: "새 작업지시 (확인 안 함)", n: fresh.length, href: "/my-actions" },
         { key: "due", label: "오늘 기한 작업지시", n: dueToday.length, href: "/my-actions" },
         { key: "late", label: "기한 지난 작업지시", n: late.length, href: "/my-actions" },
         { key: "wo-returned", label: "보완 요청 받은 작업지시", n: returned.length, href: "/my-actions" },

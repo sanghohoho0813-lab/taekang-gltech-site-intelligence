@@ -7,6 +7,7 @@ import { DEFAULT_SETTINGS } from "@/lib/domain/types";
 import { siteFinancials, snapshotOf } from "@/lib/domain/calc";
 import { CATEGORY_LABEL, COST_CATEGORIES } from "@/lib/domain/labels";
 import { fmtEok, fmtMan, todayIso } from "@/lib/domain/format";
+import { syncStageDone } from "@/lib/domain/schedule";
 import { uid } from "@/lib/domain/ids";
 import { CommandError, MAX_AMOUNT, MAX_CONTRACT, claimKey, clone, log, nowIso, pastCalendarDate, requireSite, touch, validateAmount, type Ctx } from "./commands";
 
@@ -111,7 +112,8 @@ export function saveSite(db0: DemoDB, input: SaveSiteInput, ctx: Ctx) {
     const untouched = s.basePct !== undefined && Math.round(s.progressPct ?? 0) === Math.round(s.basePct);
     // 본사가 창을 연 사이 현장 보고로 공정률이 바뀌었고 이 창에서는 그대로 두었다면 → 현장 값 유지 (덮어쓰기 방지)
     const progressPct = cur !== undefined && untouched && cur !== s.basePct ? cur : Math.round(s.progressPct ?? 0);
-    return { id: s.id ?? uid("stg"), name: s.name.trim(), startDate: s.startDate, endDate: s.endDate, progressPct };
+    const doneOn = s.id ? db0.sites.find((x) => x.id === input.id)?.stages.find((x) => x.id === s.id)?.doneOn : undefined;
+    return { id: s.id ?? uid("stg"), name: s.name.trim(), startDate: s.startDate, endDate: s.endDate, progressPct, ...(doneOn ? { doneOn } : {}) };
   });
   if (!site) {
     const year = input.startDate.slice(0, 4);
@@ -151,6 +153,7 @@ export function saveSite(db0: DemoDB, input: SaveSiteInput, ctx: Ctx) {
       illustration: input.illustration ?? site.illustration,
     });
   }
+  syncStageDone(site, todayIso(ctx.now));
   const warrantyStart = !isNew && site.warranty && !site.warranty.completedDate && typeof wDate === "string" && wDate ? wDate : null;
   if (warrantyStart) site.warranty = { ...site.warranty!, completedDate: warrantyStart, setAt: at, setBy: ctx.userId };
 
@@ -244,6 +247,8 @@ export function updateProgress(db0: DemoDB, input: UpdateProgressInput, ctx: Ctx
     const st = site.stages.find((x) => x.id === s.id);
     if (st) st.progressPct = Math.round(s.progressPct);
   }
+  // 본사가 공정률을 고쳐 100%가 된 단계도 완료일을 남긴다 (준공 보고서 · D-72 점검 반영)
+  syncStageDone(site, todayIso(ctx.now));
   log(db, ctx, "progress", `${site.shortName} 공정률 ${prev}% → ${site.progressPct}%`, site.id, `/sites/${site.id}`);
   touch(db, ctx);
   return { db, result: { progressPct: site.progressPct } };

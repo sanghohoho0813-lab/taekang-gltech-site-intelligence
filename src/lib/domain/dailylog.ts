@@ -4,6 +4,7 @@
  */
 import type { CostCategory, DemoDB, FieldReport, Site, SitePhoto, WorkOrder } from "./types";
 import { hhmm, minutesOf, shiftDate } from "./attendance";
+import { todayIso } from "./format";
 import { liveMoves, materialRows, movesOn, roundQty } from "./material";
 
 export interface DailyCrewRow {
@@ -132,7 +133,12 @@ export interface WeeklyLog {
   openOrders: { title: string; status: WorkOrder["status"]; dueDate?: string }[];
   /** 자재 반입·설치 — 이번 주 합계와 주말까지 누계 (D-64 · 수량만) */
   materials: { name: string; unit: string; weekIn: number; weekInstall: number; inTotal: number; installTotal: number; plannedQty: number; installPct: number | null }[];
-  nextStages: { name: string; startDate: string; endDate: string; progressPct: number }[];
+  /** 그 주 말일의 공정 단계 진행률 (지난 주: 그때까지의 마지막 기록 · 이번 주: 지금 값 · 기록 없으면 null) */
+  nextStages: { name: string; startDate: string; endDate: string; progressPct: number | null }[];
+  /** 그 주 말일 기준 전체 공정률 — 지난 주에 오늘 값이 찍히던 문제 (D-72 점검 반영) */
+  endPct: number | null;
+  /** 이번 주(또는 앞으로의 주)인가 — ‘현재’라고 써도 되는가 */
+  current: boolean;
 }
 
 /** 월요일 시작 주간 */
@@ -141,7 +147,7 @@ export function weekStart(date: string): string {
   return shiftDate(date, wd === 0 ? -6 : 1 - wd);
 }
 
-export function weeklyLog(db: DemoDB, site: Site, from: string): WeeklyLog {
+export function weeklyLog(db: DemoDB, site: Site, from: string, today = todayIso()): WeeklyLog {
   const to = shiftDate(from, 6);
   const days = Array.from({ length: 7 }, (_, i) => dailyLog(db, site, shiftDate(from, i)));
   const byStage = new Map<string, { name: string; from: number; to: number }>();
@@ -153,6 +159,11 @@ export function weeklyLog(db: DemoDB, site: Site, from: string): WeeklyLog {
       }
   // ‘현장 보고 N일’은 실제 현장 보고만 (엑셀로 옮긴 지난 기록 제외 · D-71 점검 반영)
   const real = (d: DailyLog) => d.reports.filter((r) => !r.importBatchId).length;
+  // 그 주 말일 기준 값 — 이번 주면 지금 값, 지난 주면 그때까지의 마지막 기록
+  const current = to >= today;
+  const upto = db.reports.filter((r) => r.siteId === site.id && r.status !== "voided" && r.reportDate <= to).sort((a, b) => a.reportDate.localeCompare(b.reportDate) || a.createdAt.localeCompare(b.createdAt));
+  const overallAt = upto.filter((r) => r.progress).at(-1)?.progress?.to ?? null;
+  const stageAt = (id: string) => upto.flatMap((r) => (r.stages ?? []).filter((c) => c.stageId === id)).at(-1)?.to ?? null;
   const nextFrom = shiftDate(to, 1);
   const nextTo = shiftDate(to, 7);
   return {
@@ -177,6 +188,10 @@ export function weeklyLog(db: DemoDB, site: Site, from: string): WeeklyLog {
         .filter((r) => !r.item.archived || week.some((m) => m.itemId === r.item.id))
         .map((r) => ({ name: r.item.name, unit: r.item.unit, weekIn: sum(r.item.id, "in"), weekInstall: sum(r.item.id, "install"), inTotal: r.inQty, installTotal: r.installQty, plannedQty: r.item.plannedQty, installPct: r.installPct }));
     })(),
-    nextStages: site.stages.filter((s) => s.progressPct < 100 && s.startDate <= nextTo && s.endDate >= nextFrom).map((s) => ({ name: s.name, startDate: s.startDate, endDate: s.endDate, progressPct: s.progressPct })),
+    nextStages: site.stages
+      .map((s) => ({ name: s.name, startDate: s.startDate, endDate: s.endDate, progressPct: current ? s.progressPct : stageAt(s.id) }))
+      .filter((s) => (s.progressPct ?? 0) < 100 && s.startDate <= nextTo && s.endDate >= nextFrom),
+    endPct: current ? site.progressPct : overallAt,
+    current,
   };
 }

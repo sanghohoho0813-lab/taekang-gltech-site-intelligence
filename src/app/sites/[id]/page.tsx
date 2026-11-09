@@ -694,12 +694,15 @@ function CompletionCard({ site }: { site: Site }) {
     <Card data-testid="completion-card">
       <CardHeader
         title="준공 보고서 (발주처 제출용)"
-        sub={done ? "공사 기간 전체 — 공정 단계별 완료일·월별 공정률·공개 사진·하자 처리·하자보증 · 금액 없음" : "준공 전에는 작성일 기준 ‘중간 정리’로 나옵니다 · 금액 없음"}
+        sub={done ? "공사 기간 전체 — 공정 단계별 완료일·월별 공정률·공개 사진·하자 처리·하자보증 · 금액 없음" : "준공 전에는 작성일 기준 ‘공사 진행 정리’로 나옵니다 · 금액 없음"}
         right={
-          <Link href={`/sites/${site.id}/completion`} data-testid="completion-open">
-            <Button size="sm" variant={done ? "cta" : "soft"} icon={<FileText size={15} />}>
-              {done ? "준공 보고서" : "중간 정리 보기"}
-            </Button>
+          // 링크 안에 버튼을 넣지 않는다 (누르는 것이 하나로 읽히게 · D-72 점검 반영)
+          <Link
+            href={`/sites/${site.id}/completion`}
+            className={cx("press inline-flex min-h-11 items-center gap-1.5 rounded-xl px-3.5 text-[0.86rem] font-bold", done ? "bg-cta text-[var(--t-cta-text)]" : "bg-active-soft text-theme-ink")}
+            data-testid="completion-open"
+          >
+            <FileText size={15} aria-hidden /> {done ? "준공 보고서" : "공사 진행 정리 보기"}
           </Link>
         }
       />

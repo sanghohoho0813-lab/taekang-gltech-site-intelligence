@@ -1,7 +1,7 @@
 "use client";
 
 /** 공사일보·주간 공정 보고 — 현장 보고·작업 인원·출퇴근·작업지시·사진으로 자동 작성 (인쇄용, 금액 없음) */
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight, Printer } from "lucide-react";
 import { useMe } from "@/lib/data/hooks";
 import { dailyLog, stageChangeText, weekStart, weeklyLog, weekdayOf, type DailyLog, type WeeklyLog } from "@/lib/domain/dailylog";
@@ -21,6 +21,14 @@ export function DailyLogBoard() {
   const [siteId, setSiteId] = useState<string>("");
   const [date, setDate] = useState(todayIso());
   const [mode, setMode] = useState<"day" | "week">("day");
+  // 아침 알림·다른 화면에서 ‘/daily?date=…&site=…’로 오면 그 날·현장으로 (D-72)
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const d = q.get("date");
+    if (d && /^\d{4}-\d{2}-\d{2}$/.test(d) && d <= todayIso()) setDate(d);
+    if (q.get("site")) setSiteId(q.get("site")!);
+    if (q.get("view") === "week") setMode("week");
+  }, []);
   if (!db) return <PageSkeleton />;
   const site = sites.find((s) => s.id === siteId) ?? sites[0];
   if (!site)
@@ -142,7 +150,8 @@ function DayDoc({ d }: { d: DailyLog }) {
       )}
       <Doc testId="daily-doc">
         <h2 className="text-center text-[1.5rem] font-extrabold tracking-[0.3em]">공 사 일 보</h2>
-        <table className="mt-4 w-full border-collapse">
+        <div className="mt-4 overflow-x-auto print:overflow-visible" role="region" tabIndex={0} aria-label="표 (휴대폰에서는 옆으로 밀어 보기)">
+        <table className="w-full min-w-[32rem] print:min-w-0 border-collapse">
           <tbody>
             <tr>
               <th className={th}>공사명</th>
@@ -178,6 +187,7 @@ function DayDoc({ d }: { d: DailyLog }) {
             </tr>
           </tbody>
         </table>
+        </div>
 
         <Section title="금일 작업 내용" testId="daily-work">
           {d.work.length ? (
@@ -197,7 +207,8 @@ function DayDoc({ d }: { d: DailyLog }) {
         </Section>
 
         <Section title={`투입 인원 (작업 인원 ${d.crewTotal}명 · 직원 ${d.staff.length}명)`} testId="daily-crew">
-          <table className="w-full border-collapse">
+          <div className="overflow-x-auto print:overflow-visible" role="region" tabIndex={0} aria-label="표 (휴대폰에서는 옆으로 밀어 보기)">
+          <table className="w-full min-w-[32rem] print:min-w-0 border-collapse">
             <thead>
               <tr>
                 <th className={th}>팀·업체</th>
@@ -237,11 +248,13 @@ function DayDoc({ d }: { d: DailyLog }) {
               ))}
             </tbody>
           </table>
+          </div>
         </Section>
 
         {d.materialQty.length > 0 && (
           <Section title="자재 반입·설치 수량" testId="daily-material-qty">
-            <table className="w-full text-[0.88rem]">
+            <div className="overflow-x-auto print:overflow-visible" role="region" tabIndex={0} aria-label="표 (휴대폰에서는 옆으로 밀어 보기)">
+            <table className="w-full min-w-[32rem] print:min-w-0 text-[0.88rem]">
               <thead>
                 <tr>
                   <th className={th}>구분</th>
@@ -264,6 +277,7 @@ function DayDoc({ d }: { d: DailyLog }) {
                 ))}
               </tbody>
             </table>
+            </div>
           </Section>
         )}
 
@@ -350,10 +364,11 @@ function WeekDoc({ w, today }: { w: WeeklyLog; today: string }) {
         {w.site.name} · <span className="num">{fmtDate(w.from)} ({weekdayOf(w.from)}) ~ {fmtDate(w.to)} ({weekdayOf(w.to)})</span>
       </p>
       <p className="mt-2 text-center text-[0.84rem] text-ink-3" data-testid="weekly-summary">
-        현장 보고 {w.reportDays}일 · 작업 인원 연 {w.crewTotal}명 · 현재 공정률 {w.site.progressPct}%
+        현장 보고 {w.reportDays}일 · 작업 인원 연 {w.crewTotal}명 · {w.current ? "현재" : "주말"} 공정률 {w.endPct === null ? "기록 없음" : `${w.endPct}%`}
       </p>
       <Section title="일별 현황" testId="weekly-days">
-        <table className="w-full border-collapse">
+        <div className="overflow-x-auto print:overflow-visible" role="region" tabIndex={0} aria-label="표 (휴대폰에서는 옆으로 밀어 보기)">
+        <table className="w-full min-w-[32rem] print:min-w-0 border-collapse">
           <thead>
             <tr>
               <th className={cx(th, "w-24")}>날짜</th>
@@ -365,7 +380,8 @@ function WeekDoc({ w, today }: { w: WeeklyLog; today: string }) {
           </thead>
           <tbody>
             {w.days.map((d) => (
-              <tr key={d.date} className={d.weekday === "일" || d.date > today ? "text-ink-3" : ""} data-future={d.date > today ? "1" : "0"}>
+              // 일요일은 일한 기록이 없을 때만 흐리게 (일요일 작업이 흐리게 보이던 문제 · D-72 점검 반영)
+              <tr key={d.date} className={(d.weekday === "일" && !d.crewTotal && !d.staff && !d.reports) || d.date > today ? "text-ink-3" : ""} data-future={d.date > today ? "1" : "0"}>
                 <td className={cx(td, "num")}>
                   {d.date.slice(5).replace("-", "/")} ({d.weekday})
                 </td>
@@ -377,6 +393,7 @@ function WeekDoc({ w, today }: { w: WeeklyLog; today: string }) {
             ))}
           </tbody>
         </table>
+        </div>
       </Section>
       <Section title="공정 진척 (이번 주 보고 기준)" testId="weekly-stages">
         {w.stages.length ? (
@@ -393,7 +410,8 @@ function WeekDoc({ w, today }: { w: WeeklyLog; today: string }) {
       </Section>
       {w.materials.length > 0 && (
         <Section title="자재 반입·설치 (이번 주 · 누계)" testId="weekly-materials">
-          <table className="w-full text-[0.86rem]">
+          <div className="overflow-x-auto print:overflow-visible" role="region" tabIndex={0} aria-label="표 (휴대폰에서는 옆으로 밀어 보기)">
+          <table className="w-full min-w-[32rem] print:min-w-0 text-[0.86rem]">
             <thead>
               <tr>
                 <th className={th}>품목</th>
@@ -418,6 +436,7 @@ function WeekDoc({ w, today }: { w: WeeklyLog; today: string }) {
               ))}
             </tbody>
           </table>
+          </div>
         </Section>
       )}
       <Section title="특이사항·문제">
@@ -452,7 +471,7 @@ function WeekDoc({ w, today }: { w: WeeklyLog; today: string }) {
           <ul className="list-disc space-y-0.5 pl-5 text-[0.9rem]">
             {w.nextStages.map((s) => (
               <li key={s.name}>
-                {s.name} <span className="num text-ink-3">({s.startDate.slice(5).replace("-", "/")} ~ {s.endDate.slice(5).replace("-", "/")}, 현재 {s.progressPct}%)</span>
+                {s.name} <span className="num text-ink-3">({s.startDate.slice(5).replace("-", "/")} ~ {s.endDate.slice(5).replace("-", "/")}, {w.current ? "현재" : "주말"} {s.progressPct === null ? "기록 없음" : `${s.progressPct}%`})</span>
               </li>
             ))}
           </ul>

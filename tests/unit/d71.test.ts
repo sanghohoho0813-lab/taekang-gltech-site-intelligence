@@ -213,7 +213,7 @@ describe("공정 진행 이력 — 반영·취소", () => {
     expect(d.stages.map((x) => stageChangeText(x))).toEqual(["30% → 60%", "10% (첫 기록)"]);
     expect(dailyLog(db, site, "2026-10-01").stages).toEqual([{ name: "전체 공정률", from: 35, to: 35 }]);
     // 주간: ‘현장 보고 N일’에 넣지 않는다
-    expect(weeklyLog(db, site, weekStart("2026-09-01")).reportDays).toBe(0);
+    expect(weeklyLog(db, site, weekStart("2026-09-01"), TODAY).reportDays).toBe(0);
     // 본사 공정 진행 이력 — 엑셀 이관 표시, 첫 기록 표시
     const h = progressHistory(db, "site-c", TODAY);
     expect(h.map((x) => [x.date, x.imported])).toEqual([

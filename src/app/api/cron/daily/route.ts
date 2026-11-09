@@ -15,7 +15,7 @@ function same(a: string, b: string): boolean {
 }
 
 /**
- * 매일 점검 (D-71) — Vercel 예약 작업(vercel.json crons)이 매일 오전 9시(한국)에 부른다.
+ * 매일 점검 (D-71) — Vercel 예약 작업(vercel.json crons)이 매일 아침 7시 30분(한국, UTC 22:30)에 부른다 — 현장 작업 시작 전에 아침 알림이 가도록 (D-72).
  * Vercel은 CRON_SECRET 환경변수가 있으면 ‘Authorization: Bearer <값>’을 붙여 보낸다. 값이 없거나 다르면 아무것도 하지 않는다.
  * 하는 일: 보관 기간 지난 위치 좌표 지우기, 하자보증 만료 60·30·7일 전 본사 알림. 응답에는 숫자만 (회사·현장 이름 없음).
  */

@@ -140,3 +140,14 @@ export function siteProgressDelta(site: Site, changes: { stageId: string; progre
   });
   return delta;
 }
+
+/** 공정 단계 완료일 맞추기 — 100%가 되면 그날을 남기고, 100% 아래로 내려가면 지운다 (D-72) */
+export function syncStageDone(site: { stages: SiteStage[] }, date: string): void {
+  site.stages = site.stages.map((st) => {
+    if (st.progressPct >= 100) return st.doneOn ? st : { ...st, doneOn: date };
+    if (!st.doneOn) return st;
+    const { doneOn: _d, ...rest } = st;
+    void _d;
+    return rest;
+  });
+}

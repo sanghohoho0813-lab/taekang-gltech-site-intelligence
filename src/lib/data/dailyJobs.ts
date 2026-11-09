@@ -66,17 +66,23 @@ export function runDailyChecks(db0: DemoDB, now: Date, live = true): DailyResult
     warranty.push({ siteId: site.id, days: d!.days });
   }
   // 아침 알림 (D-72) — 하루 한 번, 할 일이 있는 사람에게만. 보낸 날은 회사 설정에 남겨 다시 보내지 않는다
+  // 아침 알림 계산에서 오류가 나도 위치 좌표 삭제·하자보증 알림은 그대로 진행되게 따로 묶는다 (D-72 점검 반영)
   if (briefOn) {
-    const h = hqBrief(db0, today, live);
-    if (h.total && hq.length) {
-      notices.push({ to: hq, title: h.title, body: h.body, url: "/dashboard", tag: "brief-hq" });
-      brief.hq = hq.length;
+    try {
+      const h = hqBrief(db0, today, live);
+      const fb = fieldBriefs(db0, today);
+      if (h.total && hq.length) {
+        notices.push({ to: hq, title: h.title, body: h.body, url: "/dashboard", tag: "brief-hq" });
+        brief.hq = hq.length;
+      }
+      for (const f of fb) {
+        notices.push({ to: [f.userId], title: f.title, body: f.body, url: f.lines[0].href, tag: "brief-field" });
+        brief.field += 1;
+      }
+      db.settings = { ...(db.settings ?? DEFAULT_SETTINGS), briefSentOn: today };
+    } catch (e) {
+      console.error("[brief]", e);
     }
-    for (const f of fieldBriefs(db0, today)) {
-      notices.push({ to: [f.userId], title: f.title, body: f.body, url: f.lines[0].href, tag: "brief-field" });
-      brief.field += 1;
-    }
-    db.settings = { ...(db.settings ?? DEFAULT_SETTINGS), briefSentOn: today };
   }
   touch(db, ctx);
   return { db, changed: true, notices, warranty, brief };

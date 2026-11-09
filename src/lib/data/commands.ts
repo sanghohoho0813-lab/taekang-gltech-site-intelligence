@@ -5,7 +5,7 @@
  */
 import { judgeGeo, validSample, type GeoSample } from "@/lib/domain/geo";
 import { hasConsent, stampTerms } from "@/lib/domain/privacy";
-import { siteProgressDelta } from "@/lib/domain/schedule";
+import { siteProgressDelta, syncStageDone } from "@/lib/domain/schedule";
 import type {
   ActionItem,
   ActionKpiSnapshot,
@@ -317,6 +317,8 @@ export function submitFieldReport(db0: DemoDB, input: FieldReportInput, ctx: Ctx
     site.progressPct = Math.round(input.progressPct);
   }
   if (site.progressPct !== progressFrom) report.progress = { from: progressFrom, to: site.progressPct };
+  // 100%가 된 단계의 완료일 = 보고 날짜 (D-72)
+  if (stageChanges.length) syncStageDone(site, report.reportDate);
   const after = siteFinancials(db, input.siteId);
   const costSum = costs.reduce((s, c) => s + c.amount, 0);
   log(
@@ -401,6 +403,7 @@ export function voidReport(db0: DemoDB, reportId: string, ctx: Ctx) {
       undone.push(`${c.name} ${c.to}% → ${c.from}%`);
     }
   }
+  syncStageDone(site, todayIso(ctx.now));
   if (!r.importBatchId && r.progress && site.progressPct === r.progress.to) {
     site.progressPct = r.progress.from;
     undone.push(`공정률 ${r.progress.to}% → ${r.progress.from}%`);

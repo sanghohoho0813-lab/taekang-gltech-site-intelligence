@@ -95,11 +95,11 @@ describe("공사일보 자동 작성", () => {
     expect(weekStart("2026-11-04")).toBe("2026-11-02");
     expect(weekStart("2026-11-08")).toBe("2026-11-02"); // 일요일은 그 주 월요일
     const { db, stage } = today(createSeed(NOW));
-    const w = weeklyLog(db, db.sites.find((s) => s.id === "site-a")!, "2026-11-02");
+    const w = weeklyLog(db, db.sites.find((s) => s.id === "site-a")!, "2026-11-02", TODAY);
     expect(w.days.map((d) => d.weekday)).toEqual(["월", "화", "수", "목", "금", "토", "일"]);
     expect(w.days[2]).toMatchObject({ crewTotal: 6, reports: expect.any(Number) });
     expect(w.stages.find((s) => s.name === stage.name)?.to).toBe(Math.min(100, stage.progressPct + 5));
     expect(w.issues).toContainEqual({ date: TODAY, text: "크레인 대기 40분" });
-    expect(w.nextStages.every((s) => s.progressPct < 100)).toBe(true);
+    expect(w.nextStages.every((s) => (s.progressPct ?? 0) < 100)).toBe(true);
   });
 });

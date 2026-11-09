@@ -294,6 +294,8 @@ export interface SiteStage {
   startDate: string;
   endDate: string;
   progressPct: number;
+  /** 100%가 된 날 (현장 보고·본사 공정률 수정 어느 쪽이든 · 100% 아래로 내려가면 지움) — 준공 보고서 완료일 (D-72) */
+  doneOn?: string;
 }
 
 export interface SiteContract {
