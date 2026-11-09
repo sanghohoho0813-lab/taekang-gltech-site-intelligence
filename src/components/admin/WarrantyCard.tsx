@@ -145,7 +145,10 @@ function WarrantyModal({ site, onClose }: { site: Site; onClose: () => void }) {
         </Field>
         {stillBuilding && (
           <p className="text-[0.8rem] font-semibold text-warn" data-testid="warranty-still-building">
-            아직 {site.status === "active" ? "진행 중인" : "공정이 남은"} 현장입니다 (공정률 {site.progressPct}%). 준공(인도)일이 맞는지 확인하세요 — 현장 상태는 운영 관리에서 ‘준공’으로 바꿉니다.
+            {site.progressPct < 100
+              ? `아직 공정이 남은 현장입니다 (공정률 ${site.progressPct}%). 준공(인도)일이 맞는지 확인하세요.`
+              : "공정률은 100%인데 현장 상태가 아직 ‘진행 중’입니다."}
+            {IS_LIVE && site.status === "active" && " 현장 상태는 운영 관리 → 현장에서 ‘준공’으로 바꿉니다."}
           </p>
         )}
         <Field label="메모 (본사만 봄 · 선택)" htmlFor="w-note" error={errors.note} counter={`${note.length}/80`}>

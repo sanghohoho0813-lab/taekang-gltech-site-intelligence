@@ -43,6 +43,8 @@ export interface CompletionReport {
   photoTotal: number;
   /** 준공일 뒤에 공개한 사진 (보고서에 넣지 않음) */
   photosAfter: number;
+  /** 준공일 뒤에 접수된 하자 (하자보증 기간 · 보고서에 넣지 않음) */
+  defectsAfter: number;
   defects: { total: number; repaired: number; confirmed: number; open: number; avgDays: number | null };
   /** 하자 외 발주처 요청 (견적·주문 등) */
   requests: { total: number; answered: number };
@@ -107,7 +109,9 @@ export function completionReport(db: DemoDB, siteId: string, today: string): Com
   // 날짜는 한국 시간으로 (준공일 다음 날 아침 사진이 들어가던 문제 · D-72 점검 반영)
   const shared = sharedPhotos(db, siteId);
   const photosAll = shared.filter((p) => kst(p.createdAt) <= to).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-  const rows = defectRows(db, today).filter((r) => r.req.siteId === siteId);
+  // 하자는 보고서 기간(준공일까지)에 접수된 것만 — 준공 뒤 하자보증 기간 요청이 ‘준공 때 진행 중’으로 보이지 않게 (D-72 점검 반영)
+  const allRows = defectRows(db, today).filter((r) => r.req.siteId === siteId);
+  const rows = allRows.filter((r) => r.receivedDate <= to);
   const st = defectStats(rows);
   const others = db.partnerRequests.filter((r) => r.siteId === siteId && r.type !== "defect");
   const finished = !!completedDate && site.progressPct >= 100 && site.stages.every((x) => x.progressPct >= 100);
@@ -118,6 +122,7 @@ export function completionReport(db: DemoDB, siteId: string, today: string): Com
     days: Math.max(0, dayDiff(site.startDate, to)) + 1,
     ...(emptyLead ? { emptyLead } : {}),
     photosAfter: shared.length - photosAll.length,
+    defectsAfter: allRows.length - rows.length,
     from: site.startDate,
     to,
     stages,

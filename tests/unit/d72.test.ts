@@ -29,9 +29,12 @@ describe("아침 알림 — 내용", () => {
     expect(h.lines[1]).toMatchObject({ key: "missing-2026-11-08", n: missingReportSites(db, "2026-11-08").length });
     const pending = pendingItems(db, TODAY, false);
     for (const l of h.lines.filter((x) => !x.key.startsWith("missing"))) expect(pending.find((p) => p.key === l.key)?.n).toBe(l.n);
-    expect(h.total).toBe(h.lines.reduce((a, l) => a + l.n, 0));
-    expect(h.title).toBe(`오늘 아침 확인할 일 ${h.total}건`);
-    expect(h.body).toContain("11/07(토) 보고 없는 현장 2곳(A현장·C현장)");
+    // 제목은 단위를 나눈다 (현장 곳 · 처리 대기 건) — 주말 이틀에 같은 현장이 두 번 세어지지 않게
+    const pendingN = h.lines.filter((l) => !l.key.startsWith("missing")).reduce((a, l) => a + l.n, 0);
+    expect(h.title).toBe(`오늘 아침: 보고 없는 현장 2곳 · 처리 대기 ${pendingN}건`);
+    expect(h.total).toBe(2 + pendingN);
+    expect(h.body).toContain("주말(11/7·11/8) 보고 없는 현장 2곳(A현장·C현장)");
+    expect(h.body).toContain("처리 대기 — ");
     expect(h.body).not.toMatch(/원|억/);
     // 화요일이면 월요일을 본다
     expect(hqBrief(db, "2026-11-10", false).lines.map((l) => l.key)).not.toContain("missing-2026-11-07");
@@ -40,18 +43,23 @@ describe("아침 알림 — 내용", () => {
     expect(missingReportSites(withImported, "2026-11-07").map((s) => s.name)).toContain("C현장");
   });
 
-  it("현장 직원: 새 지시(확인 안 함)·오늘 기한·기한 지남·보완 요청만, 본인 것만", () => {
+  it("현장 직원: 현장 앱과 같은 말 ‘본사 요청’ · 가장 급한 한 건을 앞에(현장·제목) · 본인 것만 · 확인 안 한 지시도 기한이 지나면 ‘기한 지남’", () => {
     let db = createSeed(NOW);
-    // 시연 데이터: 박 소장에게 아직 확인 안 한 지시 1건
-    expect(fieldBriefs(db, TODAY).map((x) => [x.userId, x.body])).toEqual([["u-field", "새 작업지시 (확인 안 함) 1건"]]);
+    // 시연 데이터: 박 소장에게 아직 확인 안 한 지시 1건 (기한 남음)
+    const f0 = fieldBriefs(db, TODAY);
+    expect(f0.map((x) => [x.userId, x.title])).toEqual([["u-field", "오늘 확인할 본사 요청 1건"]]);
+    expect(f0[0].body).toMatch(/^A현장 · .+ — 확인해 주세요$/);
     const wo = createWorkOrder(db, { siteId: "site-a", title: "3층 실링 보수", assigneeUserId: "u-field", dueDate: TODAY }, ctx());
     db = workOrderStep(wo.db, { workOrderId: wo.result.workOrderId, action: "receive" }, ctx("u-field")).db;
     db = createWorkOrder(db, { siteId: "site-c", title: "철골 볼트 확인", assigneeUserId: "u-field2", dueDate: "2026-11-12" }, ctx()).db;
     const f = fieldBriefs(db, TODAY);
-    expect(f.find((x) => x.userId === "u-field")).toMatchObject({ title: "오늘 할 일 2건", body: "새 작업지시 (확인 안 함) 1건 · 오늘 기한 작업지시 1건" });
-    expect(f.find((x) => x.userId === "u-field2")).toMatchObject({ body: "새 작업지시 (확인 안 함) 1건" });
-    // 다음 날이면 ‘기한 지난’
-    expect(fieldBriefs(db, "2026-11-10").find((x) => x.userId === "u-field")!.body).toContain("기한 지난 작업지시 1건");
+    expect(f.find((x) => x.userId === "u-field")).toMatchObject({ title: "오늘 확인할 본사 요청 2건", body: "A현장 · 3층 실링 보수 — 오늘까지 (외 1건)" });
+    expect(f.find((x) => x.userId === "u-field2")!.body).toMatch(/^C현장 · 철골 볼트 확인 — 확인해 주세요$/);
+    // 다음 날이면 ‘기한 지남’이 맨 앞
+    expect(fieldBriefs(db, "2026-11-10").find((x) => x.userId === "u-field")!.body).toMatch(/^A현장 · 3층 실링 보수 — 기한 지남/);
+    // 확인 안 한 지시라도 기한이 지나면 ‘기한 지난 본사 요청’
+    const unseen = createWorkOrder(createSeed(NOW), { siteId: "site-c", title: "창호 교체", assigneeUserId: "u-field2", dueDate: TODAY }, ctx()).db;
+    expect(fieldBriefs(unseen, "2026-11-11").find((x) => x.userId === "u-field2")!.lines.map((l) => l.key)).toEqual(["late"]);
   });
 });
 
@@ -65,7 +73,7 @@ describe("아침 알림 — 매일 점검", () => {
     const hq = r.notices.find((n) => n.tag === "brief-hq")!;
     expect(hq).toMatchObject({ url: "/dashboard" });
     expect(hq.to.sort()).toEqual(["u-ceo", "u-manager"]);
-    expect(r.notices.find((n) => n.tag === "brief-field")).toMatchObject({ to: ["u-field"], title: "오늘 할 일 2건", url: "/my-actions" });
+    expect(r.notices.find((n) => n.tag === "brief-field")).toMatchObject({ to: ["u-field"], title: "오늘 확인할 본사 요청 2건", url: "/my-actions" });
     expect(JSON.stringify(r.notices)).not.toMatch(/\d\s*원|억/);
     expect(r.db.settings?.briefSentOn).toBe(TODAY);
     // 같은 날 다시 → 없음

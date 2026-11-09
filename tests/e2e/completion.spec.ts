@@ -25,9 +25,9 @@ test("아침 알림: 설정에서 오늘 보낼 내용 미리보기(본사·현�
   const card = page.getByTestId("brief-card");
   await expect(card).toHaveAttribute("data-on", "1");
   await expect(card.getByTestId("brief-status")).toContainText("시연판은 실제로 보내지 않습니다");
-  await expect(card.getByTestId("brief-preview-hq")).toContainText("오늘 아침 확인할 일");
+  await expect(card.getByTestId("brief-preview-hq")).toContainText("오늘 아침");
   // 휴대폰에 보일 문구 그대로
-  await expect(card.getByTestId("brief-push-hq")).toContainText("오늘 아침 확인할 일");
+  await expect(card.getByTestId("brief-push-hq")).toContainText("오늘 아침");
   await expect(card.getByTestId("brief-preview-hq")).not.toContainText(/\d\s*원|억/);
   await card.getByTestId("brief-toggle").click();
   await expect(card).toHaveAttribute("data-on", "0");
@@ -36,7 +36,7 @@ test("아침 알림: 설정에서 오늘 보낼 내용 미리보기(본사·현�
   await expect(card).toHaveAttribute("data-on", "1");
 });
 
-test("준공 보고서: 준공 전 ‘중간 정리’ → 준공일 넣으면 ‘준공 보고서’ · 인쇄 · 금액 없음 · 현장 직원은 못 봄", async ({ page }) => {
+test("준공 보고서: 준공 전 ‘공사 진행 정리’ → 준공일만 넣고 공정 미완료면 ‘공사 정리 보고서’ · 인쇄 · 금액 없음 · 현장 직원은 못 봄", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await freshStart(page);
   await page.goto("/sites/site-a?tab=requests");

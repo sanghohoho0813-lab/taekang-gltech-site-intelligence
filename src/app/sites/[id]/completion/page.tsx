@@ -91,7 +91,7 @@ export default function CompletionReportPage() {
             <section className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4" aria-label="요약">
               <Kpi label="공사 기간" value={`${r.days.toLocaleString("ko-KR")}일`} sub={`${fmtDate(r.from)} ~ ${r.completedDate ? fmtDate(r.completedDate) : "진행 중"}`} testId="completion-kpi-period" />
               <Kpi label="공정률" value={`${site.progressPct}%`} sub={`공정 단계 ${done}/${r.stages.length} 완료`} testId="completion-kpi-progress" />
-              <Kpi label="공정 사진" value={`${r.photos.length}장`} sub="기간에 고르게" testId="completion-kpi-photos" />
+              <Kpi label="공정 사진" value={`${r.photos.length}장`} sub={r.photos.length ? "기간에 고르게" : "실은 사진 없음"} testId="completion-kpi-photos" />
               <Kpi
                 label="하자보수"
                 value={d.total ? `${d.total}건` : "없음"}
@@ -149,7 +149,8 @@ export default function CompletionReportPage() {
                             ) : st.doneDate ? (
                               <span className="inline-flex flex-wrap items-center justify-end gap-1.5">
                                 <b className="whitespace-nowrap">{fmtDate(st.doneDate)}</b>
-                                {st.late ? <Badge tone="warn">계획보다 늦음</Badge> : <Badge tone="ok">계획 안</Badge>}
+                                {/* 계획 대비는 본사 화면에서만 — 제출 문서에 ‘늦음’이 찍혀 지체 근거로 읽히지 않게 (D-72 점검 반영) */}
+                                <span className="no-print">{st.late ? <Badge tone="warn">계획보다 늦음</Badge> : <Badge tone="ok">계획 안</Badge>}</span>
                               </span>
                             ) : (
                               <span className="font-semibold">
@@ -209,7 +210,8 @@ export default function CompletionReportPage() {
               )}
             </Section>
 
-            <Section title="5. 하자·요청 처리">
+            <Section title="5. 하자·요청 처리" sub={r.completedDate ? "준공일까지 접수된 것" : undefined}>
+              {r.defectsAfter > 0 && <p className="no-print mb-2 text-[0.8rem] text-ink-3" data-testid="completion-defects-after">준공일 뒤 접수된 하자 {r.defectsAfter}건은 하자보증 기간 요청이라 넣지 않았습니다 (하자보수 화면에서 관리).</p>}
               <dl className="grid gap-x-6 sm:grid-cols-2" data-testid="completion-defects">
                 <Row k="하자보수 요청" v={d.total ? `${d.total}건` : "없음"} />
                 <Row k="처리 완료" v={d.total ? `${d.total - d.open}건 (발주처 확인 ${d.confirmed}건)` : "—"} />
