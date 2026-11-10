@@ -7,11 +7,11 @@
  * - 열어 본 횟수는 회사 잠금 안에서 링크 한 건만 고쳐 쓴다 (명령과 동시에 실행돼도 서로 덮어쓰지 않게).
  */
 import type { MaterialMove, FieldReport, PartnerRequest, ReportShare, SitePhoto } from "@/lib/domain/types";
-import { SHARE_TOKEN_RE, shareIdOf, sharePhotoVisible, shareState, type ShareDoc } from "@/lib/domain/share";
+import { SHARE_TOKEN_RE, shareIdOf, sharePhotoVisible, shareState, shareViewCounts, type ShareDoc } from "@/lib/domain/share";
 import { uid } from "@/lib/domain/ids";
 import { getDb, type Tx } from "./sql";
 import { deliver } from "./push";
-import { RULES, hit } from "./rateLimit";
+import { RULES, hit, peek } from "./rateLimit";
 
 type Json<T> = T | string;
 const parse = <T>(v: Json<T>): T => (typeof v === "string" ? (JSON.parse(v) as T) : v);
@@ -22,9 +22,10 @@ export type ShareOpen =
       title: string;
       createdAt: string;
       expiresAt: string;
+      /** 만들 때 고정한 내용 — 사진은 지금도 공개인 것만 남긴다 (공개를 끈 사진은 번호·설명도 내보내지 않는다) */
       doc: ShareDoc;
-      /** 지금 보여 줄 수 있는 사진 번호 (문서에 든 것 중 공개가 유지된 것) */
-      photoIds: string[];
+      /** 보낸 뒤 공개를 거둔 사진 수 */
+      hiddenPhotos: number;
     }
   | { ok: false; reason: "notfound" | "expired" | "revoked" };
 
@@ -68,41 +69,75 @@ export async function openShare(token: unknown, now = new Date()): Promise<Share
   if (state !== "open") return { ok: false, reason: state };
   const doc = f.share.snapshot;
   if (!doc) return { ok: false, reason: "notfound" };
-  const photoIds = await visiblePhotoIds(db, f.companyId, f.share.siteId, doc.photos.map((p) => p.id));
-  return { ok: true, title: f.share.title, createdAt: f.share.createdAt, expiresAt: f.share.expiresAt, doc, photoIds };
+  const visible = new Set(await visiblePhotoIds(db, f.companyId, f.share.siteId, doc.photos.map((p) => p.id)));
+  const photos = doc.photos.filter((p) => visible.has(p.id));
+  return { ok: true, title: f.share.title, createdAt: f.share.createdAt, expiresAt: f.share.expiresAt, doc: { ...doc, photos }, hiddenPhotos: doc.photos.length - photos.length };
 }
 
-/** 링크 속 사진 원본 — 문서에 든 번호이고 지금도 공개인 것만 */
-export async function sharePhoto(token: unknown, photoId: unknown, now = new Date()): Promise<{ mime: string; data: Uint8Array } | null> {
+/**
+ * 주소 미리보기(카카오톡·문자)에 보일 ‘보낸 곳’ 이름 — 열려 있는 링크만. 요청이 많은 곳에는 주지 않는다 (없어도 화면은 열린다)
+ */
+export async function shareSender(token: unknown, who: string, now = new Date()): Promise<string | null> {
+  if (typeof token !== "string" || !SHARE_TOKEN_RE.test(token)) return null;
+  if (!hit(RULES.share, who, now.getTime()).ok) return null;
+  const db = await getDb();
+  const f = await findShare(db, token);
+  if (!f || shareState(f.share, now.toISOString()) !== "open") return null;
+  return f.share.snapshot?.company ?? null;
+}
+
+/**
+ * 링크 속 사진을 줘도 되는지 — 문서에 든 번호이고 지금도 공개인 것만. 원본은 읽지 않는다
+ * (브라우저가 ‘바뀌었는지’만 물을 때마다 사진 전체를 DB에서 꺼내지 않게 · 점검 9차)
+ */
+export async function sharePhotoAccess(token: unknown, photoId: unknown, now = new Date()): Promise<{ companyId: string } | null> {
   if (typeof photoId !== "string" || !/^[\w-]{1,80}$/.test(photoId)) return null;
   const db = await getDb();
   const f = await findShare(db, token);
   if (!f || shareState(f.share, now.toISOString()) !== "open") return null;
   if (!f.share.snapshot?.photos.some((p) => p.id === photoId)) return null;
   if (!(await visiblePhotoIds(db, f.companyId, f.share.siteId, [photoId])).length) return null;
-  const [row] = await db.query<{ mime: string; data: Uint8Array }>(`select mime, data from photo_blobs where id = $1 and company_id = $2`, [photoId, f.companyId]);
+  return { companyId: f.companyId };
+}
+
+/** 사진 원본 (sharePhotoAccess가 허락한 뒤에만 부른다) */
+export async function sharePhotoBlob(companyId: string, photoId: string): Promise<{ mime: string; data: Uint8Array } | null> {
+  const db = await getDb();
+  const [row] = await db.query<{ mime: string; data: Uint8Array }>(`select mime, data from photo_blobs where id = $1 and company_id = $2`, [photoId, companyId]);
   return row ? { mime: row.mime, data: row.data } : null;
 }
 
+/** 링크 속 사진 원본 — 확인 + 읽기 */
+export async function sharePhoto(token: unknown, photoId: unknown, now = new Date()): Promise<{ mime: string; data: Uint8Array } | null> {
+  const ok = await sharePhotoAccess(token, photoId, now);
+  return ok ? sharePhotoBlob(ok.companyId, photoId as string) : null;
+}
+
 /**
- * 열어 본 기록 — 같은 곳(접속 주소)에서 30분 안에 다시 열면 세지 않는다. 링크 하나에 시간당 60번까지만 쓴다 (쓰기 폭주 방지).
- * 처음 열렸을 때는 활동 이력에 남기고 링크를 만든 사람에게 알린다 (금액·이름 없음).
+ * 열어 본 기록.
+ * - 한 링크는 5분에 한 번만 센다 — 이 규칙은 DB의 마지막 시각으로 지킨다 (서버가 여러 대여도 같은 규칙).
+ *   셀 때마다 회사 데이터 번호(rev)가 올라가 로그인한 모든 화면이 새로 받으므로, 여러 사람이 한꺼번에 열어도 폭주하지 않게 (점검 9차)
+ * - 같은 곳(접속 주소)에서는 30분에 한 번 (서버 한 대 기준 메모리 — 보조 장치)
+ * - 처음 열렸을 때는 활동 이력에 남기고 링크를 만든 사람에게 알린다 (금액·이름 없음)
  */
 export async function countShareView(token: unknown, who: string, now = new Date()): Promise<{ counted: boolean }> {
   const db = await getDb();
   const f0 = await findShare(db, token);
-  if (!f0 || shareState(f0.share, now.toISOString()) !== "open") return { counted: false };
-  const id = f0.share.id;
-  if (!hit(RULES.shareViewer, `${id.slice(0, 16)}:${who}`, now.getTime()).ok) return { counted: false };
-  if (!hit(RULES.shareWrites, id.slice(0, 16), now.getTime()).ok) return { counted: false };
   const at = now.toISOString();
+  if (!f0 || shareState(f0.share, at) !== "open") return { counted: false };
+  // 잠금을 잡기 전에 먼저 거른다 (셀 일이 없으면 회사 잠금을 건드리지 않는다)
+  if (!shareViewCounts(f0.share, at)) return { counted: false };
+  const id = f0.share.id;
+  const viewer = `${id.slice(0, 16)}:${who}`;
+  if (!peek(RULES.shareViewer, viewer, now.getTime()).ok) return { counted: false };
   const first = await db.transaction(async (tx) => {
     // 명령과 같은 회사 잠금 — 그 사이 실행 중인 명령이 이 링크를 옛 값으로 덮어쓰지 않게
     await tx.query(`select rev from companies where id = $1 for update`, [f0.companyId]);
     const [row] = await tx.query<{ data: Json<ReportShare> }>(`select data from records where company_id = $1 and collection = 'shares' and id = $2`, [f0.companyId, id]);
     if (!row) return null;
     const cur = parse(row.data);
-    if (shareState(cur, at) !== "open") return null;
+    // 잠금 안에서 다시 확인 (그 사이 닫혔거나, 다른 서버가 방금 셌을 수 있다)
+    if (shareState(cur, at) !== "open" || !shareViewCounts(cur, at)) return null;
     const next: ReportShare = { ...cur, views: (cur.views ?? 0) + 1, firstViewedAt: cur.firstViewedAt ?? at, lastViewedAt: at };
     await tx.query(`update records set data = $3::jsonb, updated_at = now() where company_id = $1 and collection = 'shares' and id = $2`, [f0.companyId, id, JSON.stringify(next)]);
     const isFirst = !cur.firstViewedAt;
@@ -115,6 +150,8 @@ export async function countShareView(token: unknown, who: string, now = new Date
     return isFirst ? cur : false;
   });
   if (first === null) return { counted: false };
+  // 저장이 끝난 뒤에만 ‘이곳은 셌다’고 적는다 (저장이 실패했는데 30분 동안 못 세던 문제 · 점검 9차)
+  hit(RULES.shareViewer, viewer, now.getTime());
   if (first) {
     await deliver(f0.companyId, [
       { to: [first.createdBy], title: "보낸 보고서를 열어 봤습니다", body: `${first.title} — 링크가 처음 열렸습니다`, url: `/sites/${first.siteId}?tab=requests`, tag: `share-${id.slice(0, 12)}` },

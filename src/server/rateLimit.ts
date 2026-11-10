@@ -29,12 +29,11 @@ export const RULES = {
   clientError: { name: "clientError", limit: 30, windowMs: 10 * 60_000 },
   /** 보고서 링크(D-73) — 한 곳에서 여는 횟수 (문서 1번 + 사진 최대 12장이 한 번 열기) */
   share: { name: "share", limit: 240, windowMs: 60_000 },
-  /** 없는 주소를 계속 넣어 보는 시도 */
+  /** 없는 주소를 계속 넣어 보는 시도 — 맞는 주소는 이 제한에 걸리지 않는다 (같은 사무실의 다른 사람이 막지 못하게) */
   shareMiss: { name: "shareMiss", limit: 20, windowMs: 10 * 60_000 },
   /** 열어 본 횟수: 같은 곳에서 30분에 한 번만 센다 */
   shareViewer: { name: "shareViewer", limit: 1, windowMs: 30 * 60_000 },
-  /** 열어 본 횟수 기록: 링크 하나에 시간당 60번까지만 쓴다 */
-  shareWrites: { name: "shareWrites", limit: 60, windowMs: 60 * 60_000 },
+
 } satisfies Record<string, RateRule>;
 
 /** 이번 요청을 세고, 한도를 넘었으면 다시 시도할 수 있을 때까지 남은 초를 돌려준다 */
@@ -52,9 +51,12 @@ export function hit(rule: RateRule, who: string, now = Date.now()): { ok: true }
   return { ok: true };
 }
 
+/** 가장 긴 제한 시간 — 그보다 오래 쉰 기록만 치운다 (30분짜리 기록이 10분 만에 지워지던 문제 · 점검 9차) */
+const MAX_WINDOW = Math.max(...Object.values(RULES).map((r: RateRule) => r.windowMs));
+
 function prune(now: number) {
   for (const [k, list] of buckets) {
-    if (!list.length || list[list.length - 1] < now - 10 * 60_000) buckets.delete(k);
+    if (!list.length || list[list.length - 1] < now - MAX_WINDOW) buckets.delete(k);
     if (buckets.size <= MAX_KEYS / 2) break;
   }
 }

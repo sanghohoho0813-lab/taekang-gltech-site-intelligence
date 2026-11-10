@@ -53,7 +53,9 @@ export default function CompletionReportPage() {
                 siteId={site.id}
                 title={shareTitle(doc)}
                 company={db.company.name}
-                note={r.finished ? undefined : `지금 보내면 ‘${title}’ 제목으로 나갑니다 (${r.completedDate ? `공정률 ${site.progressPct}% · 끝나지 않은 단계 ${unfinished}개` : "준공일을 넣기 전"}). 준공 보고서로 보내려면 준공일과 공정률 마감을 먼저 해 주세요.`}
+                note={r.finished ? undefined : r.completedDate
+                    ? `지금 보내면 ‘${title}’ 제목으로 나갑니다 (공정률 ${site.progressPct}% · 끝나지 않은 단계 ${unfinished}개). ‘준공 보고서’로 보내려면 공정률을 100%로 마감한 뒤 다시 만들어 주세요.`
+                    : `지금 보내면 ‘${title}’ 제목으로 나갑니다 (준공일을 넣기 전). ‘준공 보고서’로 보내려면 준공일을 넣고 공정률을 100%로 마감한 뒤 다시 만들어 주세요.`}
               />
               <Button icon={<Printer size={17} />} onClick={() => window.print()} data-testid="completion-print">
                 인쇄·PDF
@@ -81,7 +83,7 @@ export default function CompletionReportPage() {
           <CompletionDocView
             doc={doc}
             photoSrc={(pid) => src.get(pid)}
-            internal={{ late: Object.fromEntries(r.stages.map((st) => [st.id, st.late])), photosAfter: r.photosAfter, defectsAfter: r.defectsAfter }}
+            internal={{ late: r.stages.map((st) => st.late), photosAfter: r.photosAfter, defectsAfter: r.defectsAfter }}
           />
         </div>
       </div>

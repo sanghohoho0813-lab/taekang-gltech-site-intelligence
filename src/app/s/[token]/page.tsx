@@ -12,7 +12,7 @@ import { dispatch, useDb } from "@/lib/data/store";
 import { recordShareView } from "@/lib/data/shareCommands";
 import { IS_LIVE } from "@/lib/mode";
 import { fmtDate } from "@/lib/domain/format";
-import { SHARE_TOKEN_RE, shareIdOf, sharePhotoVisible, shareState, type ShareDoc } from "@/lib/domain/share";
+import { SHARE_PREVIEW_HASH, SHARE_TOKEN_RE, shareIdOf, sharePhotoVisible, shareState, type ShareDoc } from "@/lib/domain/share";
 import { Button, PageSkeleton } from "@/components/ui/primitives";
 import { LogoMark } from "@/components/shell/Logo";
 import { CompletionDocView, MonthlyDocView } from "@/components/docs/ReportDocs";
@@ -20,7 +20,7 @@ import { CompletionDocView, MonthlyDocView } from "@/components/docs/ReportDocs"
 type Gone = "notfound" | "expired" | "revoked";
 type View =
   | { status: "loading" }
-  | { status: "ok"; title: string; expiresAt: string; doc: ShareDoc; photoSrc: (id: string) => string | null }
+  | { status: "ok"; title: string; expiresAt: string; doc: ShareDoc; photoSrc: (id: string) => string | null; hidden: number }
   | { status: "gone"; code: Gone }
   | { status: "error"; message: string };
 
@@ -31,6 +31,26 @@ const GONE: Record<Gone, { title: string; desc: string }> = {
 };
 
 const VIEW_GAP_MS = 30 * 60_000;
+const PREVIEW_KEY = "tk-site-intel:share-preview";
+/**
+ * 본사가 ‘열어 보기’로 확인하는 중인가 (주소 뒤 #preview — 서버로 가지 않는 표시). 받는 분이 여는 주소에는 없다.
+ * 표시는 읽자마자 주소에서 지운다 — 본사가 이 탭의 주소를 복사해 보내도 받는 분의 열람이 정상으로 세어지게 (점검 9차).
+ * 같은 탭에서 새로 고쳐도 미리보기로 남도록 탭 저장소에 적어 둔다.
+ */
+function isPreview(): boolean {
+  if (typeof window === "undefined") return false;
+  const path = window.location.pathname;
+  try {
+    if (window.location.hash === SHARE_PREVIEW_HASH) {
+      sessionStorage.setItem(PREVIEW_KEY, path);
+      window.history.replaceState(window.history.state, "", path + window.location.search);
+      return true;
+    }
+    return sessionStorage.getItem(PREVIEW_KEY) === path;
+  } catch {
+    return window.location.hash === SHARE_PREVIEW_HASH;
+  }
+}
 
 export default function SharePage() {
   const { token } = useParams<{ token: string }>();
@@ -50,9 +70,12 @@ function LiveShare({ token }: { token: string }) {
       if (r.status === 404 || r.status === 410) return setView({ status: "gone", code: (body?.code as Gone) ?? "notfound" });
       if (r.status === 429) return setView({ status: "error", message: body?.error ?? "요청이 많습니다. 잠시 뒤 다시 열어 주세요." });
       if (!r.ok || !body?.doc) return setView({ status: "error", message: "보고서를 불러오지 못했습니다. 잠시 뒤 다시 열어 주세요." });
-      const ok = new Set<string>(body.photoIds ?? []);
-      setView({ status: "ok", title: body.title, expiresAt: body.expiresAt, doc: body.doc as ShareDoc, photoSrc: (id) => (ok.has(id) ? `/api/share/${token}/photo/${encodeURIComponent(id)}` : null) });
-      if (!counted.current) {
+      // 서버가 지금도 공개인 사진만 담아 보낸다 (공개를 거둔 사진은 번호·설명도 오지 않고 장수만)
+      const doc = body.doc as ShareDoc;
+      const ok = new Set<string>(doc.photos.map((p) => p.id));
+      setView({ status: "ok", title: body.title, expiresAt: body.expiresAt, doc, hidden: Number(body.hiddenPhotos ?? 0), photoSrc: (id) => (ok.has(id) ? `/api/share/${token}/photo/${encodeURIComponent(id)}` : null) });
+      // 본사가 확인하려고 연 것은 세지 않는다 — ‘처음 열림’ 알림이 받는 분이 열기 전에 나가 버리지 않게 (점검 9차)
+      if (!counted.current && !isPreview()) {
         counted.current = true;
         // 열어 본 기록 — 실패해도 화면에는 영향 없음
         void fetch(`/api/share/${token}/view`, { method: "POST", credentials: "omit", keepalive: true }).catch(() => {});
@@ -76,7 +99,7 @@ function DemoShare({ token }: { token: string }) {
   const state = share ? shareState(share, openedAt) : null;
   const counted = useRef(false);
   useEffect(() => {
-    if (!share || state !== "open" || counted.current) return;
+    if (!share || state !== "open" || counted.current || isPreview()) return;
     counted.current = true;
     // 같은 브라우저에서 30분 안에 다시 열면 세지 않는다 (서버와 같은 규칙)
     const key = `tk-site-intel:share-view:${id.slice(0, 16)}`;
@@ -98,21 +121,42 @@ function DemoShare({ token }: { token: string }) {
     if (!db) return { status: "loading" };
     if (!share || !state) return { status: "gone", code: "notfound" };
     if (state !== "open" || !share.snapshot) return { status: "gone", code: state === "open" ? "notfound" : state };
+    // 서버와 같은 규칙: 지금도 공개인 사진만 남기고, 거둔 사진은 장수만
+    const src = new Map<string, string>();
+    for (const ph of share.snapshot.photos) {
+      const p = db.photos.find((x) => x.id === ph.id);
+      if (sharePhotoVisible(db, p, share.siteId)) src.set(ph.id, p.dataUrl);
+    }
+    const photos = share.snapshot.photos.filter((ph) => src.has(ph.id));
     return {
       status: "ok",
       title: share.title,
       expiresAt: share.expiresAt,
-      doc: share.snapshot,
-      photoSrc: (pid) => {
-        const p = db.photos.find((x) => x.id === pid);
-        return sharePhotoVisible(db, p, share.siteId) ? p.dataUrl : null;
-      },
+      doc: { ...share.snapshot, photos },
+      hidden: share.snapshot.photos.length - photos.length,
+      photoSrc: (pid) => src.get(pid) ?? null,
     };
   }, [db, share, state]);
   return <Frame view={view} />;
 }
 
+/** 본사 확인용으로 연 화면인가 — 주소 뒤 표시는 브라우저에서만 알 수 있어 화면이 뜬 뒤에 읽는다 */
+function usePreviewFlag() {
+  const [preview, setPreview] = useState(false);
+  useEffect(() => setPreview(isPreview()), []);
+  return preview;
+}
+
+/** 카카오톡 안의 브라우저인가 — 그 안에서는 인쇄가 안 되는 경우가 많다 */
+function useInAppBrowser() {
+  const [inApp, setInApp] = useState(false);
+  useEffect(() => setInApp(/KAKAOTALK/i.test(navigator.userAgent)), []);
+  return inApp;
+}
+
 function Frame({ view, onRetry }: { view: View; onRetry?: () => void }) {
+  const preview = usePreviewFlag();
+  const inApp = useInAppBrowser();
   // 탭 이름·PDF 파일 이름을 보고서 이름으로 — 화면 틀이 뒤늦게 넣는 기본 제목에 덮이지 않게 지켜본다
   const title = view.status === "ok" ? `${view.title} (읽기 전용)` : null;
   useEffect(() => {
@@ -155,15 +199,15 @@ function Frame({ view, onRetry }: { view: View; onRetry?: () => void }) {
       </main>
     );
   }
-  const { doc } = view;
-  const hidden = doc.photos.filter((p) => !view.photoSrc(p.id)).length;
+  const { doc, hidden } = view;
   return (
     <div className="min-h-dvh bg-[#F6F5F3] print:bg-white" data-testid="share-page" data-state="open" data-kind={doc.kind}>
       <header className="no-print border-b border-line bg-surface">
         <div className="mx-auto flex min-h-14 max-w-[960px] flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2">
           <LogoMark size={26} />
-          <p className="min-w-0 flex-1 truncate text-[0.92rem] font-extrabold" data-testid="share-company">{doc.company}</p>
-          <Button size="sm" icon={<Printer size={16} />} onClick={() => window.print()} data-testid="share-print">
+          {/* 보낸 곳 이름은 자르지 않는다 (큰 글씨에서 ‘(주)태강…’으로 잘리던 문제 · 점검 9차) */}
+          <p className="min-w-0 flex-1 text-[0.92rem] font-extrabold [overflow-wrap:anywhere]" data-testid="share-company">{doc.company}</p>
+          <Button icon={<Printer size={17} />} onClick={() => window.print()} data-testid="share-print">
             인쇄·PDF
           </Button>
         </div>
@@ -173,19 +217,24 @@ function Frame({ view, onRetry }: { view: View; onRetry?: () => void }) {
           <span className="mr-2 inline-flex items-center gap-1 rounded-full bg-surface-3 px-2 py-0.5 align-[1px] text-[0.74rem] font-bold text-ink-2">
             <Lock size={12} aria-hidden /> 읽기 전용
           </span>
-          <b className="num text-ink">{fmtDate(doc.asOf)}</b>에 만든 내용 그대로입니다 · <b className="num text-ink">{fmtDate(view.expiresAt)}</b>까지 열립니다
+          <b className="num text-ink">{fmtDate(doc.asOf)}</b> 기준으로 작성한 보고서입니다 (이후 변경은 반영되지 않습니다) · <b className="num text-ink">{fmtDate(view.expiresAt)}</b>까지 볼 수 있습니다
+          {preview && (
+            <span className="block text-[0.78rem] font-semibold text-theme-ink" data-testid="share-preview-note">
+              본사 확인용 미리보기 — 열어 본 횟수에 넣지 않습니다. 받는 분에게는 이 줄이 보이지 않습니다.
+            </span>
+          )}
+          {inApp && (
+            <span className="block text-[0.78rem] text-ink-3" data-testid="share-inapp-note">
+              카카오톡 안에서는 인쇄가 안 될 수 있습니다. 오른쪽 위 메뉴의 ‘다른 브라우저로 열기’를 누른 뒤 인쇄해 주세요.
+            </span>
+          )}
           {!IS_LIVE && <span className="block text-[0.78rem] text-ink-3">시연판 — 이 브라우저에 저장된 가상 데이터로 여는 화면입니다.</span>}
         </p>
-        {doc.kind === "monthly" ? <MonthlyDocView doc={doc} photoSrc={view.photoSrc} /> : <CompletionDocView doc={doc} photoSrc={view.photoSrc} />}
-        {hidden > 0 && (
-          <p className="no-print mt-3 text-[0.8rem] text-ink-3" data-testid="share-hidden-photos">
-            사진 {hidden}장은 보낸 곳에서 공개를 거두어 보이지 않습니다.
-          </p>
-        )}
-        <p className="no-print mt-4 pb-6 text-center text-[0.78rem] leading-relaxed text-ink-3">
+        {doc.kind === "monthly" ? <MonthlyDocView doc={doc} photoSrc={view.photoSrc} hiddenPhotos={hidden} /> : <CompletionDocView doc={doc} photoSrc={view.photoSrc} hiddenPhotos={hidden} />}
+        <p className="no-print mt-4 pb-6 text-center text-[0.78rem] leading-relaxed text-ink-3" data-testid="share-foot">
           {doc.company}에서 보낸 읽기 전용 보고서입니다. 로그인이나 앱 설치 없이 볼 수 있습니다.
           <br />
-          궁금한 점은 보내 주신 담당자에게 문의해 주세요.
+          이 보고서를 열어 본 횟수는 보낸 곳에 표시됩니다. 궁금한 점은 보내 주신 담당자에게 문의해 주세요.
         </p>
       </main>
     </div>

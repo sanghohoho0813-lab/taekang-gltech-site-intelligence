@@ -17,7 +17,7 @@ export default function proxy(req: NextRequest) {
     return NextResponse.next();
   }
   // 보고서 링크(/s/비밀값, D-73) — 주소의 비밀값만으로 열리는 읽기 전용 화면 (내용은 /api/share가 비밀값을 확인하고 준다)
-  if (PUBLIC.includes(pathname) || pathname === KIOSK || pathname.startsWith("/s/")) return NextResponse.next();
+  if (PUBLIC.includes(pathname) || pathname === KIOSK || pathname === "/s" || pathname.startsWith("/s/")) return NextResponse.next();
   if (!req.cookies.get("tk_session")?.value) {
     const url = new URL("/login", req.url);
     if (pathname !== "/" && pathname !== "/dashboard") url.searchParams.set("next", pathname + search);

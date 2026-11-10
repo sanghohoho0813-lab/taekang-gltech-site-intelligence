@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { sharePhoto } from "@/server/shareService";
+import { sharePhotoAccess, sharePhotoBlob } from "@/server/shareService";
 import { RULES, clientIp, limited } from "@/server/rateLimit";
 import { errorResponse, notLive } from "@/server/http";
 
@@ -17,10 +17,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
   if (blocked) return blocked;
   try {
     const { token, id } = await params;
-    const photo = await sharePhoto(token, id);
-    if (!photo) return Response.json({ error: "사진을 찾을 수 없습니다." }, { status: 404, headers: { ...HEADERS, "Cache-Control": "private, no-store" } });
+    const gone = () => Response.json({ error: "사진을 찾을 수 없습니다." }, { status: 404, headers: { ...HEADERS, "Cache-Control": "private, no-store" } });
+    // 먼저 ‘줘도 되는지’만 확인한다 — 닫힌 링크·공개를 끈 사진은 브라우저에 남은 사본이 있어도 404
+    const ok = await sharePhotoAccess(token, id);
+    if (!ok) return gone();
     const cache = { ...HEADERS, "Cache-Control": "private, no-cache", ETag: `"${id}"` };
+    // 바뀌지 않았으면 사진 원본을 DB에서 꺼내지 않고 답한다
     if (req.headers.get("if-none-match") === `"${id}"`) return new Response(null, { status: 304, headers: cache });
+    const photo = await sharePhotoBlob(ok.companyId, id);
+    if (!photo) return gone();
     return new Response(Buffer.from(photo.data), { headers: { ...cache, "Content-Type": photo.mime } });
   } catch (e) {
     return errorResponse(e);

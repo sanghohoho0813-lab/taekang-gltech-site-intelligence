@@ -997,6 +997,15 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     expect(s1.shares[0].views).toBe(0);
     expect(JSON.stringify(s1)).not.toContain(token);
 
+    // 본사가 ‘열어 보기’(주소 뒤 #preview)로 확인한 것은 세지 않는다 — 받는 분이 열기 전에 ‘처음 열림’ 알림이 나가지 않게
+    const pre = await hq.context().newPage();
+    await pre.goto(`${url}#preview`);
+    await expect(pre.getByTestId("share-preview-note")).toBeVisible();
+    await expect(pre.getByTestId("report-body")).toBeVisible();
+    await pre.waitForTimeout(800);
+    expect((await state(hq)).shares[0].views).toBe(0);
+    await pre.close();
+
     // 로그인하지 않은 다른 브라우저(휴대폰) — 로그인 화면으로 보내지 않고 문서만
     const anonCtx = await browser.newContext({ viewport: { width: 390, height: 844 } });
     const anon = await anonCtx.newPage();
@@ -1026,7 +1035,9 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     expect((await anon.request.get(`/api/share/${token}/photo/${p2}`)).status()).toBe(404);
     const api = await anon.request.get(`/api/share/${token}`);
     expect(api.headers()["cache-control"]).toBe("private, no-store");
-    expect(Object.keys(await api.json()).sort()).toEqual(["createdAt", "doc", "expiresAt", "photoIds", "title"]);
+    expect(Object.keys(await api.json()).sort()).toEqual(["createdAt", "doc", "expiresAt", "hiddenPhotos", "title"]);
+    expect(api.headers()["referrer-policy"]).toBe("no-referrer");
+    expect(api.headers()["x-robots-tag"]).toContain("noarchive");
     expect((await anon.request.get(`/api/share/${token.slice(0, 31)}A`)).status()).toBe(404);
 
     // 열어 본 횟수: 본사 화면에 1번 (다시 열어도 30분 안에는 한 번)
@@ -1044,6 +1055,11 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     await anon.reload();
     await expect(anon.getByTestId("report-photo")).toHaveCount(0);
     await expect(anon.getByTestId("share-hidden-photos")).toContainText("1장");
+    // 공개를 끈 사진은 번호·설명도 나가지 않는다
+    const after = await (await anon.request.get(`/api/share/${token}`)).text();
+    expect(after).not.toContain(p1);
+    expect(after).not.toContain("링크용 공개 사진");
+    expect(JSON.parse(after).hiddenPhotos).toBe(1);
 
     // 발주처 계정: 링크를 만들거나 닫을 수 없고, 목록도 받지 않는다
     const partner = await login(browser, PARTNER.email, PARTNER.password);

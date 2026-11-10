@@ -59,6 +59,14 @@ const nextConfig: NextConfig = {
         ],
       },
       {
+        // 보고서 링크의 문서·사진 응답도 같은 머리말 (위의 전체 규칙이 경로별 응답 머리말을 덮어쓰므로 여기서 다시 정한다 · 점검 9차)
+        source: "/api/share/:path*",
+        headers: [
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "X-Robots-Tag", value: "noindex, nofollow, noarchive" },
+        ],
+      },
+      {
         // 알림 서비스워커는 바뀌면 바로 새로 받게 (D-37)
         source: "/sw.js",
         headers: [

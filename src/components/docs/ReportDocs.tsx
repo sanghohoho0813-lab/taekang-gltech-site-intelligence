@@ -4,6 +4,10 @@
  * 발주처 제출 문서 (월간 공정 보고서 · 준공 보고서) — 화면(포털·본사)과 보고서 링크(D-73)가 같은 컴포넌트로 그린다.
  * 받는 값은 문서 내용(doc)뿐이라 링크에서는 저장해 둔 내용 그대로 나온다. 금액·사람 이름·요청 내용은 doc에 없다.
  * 사진은 번호만 받고 photoSrc가 주소를 준다 — 주소가 없으면(공개를 끈 사진) 그 사진은 빼고 그린다.
+ *
+ * 발주처에 나가는 문서이므로 (점검 9차)
+ * - ‘계획보다 늦음’·‘준공 시점 미완료’ 같은 판정은 본사 화면에서만 보인다 (internal · 인쇄 안 됨). 전달될 수 있는 문서에 시공사가 스스로 지체를 적지 않는다.
+ * - ‘오늘’·‘현재’ 대신 기준 날짜를 적는다: 이번 달 보고서는 ‘작성일 기준’, 지난 달 보고서는 ‘그 달 말 기준’.
  */
 import type { ReactNode } from "react";
 import { IS_LIVE } from "@/lib/mode";
@@ -16,32 +20,49 @@ export type PhotoSrc = (id: string) => string | null | undefined;
 
 const monthKo = (m: string) => `${m.slice(0, 4)}년 ${Number(m.slice(5, 7))}월`;
 const monthDot = (m: string) => `${m.slice(0, 4)}.${m.slice(5, 7)}`;
+/** 휴대폰에서는 한 줄에 한 장 — 두 장씩이면 너무 작아 공정을 알아볼 수 없다 (점검 9차) */
+const PHOTO_GRID = "grid grid-cols-1 gap-3 min-[26rem]:grid-cols-2 sm:grid-cols-3 print:grid-cols-3";
 
 function DemoMark({ sample }: { sample?: boolean }) {
   if (IS_LIVE && !sample) return null;
   return <p className="mt-0.5 text-[0.74rem] font-bold text-[#7A5200]">DEMO · 가상 시연 데이터</p>;
 }
 
+/** 보낸 뒤 공개를 거둔 사진 안내 — 사진 절 안에 (문서 밖 맨 아래에 있어 ‘사진 없음’과 어긋나 보이던 문제 · 점검 9차) */
+function HiddenPhotos({ n, all }: { n: number; all: boolean }) {
+  if (!n) return null;
+  return (
+    <p className={cx("no-print text-[0.82rem] text-ink-2", !all && "mt-2")} data-testid="share-hidden-photos">
+      {all ? `보고서를 만든 뒤 보낸 곳에서 사진 ${n}장의 공유를 중단해 지금은 표시되지 않습니다.` : `이 밖에 사진 ${n}장은 보낸 곳에서 공유를 중단해 표시되지 않습니다.`}
+    </p>
+  );
+}
+
 export function MonthlyDocView({
   doc,
   photoSrc,
-  live,
   requests,
   hints,
+  internal,
+  hiddenPhotos = 0,
 }: {
   doc: MonthlyDoc;
   photoSrc: PhotoSrc;
-  /** 지금 데이터로 그리는 화면 (‘오늘 기준’) — 링크는 저장해 둔 내용이라 ‘작성일 기준’ */
-  live?: boolean;
   /** 요청 목록 — 로그인한 화면에서만 (링크에는 건수만 나온다) */
   requests?: ReactNode;
-  /** 화면 전용 안내 (본사 미리보기) */
+  /** 화면 전용 안내 (본사 미리보기 · 인쇄 안 됨) */
   hints?: { noChange?: string; noPhotos?: string };
+  /** 본사 화면 전용 (인쇄·링크·발주처 계정에는 없음): 계획 기간이 지난 공정 */
+  internal?: { late: Record<string, boolean | undefined> };
+  /** 보낸 뒤 공개를 거둔 사진 수 (링크에서만) */
+  hiddenPhotos?: number;
 }) {
   const current = doc.month === doc.asOf.slice(0, 7);
-  const mName = `${Number(doc.month.slice(5, 7))}월`;
-  // 링크는 저장해 둔 내용 — ‘오늘’이 아니라 ‘작성일’ (날짜는 머리말에)
-  const asOf = live ? "오늘 기준" : "작성일 기준";
+  const mNum = Number(doc.month.slice(5, 7));
+  const mName = `${mNum}월`;
+  const nextName = `${mNum === 12 ? 1 : mNum + 1}월`;
+  // 진행률이 어느 날짜 값인지: 이번 달 보고서는 작성일, 지난 달 보고서는 그 달 말
+  const basis = current ? "작성일 기준" : `${mName} 말 기준`;
   const changed = doc.stages.filter((s) => s.change).length;
   const photos = doc.photos.flatMap((p) => {
     const src = photoSrc(p.id);
@@ -49,30 +70,29 @@ export function MonthlyDocView({
   });
   const c = doc.counts;
   return (
-    <article className="rounded-2xl border border-line bg-surface p-6 shadow-card print:rounded-none print:border-0 print:p-0 print:shadow-none sm:p-8" data-testid="report-body">
+    <article className="rounded-2xl border border-line bg-surface p-5 shadow-card print:rounded-none print:border-0 print:p-0 print:shadow-none sm:p-8" data-testid="report-body">
       <header className="flex flex-wrap items-start justify-between gap-3 border-b-2 border-ink pb-4">
         <div className="flex items-center gap-3">
           <LogoMark size={34} />
           <div>
-            <p className="text-[0.8rem] font-extrabold tracking-[0.06em] text-ink-2">TAEKANG GLTECH</p>
+            <p className="text-[0.8rem] font-extrabold tracking-[0.04em] text-ink-2" data-testid="report-company">{doc.company}</p>
             <h1 className="text-[1.45rem] font-extrabold leading-tight">월간 공정 보고서</h1>
           </div>
         </div>
         <div className="text-right text-[0.85rem]">
           <p className="font-bold" data-testid="report-site-name">{doc.siteName}</p>
           <p className="num text-ink-2" data-testid="report-month">
-            {monthKo(doc.month)} ({fmtDate(doc.from)} ~ {fmtDate(current ? doc.asOf : doc.to)}
-            {current ? " · 작성일 기준" : ""})
+            {monthKo(doc.month)} ({fmtDate(doc.from)} ~ {fmtDate(current ? doc.asOf : doc.to)})
           </p>
+          <p className="num text-[0.78rem] text-ink-2" data-testid="report-asof">작성일 {fmtDate(doc.asOf)}</p>
           {/* 지난달 보고서에서도 맞게 — 남은 날 없이 날짜만, 계약서 기준임을 밝힌다 (D-70 점검 반영) */}
           {doc.warranty && <p className="num text-[0.78rem] text-ink-2" data-testid="report-warranty">{doc.warranty}</p>}
-          {!live && <p className="num text-[0.78rem] text-ink-2" data-testid="report-asof">작성일 {fmtDate(doc.asOf)}</p>}
           <DemoMark sample={doc.sample} />
         </div>
       </header>
 
       <section className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4" aria-label="요약">
-        <Kpi label={`전체 공정률 (${asOf})`} value={`${doc.progressPct}%`} sub={doc.overall ? `${mName} ${doc.overall.from}% → ${doc.overall.to}%` : undefined} testId="report-kpi-progress" />
+        <Kpi label={current ? "전체 공정률 (작성일 기준)" : `${mName} 말 전체 공정률`} value={`${doc.progressPct}%`} sub={doc.overall ? `${mName} ${doc.overall.from}% → ${doc.overall.to}%` : undefined} testId="report-kpi-progress" />
         <Kpi label={`${mName}에 진척된 단계`} value={`${changed}개`} testId="report-kpi-stages" />
         <Kpi label={`${mName} 공개 사진`} value={`${photos.length}장`} testId="report-kpi-photos" />
         <Kpi label="요청 처리" value={`${c.answered}건 회신`} sub={`접수 ${c.received} · 진행 중 ${c.open}`} testId="report-kpi-requests" />
@@ -86,10 +106,10 @@ export function MonthlyDocView({
             <table className="w-full border-collapse text-[0.85rem]" data-testid="report-stages">
               <thead>
                 <tr className="border-b border-line text-left text-[0.76rem] text-ink-3">
-                  <th className="py-2 font-semibold">공정 단계</th>
-                  <th className="hidden py-2 font-semibold @min-[30rem]:table-cell print:table-cell">계획 기간</th>
-                  <th className="whitespace-nowrap py-2 text-right font-semibold">{mName} 변화</th>
-                  <th className="w-[26%] whitespace-nowrap py-2 text-right font-semibold">{asOf}</th>
+                  <th className="py-2 pr-2 font-semibold">공정 단계</th>
+                  <th className="hidden py-2 pr-2 font-semibold @min-[30rem]:table-cell print:table-cell">계획 기간</th>
+                  <th className="whitespace-nowrap px-2 py-2 text-right font-semibold">{mName} 변화</th>
+                  <th className="w-[26%] whitespace-nowrap py-2 pl-2 text-right font-semibold" data-testid="report-basis">{basis}</th>
                 </tr>
               </thead>
               <tbody>
@@ -101,7 +121,7 @@ export function MonthlyDocView({
                       <td className="num hidden whitespace-nowrap py-2 pr-2 text-[0.78rem] text-ink-2 @min-[30rem]:table-cell print:table-cell print:text-[8.5pt]">
                         {fmtDate(st.startDate).slice(2)} ~ {fmtDate(st.endDate).slice(2)}
                       </td>
-                      <td className="num whitespace-nowrap py-2 text-right">
+                      <td className="num whitespace-nowrap px-2 py-2 text-right">
                         {ch ? (
                           <b className={ch.to >= ch.from ? "text-theme-ink" : "text-err"}>
                             {ch.to >= ch.from ? "+" : "−"}
@@ -124,34 +144,41 @@ export function MonthlyDocView({
         )}
         {changed === 0 && doc.stages.length > 0 && (
           <p className="mt-2 text-[0.82rem] text-ink-2" data-testid="report-no-change">
-            {mName}에 바뀐 공정 진행률이 없습니다.{hints?.noChange ?? ""}
+            {mName}에 바뀐 공정 진행률이 없습니다.{hints?.noChange && <span className="no-print">{hints.noChange}</span>}
           </p>
         )}
-        <p className="mt-2 text-[0.74rem] text-ink-3">‘{mName} 변화’는 현장 보고·공정 기록으로 바뀐 진행률이며, 태강지엘텍 확인 전 보고도 포함합니다. 공정률은 현장 기준이며 기성(대금 청구) 비율과 다를 수 있습니다.</p>
+        <p className="mt-2 text-[0.74rem] text-ink-3">‘{mName} 변화’는 현장 보고 기준 진행률이며 추후 정정될 수 있습니다. 공정률은 현장 기준이며 기성(대금 청구) 비율과 다를 수 있습니다.</p>
       </Section>
 
-      <Section title="2. 공정 사진" sub={photos.length ? `태강지엘텍이 공개한 사진 ${photos.length}장` : undefined}>
+      <Section title="2. 공정 사진" sub={photos.length ? `공개 사진 ${photos.length}장` : undefined}>
         {photos.length === 0 ? (
-          <p className="text-[0.85rem] text-ink-3" data-testid="report-no-photos">
-            {mName}에 공개된 공정 사진이 없습니다.{hints?.noPhotos ?? ""}
-          </p>
+          hiddenPhotos ? (
+            <HiddenPhotos n={hiddenPhotos} all />
+          ) : (
+            <p className="text-[0.85rem] text-ink-3" data-testid="report-no-photos">
+              {mName}에 공개된 공정 사진이 없습니다.{hints?.noPhotos && <span className="no-print">{hints.noPhotos}</span>}
+            </p>
+          )
         ) : (
-          <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 print:grid-cols-3">
-            {photos.map((p) => (
-              <li key={p.id} className="break-inside-avoid overflow-hidden rounded-xl border border-line" data-testid="report-photo">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={p.src} alt={p.caption || "공정 사진"} className="aspect-[4/3] w-full bg-surface-2 object-cover print:object-contain" />
-                <p className="px-2 py-1.5 text-[0.78rem]">
-                  <span className="num block whitespace-nowrap text-ink-3">{fmtDate(p.at)}</span>
-                  {p.caption && <span className="line-clamp-2 [overflow-wrap:anywhere]">{p.caption}</span>}
-                </p>
-              </li>
-            ))}
-          </ul>
+          <>
+            <ul className={PHOTO_GRID}>
+              {photos.map((p) => (
+                <li key={p.id} className="break-inside-avoid overflow-hidden rounded-xl border border-line" data-testid="report-photo">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={p.src} alt={p.caption || "공정 사진"} className="aspect-[4/3] w-full bg-surface-2 object-cover print:object-contain" />
+                  <p className="px-2 py-1.5 text-[0.78rem]">
+                    <span className="num block whitespace-nowrap text-ink-3">{fmtDate(p.at)}</span>
+                    {p.caption && <span className="line-clamp-2 [overflow-wrap:anywhere]">{p.caption}</span>}
+                  </p>
+                </li>
+              ))}
+            </ul>
+            <HiddenPhotos n={hiddenPhotos} all={false} />
+          </>
         )}
       </Section>
 
-      <Section title="3. 요청·하자보수 처리" sub={`${c.defects ? `하자보수 ${c.defects}건 · 보수 회신 ${c.repaired}건 · 확인 ${c.confirmed}건 · ` : ""}처리 상태는 작성일 기준`}>
+      <Section title="3. 요청·하자보수 처리" sub={requests ? `${c.defects ? `하자보수 ${c.defects}건 · 보수 회신 ${c.repaired}건 · 확인 ${c.confirmed}건 · ` : ""}처리 상태는 작성일 기준` : "건수 · 처리 상태는 작성일 기준"}>
         {requests ?? (
           <dl className="grid gap-x-6 sm:grid-cols-2 print:grid-cols-2" data-testid="report-request-counts">
             <Row k={`${mName} 접수`} v={`${c.received}건`} />
@@ -162,17 +189,18 @@ export function MonthlyDocView({
         )}
       </Section>
 
-      <Section title="4. 다음 달 예정 공정">
+      <Section title={`4. ${nextName} 예정 공정`}>
         {doc.next.length === 0 ? (
-          <p className="text-[0.85rem] text-ink-3">다음 달에 계획된 미완료 공정이 없습니다.</p>
+          <p className="text-[0.85rem] text-ink-3">{nextName}에 계획된 미완료 공정이 없습니다.</p>
         ) : (
           <ul className="space-y-1.5 text-[0.86rem]" data-testid="report-next">
             {doc.next.map((n) => (
               <li key={n.name} className="flex flex-wrap items-baseline justify-between gap-2 [break-inside:avoid]">
                 <b className="[overflow-wrap:anywhere]">{n.name}</b>
                 <span className="num text-ink-2">
-                  {fmtDate(n.startDate)} ~ {fmtDate(n.endDate)} · 현재 {n.progressPct}%
-                  {n.late && <b className="ml-1.5 text-warn" data-testid="report-next-late">계획보다 늦음</b>}
+                  {fmtDate(n.startDate)} ~ {fmtDate(n.endDate)} · {basis} {n.progressPct}%
+                  {/* 계획 대비는 본사 화면에서만 — 발주처에 나가는 문서(인쇄·링크·포털)에는 찍지 않는다 (점검 9차) */}
+                  {internal?.late[n.name] && <b className="no-print ml-1.5 text-warn" data-testid="report-next-late">계획보다 늦음 (본사만 보임)</b>}
                 </span>
               </li>
             ))}
@@ -181,7 +209,7 @@ export function MonthlyDocView({
       </Section>
 
       <footer className="mt-6 border-t border-line pt-3 text-[0.74rem] leading-relaxed text-ink-3 [break-before:avoid] [break-inside:avoid]">
-        이 보고서에는 계약·공사비·기성 금액과 내부 메모가 들어가지 않습니다. 태강지엘텍 시스템에 기록된 현장 보고·공개 사진·요청 처리 기록으로 자동 작성했습니다.
+        {doc.company}의 현장 보고·공정 사진·요청 처리 기록으로 작성했으며 금액 정보는 포함하지 않습니다.
         {(!IS_LIVE || doc.sample) && " DEMO 화면의 현장·사진·요청은 가상 시연 데이터입니다."}
       </footer>
     </article>
@@ -192,14 +220,18 @@ export function CompletionDocView({
   doc,
   photoSrc,
   internal,
+  hiddenPhotos = 0,
 }: {
   doc: CompletionDoc;
   photoSrc: PhotoSrc;
-  /** 본사 화면 전용 표시 (인쇄·링크에는 없음): 단계별 계획 대비, 보고서에 넣지 않은 준공 뒤 사진·하자 수 */
-  internal?: { late: Record<string, boolean | undefined>; photosAfter: number; defectsAfter: number };
+  /** 본사 화면 전용 표시 (인쇄·링크에는 없음): 단계별 계획 대비(단계 순서대로), 보고서에 넣지 않은 준공 뒤 사진·하자 수 */
+  internal?: { late: (boolean | undefined)[]; photosAfter: number; defectsAfter: number };
+  /** 보낸 뒤 공개를 거둔 사진 수 (링크에서만) */
+  hiddenPhotos?: number;
 }) {
   const done = doc.stages.filter((s) => s.progressPct >= 100).length;
-  const title = completionTitle(doc);
+  // ‘(준공 전)’이 ‘(준공 / 전)’으로 끊기지 않게 괄호는 한 덩어리로
+  const [, titleMain, titleParen] = /^(.*?)(\s*\(.+\))?$/.exec(completionTitle(doc)) ?? [];
   const d = doc.defects;
   const photos = doc.photos.flatMap((p) => {
     const src = photoSrc(p.id);
@@ -211,8 +243,11 @@ export function CompletionDocView({
         <div className="flex items-center gap-3">
           <LogoMark size={34} />
           <div>
-            <p className="text-[0.8rem] font-extrabold tracking-[0.06em] text-ink-2">{doc.company}</p>
-            <h1 className="text-[1.45rem] font-extrabold leading-tight" data-testid="completion-title">{title}</h1>
+            <p className="text-[0.8rem] font-extrabold tracking-[0.04em] text-ink-2">{doc.company}</p>
+            <h1 className="text-[1.45rem] font-extrabold leading-tight" data-testid="completion-title">
+              {titleMain}
+              {titleParen && <span className="whitespace-nowrap">{titleParen}</span>}
+            </h1>
           </div>
         </div>
         <div className="text-right text-[0.85rem]">
@@ -224,11 +259,10 @@ export function CompletionDocView({
       </header>
 
       <section className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4" aria-label="요약">
-        <Kpi nowrap label="공사 기간" value={`${doc.days.toLocaleString("ko-KR")}일`} sub={`${fmtDate(doc.from)} ~ ${doc.completedDate ? fmtDate(doc.completedDate) : "진행 중"}`} testId="completion-kpi-period" />
-        <Kpi nowrap label="공정률" value={`${doc.progressPct}%`} sub={`공정 단계 ${done}/${doc.stages.length} 완료`} testId="completion-kpi-progress" />
-        <Kpi nowrap label="공정 사진" value={`${photos.length}장`} sub={photos.length ? "기간에 고르게" : "실은 사진 없음"} testId="completion-kpi-photos" />
+        <Kpi label="공사 기간" value={`${doc.days.toLocaleString("ko-KR")}일`} sub={`${fmtDate(doc.from)} ~ ${doc.completedDate ? fmtDate(doc.completedDate) : "진행 중"}`} testId="completion-kpi-period" />
+        <Kpi label="공정률" value={`${doc.progressPct}%`} sub={`공정 단계 ${done}/${doc.stages.length} 완료`} testId="completion-kpi-progress" />
+        <Kpi label="공정 사진" value={`${photos.length}장`} sub={photos.length ? "발주처 공개 사진" : "첨부 사진 없음"} testId="completion-kpi-photos" />
         <Kpi
-          nowrap
           label="하자보수"
           value={d.total ? `${d.total}건` : "없음"}
           sub={d.total ? (d.open ? `처리 완료 ${d.total - d.open} · 진행 중 ${d.open}` : "모두 처리 완료") : "하자 요청 없음"}
@@ -256,37 +290,38 @@ export function CompletionDocView({
             <table className="w-full border-collapse text-[0.85rem]" data-testid="completion-stages">
               <thead>
                 <tr className="border-b border-line text-left text-[0.76rem] text-ink-3">
-                  <th className="py-2 font-semibold">공정 단계</th>
-                  <th className="hidden py-2 font-semibold @min-[30rem]:table-cell print:table-cell">계획 기간</th>
-                  <th className="py-2 text-right font-semibold">완료일</th>
+                  <th className="py-2 pr-2 font-semibold">공정 단계</th>
+                  <th className="hidden py-2 pr-2 font-semibold @min-[30rem]:table-cell print:table-cell">계획 기간</th>
+                  <th className="whitespace-nowrap py-2 pl-2 text-right font-semibold">완료일·진행률</th>
                 </tr>
               </thead>
               <tbody>
-                {doc.stages.map((st) => (
-                  <tr key={st.id} className="border-b border-line/70 align-top [break-inside:avoid]" data-testid="completion-stage">
+                {doc.stages.map((st, i) => (
+                  <tr key={`${st.name}-${i}`} className="border-b border-line/70 align-top [break-inside:avoid]" data-testid="completion-stage">
                     <td className="py-2 pr-2">
                       <p className="font-semibold">{st.name}</p>
                       <p className="num text-[0.74rem] text-ink-3 @min-[30rem]:hidden print:hidden">
                         계획 <span className="whitespace-nowrap">{fmtDate(st.startDate)}</span> ~ <span className="whitespace-nowrap">{fmtDate(st.endDate)}</span>
                       </p>
                     </td>
-                    <td className="num hidden whitespace-nowrap py-2 text-ink-2 @min-[30rem]:table-cell print:table-cell">
+                    <td className="num hidden whitespace-nowrap py-2 pr-2 text-ink-2 @min-[30rem]:table-cell print:table-cell">
                       {fmtDate(st.startDate)} ~ {fmtDate(st.endDate)}
                     </td>
-                    <td className="num py-2 text-right">
+                    <td className="num py-2 pl-2 text-right">
                       {st.progressPct < 100 ? (
                         <span className="inline-flex flex-wrap items-center justify-end gap-x-2">
                           <span className="hidden w-20 sm:inline-block print:inline-block">
                             <ProgressBar value={st.progressPct} label={`${st.name} 진행률`} />
                           </span>
                           <b className="whitespace-nowrap">{st.progressPct}%</b>
-                          {doc.completedDate && <span className="whitespace-nowrap text-[0.74rem] text-warn">준공 시점 미완료</span>}
+                          {/* 본사 화면에서만 — 제출 문서에는 진행률만 (점검 9차) */}
+                          {internal && doc.completedDate && <span className="no-print whitespace-nowrap text-[0.74rem] text-warn">준공 시점 미완료</span>}
                         </span>
                       ) : st.doneDate ? (
                         <span className="inline-flex flex-wrap items-center justify-end gap-1.5">
                           <b className="whitespace-nowrap">{fmtDate(st.doneDate)}</b>
                           {/* 계획 대비는 본사 화면에서만 — 제출 문서에 ‘늦음’이 찍혀 지체 근거로 읽히지 않게 (D-72 점검 반영) */}
-                          {internal && <span className="no-print">{internal.late[st.id] ? <Badge tone="warn">계획보다 늦음</Badge> : <Badge tone="ok">계획 안</Badge>}</span>}
+                          {internal && <span className="no-print">{internal.late[i] ? <Badge tone="warn">계획보다 늦음</Badge> : <Badge tone="ok">계획 안</Badge>}</span>}
                         </span>
                       ) : (
                         <span className="font-semibold">
@@ -305,17 +340,18 @@ export function CompletionDocView({
       <Section title="3. 월별 공정률" sub={`월말 기준 전체 공정률 · 마지막 달은 ${doc.completedDate ? "준공일" : "작성일"} 기준`}>
         <ol className="grid grid-cols-2 gap-2 [break-inside:avoid] sm:grid-cols-6 print:grid-cols-6" data-testid="completion-months">
           {doc.emptyLead && (
-            <li className="rounded-lg border border-dashed border-line px-2.5 py-2 text-center sm:col-span-2 print:col-span-2" data-testid="completion-month-lead">
-              <p className="num whitespace-nowrap text-[0.74rem] text-ink-3">
-                {monthDot(doc.emptyLead.from)} ~ {monthDot(doc.emptyLead.to)}
+            <li className="col-span-2 rounded-lg border border-dashed border-line px-2.5 py-2 text-center" data-testid="completion-month-lead">
+              <p className="num text-[0.74rem] text-ink-3">
+                <span className="whitespace-nowrap">{monthDot(doc.emptyLead.from)}</span> ~ <span className="whitespace-nowrap">{monthDot(doc.emptyLead.to)}</span>
               </p>
-              <p className="py-0.5 text-[0.8rem] font-semibold text-ink-3">기록 없음</p>
+              {/* 앱을 쓰기 전 기간 — 제출 문서에 ‘기록 없음’이 여섯 달씩 찍히지 않게 (점검 9차) */}
+              <p className="py-0.5 text-[0.8rem] font-semibold text-ink-3">월별 집계 전</p>
             </li>
           )}
           {doc.months.map((m) => (
             <li key={m.month} className="rounded-lg border border-line px-2.5 py-2 text-center" data-testid="completion-month">
               <p className="num whitespace-nowrap text-[0.74rem] text-ink-3">{monthDot(m.month)}</p>
-              <p className={cx("num whitespace-nowrap", m.pct === null ? "py-0.5 text-[0.8rem] font-semibold text-ink-3" : "text-[1.05rem] font-extrabold")}>{m.pct === null ? "기록 없음" : `${m.pct}%`}</p>
+              <p className={cx("num whitespace-nowrap", m.pct === null ? "py-0.5 text-[0.8rem] font-semibold text-ink-3" : "text-[1.05rem] font-extrabold")}>{m.pct === null ? "집계 전" : `${m.pct}%`}</p>
             </li>
           ))}
         </ol>
@@ -326,23 +362,30 @@ export function CompletionDocView({
           <p className="no-print mb-2 text-[0.8rem] text-ink-3" data-testid="completion-photos-after">준공일 뒤 사진 {internal.photosAfter}장은 넣지 않았습니다.</p>
         )}
         {photos.length === 0 ? (
-          <>
-            <p className="text-[0.85rem] text-ink-3" data-testid="completion-no-photos">공정 사진 없음</p>
-            {internal && <p className="no-print mt-1 text-[0.8rem] text-ink-3">사진대장에서 ‘발주처 공개’를 켠 사진만 들어갑니다.</p>}
-          </>
+          hiddenPhotos ? (
+            <HiddenPhotos n={hiddenPhotos} all />
+          ) : (
+            <>
+              <p className="text-[0.85rem] text-ink-3" data-testid="completion-no-photos">공정 사진 없음</p>
+              {internal && <p className="no-print mt-1 text-[0.8rem] text-ink-3">사진대장에서 ‘발주처 공개’를 켠 사진만 들어갑니다.</p>}
+            </>
+          )
         ) : (
-          <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 print:grid-cols-3" data-testid="completion-photos">
-            {photos.map((p) => (
-              <li key={p.id} className="overflow-hidden rounded-xl border border-line [break-inside:avoid]">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={p.src} alt={p.caption || "공정 사진"} className="aspect-[4/3] w-full bg-surface-2 object-cover print:object-contain" />
-                <p className="px-2 py-1 text-[0.74rem] text-ink-2">
-                  <span className="num whitespace-nowrap">{fmtDate(p.at)}</span>
-                  {p.caption ? ` · ${p.caption}` : ""}
-                </p>
-              </li>
-            ))}
-          </ul>
+          <>
+            <ul className={PHOTO_GRID} data-testid="completion-photos">
+              {photos.map((p) => (
+                <li key={p.id} className="overflow-hidden rounded-xl border border-line [break-inside:avoid]">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={p.src} alt={p.caption || "공정 사진"} className="aspect-[4/3] w-full bg-surface-2 object-cover print:object-contain" />
+                  <p className="px-2 py-1 text-[0.74rem] text-ink-2">
+                    <span className="num whitespace-nowrap">{fmtDate(p.at)}</span>
+                    {p.caption ? ` · ${p.caption}` : ""}
+                  </p>
+                </li>
+              ))}
+            </ul>
+            <HiddenPhotos n={hiddenPhotos} all={false} />
+          </>
         )}
       </Section>
 
@@ -376,17 +419,18 @@ export function CompletionDocView({
       </section>
 
       <p className="mt-6 border-t border-line pt-3 text-[0.74rem] text-ink-3">
-        이 보고서는 현장 보고·공정 기록·발주처 요청 처리 기록으로 자동 작성했습니다. 공정률은 현장 기준이며 기성(대금 청구) 비율과 다를 수 있습니다. 하자보증 기간은 계약서 기준입니다.
+        {doc.company}의 현장 보고·공정 기록·요청 처리 기록으로 작성했으며 금액 정보는 포함하지 않습니다. 공정률은 현장 기준이며 기성(대금 청구) 비율과 다를 수 있습니다. 하자보증 기간은 계약서 기준입니다.
       </p>
     </article>
   );
 }
 
-function Kpi({ label, value, sub, testId, nowrap }: { label: string; value: string; sub?: string; testId: string; nowrap?: boolean }) {
+function Kpi({ label, value, sub, testId }: { label: string; value: string; sub?: string; testId: string }) {
   return (
     <div className="rounded-xl border border-line bg-surface-2 px-3 py-2.5 print:bg-white" data-testid={testId}>
       <p className="text-[0.74rem] font-semibold text-ink-3">{label}</p>
-      <p className={cx("num font-extrabold leading-tight", nowrap ? "whitespace-nowrap text-[1.2rem]" : "text-[1.3rem]")}>{value}</p>
+      {/* 큰 글씨에서 ‘58 / %’로 끊기지 않게 */}
+      <p className="num whitespace-nowrap text-[1.25rem] font-extrabold leading-tight">{value}</p>
       {sub && <p className="num text-[0.74rem] text-ink-2">{sub}</p>}
     </div>
   );

@@ -473,10 +473,13 @@ export interface ReportShare {
   title: string;
   createdAt: string;
   createdBy: string;
+  /** 닫히는 시각 — 고른 날의 한국 시간 자정 직전 */
   expiresAt: string;
+  /** 받는 분 메모 (본사 목록에만 · 링크·보고서에는 없음) */
+  to?: string;
   revokedAt?: string;
   revokedBy?: string;
-  /** 열어 본 횟수 (같은 곳에서 30분 안에 다시 열면 한 번) */
+  /** 열어 본 횟수 (한 링크는 5분에 한 번, 같은 곳은 30분에 한 번만 센다 · 본사 미리보기는 세지 않음) */
   views: number;
   firstViewedAt?: string;
   lastViewedAt?: string;

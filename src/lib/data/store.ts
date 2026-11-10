@@ -11,6 +11,7 @@ import { createSeed, ROLE_DEFAULT_USER } from "./seed";
 import { CommandError } from "./commands";
 import { COMMANDS, type CommandArgs, type CommandName, type CommandResult } from "./registry";
 import { applyLocationRetention } from "./privacyCommands";
+import { applyShareRetention } from "./shareCommands";
 import { DEFAULT_THEME, type ThemeId } from "@/lib/theme/themes";
 import { IS_LIVE } from "@/lib/mode";
 
@@ -182,7 +183,7 @@ function start() {
 
 export const STANDALONE_PATHS = ["/login", "/setup", "/account", "/kiosk"];
 /** 회사 데이터를 받지 않는 화면 — 로그인·설정·태블릿, 그리고 로그인 없이 여는 보고서 링크(/s/…, D-73) */
-export const isStandalonePath = (pathname: string) => STANDALONE_PATHS.includes(pathname) || pathname.startsWith("/s/");
+export const isStandalonePath = (pathname: string) => STANDALONE_PATHS.includes(pathname) || pathname === "/s" || pathname.startsWith("/s/");
 
 let liveDb: DemoDB | null = null;
 let liveRev = -1;
@@ -417,7 +418,8 @@ export async function run<N extends CommandName>(name: N, args: CommandArgs<N>):
   if (!IS_LIVE) {
     const fn = COMMANDS[name] as unknown as (d: DemoDB, a: CommandArgs<N>, c: { userId: string; now: Date }) => { db: DemoDB; result: CommandResult<N> };
     // 하루 한 번 보관 기간이 지난 위치 좌표 정리 (서버와 같은 규칙 · D-43)
-    return dispatch((d, ctx) => fn(applyLocationRetention(d, ctx.now), args, ctx));
+    // 기한이 지난 보고서 링크의 내용도 함께 정리 (서버와 같은 규칙 · D-73)
+    return dispatch((d, ctx) => fn(applyShareRetention(applyLocationRetention(d, ctx.now), ctx.now), args, ctx));
   }
   let r: Response;
   try {

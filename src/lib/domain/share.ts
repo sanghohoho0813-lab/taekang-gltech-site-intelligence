@@ -12,7 +12,7 @@ import type { DemoDB, PartnerFeedItem, ReportShare, Site, SitePhoto } from "./ty
 import { PARTNER_FEED_KEEP_DAYS, partnerMonthly, partnerProgressFeed, photoWithdrawn, replyPhotoIds, type PartnerMonthly } from "./partnerFeed";
 import { completionReport, type CompletionReport } from "./completion";
 import { warrantyClientLine } from "./warranty";
-import { fmtDate } from "./format";
+import { fmtDate, todayIso } from "./format";
 import { hex, sha256, utf8 } from "./hmac";
 
 /** 고를 수 있는 기한 (일) */
@@ -24,6 +24,10 @@ export const SHARE_MAX_OPEN_PER_SITE = 20;
 export const SHARE_KEEP_DAYS = 60;
 /** 월간 보고서 링크로 고를 수 있는 지난 달 수 (이번 달 포함) */
 export const SHARE_MONTHS_BACK = 24;
+/** 열어 본 횟수: 한 링크는 5분에 한 번만 센다 (여러 사람이 한꺼번에 열어도 본사 화면이 계속 새로 받지 않게 — 점검 9차) */
+export const SHARE_VIEW_GAP_MS = 5 * 60_000;
+/** 본사가 ‘열어 보기’로 확인할 때 주소 뒤에 붙이는 표시 — 서버로 가지 않고, 열어 본 횟수에 넣지 않는다 */
+export const SHARE_PREVIEW_HASH = "#preview";
 /** 주소 비밀값: 24바이트 난수 → URL에 쓸 수 있는 글자 32자 (192비트) */
 export const SHARE_TOKEN_RE = /^[A-Za-z0-9_-]{32}$/;
 
@@ -40,6 +44,20 @@ export function base64url(bytes: Uint8Array): string {
     if (c !== undefined) out += B64[c & 63];
   }
   return out;
+}
+
+/** 새 주소 비밀값 — 끝 글자가 ‘-’·‘_’이면 메신저가 주소 끝을 잘라 먹을 수 있어 글자·숫자로 끝나는 것만 쓴다 */
+export function newShareToken(random: (n: number) => Uint8Array): string {
+  for (;;) {
+    const t = base64url(random(24));
+    if (/[A-Za-z0-9]$/.test(t)) return t;
+  }
+}
+
+/** 이번에 열어 본 것을 셀까 — 처음이거나, 마지막으로 센 지 5분이 지났을 때만 */
+export function shareViewCounts(s: Pick<ReportShare, "firstViewedAt" | "lastViewedAt">, nowIso: string): boolean {
+  if (!s.firstViewedAt || !s.lastViewedAt) return true;
+  return Date.parse(nowIso) - Date.parse(s.lastViewedAt) >= SHARE_VIEW_GAP_MS;
 }
 
 /** 주소 비밀값 → 저장용 id (SHA-256 hex) */
@@ -71,13 +89,15 @@ export interface MonthlyDoc {
   asOf: string;
   /** 가상 시연 데이터로 만든 문서 */
   sample?: true;
+  /** 보고 기간 끝의 전체 공정률 — 이번 달 보고서면 작성일 값, 지난 달 보고서면 그 달 말일 값 */
   progressPct: number;
   overall?: { from: number; to: number };
-  /** 현장의 모든 공정 단계 — 그 달에 바뀐 단계는 change */
+  /** 현장의 모든 공정 단계 (진행률은 보고 기간 끝 기준) — 그 달에 바뀐 단계는 change */
   stages: { name: string; startDate: string; endDate: string; progressPct: number; change?: { from: number; to: number } }[];
   photos: SharePhoto[];
   counts: PartnerMonthly["counts"];
-  next: PartnerMonthly["next"];
+  /** 다음 달 예정 공정 — ‘계획보다 늦음’ 판정은 넣지 않는다 (본사 화면 전용) */
+  next: { name: string; startDate: string; endDate: string; progressPct: number }[];
   warranty?: string;
 }
 
@@ -99,8 +119,8 @@ export interface CompletionDoc {
   days: number;
   from: string;
   to: string;
-  /** 계획 대비(늦음)는 본사 화면에서만 보므로 넣지 않는다 */
-  stages: { id: string; name: string; startDate: string; endDate: string; progressPct: number; doneDate?: string }[];
+  /** 계획 대비(늦음)·내부 번호는 넣지 않는다 */
+  stages: { name: string; startDate: string; endDate: string; progressPct: number; doneDate?: string }[];
   months: CompletionReport["months"];
   emptyLead?: CompletionReport["emptyLead"];
   photos: SharePhoto[];
@@ -128,15 +148,15 @@ export function monthlyDocFrom(db: Pick<DemoDB, "company" | "settings">, site: S
     to: r.to,
     asOf: today,
     ...sampleOf(db as DemoDB),
-    progressPct: site.progressPct,
+    progressPct: r.endPct,
     ...(r.overall ? { overall: r.overall } : {}),
-    stages: site.stages.map((st) => {
+    stages: site.stages.map((st, i) => {
       const ch = r.stages.find((x) => x.stage === st.name);
-      return { name: st.name, startDate: st.startDate, endDate: st.endDate, progressPct: st.progressPct, ...(ch ? { change: { from: ch.from, to: ch.to } } : {}) };
+      return { name: st.name, startDate: st.startDate, endDate: st.endDate, progressPct: r.stageEnd[i] ?? st.progressPct, ...(ch ? { change: { from: ch.from, to: ch.to } } : {}) };
     }),
     photos: r.photos.map(photoOf),
     counts: r.counts,
-    next: r.next,
+    next: r.next.map(({ late: _late, ...n }) => (void _late, n)),
     ...(warranty ? { warranty } : {}),
   };
 }
@@ -150,7 +170,7 @@ export function feedForMonth(db: DemoDB, siteId: string, month: string, today: s
 export function monthlyDoc(db: DemoDB, siteId: string, month: string, today: string): MonthlyDoc | null {
   const site = db.sites.find((s) => s.id === siteId);
   if (!site) return null;
-  return monthlyDocFrom(db, site, partnerMonthly(db, siteId, month, feedForMonth(db, siteId, month, today)), today);
+  return monthlyDocFrom(db, site, partnerMonthly(db, siteId, month, feedForMonth(db, siteId, month, today), undefined, today), today);
 }
 
 export function completionDocFrom(db: Pick<DemoDB, "company" | "settings">, r: CompletionReport, today: string): CompletionDoc {
@@ -173,7 +193,7 @@ export function completionDocFrom(db: Pick<DemoDB, "company" | "settings">, r: C
     days: r.days,
     from: r.from,
     to: r.to,
-    stages: r.stages.map((s) => ({ id: s.id, name: s.name, startDate: s.startDate, endDate: s.endDate, progressPct: s.progressPct, ...(s.doneDate ? { doneDate: s.doneDate } : {}) })),
+    stages: r.stages.map((s) => ({ name: s.name, startDate: s.startDate, endDate: s.endDate, progressPct: s.progressPct, ...(s.doneDate ? { doneDate: s.doneDate } : {}) })),
     months: r.months,
     ...(r.emptyLead ? { emptyLead: r.emptyLead } : {}),
     photos: r.photos.map(photoOf),
@@ -193,9 +213,15 @@ export function completionTitle(d: Pick<CompletionDoc, "finished" | "completedDa
   return d.finished ? "준공 보고서" : d.completedDate ? "공사 정리 보고서" : "공사 진행 정리 (준공 전)";
 }
 
+/** 월간 보고서 이름의 달 — 작성한 해와 다른 해면 연도를 붙인다 (작년 11월과 올해 11월이 같은 이름이 되지 않게 · 점검 9차) */
+export function monthTitle(month: string, asOf: string): string {
+  const m = `${Number(month.slice(5, 7))}월`;
+  return month.slice(0, 4) === asOf.slice(0, 4) ? m : `${month.slice(0, 4)}년 ${m}`;
+}
+
 /** 목록·활동 이력·보내는 글에 쓰는 이름 (예: ‘강남 물류 11월 공정 보고서’) */
 export function shareTitle(doc: ShareDoc): string {
-  if (doc.kind === "monthly") return `${doc.siteShort} ${Number(doc.month.slice(5, 7))}월 공정 보고서`;
+  if (doc.kind === "monthly") return `${doc.siteShort} ${monthTitle(doc.month, doc.asOf)} 공정 보고서`;
   return `${doc.siteShort} ${completionTitle(doc).replace(/\s*\(준공 전\)$/, "")}`;
 }
 
@@ -225,7 +251,16 @@ export function sharePhotoVisible(db: Pick<DemoDB, "reports" | "materialMoves" |
 
 /** 보내는 글 (카카오톡·문자에 붙여 넣기) — 금액·사람 이름 없음 */
 export function shareMessage(a: { company: string; title: string; url: string; expiresAt: string }): string {
-  return `[${a.company}] ${a.title}입니다.\n아래 주소를 누르면 바로 보실 수 있습니다 (로그인 없음 · ${fmtDate(a.expiresAt)}까지 열림).\n${a.url}`;
+  return `[${a.company}] ${a.title}입니다.\n아래 주소를 누르면 로그인 없이 바로 보실 수 있습니다 (${fmtDate(a.expiresAt)}까지).\n${a.url}`;
+}
+
+/**
+ * 링크가 닫히는 시각 — 그날 밤 자정 직전(한국 시간)까지.
+ * 화면·보낼 글에는 날짜만 나오므로(‘11.24까지’), 그날 낮에 끊기면 약속과 다르다 (점검 9차).
+ */
+export function shareExpiry(now: Date, days: number): string {
+  const day = todayIso(new Date(now.getTime() + days * 86_400_000));
+  return new Date(`${day}T23:59:59.999+09:00`).toISOString();
 }
 
 /** 목록에 보여 줄 링크 (최근 만든 것부터) */

@@ -169,14 +169,33 @@ export interface PartnerMonthly {
   photos: SitePhoto[];
   requests: PartnerRequest[];
   counts: { received: number; answered: number; open: number; defects: number; repaired: number; confirmed: number };
-  /** 다음 달에 걸친 미완료 공정 */
+  /** 다음 달에 걸친 미완료 공정 (보고 기간 끝 기준) — late(계획보다 늦음)는 본사 화면에서만 쓴다 */
   next: { name: string; startDate: string; endDate: string; progressPct: number; late: boolean }[];
+  /** 지난 달 보고서인가 (작성일이 그 달이 끝난 뒤) */
+  past: boolean;
+  /** 보고 기간 끝의 전체 공정률 — 이번 달이면 지금 값, 지난 달이면 그 달 말일 값 (D-73 점검 9차) */
+  endPct: number;
+  /** 보고 기간 끝의 단계별 진행률 (현장 공정 단계 순서) */
+  stageEnd: number[];
 }
 
 /** 발주처 월간 공정 보고서 (D-68) — 금액·사람 이름·보고 원문 없이 공정·공개 사진·요청 처리만 */
-export function partnerMonthly(db: DemoDB, siteId: string, month: string, feed: PartnerFeedItem[], partnerUserId?: string): PartnerMonthly {
+/**
+ * today(작성일)를 주면 지난 달 보고서는 ‘그 달 말일’ 값으로 만든다 — 10월 보고서에 11월 수치가 10월 것처럼 찍히던 문제 (D-73 점검 9차).
+ * 그 달 말일 값 = 그 달까지의 마지막 기록, 없으면 그 뒤 첫 기록이 바뀌기 전 값, 그것도 없으면 지금 값(그동안 바뀐 적 없음).
+ */
+export function partnerMonthly(db: DemoDB, siteId: string, month: string, feed: PartnerFeedItem[], partnerUserId?: string, today?: string): PartnerMonthly {
   const { from, to } = monthRange(month);
   const site = db.sites.find((s) => s.id === siteId);
+  const past = !!today && today > to;
+  const endOf = (stage: string, current: number) => {
+    if (!past) return current;
+    const rows = feed.filter((f) => f.stage === stage).sort((a, b) => a.date.localeCompare(b.date));
+    const before = rows.filter((f) => f.date <= to).at(-1);
+    if (before) return before.to;
+    const after = rows.find((f) => f.date > to);
+    return after ? after.from : current;
+  };
   const inMonth = feed.filter((f) => f.date >= from && f.date <= to).sort((a, b) => a.date.localeCompare(b.date));
   const agg = new Map<string, { stage: string; from: number; to: number }>();
   for (const f of inMonth) {
@@ -207,9 +226,11 @@ export function partnerMonthly(db: DemoDB, siteId: string, month: string, feed: 
   const [y, m] = month.split("-").map(Number);
   const nm = `${m === 12 ? y + 1 : y}-${String(m === 12 ? 1 : m + 1).padStart(2, "0")}`;
   const nr = monthRange(nm);
-  // 계획 기간이 지났는데 끝나지 않은 공정도 넣고 ‘계획보다 늦음’으로 (D-68 점검 반영)
+  const stageEnd = (site?.stages ?? []).map((st) => endOf(st.name, st.progressPct));
+  const endPct = endOf("전체 공정률", site?.progressPct ?? 0);
+  // 계획 기간이 지났는데 끝나지 않은 공정도 넣는다 (D-68 점검 반영) — 보고 기간 끝의 진행률 기준
   const next = (site?.stages ?? [])
-    .filter((s) => s.progressPct < 100 && s.startDate <= nr.to)
-    .map((s) => ({ name: s.name, startDate: s.startDate, endDate: s.endDate, progressPct: s.progressPct, late: s.endDate < nr.from }));
-  return { month, from, to, stages, ...(overallRow && overallRow.from !== overallRow.to ? { overall: { from: overallRow.from, to: overallRow.to } } : {}), photos, requests, counts, next };
+    .map((s, i) => ({ name: s.name, startDate: s.startDate, endDate: s.endDate, progressPct: stageEnd[i], late: s.endDate < nr.from }))
+    .filter((s) => s.progressPct < 100 && s.startDate <= nr.to);
+  return { month, from, to, stages, ...(overallRow && overallRow.from !== overallRow.to ? { overall: { from: overallRow.from, to: overallRow.to } } : {}), photos, requests, counts, next, past, endPct, stageEnd };
 }

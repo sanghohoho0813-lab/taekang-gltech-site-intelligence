@@ -11,13 +11,15 @@ import {
   SHARE_DEFAULT_DAYS,
   SHARE_KEEP_DAYS,
   SHARE_MAX_OPEN_PER_SITE,
-  base64url,
   completionDoc,
   monthlyDoc,
   shareIdOf,
   shareMonths,
   shareState,
+  newShareToken,
+  shareExpiry,
   shareTitle,
+  shareViewCounts,
   type ShareDoc,
 } from "@/lib/domain/share";
 
@@ -28,6 +30,8 @@ export interface CreateShareInput {
   month?: string;
   /** 열어 둘 기간 (7·14·30일) */
   days?: number;
+  /** 받는 분 메모 (선택 · 본사 목록에만 보임 — 보고서·링크에는 들어가지 않는다) */
+  to?: string;
 }
 
 /** 닫히거나 기한이 지난 지 오래된 링크 기록을 지운다 — 바꿀 것이 없으면 같은 객체를 그대로 돌려준다 */
@@ -55,13 +59,15 @@ export function createShare(db0: DemoDB, input: CreateShareInput, ctx: Ctx) {
   if (kind !== "monthly" && kind !== "completion") throw new CommandError("보고서 종류를 확인해주세요.", "VALIDATION", { kind: "월간 보고서 또는 준공 보고서" });
   const days = input.days === undefined ? SHARE_DEFAULT_DAYS : input.days;
   if (!(SHARE_DAYS as readonly number[]).includes(days)) throw new CommandError(`열어 둘 기간은 ${SHARE_DAYS.join("·")}일 중에서 골라 주세요.`, "VALIDATION", { days: "7·14·30일" });
+  const to = typeof input.to === "string" ? input.to.replace(/\s+/g, " ").trim() : "";
+  if (to.length > 30) throw new CommandError("받는 분 메모는 30자 이내로 적어 주세요.", "VALIDATION", { to: "30자 이내" });
   const now = ctx.now ?? new Date();
   const db = clone(applyShareRetention(db0, now));
   const site = requireSite(db, typeof input.siteId === "string" ? input.siteId : "");
   const at = nowIso(ctx);
   const today = todayIso(now);
   const open = (db.shares ?? []).filter((s) => s.siteId === site.id && shareState(s, at) === "open").length;
-  if (open >= SHARE_MAX_OPEN_PER_SITE) throw new CommandError(`이 현장에 열려 있는 링크가 ${SHARE_MAX_OPEN_PER_SITE}개입니다. 안 쓰는 링크를 닫고 다시 만들어 주세요.`, "STATE");
+  if (open >= SHARE_MAX_OPEN_PER_SITE) throw new CommandError(`이 현장에 열려 있는 링크가 ${SHARE_MAX_OPEN_PER_SITE}개입니다. 현장 상세 ‘발주처·하자보증’의 ‘보낸 보고서 링크’에서 안 쓰는 링크를 닫고 다시 만들어 주세요.`, "STATE");
 
   let doc: ShareDoc | null;
   if (kind === "monthly") {
@@ -73,7 +79,7 @@ export function createShare(db0: DemoDB, input: CreateShareInput, ctx: Ctx) {
   }
   if (!doc) throw new CommandError("현장을 찾을 수 없습니다.", "NOT_FOUND");
 
-  const token = base64url(randomBytes(24));
+  const token = newShareToken(randomBytes);
   const share: ReportShare = {
     id: shareIdOf(token),
     kind,
@@ -82,7 +88,8 @@ export function createShare(db0: DemoDB, input: CreateShareInput, ctx: Ctx) {
     title: shareTitle(doc),
     createdAt: at,
     createdBy: ctx.userId,
-    expiresAt: new Date(now.getTime() + days * 86_400_000).toISOString(),
+    expiresAt: shareExpiry(now, days),
+    ...(to ? { to } : {}),
     views: 0,
     snapshot: doc,
   };
@@ -114,6 +121,8 @@ export function recordShareView(db0: DemoDB, input: { shareId: string }, ctx: Ct
   const at = nowIso(ctx);
   const s0 = (db0.shares ?? []).find((x) => x.id === input?.shareId);
   if (!s0 || shareState(s0, at) !== "open") throw new CommandError("열 수 없는 링크입니다.", "NOT_FOUND");
+  // 5분 안에 다시 연 것은 세지 않는다 (서버와 같은 규칙)
+  if (!shareViewCounts(s0, at)) return { db: db0, result: { views: s0.views } };
   const db = clone(db0);
   db.shares = (db.shares ?? []).map((x) => (x.id === s0.id ? { ...x, views: x.views + 1, firstViewedAt: x.firstViewedAt ?? at, lastViewedAt: at } : x));
   touch(db, ctx);

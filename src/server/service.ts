@@ -137,7 +137,8 @@ export async function executeCommand(m: Member, name: unknown, args: unknown): P
       const loaded = hit?.db ?? (await loadState(tx, m.companyId));
       const now = new Date();
       // 하루 한 번: 보관 기간이 지난 위치 좌표를 지운다 (명령과 같은 트랜잭션 — 명령이 실패하면 함께 되돌아감 · D-43)
-      const state = applyLocationRetention(loaded, now);
+      // 기한이 지난 보고서 링크의 내용도 함께 지운다 — 매일 점검(예약 작업)이 안 도는 배포에서도 남지 않게 (D-73 점검 9차)
+      const state = applyShareRetention(applyLocationRetention(loaded, now), now);
       const safeArgs = authorize(m, name, args, state, now);
       const fn = COMMANDS[name as CommandName] as unknown as (d: DemoDB, a: unknown, c: { userId: string; now: Date }) => { db: DemoDB; result: unknown };
       let out: { db: DemoDB; result: unknown };
