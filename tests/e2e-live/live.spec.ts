@@ -986,7 +986,10 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     const token = url.split("/s/")[1];
     await expect(hq.getByTestId("share-demo-note")).toHaveCount(0);
     await expect(hq.getByTestId("share-message")).toHaveValue(/공정 보고서입니다/);
+    // 복사하지 않고 닫으면 한 번 더 묻는다 → 닫기
+    hq.once("dialog", (d) => void d.accept());
     await hq.getByTestId("share-done").click();
+    await expect(hq.getByTestId("share-dialog")).toHaveCount(0);
     // 화면 데이터에는 목록만 — 보고서 내용·주소 비밀값 없음
     const s1 = await state(hq);
     expect(s1.shares).toHaveLength(1);

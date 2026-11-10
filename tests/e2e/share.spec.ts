@@ -53,6 +53,15 @@ test("월간 보고서 링크: 만들기 → 주소·보낼 글 복사 → 로�
   expect(msg).toContain("로그인 없음");
   expect(msg).not.toMatch(MONEY);
   await expect(page.getByTestId("share-demo-note")).toBeVisible();
+  // 주소를 복사하기 전에는 실수로 닫히지 않는다 (Esc·닫기 → 한 번 더 물음) — 주소는 다시 볼 수 없으므로
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("share-url")).toBeVisible();
+  page.once("dialog", (d) => {
+    expect(d.message()).toContain("아직 복사하지 않았습니다");
+    void d.dismiss();
+  });
+  await page.getByTestId("share-done").click();
+  await expect(page.getByTestId("share-url")).toHaveValue(url);
   await page.getByTestId("share-copy").click();
   await expect(page.getByTestId("share-copy")).toContainText("복사됨");
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(url);

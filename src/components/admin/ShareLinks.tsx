@@ -75,6 +75,9 @@ export function ShareLinkButton({
   const [copied, setCopied] = useState<"url" | "msg" | null>(null);
   const [canShare, setCanShare] = useState(false);
   const urlRef = useRef<HTMLInputElement>(null);
+  /** 주소를 복사했거나 공유 창으로 보냈는가 — 아직이면 실수로 닫히지 않게 막는다 (주소는 다시 볼 수 없으므로) */
+  const [taken, setTaken] = useState(false);
+  const creating = useRef(false);
 
   useEffect(() => setCanShare(typeof navigator !== "undefined" && typeof navigator.share === "function"), []);
 
@@ -83,8 +86,17 @@ export function ShareLinkButton({
     setMade(null);
     setErr(null);
     setCopied(null);
+    setTaken(false);
+  };
+  /** ‘닫기’ 버튼: 주소를 아직 가져가지 않았으면 한 번 더 묻는다 */
+  const done = () => {
+    if (made && !taken && !window.confirm("주소를 아직 복사하지 않았습니다.\n닫으면 이 주소를 다시 볼 수 없습니다. 그래도 닫을까요?")) return;
+    close();
   };
   const create = async () => {
+    // 두 번 눌러 링크가 두 개 만들어지지 않게
+    if (creating.current) return;
+    creating.current = true;
     setBusy(true);
     setErr(null);
     try {
@@ -93,6 +105,7 @@ export function ShareLinkButton({
     } catch (e) {
       setErr(errorMessage(e, "링크를 만들지 못했습니다. 다시 눌러 주세요."));
     } finally {
+      creating.current = false;
       setBusy(false);
     }
   };
@@ -101,6 +114,7 @@ export function ShareLinkButton({
     const ok = await copyText(what === "url" ? made!.url : message);
     if (ok) {
       setCopied(what);
+      setTaken(true);
       toast.push({ tone: "ok", title: what === "url" ? "주소를 복사했습니다" : "보낼 글을 복사했습니다", desc: "카카오톡·문자에 붙여 넣으세요." });
     } else {
       urlRef.current?.select();
@@ -110,6 +124,7 @@ export function ShareLinkButton({
   const share = async () => {
     try {
       await navigator.share({ title: made!.title, text: message });
+      setTaken(true);
     } catch {
       // 사용자가 공유 창을 닫음 — 아무것도 하지 않는다
     }
@@ -127,13 +142,15 @@ export function ShareLinkButton({
         description={made ? `${made.title} · ${fmtDate(made.expiresAt)}까지 열립니다` : title}
         size="md"
         testId="share-dialog"
+        // 주소를 만든 뒤 복사하기 전에는 바깥을 누르거나 ‘뒤로’로 닫히지 않는다 — 아래 ‘닫기’로만 (한 번 더 물음)
+        dismissible={!made || taken}
         footer={
           made ? (
             <>
               <a href={made.url} target="_blank" rel="noreferrer" className="press inline-flex h-11 items-center gap-2 rounded-full border border-line-strong bg-surface px-4 text-[0.9rem] font-semibold text-ink hover:bg-surface-2" data-testid="share-preview">
                 <ExternalLink size={16} aria-hidden /> 열어 보기
               </a>
-              <Button variant="cta" onClick={close} data-testid="share-done">
+              <Button variant="cta" onClick={done} data-testid="share-done">
                 닫기
               </Button>
             </>
