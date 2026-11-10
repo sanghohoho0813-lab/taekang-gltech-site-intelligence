@@ -10,6 +10,7 @@ import { AUDIT_LIMIT, auditRange, type AuditFilter } from "@/lib/domain/audit";
 import { COMMANDS, isCommandName, type CommandName } from "@/lib/data/registry";
 import { CommandError } from "@/lib/data/commands";
 import { applyLocationRetention } from "@/lib/data/privacyCommands";
+import { applyShareRetention } from "@/lib/data/shareCommands";
 import { runDailyChecks } from "@/lib/data/dailyJobs";
 import { recordError } from "./errors";
 import { cachedEntry, cachedState, rememberState } from "./stateCache";
@@ -186,7 +187,8 @@ export async function runDailyJobs(now = new Date()): Promise<{ companies: numbe
       const done = await db.transaction(async (tx) => {
         await tx.query(`select rev from companies where id = $1 for update`, [id]);
         const loaded = await loadState(tx, id);
-        const retained = applyLocationRetention(loaded, now);
+        // 닫히거나 기한이 지난 보고서 링크의 내용·오래된 기록도 함께 지운다 (D-73)
+        const retained = applyShareRetention(applyLocationRetention(loaded, now), now);
         // 알림 키가 없으면 하자보증 만료 알림은 건너뛴다 (‘보낸 알림’으로 남지 않게) — 위치 좌표 정리는 그대로
         const out = pushReady() ? runDailyChecks(retained, now) : { db: retained, notices: [], warranty: [], brief: { hq: 0, field: 0 }, changed: false };
         if (out.db === loaded) return null;

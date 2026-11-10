@@ -83,3 +83,6 @@ alter table sessions enable row level security;
 alter table records enable row level security;
 
 alter table photo_blobs enable row level security;
+
+-- 002_share_lookup
+create index if not exists records_share_id on records(id) where collection = 'shares';

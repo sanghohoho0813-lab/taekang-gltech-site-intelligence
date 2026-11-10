@@ -1,6 +1,6 @@
 /**
  * DB 스키마 — 앱이 처음 DB에 연결할 때 자동 적용 (적용 이력: schema_migrations).
- * supabase/migrations/001_init.sql 은 이 파일과 같은 내용 (단위 테스트로 일치 확인).
+ * supabase/migrations/001_init.sql 은 이 파일과 같은 내용 (단위 테스트로 일치 확인 — 뒤에 추가한 변경도 그 파일에 이어 붙는다).
  *
  * 설계 (DECISIONS D-19):
  * - 업무 데이터는 records(컬렉션·id·data jsonb) 한 표에 엔터티 단위로 저장 — 화면·계산이 쓰는 모양 그대로,
@@ -89,6 +89,13 @@ alter table members enable row level security;
 alter table sessions enable row level security;
 alter table records enable row level security;
 alter table photo_blobs enable row level security
+`,
+  },
+  {
+    // 보고서 링크(D-73): 로그인 없이 여는 주소는 회사 번호 없이 링크 id(해시)만으로 찾는다 — 그 조회가 전체 기록을 훑지 않게
+    name: "002_share_lookup",
+    sql: `
+create index if not exists records_share_id on records(id) where collection = 'shares'
 `,
   },
 ];

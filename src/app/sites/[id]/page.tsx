@@ -20,6 +20,7 @@ import { useFrameCommand } from "@/components/device/frameCommands";
 import { CostEntryList } from "@/components/domain/CostEntryList";
 import { MaterialTab } from "@/components/admin/MaterialTab";
 import { WarrantyCard } from "@/components/admin/WarrantyCard";
+import { SharesCard } from "@/components/admin/ShareLinks";
 import { ProgressHistory } from "@/components/admin/ProgressHistory";
 import { simulateApprovedClaims, type SiteFinancials } from "@/lib/domain/calc";
 import { receivableAging } from "@/lib/domain/risk";
@@ -662,6 +663,8 @@ function RequestsTab({ db, site }: { db: DemoDB; site: Site }) {
     <WarrantyCard site={site} />
     {/* 준공 보고서 (D-72) — 발주처 제출용, 본사만 */}
     <CompletionCard site={site} />
+    {/* 보낸 보고서 링크 (D-73) — 본사만 */}
+    <SharesSection db={db} site={site} />
     <Card>
       <CardHeader title="발주처·협력사 요청함" sub="발주처 포털에서 등록된 요청" right={<Link href="/insights#requests"><Button size="sm" icon={<Handshake size={15} />}>요청 처리</Button></Link>} />
       {reqs.length === 0 ? (
@@ -707,6 +710,26 @@ function CompletionCard({ site }: { site: Site }) {
         }
       />
     </Card>
+  );
+}
+
+function SharesSection({ db, site }: { db: DemoDB; site: Site }) {
+  const { role } = useMe();
+  if (role !== "ceo" && role !== "manager") return null;
+  return (
+    <div className="space-y-2">
+      <SharesCard db={db} siteId={site.id} />
+      <p className="px-1 text-[0.82rem] text-ink-2">
+        보낼 보고서 고르기:{" "}
+        <Link href={`/partner/report?site=${site.id}`} className="font-bold text-theme-ink underline underline-offset-2" data-testid="shares-monthly-link">
+          발주처 월간 보고서
+        </Link>{" "}
+        ·{" "}
+        <Link href={`/sites/${site.id}/completion`} className="font-bold text-theme-ink underline underline-offset-2" data-testid="shares-completion-link">
+          준공 보고서
+        </Link>
+      </p>
+    </div>
   );
 }
 

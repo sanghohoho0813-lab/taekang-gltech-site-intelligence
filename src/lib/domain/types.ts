@@ -458,6 +458,32 @@ export interface PartnerFeedItem {
   to: number;
 }
 
+/**
+ * 보고서 링크 (D-73) — 로그인 없이 여는 읽기 전용 주소. 만들 때의 내용으로 고정(snapshot)하고,
+ * 주소에 든 비밀값은 저장하지 않는다 (id = 비밀값의 SHA-256). 금액·사람 이름·요청 내용은 넣지 않는다.
+ */
+export type ShareKind = "monthly" | "completion";
+export interface ReportShare {
+  /** 주소 비밀값의 SHA-256 (hex) — 이 값으로는 링크를 열 수 없다 */
+  id: string;
+  kind: ShareKind;
+  siteId: string;
+  /** 월간 보고서의 달 (YYYY-MM) */
+  month?: string;
+  title: string;
+  createdAt: string;
+  createdBy: string;
+  expiresAt: string;
+  revokedAt?: string;
+  revokedBy?: string;
+  /** 열어 본 횟수 (같은 곳에서 30분 안에 다시 열면 한 번) */
+  views: number;
+  firstViewedAt?: string;
+  lastViewedAt?: string;
+  /** 만들 때의 보고서 내용 — 닫으면 지운다. LIVE 화면 데이터에는 싣지 않는다 (링크를 열 때만 읽음) */
+  snapshot?: import("./share").ShareDoc;
+}
+
 export type ChangeOrderStatus = "review" | "submitted" | "approved" | "rejected";
 
 export interface ChangeOrder {
@@ -745,6 +771,8 @@ export interface DemoDB {
   importBatches?: ImportBatch[];
   /** 자재 반입·설치 기록 (D-62) */
   materialMoves?: MaterialMove[];
+  /** 발주처에 보낸 보고서 링크 (D-73) — 주소의 비밀값은 저장하지 않고 해시(id)만 */
+  shares?: ReportShare[];
   /** LIVE: 현재 로그인 사용자 id (서버가 채움). DEMO에서는 없음 */
   me?: string;
   /** LIVE: 서버가 역할별로 걸러 보낸 데이터인지 */

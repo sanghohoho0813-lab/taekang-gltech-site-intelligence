@@ -14,6 +14,7 @@ import * as D from "./deviceCommands";
 import * as F from "./feedbackCommands";
 import * as M from "./materialCommands";
 import * as PT from "./portalCommands";
+import * as SH from "./shareCommands";
 
 type Ctx = C.Ctx;
 
@@ -79,6 +80,9 @@ export const COMMANDS = {
   // 앱 의견 (D-47) — 보내기는 본인, 확인은 본사
   sendFeedback: (db: DemoDB, a: F.FeedbackInput, ctx: Ctx) => F.sendFeedback(db, a, ctx),
   reviewFeedback: (db: DemoDB, a: Parameters<typeof F.reviewFeedback>[1], ctx: Ctx) => F.reviewFeedback(db, a, ctx),
+  // 보고서 링크 (D-73) — 본사만. 링크를 열어 본 기록은 명령이 아니라 서버 전용 경로(/api/share)에서 남긴다
+  createShare: (db: DemoDB, a: SH.CreateShareInput, ctx: Ctx) => SH.createShare(db, a, ctx),
+  revokeShare: (db: DemoDB, a: { shareId: string }, ctx: Ctx) => SH.revokeShare(db, a, ctx),
   // pairKiosk는 목록에 넣지 않는다 — 로그인하지 않은 태블릿 전용 경로(/api/kiosk/pair)에서만 실행
 } as const;
 

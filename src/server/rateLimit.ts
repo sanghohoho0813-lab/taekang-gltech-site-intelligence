@@ -27,6 +27,14 @@ export const RULES = {
   export: { name: "export", limit: 6, windowMs: 10 * 60_000 },
   pushTest: { name: "pushTest", limit: 5, windowMs: 10 * 60_000 },
   clientError: { name: "clientError", limit: 30, windowMs: 10 * 60_000 },
+  /** 보고서 링크(D-73) — 한 곳에서 여는 횟수 (문서 1번 + 사진 최대 12장이 한 번 열기) */
+  share: { name: "share", limit: 240, windowMs: 60_000 },
+  /** 없는 주소를 계속 넣어 보는 시도 */
+  shareMiss: { name: "shareMiss", limit: 20, windowMs: 10 * 60_000 },
+  /** 열어 본 횟수: 같은 곳에서 30분에 한 번만 센다 */
+  shareViewer: { name: "shareViewer", limit: 1, windowMs: 30 * 60_000 },
+  /** 열어 본 횟수 기록: 링크 하나에 시간당 60번까지만 쓴다 */
+  shareWrites: { name: "shareWrites", limit: 60, windowMs: 60 * 60_000 },
 } satisfies Record<string, RateRule>;
 
 /** 이번 요청을 세고, 한도를 넘었으면 다시 시도할 수 있을 때까지 남은 초를 돌려준다 */

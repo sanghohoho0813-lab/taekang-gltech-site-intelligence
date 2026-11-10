@@ -42,12 +42,13 @@ export const COLLECTIONS = {
   workOrders: byId,
   importBatches: byId,
   materialMoves: byId,
+  shares: byId,
 } satisfies Record<string, KeyFn>;
 export type CollectionName = keyof typeof COLLECTIONS;
 const NAMES = Object.keys(COLLECTIONS) as CollectionName[];
 
 /** 최신 항목이 배열 앞에 오는 컬렉션 (명령이 unshift) */
-const NEWEST_FIRST = new Set<CollectionName>(["reports", "proofEvents", "activityLogs", "actions", "partnerRequests", "importBatches"]);
+const NEWEST_FIRST = new Set<CollectionName>(["reports", "proofEvents", "activityLogs", "actions", "partnerRequests", "importBatches", "shares"]);
 /** 지우지 않는 컬렉션 */
 const APPEND_ONLY = new Set<CollectionName>(["activityLogs"]);
 const LOG_LIMIT = 300;

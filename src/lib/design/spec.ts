@@ -76,6 +76,8 @@ export const COMMAND_SPEC: Record<CommandName, { label: string; group: CmdGroup;
   setSiteMaterials: { label: "현장 주요 자재 품목·설계 수량 정하기", group: "ops", allow: HQ },
   setSiteWarranty: { label: "현장 하자보증 기간·준공일 정하기 (계약서 기준 · 금액 없음)", group: "partner", allow: HQ },
   setPhotoShare: { label: "발주처 포털에 현장 사진 공개·비공개", group: "partner", allow: HQ },
+  createShare: { label: "보고서 링크 만들기 (읽기 전용 · 기한)", group: "partner", allow: HQ },
+  revokeShare: { label: "보고서 링크 닫기", group: "partner", allow: HQ },
   setCompanySettings: { label: "운영 설정 (본사 전화·기본 일당·반영 방식)", group: "ops", allow: HQ },
   setThresholds: { label: "위험 기준 (목표 이익률 등)", group: "ops", allow: HQ },
   importData: { label: "지난 자료 엑셀 가져오기 (기성·변경공사·출력·단가·원가·자재·공정 이력)", group: "ops", allow: HQ },
@@ -133,6 +135,7 @@ export const COLLECTION_SPEC: Record<CollectionName, CollectionSpec> = {
   workOrders: { label: "작업지시", holds: "지시 내용·받는 사람·기한·접수→진행→완료→확인 이력·작업량·사진", field: "본인에게 온 것", partner: DATA_NONE, keep: "보관" },
   importBatches: { label: "자료 가져오기 기록", holds: "종류·건수·건너뛴 행·취소 여부", field: DATA_NONE, partner: DATA_NONE, keep: "보관" },
   materialMoves: { label: "자재 반입·설치", holds: "품목·반입/설치·수량·날짜·사진·메모·취소 사유 (금액 없음)", field: "담당 현장 것 (누계가 맞도록 기간 제한 없음)", partner: DATA_NONE, keep: "보관 (취소는 지우지 않고 표시)" },
+  shares: { label: "보고서 링크", holds: "종류·기한·열어 본 횟수·고정한 내용 (주소 비밀값은 해시만)", field: DATA_NONE, partner: DATA_NONE, keep: "닫으면 내용 삭제 · 60일 뒤 기록 삭제" },
 };
 
 /** 회사 데이터 밖의 서버 표 */
@@ -216,7 +219,7 @@ export const MODULES: { no: string; name: string; routes: string[]; note: string
   { no: "03", name: "본사-현장 소통", routes: ["/orders", "/my-actions", "/audit"], note: "지시→접수→진행→완료→확인, 보완 요청, 휴대폰 알림, 활동 이력" },
   { no: "04", name: "공정·투입 원가", routes: ["/sites", "/schedule", "/labor", "/finance"], note: "현장 손익·공정 일정·투입 인건비 추정 vs 실제·기성·변경공사·자재 설치율·기성 청구 지연 표시" },
   { no: "05", name: "대표자 통합 현황판", routes: ["/dashboard", "/report", "/insights"], note: "처리 대기·현장별 손익·위험 신호(규칙 기반)·대표 보고서" },
-  { no: "06", name: "고객·협력사 초기화면", routes: ["/partner", "/partner/report", "/defects"], note: "공개 현장 진행·공정 사진·견적 문의·주문 요청·하자보수(사진·보수 진행·확인·본사 하자보수 현황·관리대장)·월간 공정 보고서 (내부 금액 비노출)" },
+  { no: "06", name: "고객·협력사 초기화면", routes: ["/partner", "/partner/report", "/defects"], note: "공개 현장 진행·공정 사진·견적 문의·주문 요청·하자보수(사진·보수 진행·확인·본사 하자보수 현황·관리대장)·월간 공정 보고서·보고서 링크 (내부 금액 비노출)" },
   { no: "07", name: "기존 프로그램 일부 기능", routes: ["/data"], note: "엑셀 가져오기 7종(기성·입금 / 변경공사 / 출력 / 팀 단가 / 원가 / 자재 반입·설치 / 공정 진행 이력)·내려받기 — 합의 항목은 계약에 따라 확정" },
 ];
 
@@ -228,5 +231,5 @@ export const SECURITY: { title: string; text: string }[] = [
   { title: "출퇴근 시각·위치", text: "시각은 서버 시계로만 기록한다. 버튼을 누를 때 한 번만 위치를 확인하고 계속 추적하지 않는다. 현장 안/밖은 서버가 거리로 판정한다." },
   { title: "개인위치정보", text: "동의한 직원만 좌표를 저장한다. 보관 기간이 지나면 좌표를 매일 자동 삭제하고, 좌표 열람 범위(대표만 / 대표·관리자)는 대표가 정한다. 직원은 자기 기록을 보고 동의를 철회할 수 있다." },
   { title: "이력", text: "누가·언제·무엇을 바꿨는지 활동 이력에 남고 지워지지 않는다. 출퇴근 정정·근태 승인·사용자 관리도 모두 남는다." },
-  { title: "웹 보안", text: "보안 헤더(외부 스크립트·다른 사이트 안에 넣기 차단), 다른 사이트에서 보낸 쓰기 요청 차단, 로그인 실패·요청 횟수 제한." },
+  { title: "웹 보안", text: "보안 헤더(외부 스크립트·다른 사이트 안에 넣기 차단), 다른 사이트에서 보낸 쓰기 요청 차단, 로그인 실패·요청 횟수 제한. 보고서 링크는 비밀값을 저장하지 않는다." },
 ];

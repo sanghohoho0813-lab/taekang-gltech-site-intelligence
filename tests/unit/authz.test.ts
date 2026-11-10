@@ -32,14 +32,18 @@ function sample(db: DemoDB, name: CommandName): Record<string, unknown> {
 }
 
 describe("권한 매트릭스 — 모든 명령 × 역할", () => {
-  it("명령 목록이 바뀌면 이 표를 먼저 갱신한다 (52개)", () => {
+  it("명령 목록이 바뀌면 이 표를 먼저 갱신한다 (54개)", () => {
     expect(ALL).toEqual(
       [
         "addActionNote", "addBilling", "addPayment", "assignAction", "checkIn", "checkOut", "completeAction", "confirmPartnerRequest", "confirmProofEvent", "confirmQr", "correctAttendance", "createAction", "createKiosk", "createPartnerRequest", "createWorkOrder", "editCostEntry", "importCostRows", "importData", "purgeLocationsNow", "purgeMemberLocations", "recordMaterial", "reportCrew", "reportDeviceCheck", "reviewFeedback", "requestAttendanceFix", "reviewAttendanceFix", "reviewCostEntry", "reviewReport", "reviewWorkOrder", "revokeKiosk", "saveSite", "setActionStatus", "setChangeOrderStatus", "setCompanySettings", "setLocationPolicy", "setPhotoShare", "setSiteGeo", "setSiteMaterials", "setSiteWarranty", "sendFeedback", "setThresholds", "submitFieldReport", "supplementReport", "undoImport", "updateForecast", "updatePartnerRequest", "updateProgress", "voidCostEntry", "voidMaterialMove", "voidReport", "withdrawLocationConsent", "workOrderStep",
+        // 보고서 링크 (D-73) — 본사만
+        "createShare", "revokeShare",
       ].sort(),
     );
     // QR 태블릿 연결은 로그인 없는 전용 API로만 (명령 목록에 없어야 함)
     expect(ALL).not.toContain("pairKiosk");
+    // 보고서 링크를 열어 본 기록도 명령이 아니다 (로그인한 사람이 횟수를 올리지 못하게 · D-73)
+    expect(ALL).not.toContain("recordShareView");
   });
 
   it("대표는 모든 명령, 관리자는 개인위치정보 규칙·좌표 삭제를 뺀 모든 명령 (금액·승인 포함)", () => {

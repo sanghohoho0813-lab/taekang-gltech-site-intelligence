@@ -960,6 +960,107 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     }
   });
 
+  test("보고서 링크(D-73): 본사가 만든 주소를 로그인 없는 브라우저에서 열기 → 공개 사진만 → 열어 본 횟수 → 공개를 끄면 사진 404 → 닫으면 410 · 발주처는 만들 수 없음", async ({ browser }) => {
+    const PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const cmd = async (page: Page, name: string, args: unknown) => {
+      const r = await page.request.post("/api/commands", { data: { name, args } });
+      return { status: r.status(), body: await r.json().catch(() => null) };
+    };
+    const state = async (page: Page) => (await (await page.request.get("/api/state")).json()).db;
+    const hq = await login(browser, CEO.email, CEO.password);
+    const today = new Date(Date.now() + 9 * 3_600_000).toISOString().slice(0, 10);
+    // 사진 2장 중 1장만 발주처 공개
+    const rep = await cmd(hq, "submitFieldReport", { idempotencyKey: "e2e-share-1", siteId, reportDate: today, workDone: "보고서 링크용 사진", photos: [{ dataUrl: PNG }, { dataUrl: PNG }] });
+    expect(rep.status).toBe(200);
+    const [p1, p2] = (await state(hq)).photos.filter((p: { reportId?: string }) => p.reportId === rep.body.result.reportId).map((p: { id: string }) => p.id);
+    expect((await cmd(hq, "setPhotoShare", { photoIds: [p1], shared: true, caption: "링크용 공개 사진" })).status).toBe(200);
+
+    // 본사: 월간 보고서 → 링크로 보내기 (7일)
+    await hq.goto(`/partner/report?site=${siteId}`);
+    await hq.getByTestId("share-open").click();
+    await hq.getByTestId("share-days-7").click();
+    await hq.getByTestId("share-create").click();
+    const url = await hq.getByTestId("share-url").inputValue();
+    expect(url).toMatch(/\/s\/[A-Za-z0-9_-]{32}$/);
+    const token = url.split("/s/")[1];
+    await expect(hq.getByTestId("share-demo-note")).toHaveCount(0);
+    await expect(hq.getByTestId("share-message")).toHaveValue(/공정 보고서입니다/);
+    await hq.getByTestId("share-done").click();
+    // 화면 데이터에는 목록만 — 보고서 내용·주소 비밀값 없음
+    const s1 = await state(hq);
+    expect(s1.shares).toHaveLength(1);
+    expect(s1.shares[0].snapshot).toBeUndefined();
+    expect(s1.shares[0].views).toBe(0);
+    expect(JSON.stringify(s1)).not.toContain(token);
+
+    // 로그인하지 않은 다른 브라우저(휴대폰) — 로그인 화면으로 보내지 않고 문서만
+    const anonCtx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const anon = await anonCtx.newPage();
+    const res = await anon.goto(url);
+    expect(res!.status()).toBe(200);
+    expect(res!.headers()["referrer-policy"]).toBe("no-referrer");
+    expect(res!.headers()["x-robots-tag"]).toContain("noindex");
+    const share = anon.getByTestId("share-page");
+    await expect(share).toHaveAttribute("data-state", "open");
+    await expect(anon).toHaveURL(url);
+    await expect(anon.getByTestId("report-body")).toContainText("월간 공정 보고서");
+    await expect(anon.getByTestId("report-photo")).toHaveCount(1);
+    const img = anon.getByTestId("report-photo").locator("img");
+    await img.scrollIntoViewIfNeeded();
+    await expect.poll(() => img.evaluate((el: HTMLImageElement) => el.naturalWidth)).toBeGreaterThan(0);
+    await expect(anon.getByTestId("report-request-counts")).toBeVisible();
+    await expect(anon.getByTestId("report-requests")).toHaveCount(0);
+    const text = (await share.innerText()).replace(/\s+/g, " ");
+    expect(text).not.toMatch(/\d+(\.\d+)?억|\d[\d,]*만 원|이익률|원가/);
+    expect(text).not.toContain("3층 거실 창 누수");
+    expect(text).not.toContain("DEMO");
+    expect(await anon.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+    // 그 브라우저는 주소에 든 것만 본다 — 회사 데이터·다른 사진은 못 받는다
+    expect((await anon.request.get("/api/state")).status()).toBe(401);
+    expect((await anon.request.get(`/api/photos/${p1}`)).status()).toBe(401);
+    expect((await anon.request.get(`/api/share/${token}/photo/${p1}`)).status()).toBe(200);
+    expect((await anon.request.get(`/api/share/${token}/photo/${p2}`)).status()).toBe(404);
+    const api = await anon.request.get(`/api/share/${token}`);
+    expect(api.headers()["cache-control"]).toBe("private, no-store");
+    expect(Object.keys(await api.json()).sort()).toEqual(["createdAt", "doc", "expiresAt", "photoIds", "title"]);
+    expect((await anon.request.get(`/api/share/${token.slice(0, 31)}A`)).status()).toBe(404);
+
+    // 열어 본 횟수: 본사 화면에 1번 (다시 열어도 30분 안에는 한 번)
+    await expect.poll(async () => (await state(hq)).shares[0].views).toBe(1);
+    await anon.reload();
+    await expect(share).toHaveAttribute("data-state", "open");
+    await hq.goto(`/sites/${siteId}?tab=requests`);
+    const row = hq.getByTestId("shares-card").getByTestId("share-row");
+    await expect(row.getByTestId("share-views")).toContainText("1번 열어 봄");
+    expect((await state(hq)).activityLogs.some((l: { type: string; summary: string }) => l.type === "share" && l.summary.includes("처음 열림"))).toBe(true);
+
+    // 공개를 끄면 링크의 사진도 바로 막힌다
+    expect((await cmd(hq, "setPhotoShare", { photoIds: [p1], shared: false })).status).toBe(200);
+    expect((await anon.request.get(`/api/share/${token}/photo/${p1}`)).status()).toBe(404);
+    await anon.reload();
+    await expect(anon.getByTestId("report-photo")).toHaveCount(0);
+    await expect(anon.getByTestId("share-hidden-photos")).toContainText("1장");
+
+    // 발주처 계정: 링크를 만들거나 닫을 수 없고, 목록도 받지 않는다
+    const partner = await login(browser, PARTNER.email, PARTNER.password);
+    expect((await cmd(partner, "createShare", { kind: "monthly", siteId })).status).toBe(403);
+    expect((await cmd(partner, "revokeShare", { shareId: s1.shares[0].id })).status).toBe(403);
+    expect((await state(partner)).shares).toEqual([]);
+
+    // 닫으면 바로 열리지 않는다 (문서 410 · 사진 404)
+    hq.once("dialog", (d) => d.accept());
+    await row.getByTestId("share-revoke").click();
+    await expect(row).toHaveAttribute("data-state", "revoked");
+    const gone = await anon.request.get(`/api/share/${token}`);
+    expect(gone.status()).toBe(410);
+    expect((await gone.json()).code).toBe("revoked");
+    expect((await anon.request.get(`/api/share/${token}/photo/${p1}`)).status()).toBe(404);
+    await anon.reload();
+    await expect(share).toHaveAttribute("data-state", "revoked");
+    await expect(anon.getByTestId("report-body")).toHaveCount(0);
+    for (const c of [anonCtx, partner.context(), hq.context()]) await c.close();
+  });
+
   // 현장 상태를 바꾸므로 맨 끝에 (D-71)
   test("하자보증(D-71): 현장 ‘준공’으로 바꾸며 준공일 → 매일 점검(비밀값 필요)이 만료 30일 전 알림 기록 · 발주처에는 알림 기록 없음", async ({ browser }) => {
     const page = await login(browser, CEO.email, CEO.password);

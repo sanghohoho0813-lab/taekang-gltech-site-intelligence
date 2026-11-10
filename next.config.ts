@@ -50,6 +50,15 @@ const nextConfig: NextConfig = {
         ],
       },
       {
+        // 보고서 링크(D-73): 주소에 비밀값이 들어 있으므로 다른 사이트로 주소가 넘어가지 않게, 브라우저·중간 서버가 저장하지 않게
+        source: "/s/:token",
+        headers: [
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "Cache-Control", value: "private, no-store" },
+          { key: "X-Robots-Tag", value: "noindex, nofollow, noarchive" },
+        ],
+      },
+      {
         // 알림 서비스워커는 바뀌면 바로 새로 받게 (D-37)
         source: "/sw.js",
         headers: [

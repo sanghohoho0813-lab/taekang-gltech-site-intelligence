@@ -109,6 +109,21 @@ export async function smokeCheck(baseUrl, fetchFn = fetch) {
   else if (cron.status === 404 && health?.mode !== "live") add("warn", "cron", "시연 빌드에는 매일 점검이 없습니다");
   else add("error", "cron", `매일 점검 주소가 비밀값 없이 열립니다 (HTTP ${cron.status})`);
 
+  // 보고서 링크 (D-73): 없는 주소는 열리지 않고(404), 응답을 저장하지 않으며, 로그인 화면으로 보내지 않는다
+  const FAKE = "A".repeat(32);
+  const share = await get(`/api/share/${FAKE}`);
+  const shareBody = await share.json().catch(() => null);
+  const sharePage = await get(`/s/${FAKE}`);
+  if (share.status === 404 && shareBody?.code === "notfound") {
+    if (!/no-store/.test(share.headers.get("cache-control") ?? "")) add("warn", "share", "보고서 링크 응답에 저장 금지(no-store)가 없습니다");
+    else if (sharePage.status !== 200) add("error", "share", `보고서 링크 화면(/s/…)이 로그인 없이 열리지 않습니다 (HTTP ${sharePage.status}) — 받는 분이 볼 수 없습니다`);
+    else if (!/no-referrer/.test(sharePage.headers.get("referrer-policy") ?? "")) add("warn", "share", "보고서 링크 화면에 주소 유출 방지(Referrer-Policy: no-referrer)가 없습니다");
+    else add("ok", "share", "보고서 링크: 없는 주소는 열리지 않고, 저장·주소 유출 방지 머리말 정상");
+  } else if (share.status === 404 && health?.mode !== "live") add("warn", "share", "시연 빌드에는 보고서 링크 서버 기능이 없습니다");
+  else if (share.status === 404) add("error", "share", "보고서 링크 주소(/api/share)가 배포되지 않았습니다");
+  else if (share.status === 429) add("warn", "share", "보고서 링크 점검이 요청 제한에 걸렸습니다 — 잠시 뒤 다시 실행하세요");
+  else add("error", "share", `없는 보고서 링크 주소가 거절되지 않습니다 (HTTP ${share.status})`);
+
   // 4) 화면 접근: 로그인 안 한 사람은 로그인 화면으로
   const home = await get("/dashboard");
   const loc = home.headers.get("location") ?? "";

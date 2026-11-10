@@ -195,7 +195,13 @@ export function viewFor(m: Member, db: DemoDB, now = new Date()): DemoDB {
     void _p;
     return rest;
   });
-  const base = { ...db, idempotencyKeys: [], me: m.id, kiosks };
+  // 보고서 링크(D-73): 본사에는 목록(기한·열어 본 횟수)만 — 보고서 내용(스냅샷)은 링크를 열 때만 읽는다. 현장·발주처에는 보내지 않는다 (아래 empty)
+  const shares = (db.shares ?? []).map((sh) => {
+    const { snapshot: _snap, ...rest } = sh;
+    void _snap;
+    return rest;
+  });
+  const base = { ...db, idempotencyKeys: [], me: m.id, kiosks, shares };
   if (canSeeMoney(m)) {
     if (m.role === "ceo") return { ...base, scope: "full" };
     // 관리자: 대표가 ‘좌표는 대표만’으로 정했거나, 그렇게 정했을 때 모은 좌표는 판정만 (본인 기록은 그대로 · D-43·D-49)
@@ -230,6 +236,7 @@ export function viewFor(m: Member, db: DemoDB, now = new Date()): DemoDB {
     workOrders: [],
     importBatches: [],
     materialMoves: [],
+    shares: [],
   } satisfies Partial<DemoDB>;
 
   if (m.role === "field") {

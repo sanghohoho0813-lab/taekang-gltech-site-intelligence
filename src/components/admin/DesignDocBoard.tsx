@@ -16,8 +16,9 @@ import { PageBody, PageHeader } from "@/components/shell/AppShell";
 import { Button, PageSkeleton, cx } from "@/components/ui/primitives";
 
 const VENDOR = "미래AI랩";
-const th = "border border-line-strong bg-surface-2 px-2.5 py-1.5 text-left text-[0.8rem] font-bold text-ink-2 print:bg-transparent";
-const td = "border border-line-strong px-2.5 py-1.5 align-top text-[0.84rem]";
+// 인쇄는 줄 간격을 조금 좁힌다 — 표에 줄이 늘어도 12장을 넘지 않게 (D-73)
+const th = "border border-line-strong bg-surface-2 px-2.5 py-1.5 text-left text-[0.8rem] font-bold text-ink-2 print:bg-transparent print:py-1";
+const td = "border border-line-strong px-2.5 py-1.5 align-top text-[0.84rem] print:py-1";
 const MARK: Record<Allow, { t: string; sr: string }> = { all: { t: "●", sr: "전부" }, own: { t: "본인만", sr: "담당 현장·본인 것만" }, no: { t: "–", sr: "안 됨" } };
 const SCREENS = NAV.filter((n) => n.only !== "demo");
 /** 현장 직원 화면은 현장 직원이 보는 이름으로 */

@@ -28,6 +28,7 @@ export const LOG_TYPE_LABEL: Record<string, string> = {
   device: "휴대폰 점검",
   feedback: "앱 의견",
   member: "사용자 관리",
+  share: "보고서 링크",
 };
 
 export interface AuditFilter {

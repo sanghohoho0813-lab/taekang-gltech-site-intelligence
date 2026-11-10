@@ -29,6 +29,8 @@ function server(over: Over = {}) {
     "/api/client-error": { status: 401 },
     "/api/commands": { status: 401 },
     "/api/cron/daily": { status: 401 },
+    [`/api/share/${"A".repeat(32)}`]: { status: 404, body: { error: "열 수 없는 주소입니다.", code: "notfound" }, headers: { "cache-control": "private, no-store" } },
+    [`/s/${"A".repeat(32)}`]: { status: 200, headers: { ...SECURE, "referrer-policy": "no-referrer" } },
     "/dashboard": { status: 307, headers: { location: "/login" } },
     "/api/setup": { body: { needsSetup: false, codeRequired: true } },
     "/sw.js": { headers: { "cache-control": "no-cache, max-age=0" } },
@@ -49,7 +51,19 @@ describe("배포 후 점검", () => {
     const cs = await smokeCheck("https://taekang.example", server());
     const { errors, text } = smokeSummary(cs);
     expect(errors, text).toBe(0);
-    expect(levels(cs)).toMatchObject({ https: "ok", mode: "ok", db: "ok", push: "ok", csp: "ok", headers: "ok", hsts: "ok", auth: "ok", origin: "ok", redirect: "ok", setup: "ok", sw: "ok", manifest: "ok", cron: "ok" });
+    expect(levels(cs)).toMatchObject({ https: "ok", mode: "ok", db: "ok", push: "ok", csp: "ok", headers: "ok", hsts: "ok", auth: "ok", origin: "ok", redirect: "ok", setup: "ok", sw: "ok", manifest: "ok", cron: "ok", share: "ok" });
+  });
+
+  it("보고서 링크 (D-73): 없는 주소가 열리거나, 받는 분 화면이 로그인으로 넘어가면 오류 · 머리말이 빠지면 경고", async () => {
+    const api = `/api/share/${"A".repeat(32)}`;
+    const page = `/s/${"A".repeat(32)}`;
+    const notfound = { status: 404, body: { code: "notfound" } };
+    expect(levels(await smokeCheck("https://t.example", server({ [api]: { status: 200, body: { doc: {} } } }))).share).toBe("error");
+    expect(levels(await smokeCheck("https://t.example", server({ [page]: { status: 307, headers: { location: "/login" } } }))).share).toBe("error");
+    expect(levels(await smokeCheck("https://t.example", server({ [api]: { ...notfound, headers: {} } }))).share).toBe("warn");
+    expect(levels(await smokeCheck("https://t.example", server({ [page]: { status: 200, headers: SECURE } }))).share).toBe("warn");
+    // 주소가 아예 배포되지 않음 (기본 404 화면)
+    expect(levels(await smokeCheck("https://t.example", server({ [api]: { status: 404, body: undefined } }))).share).toBe("error");
   });
 
   it("매일 점검 예약 작업: 비밀값 없음은 경고, 비밀값 없이 열리면 오류 (D-71)", async () => {

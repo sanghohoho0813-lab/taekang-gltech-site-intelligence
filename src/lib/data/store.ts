@@ -160,7 +160,7 @@ function start() {
   if (IS_LIVE) {
     readPrefs();
     // 로그인·최초 설정·계정 화면에서는 회사 데이터를 받지 않는다 (로그인 전 401 → 새로고침 반복 방지)
-    if (!STANDALONE_PATHS.includes(window.location.pathname)) startLive();
+    if (!isStandalonePath(window.location.pathname)) startLive();
     return;
   }
   readDb();
@@ -181,6 +181,8 @@ function start() {
 // ───────────────────────── LIVE (서버 DB) ─────────────────────────
 
 export const STANDALONE_PATHS = ["/login", "/setup", "/account", "/kiosk"];
+/** 회사 데이터를 받지 않는 화면 — 로그인·설정·태블릿, 그리고 로그인 없이 여는 보고서 링크(/s/…, D-73) */
+export const isStandalonePath = (pathname: string) => STANDALONE_PATHS.includes(pathname) || pathname.startsWith("/s/");
 
 let liveDb: DemoDB | null = null;
 let liveRev = -1;
@@ -210,7 +212,7 @@ function startLive() {
 }
 
 function goLogin() {
-  if (STANDALONE_PATHS.includes(window.location.pathname) && window.location.pathname !== "/account") return;
+  if (isStandalonePath(window.location.pathname) && window.location.pathname !== "/account") return;
   const next = window.location.pathname + window.location.search;
   window.location.assign(`/login${next && next !== "/" ? `?next=${encodeURIComponent(next)}` : ""}`);
 }
