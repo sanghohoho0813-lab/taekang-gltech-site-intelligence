@@ -438,9 +438,12 @@ export function IntakeContact({ db, req }: { db: DemoDB; req: PartnerRequest }) 
         <p className="mt-1 text-[0.76rem] text-ink-3">다시 접수된 건으로 이어서 처리 중입니다.</p>
       ) : (
         <>
-          <p className={cx("mt-1 text-[0.78rem]", shouldNotify ? "font-semibold text-ink" : "text-ink-3")} data-testid="request-intake-hint">
-            {shouldNotify ? "회신은 접수자의 ‘진행 확인’ 화면에 보이지만 알림은 가지 않습니다. 문자나 전화로 알려 주세요." : "알림이 가지 않는 접수입니다 — 진행은 전화·문자로 알려 주세요."}
-          </p>
+          {/* 회신한 뒤에만 한 번 알린다 — 카드마다 같은 문장이 되풀이되지 않게 (점검 10차) */}
+          {shouldNotify && (
+            <p className="mt-1 text-[0.78rem] font-semibold text-ink" data-testid="request-intake-hint">
+              회신은 접수자의 ‘진행 확인’ 화면에 보이지만 알림은 가지 않습니다. 문자나 전화로 알려 주세요.
+            </p>
+          )}
           <div className="mt-1.5 flex flex-wrap items-center gap-2">
             {url ? (
               <>
@@ -493,7 +496,7 @@ export function IntakeContact({ db, req }: { db: DemoDB; req: PartnerRequest }) 
               <label htmlFor={`msg-${req.id}`} className="text-[0.78rem] font-bold text-ink-2">
                 접수자에게 보낼 글 (진행 확인 주소 포함)
               </label>
-              <textarea id={`msg-${req.id}`} readOnly rows={4} value={message} onFocus={(e) => e.currentTarget.select()} className={cx(inputCls, "mt-1 h-auto resize-none py-1.5 text-[0.8rem] leading-relaxed [overflow-wrap:anywhere]")} data-testid="request-intake-message" />
+              <textarea id={`msg-${req.id}`} readOnly rows={6} value={message} onFocus={(e) => e.currentTarget.select()} className={cx(inputCls, "mt-1 h-auto resize-none py-1.5 text-[0.8rem] leading-relaxed [overflow-wrap:anywhere]")} data-testid="request-intake-message" />
               <div className="mt-1.5 flex flex-wrap items-center gap-2">
                 <Button size="sm" variant="cta" icon={<Copy size={14} />} onClick={copy} data-testid="request-intake-copy">
                   보낼 글 복사

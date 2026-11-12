@@ -128,7 +128,7 @@ export const COLLECTION_SPEC: Record<CollectionName, CollectionSpec> = {
   changeOrders: { label: "변경공사", holds: "변경 내용·요청 금액·승인 금액·상태", field: DATA_NONE, partner: DATA_NONE, keep: "보관" },
   billings: { label: "기성 청구", holds: "회차·청구일·금액", field: DATA_NONE, partner: DATA_NONE, keep: "보관" },
   payments: { label: "입금", holds: "입금일·금액", field: DATA_NONE, partner: DATA_NONE, keep: "보관" },
-  partnerRequests: { label: "발주처 요청", holds: "견적 문의·주문 요청(품목·수량·희망일)·하자보수(위치·사진·보수 작업지시)·회신·발주처 확인", field: DATA_NONE, partner: "본인이 보낸 것만 (작업지시 번호 없이 보수 단계·기한만)", keep: "보관" },
+  partnerRequests: { label: "발주처 요청·하자 접수", holds: "견적 문의·주문 요청(품목·수량·희망일)·하자보수(위치·사진·보수 작업지시)·회신·확인 · 링크·전화 접수는 접수자 이름·전화(본사만)", field: "없음 (접수자 연락처는 본사가 고른 작업지시에만)", partner: "본인이 보낸 것만 (작업지시 번호 없이 보수 단계·기한만)", keep: "보관 · 접수자 이름·전화는 처리 끝난 뒤 90일(미처리 180일)에 삭제" },
   actions: { label: "위험 조치 (본사 요청)", holds: "위험 신호에서 만든 할 일·담당·기한·진행·결과", field: "본인 배정분 (금액이 든 근거 문구는 빼고)", partner: DATA_NONE, keep: "보관" },
   proofEvents: { label: "조치 성과 기록", holds: "조치 전후 지표·확인 여부", field: "확인 여부만", partner: DATA_NONE, keep: "보관" },
   activityLogs: { label: "활동 이력", holds: "누가·언제·무엇을 했는지 (지워지지 않음)", field: "본인 것만", partner: DATA_NONE, keep: "지우지 않음 (화면에는 최근 300건, 전체는 검색)" },
@@ -143,7 +143,7 @@ export const COLLECTION_SPEC: Record<CollectionName, CollectionSpec> = {
   importBatches: { label: "자료 가져오기 기록", holds: "종류·건수·건너뛴 행·취소 여부", field: DATA_NONE, partner: DATA_NONE, keep: "보관" },
   materialMoves: { label: "자재 반입·설치", holds: "품목·반입/설치·수량·날짜·사진·메모·취소 사유 (금액 없음)", field: "담당 현장 것 (누계가 맞도록 기간 제한 없음)", partner: DATA_NONE, keep: "보관 (취소는 지우지 않고 표시)" },
   shares: { label: "보고서 링크", holds: "종류·기한·열어 본 횟수·고정한 내용 (주소 비밀값은 해시만)", field: DATA_NONE, partner: DATA_NONE, keep: "닫으면 내용 삭제 · 60일 뒤 기록 삭제" },
-  intakes: { label: "하자 접수 링크", holds: "현장·이름·접수 건수·주소 (접수만 되는 주소)", field: DATA_NONE, partner: DATA_NONE, keep: "닫은 뒤에도 보관" },
+  intakes: { label: "하자 접수 링크", holds: "현장·이름·접수 건수·주소 (접수만 되는 주소 · 하루 40건)", field: DATA_NONE, partner: DATA_NONE, keep: "닫은 뒤에도 보관 (다시 열 수 있음)" },
 };
 
 /** 회사 데이터 밖의 서버 표 */
@@ -239,5 +239,5 @@ export const SECURITY: { title: string; text: string }[] = [
   { title: "출퇴근 시각·위치", text: "시각은 서버 시계로만 기록한다. 버튼을 누를 때 한 번만 위치를 확인하고 계속 추적하지 않는다. 현장 안/밖은 서버가 거리로 판정한다." },
   { title: "개인위치정보", text: "동의한 직원만 좌표를 저장한다. 보관 기간이 지나면 좌표를 매일 자동 삭제하고, 좌표 열람 범위(대표만 / 대표·관리자)는 대표가 정한다. 직원은 자기 기록을 보고 동의를 철회할 수 있다." },
   { title: "이력", text: "누가·언제·무엇을 바꿨는지 활동 이력에 남고 지워지지 않는다. 출퇴근 정정·근태 승인·사용자 관리도 모두 남는다." },
-  { title: "웹 보안", text: "보안 헤더(외부 스크립트·다른 사이트 안에 넣기 차단), 다른 사이트에서 보낸 쓰기 요청 차단, 로그인 실패·요청 횟수 제한. 보고서 링크는 비밀값을 저장하지 않는다." },
+  { title: "웹 보안", text: "보안 헤더(외부 스크립트·다른 사이트 안에 넣기 차단), 다른 사이트에서 보낸 쓰기 요청 차단, 로그인 실패·요청 횟수 제한. 보고서 링크는 비밀값을 저장하지 않는다. 하자 접수 링크는 접수만 되고(읽기 없음), 사진 형식·크기·하루 접수 수를 서버가 확인한다." },
 ];

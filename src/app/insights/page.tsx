@@ -281,7 +281,8 @@ function PartnerInbox({ db }: { db: DemoDB }) {
                     {r.intake ? `다시 접수 (아직 문제가 있음) · 앞 접수 번호 ${db.partnerRequests.find((x) => x.id === r.reopenedFrom)?.intake?.no ?? "—"}` : `다시 요청 · 원래 요청: ${db.partnerRequests.find((x) => x.id === r.reopenedFrom)?.title ?? "—"}`}
                   </p>
                 )}
-                <p className="text-[0.8rem] text-ink-2">{r.description}</p>
+                {/* 링크·전화 접수는 제목이 곧 적은 내용의 앞부분이라, 같은 글이면 한 번만 보여 준다 (D-74 점검 10차) */}
+                {r.description.trim() !== r.title && <p className="whitespace-pre-wrap text-[0.8rem] text-ink-2">{r.description}</p>}
                 {/* 링크로 들어온 접수: 접수자 이름·연락처 (본사만) · 진행 확인 주소 다시 만들기 (D-74) */}
                 <IntakeContact db={db} req={r} />
                 <PhotoStrip db={db} ids={r.photoIds} label={r.intake ? "접수 사진" : "발주처 사진"} testId="request-photos" />
@@ -388,7 +389,8 @@ function DefectOrderModal({ db, req, onClose }: { db: DemoDB; req: PartnerReques
   const [key] = useState(() => uid("idem"));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
-  const base = [req.location ? `위치: ${req.location}` : "", req.description].filter(Boolean).join(" — ");
+  // 링크·전화 접수는 제목에 ‘위치 — 문제’가 이미 들어 있다 — 제목에 다 담기지 않은 긴 내용만 덧붙인다 (현장 카드에 같은 글이 되풀이되지 않게)
+  const base = req.intake ? (req.description.trim() === req.title ? "" : req.description.trim()) : [req.location ? `위치: ${req.location}` : "", req.description].filter(Boolean).join(" — ");
   const detail = [base.slice(0, memo.trim() ? 380 : 500), memo.trim() ? `본사 메모: ${memo.trim()}` : ""].filter(Boolean).join("\n").slice(0, 500);
   return (
     <Modal
@@ -427,7 +429,11 @@ function DefectOrderModal({ db, req, onClose }: { db: DemoDB; req: PartnerReques
       }
     >
       <div className="space-y-3">
-        <p className="whitespace-pre-wrap rounded-lg bg-surface-2 px-3 py-2 text-[0.82rem] text-ink-2" data-testid="defect-order-detail">{detail}</p>
+        {detail && (
+          <p className="whitespace-pre-wrap rounded-lg bg-surface-2 px-3 py-2 text-[0.82rem] text-ink-2" data-testid="defect-order-detail">
+            {detail}
+          </p>
+        )}
         {req.desiredDate && (
           <p className="text-[0.8rem] font-semibold text-ink-2" data-testid="defect-order-desired">
             발주처 보수 희망일: {fmtDate(req.desiredDate)}
