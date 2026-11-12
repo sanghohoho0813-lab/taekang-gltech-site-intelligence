@@ -4,6 +4,7 @@
  * 2) viewFor: 역할별로 내려보낼 데이터만 남긴다 — 현장직원·발주처에게는 계약·원가·이익·기성·미수가 아예 전송되지 않음
  * 3) sanitizeResult: 명령 결과에서도 금액 정보 제거
  */
+import { workOrderContact } from "@/lib/domain/intake";
 import { hasMoney, stripMoney } from "@/lib/domain/redact";
 import { PARTNER_FEED_KEEP_DAYS, partnerProgressFeed, partnerRepairView, photoWithdrawn, replyPhotoIds } from "@/lib/domain/partnerFeed";
 
@@ -201,8 +202,11 @@ export function viewFor(m: Member, db: DemoDB, now = new Date()): DemoDB {
     void _snap;
     return rest;
   });
-  // 하자 접수(D-74): 진행 확인 주소의 해시는 누구에게도 보내지 않는다. 접수자 이름·연락처와 접수 링크 주소는 본사만 (현장·발주처는 아래에서 요청·링크 자체를 받지 않는다)
-  const partnerRequests = db.partnerRequests.some((r) => r.statusKey) ? db.partnerRequests.map(({ statusKey: _k, ...r }) => (void _k, r)) : db.partnerRequests;
+  // 하자 접수(D-74): 주소 찾기용 해시·같은 접수 표시·접수한 곳 표시는 누구에게도 보내지 않는다.
+  // 접수자 이름·연락처·진행 확인 주소·접수 링크 주소는 본사만 (현장·발주처는 아래에서 요청·링크 자체를 받지 않는다)
+  const partnerRequests = db.partnerRequests.some((r) => r.statusKey || r.intakeKey || r.intakeSrc)
+    ? db.partnerRequests.map(({ statusKey: _k, intakeKey: _i, intakeSrc: _s, ...r }) => (void _k, void _i, void _s, r))
+    : db.partnerRequests;
   const base = { ...db, idempotencyKeys: [], me: m.id, kiosks, shares, partnerRequests };
   if (canSeeMoney(m)) {
     if (m.role === "ceo") return { ...base, scope: "full" };
@@ -263,7 +267,13 @@ export function viewFor(m: Member, db: DemoDB, now = new Date()): DemoDB {
     // 엑셀로 옮긴 지난 공정 기록(본사 메모 포함)은 현장 휴대폰에 보내지 않는다 — 현장 화면은 쓰지 않는다 (D-71 점검 반영)
     const reports = others.reports.filter((r) => sites.has(r.siteId) && !r.importBatchId && (r.reportDate >= since || (r.createdBy === m.id && r.review?.status === "returned")));
     const crewChecks = (others.crewChecks ?? []).filter((c) => sites.has(c.siteId) && c.workDate >= since);
-    const workOrders = (db.workOrders ?? []).filter((w) => w.assigneeUserId === m.id && (w.status !== "confirmed" || kstDate(w.createdAt) >= since));
+    // 링크·전화 접수의 작업지시: 본사가 ‘연락처 보여 주기’를 고른 것만, 끝나서 본사가 확인하기 전까지만 접수자 연락처를 붙여 보낸다 (방문 약속용 · 점검 10차)
+    const workOrders = (db.workOrders ?? [])
+      .filter((w) => w.assigneeUserId === m.id && (w.status !== "confirmed" || kstDate(w.createdAt) >= since))
+      .map((w) => {
+        const contact = workOrderContact(db, w);
+        return contact ? { ...w, contactView: contact } : w;
+      });
     const photoRefs = new Set([
       ...reports.flatMap((r) => [...r.photoIds, ...(r.supplements ?? []).flatMap((s) => s.photoIds)]),
       ...crewChecks.flatMap((c) => (c.photoId ? [c.photoId] : [])),
@@ -284,7 +294,8 @@ export function viewFor(m: Member, db: DemoDB, now = new Date()): DemoDB {
       contracts: [...sites].map(zeroContract),
       costEntries: db.costEntries.filter((e) => e.createdBy === m.id && sites.has(e.siteId) && (e.date >= since || e.status === "pending")),
       reports,
-      photos: db.photos.filter((p) => sites.has(p.siteId) && (photoRefs.has(p.id) || (!!p.actionId && actionIds.has(p.actionId)) || kstDate(p.createdAt) >= since)),
+      // 발주처·접수자가 올린 하자 사진은 본인에게 온 작업지시에 붙은 것만 (본사가 보기 전의 접수 사진이 현장 휴대폰에 가지 않게 · 점검 10차)
+      photos: db.photos.filter((p) => sites.has(p.siteId) && (photoRefs.has(p.id) || (!p.partnerRequestId && ((!!p.actionId && actionIds.has(p.actionId)) || kstDate(p.createdAt) >= since)))),
       // 발주처 요청은 현장 휴대폰에 보내지 않는다 — 회신 글에 금액이 들어갈 수 있고, 보수에 필요한 위치·사진은 작업지시에 담겨 간다 (D-68 점검 반영)
       partnerRequests: [],
       actions,

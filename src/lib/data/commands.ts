@@ -3,6 +3,7 @@
  * 모든 쓰기 경로는 여기를 거친다 (검증·중복저장 방지·활동로그·Proof Event).
  * 저장소(Repository)는 결과 db를 영속화만 한다.
  */
+import { photoLooksReal } from "@/lib/domain/photoSniff";
 import { judgeGeo, validSample, type GeoSample } from "@/lib/domain/geo";
 import { hasConsent, stampTerms } from "@/lib/domain/privacy";
 import { siteProgressDelta, syncStageDone } from "@/lib/domain/schedule";
@@ -66,7 +67,27 @@ export const MAX_AMOUNT = 5_000_000_000; // 1건 50억 원 상한 (입력 오류
 /** 사진은 휴대폰에서 줄인 JPEG·PNG·WEBP 데이터만 (다른 주소를 넣어 본사 화면이 내부 주소를 불러오게 하는 것 방지 · D-41) */
 export const PHOTO_DATA_URL = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/;
 export const MAX_PHOTO_CHARS = 3_500_000; // 약 2.5MB
-export const validPhoto = (v: unknown): v is string => typeof v === "string" && v.length <= MAX_PHOTO_CHARS && PHOTO_DATA_URL.test(v);
+/** 형식과 크기, 그리고 앞 바이트가 정말 그 사진 형식인지 (사진이라 적고 다른 파일을 올리지 못하게 · D-74 점검 10차) */
+export const validPhoto = (v: unknown): v is string => typeof v === "string" && v.length <= MAX_PHOTO_CHARS && PHOTO_DATA_URL.test(v) && photoLooksReal(v);
+
+/** DB(jsonb)가 받지 못하는 글자를 뺀다 — NUL은 지우고 짝 없는 서로게이트는 대체 문자로 (그대로 두면 저장할 때 서버 오류) */
+export function cleanText(s: string): string {
+  if (!/[\u0000\uD800-\uDFFF]/.test(s)) return s;
+  let out = "";
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c === 0) continue;
+    if (c >= 0xd800 && c <= 0xdbff) {
+      const n = s.charCodeAt(i + 1);
+      if (n >= 0xdc00 && n <= 0xdfff) {
+        out += s[i] + s[i + 1];
+        i++;
+      } else out += "\ufffd";
+    } else if (c >= 0xdc00 && c <= 0xdfff) out += "\ufffd";
+    else out += s[i];
+  }
+  return out;
+}
 
 export function clone(db: DemoDB): DemoDB {
   return structuredClone(db);

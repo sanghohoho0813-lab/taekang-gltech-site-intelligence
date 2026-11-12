@@ -39,7 +39,7 @@ describe("권한 매트릭스 — 모든 명령 × 역할", () => {
         // 보고서 링크 (D-73) — 본사만
         "createShare", "revokeShare",
         // 하자 접수 링크 (D-74) — 본사만
-        "createIntake", "closeIntake", "renewIntakeStatus",
+        "createIntake", "closeIntake", "renewIntakeStatus", "reopenIntakeLink", "discardIntakeRequests", "registerPhoneDefect", "reopenIntakeRequest",
       ].sort(),
     );
     // QR 태블릿 연결은 로그인 없는 전용 API로만 (명령 목록에 없어야 함)

@@ -168,7 +168,8 @@ export interface PartnerMonthly {
   overall?: { from: number; to: number };
   photos: SitePhoto[];
   requests: PartnerRequest[];
-  counts: { received: number; answered: number; open: number; defects: number; repaired: number; confirmed: number };
+  /** viaIntake: 그중 접수 링크·전화로 들어온 하자 수 (목록에는 넣지 않고 건수에만 · D-74) */
+  counts: { received: number; answered: number; open: number; defects: number; repaired: number; confirmed: number; viaIntake?: number };
   /** 다음 달에 걸친 미완료 공정 (보고 기간 끝 기준) — late(계획보다 늦음)는 본사 화면에서만 쓴다 */
   next: { name: string; startDate: string; endDate: string; progressPct: number; late: boolean }[];
   /** 지난 달 보고서인가 (작성일이 그 달이 끝난 뒤) */
@@ -211,17 +212,24 @@ export function partnerMonthly(db: DemoDB, siteId: string, month: string, feed: 
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
     .slice(0, 12);
   const touched = (r: PartnerRequest) => r.history.some((h) => kst(h.at) >= from && kst(h.at) <= to);
-  const requests = db.partnerRequests.filter((r) => r.siteId === siteId && (!partnerUserId || r.partnerUserId === partnerUserId) && touched(r)).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  // 접수 링크·전화로 들어온 하자(D-74)는 본사가 손댄 뒤에만, 건수로만 센다 — 접수자가 적은 글·호수는 발주처에 나가는 문서에 넣지 않는다 (점검 10차).
+  // 준공 보고서와 같은 규칙: 현장의 하자 건수에는 넣되 목록에는 발주처 계정의 요청만 보인다.
+  const counted = db.partnerRequests
+    .filter((r) => r.siteId === siteId && touched(r) && (r.intake ? r.status !== "received" || !!r.linkedWorkOrderId : !partnerUserId || r.partnerUserId === partnerUserId))
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const requests = counted.filter((r) => !r.intake);
   const at = (iso?: string) => !!iso && kst(iso) >= from && kst(iso) <= to;
+  const viaIntake = counted.length - requests.length;
   const counts = {
-    received: requests.filter((r) => at(r.createdAt)).length,
+    received: counted.filter((r) => at(r.createdAt)).length,
     // 처음 회신한 날 기준 — 발주처 확인·보수 사진 추가 회신은 회신 건수로 세지 않는다 (D-68 점검 반영)
-    answered: requests.filter((r) => r.status === "answered" && at(r.history.find((h) => h.status === "answered")?.at)).length,
-    open: requests.filter((r) => r.status !== "answered").length,
-    defects: requests.filter((r) => r.type === "defect").length,
+    answered: counted.filter((r) => r.status === "answered" && at(r.history.find((h) => h.status === "answered")?.at)).length,
+    open: counted.filter((r) => r.status !== "answered").length,
+    defects: counted.filter((r) => r.type === "defect").length,
     // 포털·하자보수 현황과 같은 기준 (보수 완료·처리 완료 · D-69 점검 반영)
-    repaired: requests.filter((r) => r.type === "defect" && defectProgress(r, partnerRepairView(db, r)).step >= 3).length,
-    confirmed: requests.filter((r) => at(r.confirmedAt)).length,
+    repaired: counted.filter((r) => r.type === "defect" && defectProgress(r, partnerRepairView(db, r)).step >= 3).length,
+    confirmed: counted.filter((r) => at(r.confirmedAt)).length,
+    ...(viaIntake ? { viaIntake } : {}),
   };
   const [y, m] = month.split("-").map(Number);
   const nm = `${m === 12 ? y + 1 : y}-${String(m === 12 ? 1 : m + 1).padStart(2, "0")}`;

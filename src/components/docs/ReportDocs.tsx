@@ -187,6 +187,11 @@ export function MonthlyDocView({
             <Row k="하자보수" v={c.defects ? `${c.defects}건 (보수 회신 ${c.repaired} · 확인 ${c.confirmed})` : "없음"} />
           </dl>
         )}
+        {!!c.viaIntake && (
+          <p className="mt-1.5 text-[0.78rem] text-ink-3" data-testid="report-via-intake">
+            건수에는 접수 링크·전화로 들어온 하자 {c.viaIntake}건이 들어 있습니다{requests ? " (목록에는 싣지 않습니다)" : ""}.
+          </p>
+        )}
       </Section>
 
       <Section title={`4. ${nextName} 예정 공정`}>

@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 const HEADERS = { "X-Robots-Tag": "noindex, nofollow, noarchive", "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff" };
 
-/** 진행 확인 화면의 사진 (로그인 없음) — 본인이 보낸 사진과 본사가 회신에 붙인 보수 사진만 */
+/** 진행 확인 화면의 사진 (로그인 없음) — 본사가 회신에 붙인 보수 사진만 (접수자가 올린 사진은 다시 내주지 않는다) */
 export async function GET(req: NextRequest, { params }: { params: Promise<{ key: string; id: string }> }) {
   const blocked = notLive() ?? limited(RULES.intake, clientIp(req));
   if (blocked) return blocked;

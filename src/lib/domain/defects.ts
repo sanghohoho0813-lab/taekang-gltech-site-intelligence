@@ -7,6 +7,7 @@
 import type { DemoDB, PartnerRepairView, PartnerRequest, Site, WorkOrder } from "./types";
 import { defectProgress, partnerRepairView } from "./partnerFeed";
 import { defectWarranty, type DefectWarranty } from "./warranty";
+import { intakeVia } from "./intake";
 
 const kst = (iso: string) => new Date(new Date(iso).getTime() + 9 * 3_600_000).toISOString().slice(0, 10);
 const dayDiff = (from: string, to: string) => Math.max(0, Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000));
@@ -86,7 +87,7 @@ export function defectRows(db: DemoDB, today: string): DefectRow[] {
         req: r,
         site: db.sites.find((s) => s.id === r.siteId),
         // 접수 링크로 들어온 것은 소속·이름 대신 ‘링크 접수’와 접수 번호만 (관리대장은 인쇄해 밖으로 나가므로 사람 이름을 넣지 않는다 · D-74)
-        partnerName: r.intake ? `링크 접수 ${r.intake.no}${r.intake.org ? ` · ${r.intake.org}` : ""}` : (db.users.find((u) => u.id === r.partnerUserId)?.name ?? "발주처"),
+        partnerName: r.intake ? `${intakeVia(r.intake)} ${r.intake.no}${r.intake.org ? ` · ${r.intake.org}` : ""}` : (db.users.find((u) => u.id === r.partnerUserId)?.name ?? "발주처"),
         wo,
         repair,
         stage,

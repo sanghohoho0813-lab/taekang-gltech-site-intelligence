@@ -190,6 +190,8 @@ export async function persistState(tx: Tx, companyId: string, prev: DemoDB | nul
     for (const key of before.keys()) {
       if (seen.has(key)) continue;
       await tx.query(`delete from records where company_id = $1 and collection = $2 and id = $3`, [companyId, name, key]);
+      // 사진 기록을 지우면 원본도 지운다 (버린 접수의 사진이 저장소에 남지 않게 · D-74 점검 10차)
+      if (name === "photos") await tx.query(`delete from photo_blobs where company_id = $1 and id = $2`, [companyId, key]);
       deleted++;
     }
   }

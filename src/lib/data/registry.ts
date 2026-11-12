@@ -85,9 +85,13 @@ export const COMMANDS = {
   createShare: (db: DemoDB, a: SH.CreateShareInput, ctx: Ctx) => SH.createShare(db, a, ctx),
   revokeShare: (db: DemoDB, a: { shareId: string }, ctx: Ctx) => SH.revokeShare(db, a, ctx),
   // 하자 접수 링크 (D-74) — 만들기·닫기·진행 확인 주소 다시 만들기는 본사만. 접수·확인(로그인 없는 사람)은 명령이 아니라 서버 전용 경로(/api/intake)
-  createIntake: (db: DemoDB, a: { siteId: string; label?: string }, ctx: Ctx) => IN.createIntake(db, a, ctx),
+  createIntake: (db: DemoDB, a: { siteId: string; label?: string; place?: string }, ctx: Ctx) => IN.createIntake(db, a, ctx),
   closeIntake: (db: DemoDB, a: { intakeId: string }, ctx: Ctx) => IN.closeIntake(db, a, ctx),
+  reopenIntakeLink: (db: DemoDB, a: { intakeId: string }, ctx: Ctx) => IN.reopenIntakeLink(db, a, ctx),
   renewIntakeStatus: (db: DemoDB, a: { requestId: string }, ctx: Ctx) => IN.renewIntakeStatus(db, a, ctx),
+  discardIntakeRequests: (db: DemoDB, a: { requestIds: string[]; reason: IN.DiscardReason }, ctx: Ctx) => IN.discardIntakeRequests(db, a, ctx),
+  registerPhoneDefect: (db: DemoDB, a: Parameters<typeof IN.registerPhoneDefect>[1], ctx: Ctx) => IN.registerPhoneDefect(db, a, ctx),
+  reopenIntakeRequest: (db: DemoDB, a: { requestId: string; note: string }, ctx: Ctx) => IN.reopenIntakeRequest(db, a, ctx),
   // pairKiosk는 목록에 넣지 않는다 — 로그인하지 않은 태블릿 전용 경로(/api/kiosk/pair)에서만 실행
 } as const;
 

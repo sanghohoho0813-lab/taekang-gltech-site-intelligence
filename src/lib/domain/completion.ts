@@ -110,7 +110,8 @@ export function completionReport(db: DemoDB, siteId: string, today: string): Com
   const shared = sharedPhotos(db, siteId);
   const photosAll = shared.filter((p) => kst(p.createdAt) <= to).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   // 하자는 보고서 기간(준공일까지)에 접수된 것만 — 준공 뒤 하자보증 기간 요청이 ‘준공 때 진행 중’으로 보이지 않게 (D-72 점검 반영)
-  const allRows = defectRows(db, today).filter((r) => r.req.siteId === siteId);
+  // 접수 링크·전화로 들어온 하자는 본사가 손댄 뒤에만 센다 (월간 보고서와 같은 규칙 · D-74 점검 10차)
+  const allRows = defectRows(db, today).filter((r) => r.req.siteId === siteId && (!r.req.intake || r.req.status !== "received" || !!r.req.linkedWorkOrderId));
   const rows = allRows.filter((r) => r.receivedDate <= to);
   const st = defectStats(rows);
   const others = db.partnerRequests.filter((r) => r.siteId === siteId && r.type !== "defect");

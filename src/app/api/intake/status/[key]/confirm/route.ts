@@ -8,10 +8,10 @@ export const dynamic = "force-dynamic";
 
 const HEADERS = { "Cache-Control": "private, no-store", "X-Robots-Tag": "noindex, nofollow, noarchive", "Referrer-Policy": "no-referrer" };
 
-/** 보수 완료 확인 (로그인 없음 — 진행 확인 주소를 가진 사람만) */
+/** ‘잘 고쳐졌습니다’ (로그인 없음 — 진행 확인 주소를 가진 사람만). 접수와 따로 센다 */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ key: string }> }) {
   const ip = clientIp(req);
-  const blocked = notLive() ?? crossSite(req) ?? limited(RULES.intake, ip) ?? limited(RULES.intakeSubmit, ip);
+  const blocked = notLive() ?? crossSite(req) ?? limited(RULES.intake, ip) ?? limited(RULES.intakeConfirm, ip);
   if (blocked) return blocked;
   try {
     const { key } = await params;

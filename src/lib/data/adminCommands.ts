@@ -2,6 +2,7 @@
  * 운영 관리 명령 — 현장 등록·수정, 잔여예상원가 재추정, 공정률, 회사 설정, 공무 원가 확인.
  * commands.ts와 같은 순수 함수 규칙: (db, input, ctx) → { db, result }
  */
+import { normalizeOfficePhone } from "@/lib/domain/intake";
 import type { CompanySettings, CostCategory, CostForecast, DemoDB, Site, SiteStatus } from "@/lib/domain/types";
 import { DEFAULT_SETTINGS } from "@/lib/domain/types";
 import { siteFinancials, snapshotOf } from "@/lib/domain/calc";
@@ -266,6 +267,12 @@ export function setCompanySettings(db0: DemoDB, input: CompanySettingsInput, ctx
   if (input.attendanceMode !== undefined && input.attendanceMode !== "gps" && input.attendanceMode !== "qr") errors.attendanceMode = "출근 방식을 선택해주세요.";
   if (input.morningBrief !== undefined && typeof input.morningBrief !== "boolean") errors.morningBrief = "아침 알림 켜기·끄기를 골라 주세요.";
   if (input.briefSentOn !== undefined) errors.briefSentOn = "바꿀 수 없는 값입니다.";
+  if (input.intakeSeq !== undefined) errors.intakeSeq = "바꿀 수 없는 값입니다.";
+  // 하자 접수 화면·안내문에 보일 회사 전화번호 (비우면 지움 · D-74 점검 10차)
+  const publicRaw = typeof input.publicPhone === "string" ? input.publicPhone.trim() : undefined;
+  const publicPhone = publicRaw ? normalizeOfficePhone(publicRaw) : undefined;
+  if (input.publicPhone !== undefined && typeof input.publicPhone !== "string") errors.publicPhone = "전화번호를 확인해 주세요. (예: 02-1234-5678)";
+  else if (publicRaw && !publicPhone) errors.publicPhone = "전화번호를 확인해 주세요. (예: 02-1234-5678, 1588-1234)";
   if (input.teamRates !== undefined) {
     if (!Array.isArray(input.teamRates) || input.teamRates.length > 60) errors.teamRates = "팀 단가 목록을 확인해주세요.";
     else
@@ -291,6 +298,9 @@ export function setCompanySettings(db0: DemoDB, input: CompanySettingsInput, ctx
     // 아침 알림: 끈 경우만 남긴다(기본 켬) · 보낸 날 기록은 매일 점검만 바꾼다 (D-72)
     ...((input.morningBrief ?? prev.morningBrief) === false ? { morningBrief: false } : {}),
     ...(prev.briefSentOn ? { briefSentOn: prev.briefSentOn } : {}),
+    ...((input.publicPhone !== undefined ? publicPhone : prev.publicPhone) ? { publicPhone: input.publicPhone !== undefined ? publicPhone! : prev.publicPhone } : {}),
+    // 접수 번호 일련번호는 접수가 들어올 때만 바뀐다
+    ...(prev.intakeSeq ? { intakeSeq: prev.intakeSeq } : {}),
   };
   if (input.companyName) db.company = { ...db.company, name: input.companyName.trim() };
   log(db, ctx, "settings", `운영 설정 변경 — 원가 반영: ${db.settings.costApproval === "review" ? "본사 공무 확인 후" : "저장 즉시"} · 기본 일당 ${fmtMan(db.settings.laborDayRate)} · 출근 ${db.settings.attendanceMode === "qr" ? "현장 QR+GPS" : "GPS"}${(prev.morningBrief === false) !== (db.settings.morningBrief === false) ? ` · 아침 알림 ${db.settings.morningBrief === false ? "끔" : "켬"}` : ""}`);

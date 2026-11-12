@@ -426,6 +426,10 @@ export interface WorkOrder {
   /** 발주처 하자보수 요청에서 만든 작업지시 (D-68) — 발주처가 보낸 사진을 현장에서 본다 */
   sourcePartnerRequestId?: string;
   refPhotoIds?: string[];
+  /** 링크·전화 접수의 접수자 연락처를 보수 담당자에게 보여 준다 (방문 약속용 · 본사가 작업지시를 보낼 때 고른다 · D-74 점검 10차) */
+  showContact?: boolean;
+  /** 현장 휴대폰 전용(서버가 만들어 보냄): 방문 전 연락할 접수자 — 작업지시가 끝나 본사가 확인하면 보내지 않는다 */
+  contactView?: { who: string; phone?: string };
   history: { at: string; by: string; to: WorkOrder["status"]; note?: string }[];
 }
 
@@ -567,14 +571,23 @@ export interface PartnerRequest {
    * 접수자 이름·연락처는 본사(대표·공무)만 본다. 처리 끝난 뒤 90일이 지나면 이름·연락처를 지운다(purgedAt).
    */
   intake?: IntakeContact;
-  /** 진행 확인 주소(/r/s/…)의 비밀값 SHA-256 — 주소 자체는 접수한 사람에게 한 번만 준다 */
+  /** 진행 확인 주소(/r/s/…)의 비밀값 SHA-256 — 서버가 주소로 찾을 때 쓴다. 누구에게도 보내지 않는다 */
   statusKey?: string;
+  /**
+   * 진행 확인 주소의 비밀값 — 본사(대표·공무)만 본다. 회신한 뒤 접수자에게 문자로 다시 알려 줄 수 있게 저장한다 (점검 10차).
+   * 이 주소로 보이는 것은 그 접수 한 건의 내용·진행·회신뿐이고(이름·전화 없음), 백업 파일에는 넣지 않는다.
+   */
+  statusToken?: string;
+  /** 접수 화면이 만든 번호(난수)의 SHA-256 — 같은 접수를 다시 보냈는지 알아보는 데만 쓴다. 누구에게도 보내지 않는다 */
+  intakeKey?: string;
+  /** 접수한 곳의 표시 (그날·그 링크에서만 통하는 해시 — 주소 자체는 저장하지 않는다). 한 곳이 하루 한도를 다 쓰지 못하게. 누구에게도 보내지 않는다 */
+  intakeSrc?: string;
   history: { at: string; status: PartnerRequestStatus; by: string; note?: string }[];
 }
 
 /** 접수 링크로 하자를 접수한 사람 (D-74) */
 export interface IntakeContact {
-  /** 어느 접수 링크로 들어왔는지 */
+  /** 어느 접수 링크로 들어왔는지 — 본사가 전화로 받아 등록한 것은 "phone" */
   id: string;
   /** 접수 번호 (예: 1112-1 — 그날 그 현장의 몇 번째 접수) — 전화로 말하기 쉬운 번호 */
   no: string;
@@ -603,6 +616,8 @@ export interface DefectIntake {
   siteId: string;
   /** 어디에 둔 링크인지 (예: 관리사무소용) */
   label: string;
+  /** 접수 화면·안내문에 보일 건물 이름 (비우면 현장 이름) — 내부 공사명이 밖으로 나가지 않게 */
+  place?: string;
   createdAt: string;
   createdBy: string;
   closedAt?: string;
@@ -610,6 +625,10 @@ export interface DefectIntake {
   /** 이 링크로 들어온 접수 수 */
   count: number;
   lastAt?: string;
+  /** 본사가 버린 접수 수 (장난·중복·오접수 — 접수 자체는 지운다) */
+  voided?: number;
+  /** 하루 한도에 닿은 날 (한국 날짜) — 본사에 한 번만 알리려고 */
+  fullOn?: string;
 }
 
 /** 발주처 화면 전용(서버가 만들어 보냄): 하자보수 진행 — 작업지시의 담당자·메모 없이 단계·기한만 (D-68) */
@@ -773,6 +792,10 @@ export interface CompanySettings {
   morningBrief?: boolean;
   /** 아침 알림을 마지막으로 보낸 날 (한국 날짜 · 같은 날 두 번 안 보내게) */
   briefSentOn?: string;
+  /** 하자 접수 화면·안내문에 보일 회사 전화번호 (D-74 점검 10차) — 계정 없는 사람이 전화할 곳. 비우면 ‘시공사에 전화’로만 안내한다 */
+  publicPhone?: string;
+  /** 접수 번호의 그날 일련번호 (한국 날짜 · 버린 접수의 번호를 다시 쓰지 않게) — 화면에서 바꾸지 않는다 */
+  intakeSeq?: { day: string; n: number };
 }
 
 export const DEFAULT_SETTINGS: CompanySettings = { costApproval: "immediate", laborDayRate: 300_000 };

@@ -35,8 +35,10 @@ export const RULES = {
   intake: { name: "intake", limit: 240, windowMs: 60_000 },
   /** 없는 접수 주소·진행 확인 주소를 계속 넣어 보는 시도 (맞는 주소는 걸리지 않는다) */
   intakeMiss: { name: "intakeMiss", limit: 20, windowMs: 10 * 60_000 },
-  /** 접수·확인 쓰기: 한 곳에서 10분에 5건 */
-  intakeSubmit: { name: "intakeSubmit", limit: 5, windowMs: 10 * 60_000 },
+  /** 접수: 한 곳에서 링크 하나에 10분에 10건 — 내용이 맞는 접수만 센다 (틀린 입력으로 막히지 않게 · 점검 10차). 하루 한도는 DB가 지킨다 */
+  intakeSubmit: { name: "intakeSubmit", limit: 10, windowMs: 10 * 60_000 },
+  /** ‘잘 고쳐졌습니다’·‘아직 문제가 있습니다’: 접수와 따로 센다 */
+  intakeConfirm: { name: "intakeConfirm", limit: 10, windowMs: 10 * 60_000 },
   /** 열어 본 횟수: 같은 곳에서 30분에 한 번만 센다 */
   shareViewer: { name: "shareViewer", limit: 1, windowMs: 30 * 60_000 },
 
@@ -67,10 +69,20 @@ function prune(now: number) {
   }
 }
 
-/** 접속한 곳 (Vercel은 x-forwarded-for 첫 번째 값이 실제 접속 주소) */
+/**
+ * 접속한 곳 (Vercel은 x-forwarded-for 첫 번째 값이 실제 접속 주소).
+ * IPv6는 앞 64비트만 본다 — 휴대폰·가정 회선 하나가 /64를 통째로 받으므로, 주소를 바꿔 가며 제한을 피하지 못하게 (D-74 점검 10차).
+ */
 export function clientIp(req: NextRequest): string {
   const fwd = req.headers.get("x-forwarded-for");
-  return (fwd?.split(",")[0] ?? req.headers.get("x-real-ip") ?? "local").trim() || "local";
+  const ip = (fwd?.split(",")[0] ?? req.headers.get("x-real-ip") ?? "local").trim().slice(0, 64) || "local";
+  if (!ip.includes(":") || ip.includes(".")) return ip;
+  // :: 줄임을 펴서 앞 4묶음만
+  const [head, tail = ""] = ip.toLowerCase().split("::");
+  const h = head ? head.split(":") : [];
+  const t = tail ? tail.split(":") : [];
+  const full = ip.includes("::") ? [...h, ...Array(Math.max(0, 8 - h.length - t.length)).fill("0"), ...t] : h;
+  return `${full.slice(0, 4).map((x) => x.replace(/^0+(?=.)/, "")).join(":")}::/64`;
 }
 
 /** 세지 않고 지금 막혀 있는지만 본다 (로그인: 실패만 센다 · D-57) */

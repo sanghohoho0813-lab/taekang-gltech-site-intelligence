@@ -3,7 +3,7 @@
  */
 import { NextResponse, type NextRequest } from "next/server";
 import { IS_LIVE } from "@/lib/mode";
-import { CommandError } from "@/lib/data/commands";
+import { CommandError, cleanText } from "@/lib/data/commands";
 import { memberFromToken, SESSION_COOKIE, SESSION_DAYS, type Member } from "./auth";
 import { ForbiddenError } from "./authz";
 
@@ -26,18 +26,60 @@ export function crossSite(req: NextRequest): NextResponse | null {
   return json({ error: "허용되지 않은 요청 출처입니다." }, 403);
 }
 
-export async function readJson(req: NextRequest, maxBytes = 12_000_000): Promise<unknown> {
+const TOO_BIG = "요청이 너무 큽니다. 사진 수를 줄여주세요.";
+
+/** 본문을 읽으면서 크기를 센다 — 길이 머리말(Content-Length)이 없거나 틀려도 한도를 넘으면 그만 읽는다 (D-74 점검 10차) */
+async function readText(req: NextRequest, maxBytes: number): Promise<string> {
   const len = Number(req.headers.get("content-length") ?? 0);
-  if (len > maxBytes) throw new CommandError("요청이 너무 큽니다. 사진 수를 줄여주세요.");
+  if (len > maxBytes) throw new CommandError(TOO_BIG);
+  if (!req.body) return "";
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > maxBytes) {
+      await reader.cancel().catch(() => {});
+      throw new CommandError(TOO_BIG);
+    }
+    chunks.push(value);
+  }
+  const all = new Uint8Array(size);
+  let at = 0;
+  for (const c of chunks) {
+    all.set(c, at);
+    at += c.byteLength;
+  }
+  return new TextDecoder().decode(all);
+}
+
+/** DB(jsonb)가 받지 못하는 글자(NUL·짝 없는 서로게이트)를 모든 글에서 걸러 낸다 — 그대로 두면 저장할 때 서버 오류 */
+function cleanJson(v: unknown, depth = 0): unknown {
+  if (typeof v === "string") return cleanText(v);
+  if (!v || typeof v !== "object") return v;
+  if (depth > 40) throw new CommandError("요청 형식이 올바르지 않습니다.");
+  if (Array.isArray(v)) {
+    for (let i = 0; i < v.length; i++) v[i] = cleanJson(v[i], depth + 1);
+    return v;
+  }
+  const o = v as Record<string, unknown>;
+  for (const k of Object.keys(o)) o[k] = cleanJson(o[k], depth + 1);
+  return o;
+}
+
+export async function readJson(req: NextRequest, maxBytes = 12_000_000): Promise<unknown> {
+  const raw = await readText(req, maxBytes);
   let body: unknown;
   try {
-    body = await req.json();
+    body = JSON.parse(raw);
   } catch {
     throw new CommandError("요청 형식이 올바르지 않습니다.");
   }
   // null·숫자·문자열 본문은 거부 (서버 오류 500 대신 400)
   if (!body || typeof body !== "object" || Array.isArray(body)) throw new CommandError("요청 형식이 올바르지 않습니다.");
-  return body;
+  return cleanJson(body);
 }
 
 export async function sessionMember(req: NextRequest, onRenew?: (expires: Date) => void): Promise<Member | null> {

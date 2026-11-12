@@ -38,8 +38,9 @@ export async function getView(m: Member): Promise<{ rev: number; db: DemoDB }> {
     });
     rememberState(m.companyId, loaded);
   }
-  // 명령이 없는 날(주말 등)에도 보관 기간이 지난 좌표는 보내지 않는다 — 저장은 다음 명령 때 (rev는 DB 값 그대로 · D-49)
-  const state = applyLocationRetention(loaded, new Date());
+  // 명령이 없는 날(주말 등)에도 보관 기간이 지난 좌표·접수자 연락처는 보내지 않는다 — 저장은 다음 명령 때 (rev는 DB 값 그대로 · D-49 · D-74 점검 10차)
+  const at = new Date();
+  const state = applyIntakeRetention(applyLocationRetention(loaded, at), at);
   return { rev: loaded.rev, db: viewFor(m, state) };
 }
 
@@ -81,8 +82,14 @@ export async function listActivity(m: Member, f: AuditFilter): Promise<{ logs: A
 export async function exportCompany(m: Member): Promise<{ filename: string; body: string }> {
   if (m.role !== "ceo") throw new ForbiddenError("전체 자료 백업은 대표만 내려받을 수 있습니다.");
   const db = await getDb();
-  // 백업에도 보관 기간이 지난 좌표는 넣지 않는다 (D-49)
-  const state = applyLocationRetention(await db.transaction((tx) => loadState(tx, m.companyId)), new Date());
+  // 백업에도 보관 기간이 지난 좌표·접수자 연락처는 넣지 않는다 (D-49 · D-74 점검 10차)
+  const now = new Date();
+  const retained = applyIntakeRetention(applyLocationRetention(await db.transaction((tx) => loadState(tx, m.companyId)), now), now);
+  // 하자 접수의 진행 확인 주소(비밀값·해시)와 내부 표시는 백업에 넣지 않는다 — 백업 파일로 진행 확인 화면을 열 수 없게
+  const state = {
+    ...retained,
+    partnerRequests: retained.partnerRequests.map(({ statusKey: _k, statusToken: _t, intakeKey: _i, intakeSrc: _s, ...r }) => (void _k, void _t, void _i, void _s, r)),
+  };
   const members = await db.query<Parameters<typeof toMember>[0]>(`select ${MEMBER_COLS} from members where company_id = $1 order by role, name`, [m.companyId]);
   const kiosks = (state.kiosks ?? []).map((k) => {
     const { secret: _s, pairHash: _p, ...rest } = k;
@@ -236,6 +243,9 @@ export async function getPhoto(m: Member, id: string): Promise<{ mime: string; d
   if (m.role === "field") {
     const state = await db.transaction((tx) => loadState(tx, m.companyId));
     if (!row.site_id || !fieldSiteIds(m, state).has(row.site_id)) return null;
+    // 발주처·접수자가 올린 하자 사진은 본인에게 온 작업지시에 붙은 것만 (D-74 점검 10차)
+    const p = state.photos.find((x) => x.id === id);
+    if (p?.partnerRequestId && !(state.workOrders ?? []).some((w) => w.assigneeUserId === m.id && (w.refPhotoIds ?? []).includes(id))) return null;
   }
   return { mime: row.mime, data: row.data };
 }

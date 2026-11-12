@@ -169,6 +169,8 @@ export interface WorkOrderInput {
   idempotencyKey?: string;
   /** 발주처 하자보수 요청에서 보내는 작업지시 (D-68) */
   partnerRequestId?: string;
+  /** 링크·전화 접수: 접수자 연락처를 보수 담당자에게 보여 준다 (방문 약속용 · D-74 점검 10차) */
+  showContact?: boolean;
 }
 
 export function createWorkOrder(db0: DemoDB, input: WorkOrderInput, ctx: Ctx) {
@@ -213,6 +215,7 @@ export function createWorkOrder(db0: DemoDB, input: WorkOrderInput, ctx: Ctx) {
   if (req0) {
     wo.sourcePartnerRequestId = req0.id;
     if (req0.photoIds?.length) wo.refPhotoIds = [...req0.photoIds];
+    if (req0.intake && input.showContact === true) wo.showContact = true;
     const r = db.partnerRequests.find((x) => x.id === req0.id)!;
     r.linkedWorkOrderId = wo.id;
     r.updatedAt = at;
