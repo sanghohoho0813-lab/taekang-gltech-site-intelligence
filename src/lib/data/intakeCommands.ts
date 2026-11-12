@@ -9,6 +9,7 @@ import { randomBytes } from "@/lib/domain/hmac";
 import {
   INTAKE_CONTACT_KEEP_DAYS,
   INTAKE_DAILY_LIMIT,
+  INTAKE_IDEM_RE,
   INTAKE_MAX_OPEN_PER_SITE,
   INTAKE_MAX_PHOTOS,
   intakeCanConfirm,
@@ -17,6 +18,7 @@ import {
   newToken,
   nextIntakeNo,
   normalizePhone,
+  statusTokenFor,
   tokenHash,
 } from "@/lib/domain/intake";
 import { uid } from "@/lib/domain/ids";
@@ -113,11 +115,20 @@ export function submitIntake(db0: DemoDB, input: SubmitIntakeInput, ctx: Ctx) {
   if (input.consent !== true) errors.consent = "연락처 제공에 동의해 주셔야 접수할 수 있습니다.";
   if (Object.keys(errors).length) throw new CommandError("입력한 내용을 확인해 주세요.", "VALIDATION", errors);
   const at = nowIso(ctx);
+  // 같은 접수를 다시 보냄 (통신이 끊겨 응답을 못 받고 다시 누름): 새로 만들지 않고 그 접수의 번호와 같은 진행 확인 주소를 돌려준다.
+  // 진행 확인 주소는 접수 주소 + 화면 난수에서 만들므로 다시 보내도 같다 (난수가 없거나 형식이 다르면 매번 새 난수).
+  const idem = typeof input.idempotencyKey === "string" && INTAKE_IDEM_RE.test(input.idempotencyKey) ? input.idempotencyKey : "";
+  const statusToken = idem ? statusTokenFor(intake.token, idem) : newToken(randomBytes, 24);
+  if (idem) {
+    const key = tokenHash(statusToken);
+    const prev = db0.partnerRequests.find((r) => r.intake?.id === intake.id && r.statusKey === key);
+    if (prev?.intake) return { db: db0, result: { requestId: prev.id, no: prev.intake.no, statusToken, again: true as boolean } };
+  }
   if (intakeCountToday(db0, intake.id, at) >= INTAKE_DAILY_LIMIT) throw new CommandError("오늘은 이 주소로 접수가 많아 더 받을 수 없습니다. 전화로 알려 주세요.", "STATE");
 
   const db = clone(db0);
-  claimKey(db, typeof input.idempotencyKey === "string" && input.idempotencyKey ? `intake:${input.idempotencyKey.slice(0, 60)}` : undefined);
-  const statusToken = newToken(randomBytes, 24);
+  // 본사가 진행 확인 주소를 다시 만든 뒤에 같은 접수가 또 오면 여기서 막힌다 (중복 접수 방지)
+  claimKey(db, idem ? `intake:${idem}` : undefined);
   const no = nextIntakeNo(db, site.id, at);
   const req: PartnerRequest = {
     id: uid("pr"),
@@ -146,7 +157,7 @@ export function submitIntake(db0: DemoDB, input: SubmitIntakeInput, ctx: Ctx) {
   // 활동 이력에는 이름·연락처를 적지 않는다 (현장·위치만)
   log(db, ctx, "partner", `하자 접수(링크): ${site.shortName} · ${location} — 접수 번호 ${no}`, site.id, "/insights#requests");
   touch(db, ctx);
-  return { db, result: { requestId: req.id, no, statusToken } };
+  return { db, result: { requestId: req.id, no, statusToken, again: false as boolean } };
 }
 
 /** 진행 확인 주소를 가진 사람의 ‘확인했습니다’ — 보수가 끝나고 회신을 받은 뒤에만 */

@@ -64,6 +64,8 @@ async function runAsSystem<R>(companyId: string, fn: (state: DemoDB, ctx: { user
     await tx.query(`select rev from companies where id = $1 for update`, [companyId]);
     const state = await loadState(tx, companyId);
     const out = fn(state, { userId: "system", now: new Date() });
+    // 바뀐 것이 없으면(같은 접수를 다시 보낸 경우) 쓰지 않는다
+    if (out.db === state) return { result: out.result, notices: [] };
     const notices = noticesFor(state, out.db, "system");
     await persistState(tx, companyId, state, out.db);
     return { result: out.result, notices };

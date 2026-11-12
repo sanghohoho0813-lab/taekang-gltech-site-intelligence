@@ -37,6 +37,20 @@ export function newToken(random: (n: number) => Uint8Array, bytes: number): stri
 }
 export const tokenHash = (token: string) => hex(sha256(utf8(token)));
 
+/** 접수 화면이 만든 번호(난수) — 응답을 못 받고 다시 보낼 때 같은 접수로 알아보는 데 쓴다 */
+export const INTAKE_IDEM_RE = /^[A-Za-z0-9_-]{20,60}$/;
+/**
+ * 진행 확인 주소의 비밀값을 접수 주소와 화면 난수에서 만든다 (24바이트 → 32자, 글자·숫자로 시작하고 끝남).
+ * 통신이 끊겨 응답을 못 받고 다시 보내도 같은 주소가 나오므로, 접수자가 접수 번호와 주소를 받지 못하는 일이 없다.
+ * 화면 난수(그 휴대폰만 안다)를 모르면 접수 주소를 가진 다른 사람도 만들 수 없다.
+ */
+export function statusTokenFor(intakeToken: string, idem: string): string {
+  for (let n = 0; ; n++) {
+    const t = base64url(sha256(utf8(`intake-status:${intakeToken}:${idem}:${n}`)).slice(0, 24));
+    if (/^[A-Za-z0-9]/.test(t) && /[A-Za-z0-9]$/.test(t)) return t;
+  }
+}
+
 export type IntakeState = "open" | "closed";
 export const intakeState = (i: Pick<DefectIntake, "closedAt">): IntakeState => (i.closedAt ? "closed" : "open");
 

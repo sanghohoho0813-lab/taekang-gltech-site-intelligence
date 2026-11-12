@@ -40,6 +40,16 @@ const GONE = {
   closed: { title: "지금은 이 주소로 접수를 받지 않습니다", desc: "시공사에서 이 접수 주소를 닫았습니다. 시공사에 전화로 알려 주세요." },
 } as const;
 
+/** 이 접수의 번호(난수) — 응답을 못 받고 다시 보내도 같은 접수로 알아보고, 진행 확인 주소도 여기서 만들어진다 */
+function newIdem(): string {
+  const c = typeof crypto === "undefined" ? undefined : (crypto as Partial<Crypto>);
+  if (c?.randomUUID) return c.randomUUID();
+  const b = new Uint8Array(16);
+  if (c?.getRandomValues) c.getRandomValues(b);
+  else for (let i = 0; i < b.length; i++) b[i] = Math.floor(Math.random() * 256);
+  return Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+}
+
 export default function IntakePage() {
   const { token } = useParams<{ token: string }>();
   const db = useDb();
@@ -117,7 +127,7 @@ function IntakeForm({ token, view }: { token: string; view: IntakeFormView }) {
   const topRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    idem.current = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    idem.current = newIdem();
     setMine(readMine(token));
   }, [token]);
 

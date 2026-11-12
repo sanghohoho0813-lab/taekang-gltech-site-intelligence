@@ -44,6 +44,8 @@ const member = (id: string, role: AuthMember["role"], extra: Partial<AuthMember>
 const days = (n: number, from = NOW) => new Date(from.getTime() + n * 86_400_000);
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 const FORM = { location: "3층 302호 거실 창", description: "비가 오면 창틀 아래로 물이 샙니다.", name: "홍길동", phone: "010-1234-5678", org: "관리사무소", consent: true };
+/** 화면이 만드는 접수 난수와 같은 꼴 (20자 이상) */
+const K = (s: string) => `idem-0123456789abcdef-${s}`;
 
 function withLink(db0 = createSeed(NOW)) {
   const made = createIntake(db0, { siteId: "site-a", label: "관리사무소용" }, ctx());
@@ -51,7 +53,7 @@ function withLink(db0 = createSeed(NOW)) {
 }
 function withRequest() {
   const l = withLink();
-  const out = submitIntake(l.db, { ...FORM, intakeId: l.intakeId, idempotencyKey: "k1", photoDataUrls: [JPG] }, sys());
+  const out = submitIntake(l.db, { ...FORM, intakeId: l.intakeId, idempotencyKey: K("k1"), photoDataUrls: [JPG] }, sys());
   const req = out.db.partnerRequests.find((r) => r.id === out.result.requestId)!;
   return { ...l, db: out.db, req, ...out.result };
 }
@@ -121,16 +123,16 @@ describe("하자 접수 — 접수·진행·확인 (순수 로직)", () => {
     expect(JSON.stringify(notices)).not.toMatch(/홍길동|1234-5678/);
     expect(notices[0].to.sort()).toEqual(["u-ceo", "u-manager"]);
     // 다음 접수는 다음 번호 · 다음 날은 다시 1번
-    const l2 = submitIntake(db, { ...FORM, intakeId, idempotencyKey: "k2" }, sys());
+    const l2 = submitIntake(db, { ...FORM, intakeId, idempotencyKey: K("k2") }, sys());
     expect(l2.result.no).toBe("1112-2");
-    expect(submitIntake(l2.db, { ...FORM, intakeId, idempotencyKey: "k3" }, sys(days(1))).result.no).toBe("1113-1");
+    expect(submitIntake(l2.db, { ...FORM, intakeId, idempotencyKey: K("k3") }, sys(days(1))).result.no).toBe("1113-1");
   });
 
   it("접수 검증: 위치·내용·이름·전화·동의는 꼭 · 사진 3장까지 · 닫힌 링크·없는 링크는 거부 · 같은 접수 두 번 안 들어감 · 하루 20건", () => {
     const { db, intakeId } = withLink();
     const fieldErrors = (input: Record<string, unknown>) => {
       try {
-        submitIntake(db, { ...FORM, intakeId, idempotencyKey: "x", ...input } as never, sys());
+        submitIntake(db, { ...FORM, intakeId, idempotencyKey: K("x"), ...input } as never, sys());
       } catch (e) {
         return (e as InstanceType<typeof CommandError>).fieldErrors;
       }
@@ -144,17 +146,35 @@ describe("하자 접수 — 접수·진행·확인 (순수 로직)", () => {
     expect(fieldErrors({ photoDataUrls: ["data:text/html;base64,PHNjcmlwdD4="] })).toHaveProperty("photos");
     expect(fieldErrors({ photoDataUrls: ["/api/photos/other"] })).toHaveProperty("photos");
     expect(fieldErrors({ consent: "true" })).toHaveProperty("consent");
-    expect(() => submitIntake(db, { ...FORM, intakeId: "nope", idempotencyKey: "x" }, sys())).toThrow(/접수할 수 없습니다/);
+    expect(() => submitIntake(db, { ...FORM, intakeId: "nope", idempotencyKey: K("x") }, sys())).toThrow(/접수할 수 없습니다/);
     const closed = closeIntake(db, { intakeId }, ctx()).db;
-    expect(() => submitIntake(closed, { ...FORM, intakeId, idempotencyKey: "x" }, sys())).toThrow(/접수할 수 없습니다/);
+    expect(() => submitIntake(closed, { ...FORM, intakeId, idempotencyKey: K("x") }, sys())).toThrow(/접수할 수 없습니다/);
     // 같은 화면에서 두 번 누른 접수
-    const once = submitIntake(db, { ...FORM, intakeId, idempotencyKey: "same" }, sys()).db;
-    expect(() => submitIntake(once, { ...FORM, intakeId, idempotencyKey: "same" }, sys())).toThrow(/이미 저장된/);
+    // 같은 접수를 다시 보냄 (응답을 못 받고 다시 누름): 새로 만들지 않고 같은 접수 번호·같은 진행 확인 주소
+    const first = submitIntake(db, { ...FORM, intakeId, idempotencyKey: K("same") }, sys());
+    const again = submitIntake(first.db, { ...FORM, intakeId, idempotencyKey: K("same") }, sys(days(1)));
+    expect(again.db).toBe(first.db);
+    expect(again.result).toMatchObject({ requestId: first.result.requestId, no: first.result.no, statusToken: first.result.statusToken, again: true });
+    expect(first.result.again).toBe(false);
+    expect(first.result.statusToken).toMatch(intake.INTAKE_STATUS_RE);
+    expect(first.result.statusToken).toMatch(/^[A-Za-z0-9].*[A-Za-z0-9]$/);
+    // 그 난수를 모르면(다른 휴대폰) 같은 접수 주소로도 그 진행 확인 주소를 만들 수 없다
+    const other = submitIntake(first.db, { ...FORM, intakeId, idempotencyKey: K("other") }, sys());
+    expect(other.result.statusToken).not.toBe(first.result.statusToken);
+    expect(other.result.no).not.toBe(first.result.no);
+    // 본사가 진행 확인 주소를 다시 만든 뒤에 같은 접수가 또 오면 새로 만들지 않고 막는다
+    const renewed = COMMANDS.renewIntakeStatus(first.db, { requestId: first.result.requestId }, ctx()).db;
+    expect(() => submitIntake(renewed, { ...FORM, intakeId, idempotencyKey: K("same") }, sys())).toThrow(/이미 저장된/);
+    // 난수가 없거나 형식이 다르면(옛 화면·직접 호출) 매번 새 접수 · 새 난수 주소
+    const s1 = submitIntake(db, { ...FORM, intakeId, idempotencyKey: "short" }, sys());
+    const s2 = submitIntake(s1.db, { ...FORM, intakeId, idempotencyKey: "short" }, sys());
+    expect(s2.result.requestId).not.toBe(s1.result.requestId);
+    expect(s2.result.statusToken).not.toBe(s1.result.statusToken);
     // 하루 한도
     let cur = db;
-    for (let i = 0; i < intake.INTAKE_DAILY_LIMIT; i++) cur = submitIntake(cur, { ...FORM, intakeId, idempotencyKey: `d${i}` }, sys()).db;
-    expect(() => submitIntake(cur, { ...FORM, intakeId, idempotencyKey: "over" }, sys())).toThrow(/전화로/);
-    expect(() => submitIntake(cur, { ...FORM, intakeId, idempotencyKey: "tomorrow" }, sys(days(1)))).not.toThrow();
+    for (let i = 0; i < intake.INTAKE_DAILY_LIMIT; i++) cur = submitIntake(cur, { ...FORM, intakeId, idempotencyKey: K(`d${i}`) }, sys()).db;
+    expect(() => submitIntake(cur, { ...FORM, intakeId, idempotencyKey: K("over") }, sys())).toThrow(/전화로/);
+    expect(() => submitIntake(cur, { ...FORM, intakeId, idempotencyKey: K("tomorrow") }, sys(days(1)))).not.toThrow();
   });
 
   it("진행 확인: 본인이 적은 내용·단계·회신·사진만 — 접수자 이름·연락처, 담당자, 작업지시 번호, 내부 번호 없음 · 보수 끝나고 회신 받은 뒤에만 확인", () => {
@@ -335,7 +355,7 @@ describe("하자 접수 — 서버 (실제 Postgres 엔진)", () => {
 
   it("주소로 접수 → 본사에만 알림(이름·연락처 없음) · 본사 화면에만 접수자 · 현장·발주처 계정에는 가지 않는다 · DB에 진행 확인 주소가 없다", async () => {
     sent.length = 0;
-    const out = await intakeSvc.submitIntakeByToken(token, { ...FORM, idempotencyKey: "srv-1", photoDataUrls: [JPG] });
+    const out = await intakeSvc.submitIntakeByToken(token, { ...FORM, idempotencyKey: K("srv-1"), photoDataUrls: [JPG] });
     expect(out!.no).toMatch(/^\d{4}-1$/);
     statusToken = out!.statusToken;
     const all = (await svc.getView(ceo)).db.partnerRequests.filter((r) => r.intake);
@@ -365,7 +385,7 @@ describe("하자 접수 — 서버 (실제 Postgres 엔진)", () => {
     const hits = await db.query<{ n: number }>(`select count(*)::int as n from records where data::text like $1`, [`%${statusToken}%`]);
     expect(hits[0].n).toBe(0);
     // 틀린 주소로는 접수되지 않는다
-    expect(await intakeSvc.submitIntakeByToken(rand(16), { ...FORM, idempotencyKey: "srv-x" })).toBeNull();
+    expect(await intakeSvc.submitIntakeByToken(rand(16), { ...FORM, idempotencyKey: K("srv-x") })).toBeNull();
   });
 
   it("진행 확인: 받은 주소로만 · 그 접수 한 건만 · 본인이 보낸 사진만 받는다", async () => {
@@ -427,21 +447,24 @@ describe("하자 접수 — 서버 (실제 Postgres 엔진)", () => {
     expect(form.headers.get("x-robots-tag")).toContain("noindex");
     expect(Object.keys(await form.json()).sort()).toEqual(["company", "sample", "siteName"]);
     const post = (body: unknown, init: { ip?: string; headers?: Record<string, string> } = {}) => formRoute.POST(http(`/api/intake/${token}`, { method: "POST", body, ...init }), { params: Promise.resolve({ token }) });
-    const ok = await post({ ...FORM, idempotencyKey: "api-1" });
+    const ok = await post({ ...FORM, idempotencyKey: K("api-1") });
     expect(ok.status).toBe(200);
     const made = (await ok.json()) as { no: string; statusToken: string };
     expect(Object.keys(made).sort()).toEqual(["no", "statusToken"]);
     expect(made.no).toMatch(/^\d{4}-2$/);
-    const bad = await post({ ...FORM, phone: "12", location: "", idempotencyKey: "api-2" });
+    const bad = await post({ ...FORM, phone: "12", location: "", idempotencyKey: K("api-2") });
     expect(bad.status).toBe(400);
     expect(Object.keys((await bad.json()).fieldErrors).sort()).toEqual(["location", "phone"]);
-    expect((await post({ ...FORM, idempotencyKey: "api-3", website: "http://spam.example" })).status).toBe(400);
-    expect((await post({ ...FORM, idempotencyKey: "api-1" })).status).toBe(409);
-    expect((await post({ ...FORM, idempotencyKey: "api-4" }, { headers: { origin: "https://evil.example", host: "localhost" } })).status).toBe(403);
+    expect((await post({ ...FORM, idempotencyKey: K("api-3"), website: "http://spam.example" })).status).toBe(400);
+    // 같은 접수를 다시 보내면 같은 접수 번호·같은 진행 확인 주소 (새 접수가 생기지 않는다)
+    const re = await post({ ...FORM, idempotencyKey: K("api-1") });
+    expect(re.status).toBe(200);
+    expect(await re.json()).toEqual(made);
+    expect((await post({ ...FORM, idempotencyKey: K("api-4") }, { headers: { origin: "https://evil.example", host: "localhost" } })).status).toBe(403);
     const wrong = rand(16);
     const miss = await formRoute.GET(http(`/api/intake/${wrong}`), { params: Promise.resolve({ token: wrong }) });
     expect(miss.status).toBe(404);
-    const missPost = await formRoute.POST(http(`/api/intake/${wrong}`, { method: "POST", body: { ...FORM, idempotencyKey: "api-5" } }), { params: Promise.resolve({ token: wrong }) });
+    const missPost = await formRoute.POST(http(`/api/intake/${wrong}`, { method: "POST", body: { ...FORM, idempotencyKey: K("api-5") } }), { params: Promise.resolve({ token: wrong }) });
     expect(missPost.status).toBe(404);
     // 진행 확인·사진·확인
     const st = await statusRoute.GET(http(`/api/intake/status/${made.statusToken}`), { params: Promise.resolve({ key: made.statusToken }) });
@@ -500,7 +523,7 @@ describe("하자 접수 — 서버 (실제 Postgres 엔진)", () => {
     const gone = await formRoute.GET(http(`/api/intake/${token}`), { params: Promise.resolve({ token }) });
     expect(gone.status).toBe(410);
     expect((await gone.json()).code).toBe("closed");
-    const post = await formRoute.POST(http(`/api/intake/${token}`, { method: "POST", body: { ...FORM, idempotencyKey: "closed-1" } }), { params: Promise.resolve({ token }) });
+    const post = await formRoute.POST(http(`/api/intake/${token}`, { method: "POST", body: { ...FORM, idempotencyKey: K("closed-1") } }), { params: Promise.resolve({ token }) });
     expect(post.status).toBe(410);
     expect(await intakeSvc.intakeStatus(statusToken)).toMatchObject({ step: 4 });
     await expect(svc.executeCommand(ceo, "closeIntake", { intakeId })).rejects.toThrow(/이미 닫은/);
