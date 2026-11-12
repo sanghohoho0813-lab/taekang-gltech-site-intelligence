@@ -323,7 +323,8 @@ function PartnerInbox({ db }: { db: DemoDB }) {
                   <p className="mt-2 text-[0.78rem] font-semibold text-warn" data-testid="request-reply-needed">보수는 끝났는데 {r.intake ? "접수자" : "발주처"}에게 아직 회신하지 않았습니다 — ‘회신하기’로 알려 주세요.</p>
                 )}
                 {/* 일정 안내로 먼저 회신한 하자보수 — 보수가 끝나면 보수 사진을 한 번 더 보낸다 (D-68 점검 반영) */}
-                {r.status === "answered" && r.type === "defect" && partnerRepairView(db, r)?.stage === "checking" && (
+                {/* 일정 안내 뒤 작업지시 화면에서 완료 확인만 한 경우도 (보수 완료 회신이 아직 없음 · 점검 11차) */}
+                {r.status === "answered" && r.type === "defect" && !r.confirmedAt && (partnerRepairView(db, r)?.stage === "checking" || (partnerRepairView(db, r)?.stage === "done" && !partnerRepairView(db, r)?.replied)) && (
                   <div className="mt-2.5">
                     <Button size="sm" variant="cta" icon={<Send size={15} />} onClick={() => setReply(r)} data-testid="request-send-photos">
                       보수 완료 회신 보내기

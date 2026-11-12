@@ -10,7 +10,7 @@
  * - 무상·유상, 법정 하자 기간은 화면이 말하지 않는다 (계약서 기준).
  */
 import type { CompanySettings, DefectIntake, DemoDB, PartnerRequest, Site, WorkOrder } from "./types";
-import { DEFECT_STEPS, defectProgress, partnerRepairView } from "./partnerFeed";
+import { DEFECT_STEPS, defectProgress, partnerRepairView, repairConfirmable } from "./partnerFeed";
 import { base64url } from "./share";
 import { hex, sha256, utf8 } from "./hmac";
 export { photoLooksReal } from "./photoSniff";
@@ -170,7 +170,7 @@ export const INTAKE_NO_REPAIR_STEPS = ["접수", "검토", "답변 완료", "확
 export function intakeCanConfirm(r: Pick<PartnerRequest, "status" | "confirmedAt" | "type" | "closedWithoutRepair" | "linkedWorkOrderId" | "history">, workOrders: WorkOrder[]): boolean {
   if (r.status !== "answered" || r.confirmedAt) return false;
   const repair = partnerRepairView({ workOrders }, r);
-  if (repair) return repair.stage === "done";
+  if (repair) return repairConfirmable({ workOrders }, r);
   return !!r.closedWithoutRepair;
 }
 

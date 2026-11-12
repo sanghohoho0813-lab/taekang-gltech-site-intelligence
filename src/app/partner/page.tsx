@@ -21,7 +21,7 @@ import { Clock } from "@/components/shell/Clock";
 import { IS_LIVE } from "@/lib/mode";
 import { PushCard } from "@/components/PushCard";
 import { SampleDataBanner } from "@/components/shell/AppShell";
-import { DEFECT_STEPS, defectProgress, partnerProgressFeed, partnerRepairView, sharedPhotos, PARTNER_FEED_DAYS } from "@/lib/domain/partnerFeed";
+import { DEFECT_STEPS, defectProgress, partnerProgressFeed, partnerRepairView, repairReady, sharedPhotos, PARTNER_FEED_DAYS } from "@/lib/domain/partnerFeed";
 import { shiftDate } from "@/lib/domain/attendance";
 import { downscalePhoto } from "@/components/easy/photo";
 import { errorMessage } from "@/lib/data/commands";
@@ -520,7 +520,7 @@ function MyRequests({ db, requests, preview, onRedo }: { db: DemoDB; requests: P
             // 하자보수는 접수부터 같은 5단계 (작업지시 전에 3단계 표시였다가 바뀌던 문제 · D-69 점검 반영)
             const prog = r.type === "defect" ? defectProgress(r, repair) : null;
             const original = r.reopenedFrom ? requests.find((x) => x.id === r.reopenedFrom) : undefined;
-            const canConfirm = r.status === "answered" && !r.confirmedAt && (repair ? repair.stage === "done" : r.type !== "defect" || !!r.closedWithoutRepair);
+            const canConfirm = r.status === "answered" && !r.confirmedAt && (repair ? repairReady(repair) : r.type !== "defect" || !!r.closedWithoutRepair);
             const redo = requests.find((x) => x.reopenedFrom === r.id);
             return (
               <li key={r.id} className="rounded-2xl border border-line bg-surface-2 p-4" data-testid="partner-request-item" data-status={r.status} data-type={r.type}>

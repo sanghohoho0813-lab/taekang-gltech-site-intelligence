@@ -376,8 +376,11 @@ function FieldSiteSummary({ db, site }: { db: DemoDB; site: Site }) {
 
 function OverviewTab({ db, site, f, canSeeMoney }: { db: DemoDB; site: Site; f: SiteFinancials; canSeeMoney: boolean }) {
   const reports = db.reports.filter((r) => r.siteId === site.id && r.status === "submitted" && !r.importBatchId).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 3);
+  // 본사가 손댈 하자가 있으면 하자보수 칸을 맨 위로 (탭 맨 아래에 있어 안 보이던 문제 · 점검 11차)
+  const defectFirst = canSeeMoney && defectStats(defectRows(db, todayIso()).filter((r) => r.req.siteId === site.id)).hqTodo > 0;
   return (
     <div className="grid gap-5 @min-[900px]:grid-cols-2">
+      {defectFirst && <DefectSummary db={db} site={site} />}
       <Card>
         <CardHeader title="주요 공정" sub={`전체 공정률 ${site.progressPct}%`} />
         <ul className="space-y-3 px-5 pb-5">
@@ -417,7 +420,7 @@ function OverviewTab({ db, site, f, canSeeMoney }: { db: DemoDB; site: Site; f: 
         )}
       </Card>
       {/* 하자보수 한눈에 (본사 · D-75) — 진행·본사 할 일·기한 지남과 접수 QR, 하자보수 화면으로 바로 */}
-      {canSeeMoney && <DefectSummary db={db} site={site} />}
+      {canSeeMoney && !defectFirst && <DefectSummary db={db} site={site} />}
     </div>
   );
 }
@@ -430,7 +433,7 @@ function DefectSummary({ db, site }: { db: DemoDB; site: Site }) {
     <Card className="@min-[900px]:col-span-2" data-testid="site-defects">
       <CardHeader
         title="하자보수"
-        sub={st.total ? `진행 중 ${st.open}건 · 본사 할 일 ${st.hqTodo}건${st.overdue ? ` · 기한 지남 ${st.overdue}건` : ""} · 끝남 ${st.confirmed}건` : "아직 들어온 하자가 없습니다"}
+        sub={st.total ? `진행 중 ${st.open}건 · 본사 할 일 ${st.hqTodo}건${st.overdue ? ` · 기한 지남 ${st.overdue}건` : ""}${st.waiting ? ` · 확인 대기 ${st.waiting}건` : ""} · 끝남 ${st.confirmed}건` : "아직 들어온 하자가 없습니다"}
         right={
           <Link href={`/defects?site=${site.id}${st.hqTodo ? "&view=todo" : ""}`} className={cx("press inline-flex min-h-11 items-center gap-1.5 rounded-xl px-3.5 text-[0.86rem] font-bold", st.hqTodo ? "bg-cta text-[var(--t-cta-text)]" : "bg-active-soft text-theme-ink")} data-testid="site-defects-open">
             <Wrench size={15} aria-hidden /> {st.hqTodo ? `처리하기 (${st.hqTodo})` : "하자보수 보기"}
@@ -440,7 +443,7 @@ function DefectSummary({ db, site }: { db: DemoDB; site: Site }) {
       <p className="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 pb-4 text-[0.82rem] text-ink-2">
         <span>{warrantyLine(site, todayIso())}</span>
         <Link href={`/sites/${site.id}?tab=requests#intake`} className="press inline-flex min-h-9 items-center gap-1 font-bold text-theme-ink underline underline-offset-2" data-testid="site-defects-qr">
-          <QrCode size={14} aria-hidden /> {links.length ? `하자 접수 QR ${links.length}개 · 접수 ${links.reduce((a, i) => a + i.count, 0)}건` : "하자 접수 QR 만들기"}
+          <QrCode size={14} aria-hidden /> {links.length ? `하자 접수 QR ${links.length}개 · 접수 ${links.reduce((a, i) => a + i.count - (i.voided ?? 0), 0)}건` : "하자 접수 QR 만들기"}
         </Link>
       </p>
     </Card>

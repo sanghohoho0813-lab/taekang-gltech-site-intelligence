@@ -207,7 +207,7 @@ export function IntakeCard({ db, siteId }: { db: DemoDB; siteId: string }) {
     <Card id="intake" data-testid="intake-card">
       <CardHeader
         title="하자 접수 링크"
-        sub="계정이 없는 관리사무소·발주처 담당이 QR·주소로 하자를 접수합니다 (위치·내용·사진·연락처) · 접수되면 ‘하자보수’와 요청함에 들어오고 알림이 옵니다"
+        sub="계정이 없는 관리사무소·발주처 담당이 QR·주소로 하자를 접수합니다 (위치·내용·사진·연락처) · 접수되면 ‘하자보수’에 들어오고 알림이 옵니다"
         right={
           <Button size="sm" icon={<PhoneIncoming size={15} />} onClick={() => setPhoneOpen(true)} data-testid="intake-phone-register">
             전화 받은 하자 등록
@@ -353,6 +353,52 @@ function notifyMessage(db: DemoDB, req: PartnerRequest, url: string): string {
 }
 
 /**
+ * 접수자에게 알리기 — 보낼 글(진행 확인 주소 포함)·복사·문자 앱 (회신 창의 다음 단계 · 점검 11차).
+ * 진행 확인 주소가 없으면(옛 자료) ‘자세히·이력’에서 만들라고 안내한다.
+ */
+export function IntakeNotifyBox({ db, req }: { db: DemoDB; req: PartnerRequest }) {
+  const [status, setStatus] = useState<string | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+  const c = req.intake;
+  if (!c) return null;
+  const url = req.statusToken ? statusUrl(req.statusToken) : "";
+  if (!url) return <p className="text-[0.82rem] text-ink-2">진행 확인 주소가 아직 없습니다. 하자보수의 ‘자세히·이력’에서 주소를 만들어 보내 주세요.</p>;
+  const message = notifyMessage(db, req, url);
+  const copy = async () => {
+    const ok = await copyText(message, ref.current);
+    setStatus(ok ? "보낼 글을 복사했습니다. 문자·카카오톡에 붙여 넣으세요." : "복사하지 못했습니다. 글을 길게 눌러 직접 복사해 주세요.");
+  };
+  return (
+    <div ref={ref} className="space-y-1.5" data-testid="intake-notify-box">
+      <label htmlFor={`nmsg-${req.id}`} className="text-[0.8rem] font-bold text-ink-2">
+        접수자에게 보낼 글 (진행 확인 주소 포함)
+      </label>
+      <textarea id={`nmsg-${req.id}`} readOnly rows={5} value={message} onFocus={(e) => e.currentTarget.select()} className={cx(inputCls, "h-auto resize-none py-1.5 text-[0.82rem] leading-relaxed [overflow-wrap:anywhere]")} data-testid="intake-notify-message" />
+      <div className="flex flex-wrap items-center gap-2">
+        <Button size="sm" variant="cta" icon={<Copy size={14} />} onClick={copy} data-testid="intake-notify-copy">
+          보낼 글 복사
+        </Button>
+        {c.phone && (
+          <a href={`sms:${c.phone.replace(/[^\d]/g, "")}?&body=${encodeURIComponent(message)}`} className="press inline-flex h-9 items-center gap-1.5 rounded-full border border-line-strong bg-surface px-3 text-[0.8rem] font-bold" data-testid="intake-notify-sms">
+            <MessageSquareText size={14} aria-hidden /> 문자 앱으로 보내기
+          </a>
+        )}
+        {c.phone && (
+          <a href={telHref(c.phone)} className="num inline-flex min-h-9 items-center gap-1 px-1 text-[0.8rem] font-bold text-theme-ink underline underline-offset-2">
+            <Phone size={14} aria-hidden /> {c.phone}
+          </a>
+        )}
+      </div>
+      {status && (
+        <p role="status" className="text-[0.8rem] font-semibold text-ink-2" data-testid="intake-notify-status">
+          {status}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
  * 요청 목록의 ‘링크 접수·전화 접수’ 표시 — 접수자 이름·소속·전화 (본사만) · 접수 번호 · 접수자에게 알리기.
  * 계정이 없는 접수라 회신해도 알림이 가지 않는다 — 보낼 글을 복사하거나 문자 앱을 열어 진행 확인 주소를 알려 준다.
  */
@@ -395,10 +441,10 @@ export function IntakeContact({ db, req }: { db: DemoDB; req: PartnerRequest }) 
     setStatus(ok ? "보낼 글을 복사했습니다. 문자·카카오톡에 붙여 넣으세요." : "복사하지 못했습니다. 글을 길게 눌러 직접 복사해 주세요.");
   };
   const discard = async (reason: DiscardReason) => {
-    if (!window.confirm(`접수 번호 ${c.no}을(를) 버릴까요? (${DISCARD_REASONS[reason]})\n접수와 사진을 지웁니다. 하자 건수·관리대장·보고서에 남지 않고, 되돌릴 수 없습니다.`)) return;
+    if (!window.confirm(`접수 번호 ${c.no} 건을 버릴까요? (${DISCARD_REASONS[reason]})\n접수와 사진을 지웁니다. 하자 건수·관리대장·보고서에 남지 않고, 되돌릴 수 없습니다.`)) return;
     try {
       await run("discardIntakeRequests", { requestIds: [req.id], reason });
-      toast.push({ tone: "ok", title: `접수 번호 ${c.no}을(를) 버렸습니다` });
+      toast.push({ tone: "ok", title: `접수 번호 ${c.no} 건을 버렸습니다` });
     } catch (e) {
       toast.push({ tone: "err", title: errorMessage(e, "버리지 못했습니다.") });
     }
@@ -410,7 +456,7 @@ export function IntakeContact({ db, req }: { db: DemoDB; req: PartnerRequest }) 
       const r = await run("reopenIntakeRequest", { requestId: req.id, note: redoNote });
       setRedo(false);
       setRedoNote("");
-      toast.push({ tone: "ok", title: `다시 접수했습니다 — 접수 번호 ${r.no}`, desc: "새 접수로 요청함에 올라옵니다. 작업지시를 다시 보내 주세요." });
+      toast.push({ tone: "ok", title: `다시 접수했습니다 — 접수 번호 ${r.no}`, desc: "하자보수 ‘본사 할 일’에 새 접수로 올라옵니다. 작업지시를 다시 보내 주세요." });
     } catch (e) {
       setErr(errorMessage(e, "다시 접수하지 못했습니다."));
     } finally {
@@ -542,10 +588,11 @@ export function IntakeContact({ db, req }: { db: DemoDB; req: PartnerRequest }) 
 }
 
 /** 전화로 받은 하자 등록 — 링크 접수와 같은 목록에 들어가고, 진행 확인 주소를 문자로 보낼 수 있다 */
-export function PhoneDefectModal({ db, siteId, onClose }: { db: DemoDB; siteId?: string; onClose: () => void }) {
+export function PhoneDefectModal({ db, siteId, defaultSiteId, onClose }: { db: DemoDB; siteId?: string; defaultSiteId?: string; onClose: () => void }) {
   const toast = useToast();
   const sites = db.sites;
-  const [site, setSite] = useState(siteId ?? sites[0]?.id ?? "");
+  // 하자보수 화면에서 현장을 골라 둔 채 누르면 그 현장으로 (점검 11차)
+  const [site, setSite] = useState(siteId ?? (defaultSiteId && sites.some((x) => x.id === defaultSiteId) ? defaultSiteId : sites[0]?.id) ?? "");
   const [location, setLocation] = useState("");
   const [description, setDescription] = useState("");
   const [name, setName] = useState("");
@@ -561,7 +608,7 @@ export function PhoneDefectModal({ db, siteId, onClose }: { db: DemoDB; siteId?:
     setErrors({});
     try {
       const r = await run("registerPhoneDefect", { siteId: site, location, description, name, phone, org, consent, idempotencyKey: key });
-      toast.push({ tone: "ok", title: `전화 접수를 등록했습니다 — 접수 번호 ${r.no}`, desc: "요청함과 하자보수에 올라왔습니다. ‘접수자에게 알리기’로 진행 확인 주소를 문자로 보낼 수 있습니다." });
+      toast.push({ tone: "ok", title: `전화 접수를 등록했습니다 — 접수 번호 ${r.no}`, desc: "하자보수 ‘본사 할 일’에 올라왔습니다. 펼쳐서 ‘접수자에게 알리기’로 진행 확인 주소를 문자로 보낼 수 있습니다." });
       onClose();
     } catch (e) {
       const fe = (e as { fieldErrors?: Record<string, string> }).fieldErrors;
@@ -603,7 +650,7 @@ export function PhoneDefectModal({ db, siteId, onClose }: { db: DemoDB; siteId?:
         <Field label="어디에 문제가 있나요" htmlFor="pd-location" required error={errors.location}>
           <input id="pd-location" className={inputCls} value={location} onChange={(e) => setLocation(e.target.value)} maxLength={60} placeholder="예: 3층 302호 거실 창" data-testid="phone-defect-location" />
         </Field>
-        <Field label="어떤 문제인가요" htmlFor="pd-description" required error={errors.description}>
+        <Field label="어떤 문제인가요 (접수자의 진행 확인 화면에 그대로 보입니다)" htmlFor="pd-description" required error={errors.description}>
           <textarea id="pd-description" rows={3} className={inputCls} value={description} onChange={(e) => setDescription(e.target.value)} maxLength={800} placeholder="예: 비가 오면 창틀 아래로 물이 샌다고 함" data-testid="phone-defect-description" />
         </Field>
         <fieldset className="space-y-3 rounded-xl border border-line bg-surface-2 p-3">

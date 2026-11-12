@@ -19,6 +19,8 @@ import { errorMessage } from "@/lib/data/commands";
 import { run } from "@/lib/data/store";
 import type { DemoDB, PartnerRequest } from "@/lib/domain/types";
 import { IS_LIVE } from "@/lib/mode";
+import { IntakeNotifyBox } from "@/components/admin/IntakeLinks";
+import { woPartial } from "@/lib/domain/partnerFeed";
 
 export const WO_STATE: Record<NonNullable<DemoDB["workOrders"]>[number]["status"], string> = { sent: "현장에 보냄", received: "현장이 확인함", in_progress: "보수 중", done: "완료 보고 · 본사 확인 전", confirmed: "완료 확인", returned: "보완 요청" };
 
@@ -152,22 +154,26 @@ export function DefectOrderModal({ db, req, onClose }: { db: DemoDB; req: Partne
   );
 }
 
-export function ReplyModal({ db, req, onClose }: { db: DemoDB; req: PartnerRequest; onClose: () => void }) {
+export function ReplyModal({ db, req, onClose, confirmDefault }: { db: DemoDB; req: PartnerRequest; onClose: () => void; confirmDefault?: boolean }) {
   const toast = useToast();
   const [text, setText] = useState("");
+  // 링크·전화 접수는 회신해도 알림이 가지 않는다 — 보낸 뒤 이 창에서 바로 알린다 (점검 11차)
+  const [sent, setSent] = useState(false);
   // 하자보수: 작업지시 완료 사진을 회신과 함께 보낼 수 있다 (D-68)
   const wo = req.linkedWorkOrderId ? (db.workOrders ?? []).find((w) => w.id === req.linkedWorkOrderId) : undefined;
   // 끝난 작업지시의 사진만 (보완 요청으로 되돌린 작업지시의 예전 사진은 고르지 않는다 · D-68 점검 반영)
   const woDone = !!wo && (wo.status === "done" || wo.status === "confirmed");
   const donePhotos = woDone ? (wo!.donePhotoIds ?? []).map((id) => db.photos.find((p) => p.id === id)).filter((p): p is NonNullable<typeof p> => !!p).slice(0, 3) : [];
-  const followUp = req.status === "answered";
+  // 두 번째 회신은 보수가 끝난 뒤의 ‘보수 완료 회신’ — 작업지시 없이 일정만 안내한 건은 아니다 (점검 11차)
+  const followUp = req.status === "answered" && !!wo;
+  // 일정 안내만 하고 작업지시를 보내지 않은 하자: 여기서는 ‘작업지시 없이 처리 끝’ 회신만 (점검 11차)
+  const closeOnly = req.type === "defect" && !wo && req.status === "answered";
   const [share, setShare] = useState<string[]>(() => donePhotos.filter((p) => !(req.replyPhotoIds ?? []).includes(p.id)).map((p) => p.id));
   // 현장이 끝냈다고 보낸 작업지시는 회신하면서 완료 확인도 함께 (요청함과 작업지시 화면 상태가 어긋나던 문제 · D-68 점검 반영)
-  const partialNote = !!wo && /일부/.test(`${wo.doneNote ?? ""}`);
-  // ‘일부만 끝냈어요’면 기본으로 완료 확인하지 않는다 (D-69 점검 반영)
-  const [confirmWo, setConfirmWo] = useState(wo?.status === "done" && !partialNote);
-  const [closeNoRepair, setCloseNoRepair] = useState(false);
-  const partial = !!wo && /일부/.test(`${wo.doneNote ?? ""}`);
+  const partial = !!wo && woPartial(wo);
+  // ‘일부만 끝냈어요’면 기본으로 완료 확인하지 않는다 (D-69 점검 반영) — ‘남은 보수 확인’에서 다 끝났다고 고르면 켠다 (점검 11차)
+  const [confirmWo, setConfirmWo] = useState(wo?.status === "done" && (confirmDefault ?? !partial));
+  const [closeNoRepair, setCloseNoRepair] = useState(closeOnly);
   const [busy, setBusy] = useState(false);
   const PH: Partial<Record<PartnerRequest["type"], string>> = {
     quote: "예) 실측 후 사양별 견적서를 별도로 보내드리겠습니다.",
@@ -184,11 +190,16 @@ export function ReplyModal({ db, req, onClose }: { db: DemoDB; req: PartnerReque
     <Modal
       open
       onClose={onClose}
-      title={followUp ? "보수 완료 회신" : req.intake ? "접수자에게 회신" : "발주처 요청 회신"}
+      title={sent ? "회신했습니다 — 접수자에게 알려 주세요" : closeOnly ? "작업지시 없이 처리 끝" : followUp ? "보수 완료 회신" : req.intake ? "접수자에게 회신" : "발주처 요청 회신"}
       description={req.title}
       size="md"
       testId="reply-modal"
       footer={
+        sent ? (
+          <Button variant="cta" onClick={onClose} data-testid="reply-done-close">
+            닫기
+          </Button>
+        ) : (
         <>
           <Button onClick={onClose}>취소</Button>
           <Button
@@ -207,11 +218,12 @@ export function ReplyModal({ db, req, onClose }: { db: DemoDB; req: PartnerReque
               try {
                 await run("updatePartnerRequest", { requestId: req.id, patch: { status: "answered", reply: text, registerChangeOrder: register && amount > 0 ? { title: req.title, amount } : undefined, ...(share.length ? { sharePhotoIds: share } : {}), ...(closeNoRepair ? { closeWithoutRepair: true } : {}) } });
                 if (wo && wo.status === "done" && confirmWo) await run("reviewWorkOrder", { workOrderId: wo.id, decision: "confirm" }).catch(() => {});
-                toast.push(
-                  req.intake
-                    ? { tone: "ok", title: "회신했습니다 — 접수자에게 알려 주세요", desc: "알림이 가지 않는 접수입니다. ‘접수자에게 알리기’에서 보낼 글을 복사하거나 문자로 보내 주세요." }
-                    : { tone: "ok", title: "회신했습니다", desc: req.type === "defect" && woDone ? "발주처 포털에 ‘보수 완료’와 회신이 표시됩니다." : "발주처 포털에 ‘회신 완료’와 회신 내용이 표시됩니다." },
-                );
+                if (req.intake) {
+                  // 회신하면 줄이 ‘본사 할 일’에서 빠진다 — 알리기 단추를 찾으러 가지 않게 이 창에서 바로 (점검 11차)
+                  setSent(true);
+                  return;
+                }
+                toast.push({ tone: "ok", title: "회신했습니다", desc: req.type === "defect" && woDone ? "발주처 포털에 ‘보수 완료’와 회신이 표시됩니다." : "발주처 포털에 ‘회신 완료’와 회신 내용이 표시됩니다." });
                 onClose();
               } catch (e) {
                 setErr(e instanceof Error ? e.message : "실패");
@@ -223,8 +235,15 @@ export function ReplyModal({ db, req, onClose }: { db: DemoDB; req: PartnerReque
             회신 보내기
           </Button>
         </>
+        )
       }
     >
+      {sent ? (
+        <div className="space-y-3" data-testid="reply-notify">
+          <Notice tone="info">링크·전화 접수는 회신해도 접수자에게 알림이 가지 않습니다. 아래 글을 문자나 카카오톡으로 보내 주세요. 나중에는 하자보수에서 그 줄의 ‘접수자에게 알리기·이력’으로 다시 볼 수 있습니다.</Notice>
+          <IntakeNotifyBox db={db} req={db.partnerRequests.find((x) => x.id === req.id) ?? req} />
+        </div>
+      ) : (
       <div className="space-y-3">
         <p className="rounded-lg bg-surface-2 px-3 py-2 text-[0.82rem] text-ink-2">
           <b className="mr-1">[{PARTNER_TYPE_LABEL[req.type]}]</b>
@@ -240,13 +259,13 @@ export function ReplyModal({ db, req, onClose }: { db: DemoDB; req: PartnerReque
         )}
         {req.type === "defect" && !wo && (
           <div className="rounded-xl border border-line bg-surface-2 p-3 text-[0.85rem]" data-testid="reply-no-wo">
-            <p className="text-ink-2">아직 작업지시를 보내지 않았습니다. 보통은 일정 안내로 회신하고, 요청함의 ‘작업지시로 보내기’로 현장에 보냅니다.</p>
+            <p className="text-ink-2">{closeOnly ? "일정 안내 회신을 이미 보냈습니다. 여기서는 작업지시 없이 끝내는 회신만 보냅니다. 보수가 필요하면 이 창을 닫고 ‘작업지시 보내기’를 누르세요." : "아직 작업지시를 보내지 않았습니다. 보통은 일정 안내로 회신하고, 하자보수 화면의 ‘작업지시 보내기’로 현장에 보냅니다."}</p>
             <label className="mt-2 flex items-start gap-2.5">
-              <input type="checkbox" checked={closeNoRepair} onChange={(e) => setCloseNoRepair(e.target.checked)} className="mt-1 size-4 accent-[var(--t-active)]" data-testid="reply-close-no-repair" />
+              <input type="checkbox" checked={closeNoRepair} disabled={closeOnly} onChange={(e) => setCloseNoRepair(e.target.checked)} className="mt-1 size-4 accent-[var(--t-active)]" data-testid="reply-close-no-repair" />
               <span>
                 <b>작업지시 없이 처리 끝</b>
                 <span className="block text-[0.74rem] text-ink-3">
-                  {req.intake ? "하자가 아니거나 전화로 해결한 경우만. 접수자 화면에 ‘답변 완료’로 보이고 확인을 받을 수 있습니다. 장난·중복 접수는 회신하지 말고 요청 카드의 ‘버리기’를 쓰세요." : "하자가 아니거나 전화로 해결한 경우만. 발주처에 ‘처리 완료 (보수 없음)’로 보이고 확인을 받을 수 있습니다."}
+                  {req.intake ? "하자가 아니거나 전화로 해결한 경우만. 접수자 화면에 ‘답변 완료’로 보이고 확인을 받을 수 있습니다. 장난·중복 접수는 회신하지 말고 ‘자세히·이력’의 ‘버리기’를 쓰세요." : "하자가 아니거나 전화로 해결한 경우만. 발주처에 ‘처리 완료 (보수 없음)’로 보이고 확인을 받을 수 있습니다."}
                 </span>
               </span>
             </label>
@@ -269,6 +288,8 @@ export function ReplyModal({ db, req, onClose }: { db: DemoDB; req: PartnerReque
                   ? "주문 요청 확인했습니다. 자재 입고 일정 확인 후 납품·시공일을 확정해 안내드리겠습니다. (DEMO 회신)"
                   : req.type === "defect"
                     ? "보수를 마쳤습니다. 창틀 아래 실리콘을 다시 시공했고, 물을 뿌려 새는 곳이 없는 것을 확인했습니다. (DEMO 회신)"
+                  : req.type === "schedule"
+                    ? "일정 확인했습니다. 요청하신 날짜 오전에 점검하겠습니다. 변동이 있으면 미리 연락드리겠습니다. (DEMO 회신)"
                   : "서면 작업지시 접수했습니다. 변경 범위를 현장에서 확인했고, 계약 내역단가 기준으로 변경공사 견적을 회신드리겠습니다. (DEMO 회신)",
             )
           }
@@ -278,7 +299,7 @@ export function ReplyModal({ db, req, onClose }: { db: DemoDB; req: PartnerReque
         </button>
         )}
         {req.type === "defect" && wo && wo.status !== "done" && wo.status !== "confirmed" && (
-          <Notice tone="warn">현장 보수가 아직 끝나지 않았습니다 (지금: {WO_STATE[wo.status]}). 지금은 일정 안내로 회신하고, 현장이 ‘다 했어요’로 보내면 요청함의 ‘보수 완료 회신’으로 한 번 더 보내세요.</Notice>
+          <Notice tone="warn">현장 보수가 아직 끝나지 않았습니다 (지금: {WO_STATE[wo.status]}). 지금은 일정 안내로 회신하고, 현장이 ‘다 했어요’로 보내면 하자보수 화면의 ‘보수 완료 회신’으로 한 번 더 보내세요.</Notice>
         )}
         {donePhotos.length > 0 && (
           <fieldset className="rounded-xl border border-line bg-surface-2 p-3" data-testid="reply-share-photos">
@@ -326,6 +347,65 @@ export function ReplyModal({ db, req, onClose }: { db: DemoDB; req: PartnerReque
         )}
         {err && <Notice tone="err">{err}</Notice>}
         <p className="text-[0.72rem] text-ink-3">접수 {fmtDateTime(req.createdAt)}</p>
+      </div>
+      )}
+    </Modal>
+  );
+}
+
+/**
+ * 남은 보수 확인 (점검 11차) — 현장이 ‘일부만 끝냈어요’로 보내고 본사가 회신만 한 하자.
+ * 남은 작업까지 끝났으면 ‘보수 완료 회신’(작업지시 완료 확인 함께), 아니면 ‘보완 요청’으로 현장에 다시 보낸다.
+ */
+export function CheckModal({ db, req, onClose, onDone }: { db: DemoDB; req: PartnerRequest; onClose: () => void; onDone: () => void }) {
+  const toast = useToast();
+  const wo = req.linkedWorkOrderId ? (db.workOrders ?? []).find((w) => w.id === req.linkedWorkOrderId) : undefined;
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  if (!wo) return null;
+  const back = async () => {
+    if (note.trim().length < 2) {
+      setErr("현장에 다시 할 일을 적어 주세요.");
+      return;
+    }
+    setBusy(true);
+    setErr("");
+    try {
+      await run("reviewWorkOrder", { workOrderId: wo.id, decision: "return", note });
+      toast.push({ tone: "ok", title: "보완을 요청했습니다", desc: "현장이 다시 끝내면 ‘보수 완료 회신’으로 알려 드립니다." });
+      onClose();
+    } catch (e) {
+      setErr(errorMessage(e, "보내지 못했습니다."));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal open onClose={onClose} title="남은 보수 확인" description={req.title} size="md" testId="check-modal">
+      <div className="space-y-3">
+        <p className="rounded-lg bg-warn-bg px-3 py-2 text-[0.84rem] text-ink" data-testid="check-done-note">
+          <b>현장 완료 보고:</b> {[wo.doneQty, wo.doneNote].filter(Boolean).join(" · ") || "—"}
+          <span className="mt-0.5 block text-[0.78rem] text-ink-2">남은 작업이 있다고 보고된 건입니다. 회신은 보냈고, 작업지시는 아직 ‘완료 보고 · 본사 확인 전’입니다.</span>
+        </p>
+        <PhotoStrip db={db} ids={wo.donePhotoIds} label="현장 완료 사진" testId="check-photos" />
+        <div className="rounded-xl border border-line bg-surface-2 p-3">
+          <p className="text-[0.86rem] font-bold">남은 작업까지 끝났습니다</p>
+          <p className="mt-0.5 text-[0.78rem] text-ink-3">작업지시 완료를 확인하고, {req.intake ? "접수자" : "발주처"}에게 보수 완료 회신을 보냅니다. 그 뒤에 ‘잘 고쳐졌습니다’ 확인을 받을 수 있습니다.</p>
+          <Button className="mt-2" variant="cta" icon={<Send size={16} />} onClick={onDone} data-testid="check-finish">
+            보수 완료 회신 쓰기
+          </Button>
+        </div>
+        <div className="rounded-xl border border-line bg-surface-2 p-3">
+          <label htmlFor="ck-note" className="text-[0.86rem] font-bold">
+            아직 남았습니다 — 현장에 보완 요청
+          </label>
+          <textarea id="ck-note" rows={2} maxLength={200} value={note} onChange={(e) => setNote(e.target.value)} placeholder="예) 아래쪽 창틀 실리콘도 다시 시공해 주세요" className={cx(inputCls, "mt-1 h-auto resize-none py-1.5")} data-testid="check-note" />
+          <Button className="mt-2" icon={<Send size={16} />} onClick={back} loading={busy} data-testid="check-return">
+            보완 요청 보내기
+          </Button>
+        </div>
+        {err && <Notice tone="err">{err}</Notice>}
       </div>
     </Modal>
   );

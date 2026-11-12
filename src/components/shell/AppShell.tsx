@@ -152,16 +152,13 @@ function FieldMobileHeader() {
 /** 현장 직원 하단 메뉴 — 4개, 크게, 이름 그대로 */
 function FieldBottomNav() {
   const pathname = usePathname();
-  const db = useDb();
-  const me = currentUserId();
   const items = bottomNavFor("field");
   const active = items
     .map((i) => i.href)
     .filter((h) => isActivePath(pathname, h))
     .sort((a, b) => b.length - a.length)[0];
-  const open =
-    (db?.actions.filter((a) => a.assigneeUserId === me && !["done", "dismissed"].includes(a.status)).length ?? 0) +
-    ((db?.workOrders ?? []).filter((w) => w.assigneeUserId === me && !["done", "confirmed"].includes(w.status)).length ?? 0);
+  // 사이드바·전체 메뉴와 같은 숫자 (점검 11차)
+  const open = useNavBadges()("/my-actions");
   return (
     <nav className="field-bottom-nav no-print fixed inset-x-0 bottom-0 z-40 border-t-2 border-line bg-surface pb-[env(safe-area-inset-bottom)] lg:hidden" aria-label="하단 메뉴" data-testid="bottom-nav">
       <ul className="mx-auto flex max-w-xl">
@@ -273,6 +270,23 @@ export function MobileDrawer({ open, onClose }: { open: boolean; onClose: () => 
           <p className="text-shell-muted">{ROLE_LABEL[role]}{IS_LIVE ? "" : " · 권한 프리뷰 (설정에서 전환)"}</p>
         </div>
         <nav className="flex-1 overflow-y-auto px-2.5 py-3 space-y-4">
+          {/* 숫자가 붙은 메뉴는 맨 위에 한 번 더 — 열자마자 할 일이 보이게 (하자보수가 열두 번째라 아래에 숨던 문제 · 점검 11차) */}
+          {(() => {
+            const todo = items.filter((i) => badgeFor(i.href) > 0);
+            if (!todo.length) return null;
+            return (
+              <div data-testid="drawer-todo">
+                <p className="px-2.5 pb-1.5 text-[0.7rem] font-bold tracking-[0.14em] text-shell-muted">지금 할 일</p>
+                {todo.map((item) => (
+                  <Link key={item.href} href={item.href} onClick={onClose} className="press flex items-center gap-3 rounded-xl px-2.5 py-2 text-[0.95rem] font-bold text-shell-strong hover:bg-shell-hover" data-testid={`drawer-todo-${item.href.slice(1)}`}>
+                    <GroupIcon item={item} active={false} />
+                    <span className="min-w-0 flex-1">{navLabel(item, role)}</span>
+                    <span className="num shrink-0 rounded-full bg-solid px-2 py-0.5 text-[0.76rem] font-bold text-white">{badgeFor(item.href)}건</span>
+                  </Link>
+                ))}
+              </div>
+            );
+          })()}
           {GROUPS.map((g) => {
             const list = items.filter((i) => i.group === g.id);
             if (!list.length) return null;

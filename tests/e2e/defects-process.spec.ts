@@ -111,7 +111,15 @@ test("하자보수 화면에서 끝까지: 메뉴 배지 → 작업지시 보내
   await expect(reply.getByTestId("reply-share-photos").locator("img")).toHaveCount(1);
   await reply.locator("#rp-text").fill("실리콘을 다시 시공했습니다. 물을 뿌려 새는 곳이 없는 것을 확인했습니다.");
   await reply.getByTestId("reply-confirm").click();
+  // 회신하면 그 줄은 ‘본사 할 일’에서 빠지므로, 같은 창에서 바로 접수자에게 알린다 (점검 11차)
+  await expect(reply.getByTestId("reply-notify")).toBeVisible();
+  await expect(reply.getByTestId("intake-notify-message")).toHaveValue(/보수를 마쳤습니다.*\/r\/s\//s);
+  await reply.getByTestId("intake-notify-copy").click();
+  await expect(reply.getByTestId("intake-notify-status")).toContainText("복사했습니다");
+  await reply.getByTestId("reply-done-close").click();
   await expect(reply).toHaveCount(0);
+  // 초점은 목록으로 (화면 맨 위로 사라지지 않게)
+  await expect.poll(() => page.evaluate(() => document.activeElement?.getAttribute("aria-label") ?? document.activeElement?.tagName)).not.toBe("BODY");
   await page.getByTestId("defect-view-all").click();
   await expect(row).toHaveAttribute("data-next", "client");
   await expect(row.getByTestId("defect-next")).toHaveText("접수자 확인 대기");
@@ -173,4 +181,90 @@ test("현장 개요의 하자보수 요약 → 그 현장 본사 할 일 · 휴�
   await asRole(page, "field");
   await page.goto("/field");
   await expect(page.getByTestId("drawer-badge-defects")).toHaveCount(0);
+});
+
+test("점검 11차: 메뉴로 들어오면 본사 할 일부터 · 주소에 현장·보기 · ‘일부만 끝냈어요’ → 회신해도 ‘남은 보수 확인’ → 보완 요청 · ?req= 로 그 줄 · 관리대장 인쇄 칸 너비", async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await freshStart(page);
+  await twoIntakes(page);
+  // 메뉴로 들어오면 본사 할 일이 있을 때 그 보기부터 (배지와 같은 목록)
+  await page.goto("/dashboard");
+  await page.getByTestId("nav-defects").click();
+  await expect(page.getByTestId("defect-view-todo")).toHaveAttribute("aria-checked", "true");
+  // 현장을 고르면 주소도 바뀐다 · 새로 고쳐도 같은 화면
+  await page.getByTestId("defect-site").selectOption("site-a");
+  await expect(page).toHaveURL(/\/defects\?site=site-a&view=todo/);
+  await page.reload();
+  await expect(page.getByTestId("defect-site")).toHaveValue("site-a");
+  await expect(page.getByTestId("defect-view-todo")).toHaveAttribute("aria-checked", "true");
+  // 없는 현장 번호는 ‘모든 현장’으로 (선택 칸과 목록이 어긋나지 않게)
+  await page.goto("/defects?site=nope&view=all");
+  await expect(page.getByTestId("defect-site")).toHaveValue("all");
+  await expect(page.getByTestId("defect-row")).not.toHaveCount(0);
+
+  // 작업지시 → 현장이 ‘일부만 끝냈어요’
+  await page.goto("/defects?view=todo");
+  const row = page.getByTestId("defect-row").filter({ hasText: "1층 로비 출입문" });
+  const id = await row.getAttribute("data-id");
+  await row.getByTestId("defect-order").click();
+  await page.getByTestId("defect-order-send").click();
+  await expect(page.getByTestId("defect-order-modal")).toHaveCount(0);
+  await asRole(page, "field");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/my-actions");
+  const wo = page.getByTestId("wo-card").filter({ hasText: "1층 로비 출입문" });
+  await wo.getByTestId("wo-receive").click();
+  await wo.getByTestId("wo-complete").click();
+  await page.getByTestId("wo-result-chip").nth(1).click();
+  await page.getByTestId("wo-photo").setInputFiles({ name: "f.png", mimeType: "image/png", buffer: PNG });
+  await page.getByTestId("wo-finish-send").click();
+  await expect(page.getByTestId("wo-finish")).toBeHidden();
+
+  // 본사: 회신 창은 작업지시 완료 확인을 끈 채 → 회신해도 ‘남은 보수 확인’으로 본사 할 일에 남는다
+  await asRole(page, "ceo");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/defects?view=todo");
+  await expect(row).toHaveAttribute("data-next", "reply");
+  await row.getByTestId("defect-reply").click();
+  await expect(page.getByTestId("reply-confirm-wo")).not.toBeChecked();
+  await page.locator("#rp-text").fill("1차 보수를 했고 남은 곳은 다음 주에 마무리하겠습니다.");
+  await page.getByTestId("reply-confirm").click();
+  await page.getByTestId("reply-done-close").click();
+  await expect(row).toHaveAttribute("data-next", "check");
+  await expect(row.getByTestId("defect-next")).toHaveText("남은 보수 확인");
+  // 보완 요청 → 현장 보수 중 (본사 할 일에서 빠짐)
+  await row.getByTestId("defect-check").click();
+  const ck = page.getByTestId("check-modal");
+  await ck.getByTestId("check-return").click();
+  await expect(ck).toContainText("다시 할 일을 적어 주세요");
+  await ck.getByTestId("check-note").fill("아래쪽 문틀도 마저 조정해 주세요");
+  await ck.getByTestId("check-return").click();
+  await expect(ck).toHaveCount(0);
+  await expect(row).toHaveCount(0);
+  await page.getByTestId("defect-view-open").click();
+  await expect(row).toHaveAttribute("data-next", "repairing");
+  await expect(row.getByTestId("defect-next")).toHaveText("보완 요청 — 다시 보수");
+
+  // ?req= (검색·알림·작업지시 화면에서): 전체 보기에서 그 줄을 펼친다 · 이력에 보완 요청
+  await page.goto(`/defects?req=${id}`);
+  await expect(page.getByTestId("defect-view-all")).toHaveAttribute("aria-checked", "true");
+  await expect(row.getByTestId("defect-detail")).toBeVisible();
+  await expect(row.getByTestId("defect-timeline")).toContainText("보완 요청 (다시 보수)");
+  await expect(row.getByTestId("defect-timeline")).toContainText("아래쪽 문틀도 마저");
+  // 작업지시 화면의 하자 카드도 하자보수로 돌아온다
+  await page.goto("/orders");
+  const card = page.getByTestId("wo-row").filter({ hasText: "1층 로비 출입문" });
+  await expect(card).toContainText("하자보수 · 링크 접수");
+  await expect(card.getByTestId("wo-to-request")).toHaveAttribute("href", `/defects?req=${id}`);
+
+  // 관리대장: 인쇄해도 칸 너비가 그대로 (번호 칸이 좁고 내용 칸이 넓다)
+  await page.goto("/defects?view=ledger&site=site-a");
+  // evaluateAll은 기다리지 않는다 — 표가 그려진 뒤에 잰다
+  await expect(page.getByTestId("defect-ledger-row")).not.toHaveCount(0);
+  await page.emulateMedia({ media: "print" });
+  const widths = await page.getByTestId("defect-ledger-table").locator("thead tr").nth(1).locator("th").evaluateAll((ths) => ths.map((t) => t.getBoundingClientRect().width));
+  await page.emulateMedia({ media: "screen" });
+  expect(widths[0]).toBeLessThan(widths[2] / 3);
+  expect(widths[2]).toBeGreaterThan(widths[4]);
 });

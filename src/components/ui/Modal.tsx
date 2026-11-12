@@ -103,6 +103,8 @@ export function Modal({
       aria-labelledby="tk-modal-title"
       data-testid={testId}
       onCancel={(e) => {
+        // 창 안에 연 창(사진 크게 보기 등)의 Esc는 그 창만 닫는다 — 바깥 창까지 닫혀 적던 글이 사라지던 문제 (점검 11차)
+        if (e.target !== e.currentTarget) return;
         e.preventDefault();
         if (dismissible) onCloseRef.current();
       }}

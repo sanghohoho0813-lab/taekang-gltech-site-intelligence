@@ -637,6 +637,8 @@ export interface PartnerRepairView {
   stage: "assigned" | "in_progress" | "checking" | "done";
   dueDate?: string;
   at: string;
+  /** 보수 완료 뒤 태강지엘텍이 회신했음 — 이때부터 ‘잘 고쳐졌습니다’로 확인할 수 있다 (점검 11차) */
+  replied?: true;
 }
 
 export type SignalRule =

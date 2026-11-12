@@ -236,6 +236,13 @@ test("하자 접수 링크: 본사가 만들고(전화번호·QR·안내문) →
   await expect(page.getByTestId("reply-share-photos")).toContainText("진행 확인 주소를 가진 사람이 볼 수 있습니다");
   await page.locator("#rp-text").fill("실리콘을 다시 시공했습니다. 물을 뿌려 새는 곳이 없는 것을 확인했습니다.");
   await page.getByTestId("reply-confirm").click();
+  // 알림이 가지 않는 접수 — 회신 창이 그대로 ‘접수자에게 알리기’로 넘어간다 (점검 11차)
+  const notify = page.getByTestId("reply-notify");
+  await expect(notify).toBeVisible();
+  await expect(notify.getByTestId("intake-notify-message")).toHaveValue(/보수를 마쳤습니다.*\/r\/s\//s);
+  await expect(notify.getByTestId("intake-notify-sms")).toHaveAttribute("href", /^sms:01012345678\?&body=/);
+  await page.getByTestId("reply-done-close").click();
+  await expect(page.getByTestId("reply-modal")).toHaveCount(0);
   // 회신한 요청은 ‘처리할 것’에서 빠진다 → 전체에서 본다
   await page.getByTestId("inbox-show-all").click();
   await expect(req).toHaveAttribute("data-status", "answered");
@@ -281,6 +288,8 @@ test("하자 접수 링크: 본사가 만들고(전화번호·QR·안내문) →
   await page.getByTestId("reply-close-no-repair").check();
   await page.locator("#rp-text").fill("결로로 보입니다. 환기 방법을 전화로 안내드렸습니다.");
   await page.getByTestId("reply-confirm").click();
+  await expect(page.getByTestId("intake-notify-message")).toHaveValue(/답변드렸습니다/);
+  await page.getByTestId("reply-done-close").click();
   await page.getByTestId("inbox-show-all").click();
   await expect(req.getByTestId("request-superseded")).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });

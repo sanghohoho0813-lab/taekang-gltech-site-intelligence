@@ -35,7 +35,7 @@ import { shiftDate } from "@/lib/domain/attendance";
 import { DECISION_METHOD } from "@/lib/domain/risk";
 import { uid } from "@/lib/domain/ids";
 import { IS_LIVE } from "@/lib/mode";
-import { partnerRepairView } from "@/lib/domain/partnerFeed";
+import { partnerRepairView, repairConfirmable, repliedAfterDone } from "@/lib/domain/partnerFeed";
 
 export interface Ctx {
   userId: string;
@@ -797,7 +797,15 @@ export function updatePartnerRequest(
   }
   // 하자보수: 보수 전에 일정 안내로 회신했어도, 보수가 끝나면 보수 사진과 함께 한 번 더 회신할 수 있다 (D-68 점검 반영)
   // (현장이 다시 끝냈는데 아직 회신하지 않은 경우 = ‘마무리 확인 중’도 사진 없이 다시 회신할 수 있다)
-  const followUp = r.status === "answered" && input.status === "answered" && r.type === "defect" && (share.length > 0 || partnerRepairView(db, r)?.stage === "checking");
+  // 점검 11차: 보수가 끝났는데 그 뒤 회신이 없으면(일정 안내 회신 뒤 작업지시 화면에서 완료 확인) 보수 완료 회신을 받는다 ·
+  // 일정 안내만 하고 작업지시 없이 끝내는 회신(‘처리 끝’)도 받는다 (하자보수 화면의 ‘작업지시 없이 회신하기’가 늘 막히던 문제)
+  const liveWo = r.linkedWorkOrderId ? (db.workOrders ?? []).find((w) => w.id === r.linkedWorkOrderId) : undefined;
+  const repairStage = partnerRepairView(db, r)?.stage;
+  const followUp =
+    r.status === "answered" &&
+    input.status === "answered" &&
+    r.type === "defect" &&
+    (share.length > 0 || repairStage === "checking" || (repairStage === "done" && !!liveWo && !repliedAfterDone(liveWo, r)) || (input.closeWithoutRepair === true && !liveWo && !r.closedWithoutRepair));
   const order: PartnerRequestStatus[] = ["received", "reviewing", "answered"];
   if (!followUp && order.indexOf(input.status) <= order.indexOf(r.status)) throw new CommandError("이미 처리된 단계입니다.", "STATE");
   if (input.status === "answered" && !input.reply?.trim()) throw new CommandError("회신 내용을 입력해주세요.", "VALIDATION", { reply: "필수" });
@@ -833,7 +841,8 @@ export function updatePartnerRequest(
   r.history.push({ at, status: input.status, by: ctx.userId, note: input.reply?.trim() });
   // 하자보수를 작업지시 없이 끝냄 — 이렇게 표시해야 ‘처리 끝’으로 본다 (일정 안내 회신만으로 ‘보수 완료’가 되던 문제 · D-69 점검 반영)
   if (input.closeWithoutRepair === true) {
-    if (r.type !== "defect" || input.status !== "answered" || r.linkedWorkOrderId) throw new CommandError("작업지시 없이 끝내기는 작업지시를 보내지 않은 하자보수 회신에서만 됩니다.", "STATE");
+    // 작업지시가 지워졌으면(번호만 남음) 작업지시 없는 것으로 본다 (점검 11차)
+    if (r.type !== "defect" || input.status !== "answered" || liveWo) throw new CommandError("작업지시 없이 끝내기는 작업지시를 보내지 않은 하자보수 회신에서만 됩니다.", "STATE");
     r.closedWithoutRepair = true;
   }
   if (share.length) {
@@ -858,7 +867,8 @@ export function confirmPartnerRequest(db0: DemoDB, input: { requestId: string; n
   if (r.confirmedAt) throw new CommandError("이미 확인한 요청입니다.", "STATE");
   // 하자보수는 보수 작업이 끝난 뒤에 확인 (일정 안내 회신만 받고 ‘보수 확인’이 되던 문제 · D-68 점검 반영)
   const repair = partnerRepairView(db, r);
-  if (repair && repair.stage !== "done") throw new CommandError("보수가 끝난 뒤에 확인할 수 있습니다.", "STATE");
+  // 보수 완료 회신을 받은 뒤에 — 일정 안내 회신만 있는데 본사가 작업지시를 확인한 경우는 아직 아님 (점검 11차)
+  if (repair && !repairConfirmable(db, r)) throw new CommandError("보수가 끝난 뒤에 확인할 수 있습니다.", "STATE");
   // 작업지시 없는 하자보수는 본사가 ‘처리 끝’으로 회신했을 때만 확인 (일정 안내 회신에는 확인 버튼 없음 · D-69 점검 반영)
   if (r.type === "defect" && !repair && !r.closedWithoutRepair) throw new CommandError("보수가 끝난 뒤에 확인할 수 있습니다.", "STATE");
   if (db.partnerRequests.some((x) => x.reopenedFrom === r.id)) throw new CommandError("다시 요청한 건으로 이어서 처리 중입니다.", "STATE");
@@ -870,7 +880,7 @@ export function confirmPartnerRequest(db0: DemoDB, input: { requestId: string; n
   r.updatedAt = at;
   r.history.push({ at, status: "answered", by: ctx.userId, note: note ? `발주처 확인 · ${note}` : "발주처 확인" });
   const site = requireSite(db, r.siteId);
-  log(db, ctx, "partner", `발주처 확인: ${site.shortName} · ${r.title}`, r.siteId, "/insights#requests");
+  log(db, ctx, "partner", `발주처 확인: ${site.shortName} · ${r.title}`, r.siteId, r.type === "defect" ? "/defects" : "/insights#requests");
   touch(db, ctx);
   return { db, result: {} };
 }

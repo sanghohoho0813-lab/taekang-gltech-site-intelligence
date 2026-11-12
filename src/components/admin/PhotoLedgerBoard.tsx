@@ -220,7 +220,7 @@ function LedgerCell({ e }: { e: LedgerEntry }) {
   return (
     <figure className="break-inside-avoid" data-testid="ledger-cell">
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={e.photo.dataUrl} alt={e.text} className="aspect-[4/3] w-full border border-line-strong bg-white object-cover print:aspect-auto print:h-[56mm] print:object-contain" />
+      <img src={e.photo.dataUrl} alt={e.text} className="aspect-[4/3] w-full border border-line-strong bg-white object-cover print:aspect-auto print:h-[48mm] print:object-contain" />
       <table className="w-full table-fixed border-collapse text-[0.74rem] [overflow-wrap:anywhere]">
         <tbody>
           <tr>

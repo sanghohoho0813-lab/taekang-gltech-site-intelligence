@@ -89,11 +89,11 @@ export function noticesFor(before: DemoDB, after: DemoDB, actorId: string): Noti
     // 링크·전화 접수(D-74): 접수자가 적은 글을 알림에 넣지 않고(현장·접수 번호만), 같은 링크의 알림은 하나로 묶는다 — 잠금 화면 문구와 횟수를 밖에서 정하지 못하게 (점검 10차)
     if (r.intake) {
       const body = `${site(r.siteId)} · 접수 번호 ${r.intake.no}`;
-      if (!prev) push({ to: hq, title: r.reopenedFrom ? "하자 다시 접수 (아직 문제가 있음)" : r.intake.id === "phone" ? "하자 접수 (전화)" : "하자 접수 (링크)", body, url: "/insights#requests", tag: `intake-${r.intake.id.slice(0, 12)}` });
-      else if (!prev.confirmedAt && r.confirmedAt) push({ to: hq, title: "접수자 확인 완료", body, url: "/insights#requests", tag: `pr-${r.id}` });
+      if (!prev) push({ to: hq, title: r.reopenedFrom ? "하자 다시 접수 (아직 문제가 있음)" : r.intake.id === "phone" ? "하자 접수 (전화)" : "하자 접수 (링크)", body, url: `/defects?req=${r.id}`, tag: `intake-${r.intake.id.slice(0, 12)}` });
+      else if (!prev.confirmedAt && r.confirmedAt) push({ to: hq, title: "접수자 확인 완료", body, url: `/defects?req=${r.id}`, tag: `pr-${r.id}` });
       continue;
     }
-    if (!prev) push({ to: hq, title: `고객 요청 · ${PARTNER_TYPE_LABEL[r.type]}`, body: `${site(r.siteId)} · ${clip(r.title)}`, url: "/insights#requests", tag: `pr-${r.id}` });
+    if (!prev) push({ to: hq, title: `고객 요청 · ${PARTNER_TYPE_LABEL[r.type]}`, body: `${site(r.siteId)} · ${clip(r.title)}`, url: r.type === "defect" ? `/defects?req=${r.id}` : "/insights#requests", tag: `pr-${r.id}` });
     else if (prev.status !== "answered" && r.status === "answered") push({ to: [r.partnerUserId], title: r.type === "defect" ? "하자보수 회신 도착" : "태강지엘텍 회신 도착", body: clip(r.title), url: "/partner#my-requests", tag: `pr-${r.id}` });
     // 하자보수를 작업지시로 보냈을 때 발주처에게 ‘보수 작업 배정’ (D-68)
     else if (!prev.linkedWorkOrderId && r.linkedWorkOrderId) push({ to: [r.partnerUserId], title: "하자보수 작업 배정", body: clip(r.title), url: "/partner#my-requests", tag: `pr-${r.id}` });
@@ -101,7 +101,7 @@ export function noticesFor(before: DemoDB, after: DemoDB, actorId: string): Noti
     else if (prev.status === "answered" && (r.replyPhotoIds ?? []).some((id) => !(prev.replyPhotoIds ?? []).includes(id))) push({ to: [r.partnerUserId], title: "보수 완료 사진 도착", body: clip(r.title), url: "/partner#my-requests", tag: `pr-${r.id}` });
     else if (prev.status === "answered" && r.type === "defect" && r.reply !== prev.reply) push({ to: [r.partnerUserId], title: "하자보수 회신 도착", body: clip(r.title), url: "/partner#my-requests", tag: `pr-${r.id}` });
     // 발주처가 회신·보수 완료를 확인 (D-68)
-    else if (!prev.confirmedAt && r.confirmedAt) push({ to: hq, title: "발주처 확인 완료", body: `${site(r.siteId)} · ${clip(r.title)}`, url: "/insights#requests", tag: `pr-${r.id}` });
+    else if (!prev.confirmedAt && r.confirmedAt) push({ to: hq, title: "발주처 확인 완료", body: `${site(r.siteId)} · ${clip(r.title)}`, url: r.type === "defect" ? `/defects?req=${r.id}` : "/insights#requests", tag: `pr-${r.id}` });
   }
   // 하자 접수 링크가 하루 한도에 닿음 (D-74 점검 10차) — 그날 한 번
   const fullBefore = new Map((before.intakes ?? []).map((i) => [i.id, i.fullOn]));

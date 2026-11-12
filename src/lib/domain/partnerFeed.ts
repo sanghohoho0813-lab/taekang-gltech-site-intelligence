@@ -1,5 +1,5 @@
 /** 발주처 포털 — 최근 공정 변화 (현장 보고의 공정 진척만 · 보고 글·금액·사람 이름 없음 · D-67) */
-import type { DemoDB, PartnerFeedItem, PartnerRepairView, PartnerRequest, SitePhoto } from "./types";
+import type { DemoDB, PartnerFeedItem, PartnerRepairView, PartnerRequest, SitePhoto, WorkOrder } from "./types";
 import { shiftDate } from "./attendance";
 
 export const PARTNER_FEED_DAYS = 14;
@@ -126,7 +126,8 @@ export function partnerRepairView(db: Pick<DemoDB, "workOrders">, r: Pick<Partne
   } else if (w.status === "done") {
     const doneAt = last((h) => h.to === "done") ?? w.createdAt;
     const answeredAfter = [...r.history].reverse().find((h) => h.status === "answered" && h.at >= doneAt && !(h.note ?? "").startsWith("발주처 확인"));
-    stage = answeredAfter ? "done" : "checking";
+    // ‘일부만 끝냈어요’는 본사가 완료를 확인하기 전까지 보수 완료가 아니다 — 회신을 보내도 (점검 11차)
+    stage = answeredAfter && !woPartial(w) ? "done" : "checking";
     at = answeredAfter?.at ?? doneAt;
   } else if (w.status === "in_progress" || w.status === "returned") {
     stage = "in_progress";
@@ -135,8 +136,27 @@ export function partnerRepairView(db: Pick<DemoDB, "workOrders">, r: Pick<Partne
     stage = "assigned";
     at = w.createdAt;
   }
-  return { stage, ...(w.dueDate ? { dueDate: w.dueDate } : {}), at };
+  return { stage, ...(w.dueDate ? { dueDate: w.dueDate } : {}), at, ...(stage === "done" && repliedAfterDone(w, r) ? { replied: true as const } : {}) };
 }
+
+/** 현장이 ‘일부만 끝냈어요 (남은 작업 있음)’로 보낸 완료 보고 (점검 11차) */
+export const woPartial = (wo: Pick<WorkOrder, "doneNote">) => /일부/.test(wo.doneNote ?? "");
+
+/**
+ * 마지막 ‘보수 완료 보고’ 뒤에 본사가 회신했는가 — 보수 전에 보낸 일정 안내 회신은 세지 않는다.
+ * 일정 안내만 하고 작업지시 화면에서 완료 확인을 하면, 보수 완료 회신 없이 ‘확인 대기’로 넘어가던 문제 (점검 11차).
+ */
+export function repliedAfterDone(wo: Pick<WorkOrder, "history" | "createdAt">, r: Pick<PartnerRequest, "history">): boolean {
+  const doneAt = [...wo.history].reverse().find((h) => h.to === "done")?.at ?? wo.createdAt;
+  return r.history.some((h) => h.status === "answered" && h.at >= doneAt && !(h.note ?? "").startsWith("발주처 확인"));
+}
+
+/** 요청한 쪽(발주처·접수자)이 ‘잘 고쳐졌습니다’로 확인할 수 있는가 — 보수 완료 + 그 뒤 본사의 회신 (점검 11차) */
+export function repairConfirmable(db: Pick<DemoDB, "workOrders">, r: Pick<PartnerRequest, "linkedWorkOrderId" | "history">): boolean {
+  return repairReady(partnerRepairView(db, r));
+}
+/** 서버가 미리 계산해 보낸 보수 진행(발주처 화면)에도 같은 규칙 */
+export const repairReady = (repair: PartnerRepairView | undefined) => !!repair && repair.stage === "done" && !!repair.replied;
 
 /** 발주처에게 보이는 하자보수 한 줄 상태 — 포털·월간 보고서가 같은 말을 쓴다 (D-68 점검 반영) */
 export const DEFECT_STEPS = ["접수", "보수 배정", "보수 중", "보수 완료", "확인 완료"] as const;

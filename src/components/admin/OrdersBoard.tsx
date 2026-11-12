@@ -12,6 +12,8 @@ import { CommandError } from "@/lib/data/commands";
 import { FIX_KIND_LABEL } from "@/lib/data/opsCommands";
 import type { AttendanceRecord, DemoDB, FieldReport, WorkOrder } from "@/lib/domain/types";
 import { worksOnSite } from "@/lib/domain/types";
+import { repliedAfterDone } from "@/lib/domain/partnerFeed";
+import { intakeVia } from "@/lib/domain/intake";
 import { fmtDate, fmtMan, todayIso } from "@/lib/domain/format";
 import { backdatedDays, hhmm } from "@/lib/domain/attendance";
 import { GEO_LABEL } from "@/lib/domain/geo";
@@ -51,6 +53,17 @@ function Inner() {
       {tab === "fixes" && <Fixes db={db} />}
     </PageBody>
   );
+}
+
+/** 작업지시 카드의 하자 출처 — 링크·전화 접수는 ‘발주처’가 아니다 (점검 11차) */
+function defectSourceLabel(db: DemoDB, requestId: string): string {
+  const r = db.partnerRequests.find((x) => x.id === requestId);
+  return r?.intake ? `하자보수 · ${intakeVia(r.intake)}` : "하자보수 · 발주처";
+}
+/** 이 작업지시로 고친 하자에 아직 보수 완료 회신을 보내지 않았는가 */
+function needsCompletionReply(db: DemoDB, w: WorkOrder): boolean {
+  const r = w.sourcePartnerRequestId ? db.partnerRequests.find((x) => x.id === w.sourcePartnerRequestId) : undefined;
+  return !!r && !r.confirmedAt && !repliedAfterDone(w, r);
 }
 
 export function OrdersBoard() {
@@ -202,7 +215,7 @@ function Orders({ db }: { db: DemoDB }) {
                     <b className="text-ink-2">{siteOf(db, w.siteId)}</b> → {nameOf(db, w.assigneeUserId)} · {fmtDate(w.createdAt.slice(0, 10))}
                     {w.dueDate && <span className={late ? "font-bold text-err" : ""}>· 기한 {fmtDate(w.dueDate)}{late ? " (지남)" : ""}</span>}
                     {w.urgent && <Badge tone="err">긴급</Badge>}
-                    {w.sourcePartnerRequestId && <Badge tone="warn">발주처 하자보수</Badge>}
+                    {w.sourcePartnerRequestId && <Badge tone="warn">{defectSourceLabel(db, w.sourcePartnerRequestId)}</Badge>}
                     <Badge tone={WO_TONE[w.status]}>{WO_LABEL[w.status]}</Badge>
                   </p>
                   <p className="text-[0.95rem] font-bold">{w.title}</p>
@@ -213,8 +226,9 @@ function Orders({ db }: { db: DemoDB }) {
                   )}
                   {photos.length > 0 && <PhotoThumbs urls={photos.map((p) => p!.dataUrl)} label="완료 사진" />}
                   {w.sourcePartnerRequestId && (
-                    <Link href={`/insights?req=${w.sourcePartnerRequestId}#requests`} className="inline-flex min-h-11 items-center text-[0.82rem] font-bold text-theme-ink underline" data-testid="wo-to-request">
-                      발주처 요청 보기 · {w.status === "done" || w.status === "confirmed" ? "보수 완료 회신하기" : "회신하기"} →
+                    // 하자는 하자보수 화면에서 처리한다 — 그 줄을 펼쳐 이력과 함께 (점검 11차)
+                    <Link href={`/defects?req=${w.sourcePartnerRequestId}`} className="inline-flex min-h-11 items-center text-[0.82rem] font-bold text-theme-ink underline" data-testid="wo-to-request">
+                      하자보수에서 {w.status === "done" || w.status === "confirmed" ? "보수 완료 회신하기" : "회신·이력 보기"} →
                     </Link>
                   )}
                   {w.status === "returned" && w.returnNote && <p className="text-[0.82rem] font-semibold text-warn">보완 요청: {w.returnNote}</p>}
@@ -226,7 +240,8 @@ function Orders({ db }: { db: DemoDB }) {
                         go(
                           () => run("reviewWorkOrder", { workOrderId: w.id, decision: "confirm" }),
                           // 하자보수는 발주처에 회신해야 끝난다 — 확인만 하고 잊지 않게 (D-69 점검 반영)
-                          w.sourcePartnerRequestId && db.partnerRequests.find((r) => r.id === w.sourcePartnerRequestId)?.status !== "answered" ? "완료를 확인했습니다 — 발주처에 보수 완료 회신을 보내세요 (아래 ‘발주처 요청 보기’)" : "작업지시 완료를 확인했습니다",
+                          // 일정 안내 회신만 있어도 보수 완료 회신은 아직이다 — 완료 보고 뒤 회신이 있는지로 본다 (점검 11차)
+                          needsCompletionReply(db, w) ? "완료를 확인했습니다 — 하자보수에서 보수 완료 회신을 보내 주세요 (아래 링크)" : "작업지시 완료를 확인했습니다",
                         )
                       }
                       onReturn={(note) => go(() => run("reviewWorkOrder", { workOrderId: w.id, decision: "return", note }), "보완을 요청했습니다")}

@@ -115,7 +115,7 @@ export function renewIntakeStatus(db0: DemoDB, input: { requestId: string }, ctx
   const r = db.partnerRequests.find((x) => x.id === r0.id)!;
   r.statusKey = tokenHash(statusToken);
   r.statusToken = statusToken;
-  log(db, ctx, "partner", `하자 접수 진행 확인 주소 바꿈 — 접수 번호 ${r0.intake.no}`, r0.siteId, "/insights#requests");
+  log(db, ctx, "partner", `하자 접수 진행 확인 주소 바꿈 — 접수 번호 ${r0.intake.no}`, r0.siteId, "/defects");
   touch(db, ctx);
   return { db, result: { statusToken, no: r0.intake.no } };
 }
@@ -228,7 +228,7 @@ export function submitIntake(db0: DemoDB, input: SubmitIntakeInput, ctx: Ctx) {
   db.partnerRequests.unshift(req);
   db.intakes = (db.intakes ?? []).map((x) => (x.id === intake.id ? { ...x, count: x.count + 1, lastAt: at } : x));
   // 활동 이력에는 이름·연락처·접수자가 적은 글을 적지 않는다 (현장·접수 번호만)
-  log(db, ctx, "partner", `하자 접수(링크): ${site.shortName} — 접수 번호 ${no}`, site.id, "/insights#requests");
+  log(db, ctx, "partner", `하자 접수(링크): ${site.shortName} — 접수 번호 ${no}`, site.id, "/defects");
   touch(db, ctx);
   return { db, result: { requestId: req.id, no, statusToken, again: false as boolean } };
 }
@@ -268,7 +268,7 @@ export function confirmIntake(db0: DemoDB, input: { requestId: string; statusKey
   if (note) r.confirmNote = note;
   r.updatedAt = at;
   r.history.push({ at, status: "answered", by: ctx.userId, note: note ? `발주처 확인 · ${note}` : "발주처 확인" });
-  log(db, ctx, "partner", `하자 접수 확인(링크): ${db.sites.find((s) => s.id === r.siteId)?.shortName ?? ""} · 접수 번호 ${r0.intake!.no}`, r.siteId, "/insights#requests");
+  log(db, ctx, "partner", `하자 접수 확인(링크): ${db.sites.find((s) => s.id === r.siteId)?.shortName ?? ""} · 접수 번호 ${r0.intake!.no}`, r.siteId, "/defects");
   touch(db, ctx);
   return { db, result: { confirmedAt: at } };
 }
@@ -322,7 +322,7 @@ export function reopenIntake(db0: DemoDB, input: { requestId: string; statusKey?
   old.updatedAt = at;
   old.history.push({ at, status: old.status, by: ctx.userId, note: `아직 문제가 있음 → 다시 접수 ${no}` });
   db.partnerRequests.unshift(req);
-  log(db, ctx, "partner", `하자 다시 접수: ${db.sites.find((s) => s.id === old.siteId)?.shortName ?? ""} — 접수 번호 ${no}${byHq ? " (본사 등록)" : ""}`, old.siteId, "/insights#requests");
+  log(db, ctx, "partner", `하자 다시 접수: ${db.sites.find((s) => s.id === old.siteId)?.shortName ?? ""} — 접수 번호 ${no}${byHq ? " (본사 등록)" : ""}`, old.siteId, "/defects");
   touch(db, ctx);
   return { db, result: { requestId: req.id, no } };
 }
@@ -371,7 +371,7 @@ export function registerPhoneDefect(db0: DemoDB, input: { siteId: string; locati
   });
   if (idem) req.intakeKey = idem;
   db.partnerRequests.unshift(req);
-  log(db, ctx, "partner", `하자 접수(전화): ${site.shortName} — 접수 번호 ${no}`, site.id, "/insights#requests");
+  log(db, ctx, "partner", `하자 접수(전화): ${site.shortName} — 접수 번호 ${no}`, site.id, "/defects");
   touch(db, ctx);
   return { db, result: { requestId: req.id, no } };
 }
@@ -411,7 +411,7 @@ export function discardIntakeRequests(db0: DemoDB, input: { requestIds: string[]
   // 접수자가 올린 사진도 함께 지운다 (서버는 사진 원본까지)
   db.photos = db.photos.filter((p) => !p.partnerRequestId || !gone.has(p.partnerRequestId));
   // 접수자가 적은 글은 활동 이력에 남기지 않는다 (번호·이유만)
-  log(db, ctx, "partner", `하자 접수 ${nos.length}건 버림 (${DISCARD_REASONS[input.reason]}) — 접수 번호 ${nos.slice(0, 8).join(", ")}${nos.length > 8 ? ` 외 ${nos.length - 8}건` : ""}`, undefined, "/insights#requests");
+  log(db, ctx, "partner", `하자 접수 ${nos.length}건 버림 (${DISCARD_REASONS[input.reason]}) — 접수 번호 ${nos.slice(0, 8).join(", ")}${nos.length > 8 ? ` 외 ${nos.length - 8}건` : ""}`, undefined, "/defects");
   touch(db, ctx);
   return { db, result: { discarded: nos.length } };
 }
