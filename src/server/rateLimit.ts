@@ -31,6 +31,12 @@ export const RULES = {
   share: { name: "share", limit: 240, windowMs: 60_000 },
   /** 없는 주소를 계속 넣어 보는 시도 — 맞는 주소는 이 제한에 걸리지 않는다 (같은 사무실의 다른 사람이 막지 못하게) */
   shareMiss: { name: "shareMiss", limit: 20, windowMs: 10 * 60_000 },
+  /** 하자 접수 링크(D-74) — 화면·진행 확인·사진 읽기 */
+  intake: { name: "intake", limit: 240, windowMs: 60_000 },
+  /** 없는 접수 주소·진행 확인 주소를 계속 넣어 보는 시도 (맞는 주소는 걸리지 않는다) */
+  intakeMiss: { name: "intakeMiss", limit: 20, windowMs: 10 * 60_000 },
+  /** 접수·확인 쓰기: 한 곳에서 10분에 5건 */
+  intakeSubmit: { name: "intakeSubmit", limit: 5, windowMs: 10 * 60_000 },
   /** 열어 본 횟수: 같은 곳에서 30분에 한 번만 센다 */
   shareViewer: { name: "shareViewer", limit: 1, windowMs: 30 * 60_000 },
 

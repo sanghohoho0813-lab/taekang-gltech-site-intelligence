@@ -11,6 +11,7 @@ import { COMMANDS, isCommandName, type CommandName } from "@/lib/data/registry";
 import { CommandError } from "@/lib/data/commands";
 import { applyLocationRetention } from "@/lib/data/privacyCommands";
 import { applyShareRetention } from "@/lib/data/shareCommands";
+import { applyIntakeRetention } from "@/lib/data/intakeCommands";
 import { runDailyChecks } from "@/lib/data/dailyJobs";
 import { recordError } from "./errors";
 import { cachedEntry, cachedState, rememberState } from "./stateCache";
@@ -138,7 +139,8 @@ export async function executeCommand(m: Member, name: unknown, args: unknown): P
       const now = new Date();
       // 하루 한 번: 보관 기간이 지난 위치 좌표를 지운다 (명령과 같은 트랜잭션 — 명령이 실패하면 함께 되돌아감 · D-43)
       // 기한이 지난 보고서 링크의 내용도 함께 지운다 — 매일 점검(예약 작업)이 안 도는 배포에서도 남지 않게 (D-73 점검 9차)
-      const state = applyShareRetention(applyLocationRetention(loaded, now), now);
+      // 처리 끝난 지 90일이 지난 링크 접수의 이름·연락처도 지운다 (D-74)
+      const state = applyIntakeRetention(applyShareRetention(applyLocationRetention(loaded, now), now), now);
       const safeArgs = authorize(m, name, args, state, now);
       const fn = COMMANDS[name as CommandName] as unknown as (d: DemoDB, a: unknown, c: { userId: string; now: Date }) => { db: DemoDB; result: unknown };
       let out: { db: DemoDB; result: unknown };
@@ -189,7 +191,7 @@ export async function runDailyJobs(now = new Date()): Promise<{ companies: numbe
         await tx.query(`select rev from companies where id = $1 for update`, [id]);
         const loaded = await loadState(tx, id);
         // 닫히거나 기한이 지난 보고서 링크의 내용·오래된 기록도 함께 지운다 (D-73)
-        const retained = applyShareRetention(applyLocationRetention(loaded, now), now);
+        const retained = applyIntakeRetention(applyShareRetention(applyLocationRetention(loaded, now), now), now);
         // 알림 키가 없으면 하자보증 만료 알림은 건너뛴다 (‘보낸 알림’으로 남지 않게) — 위치 좌표 정리는 그대로
         const out = pushReady() ? runDailyChecks(retained, now) : { db: retained, notices: [], warranty: [], brief: { hq: 0, field: 0 }, changed: false };
         if (out.db === loaded) return null;

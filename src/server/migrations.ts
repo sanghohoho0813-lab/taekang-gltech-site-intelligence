@@ -98,6 +98,14 @@ alter table photo_blobs enable row level security
 create index if not exists records_share_id on records(id) where collection = 'shares'
 `,
   },
+  {
+    // 하자 접수 링크(D-74): 로그인 없이 접수 주소(링크 id)와 진행 확인 주소(요청의 statusKey)로 바로 찾는다
+    name: "003_intake_lookup",
+    sql: `
+create index if not exists records_intake_id on records(id) where collection = 'intakes';
+create index if not exists records_request_status_key on records((data->>'statusKey')) where collection = 'partnerRequests'
+`,
+  },
 ];
 
 function statements(sql: string): string[] {

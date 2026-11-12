@@ -34,8 +34,8 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
   test("배포 직후 점검: 상태 확인(DB 연결)·홈 화면 앱 파일은 로그인 없이, 회사 데이터는 로그인 필요", async ({ page }) => {
     const h = await page.request.get("/api/health");
     expect(h.status()).toBe(200);
-    // 스키마 2개: 처음 표 + 보고서 링크 색인 (D-73)
-    expect(await h.json()).toMatchObject({ ok: true, mode: "live", db: "ok", migrations: 2 });
+    // 스키마 3개: 처음 표 + 보고서 링크 색인 (D-73) + 하자 접수 색인 (D-74)
+    expect(await h.json()).toMatchObject({ ok: true, mode: "live", db: "ok", migrations: 3 });
     const mf = await page.request.get("/manifest.webmanifest");
     expect(mf.status()).toBe(200);
     expect((await mf.json()).name).toBe("TAEKANG 현장");

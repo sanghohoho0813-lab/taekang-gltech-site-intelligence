@@ -562,7 +562,54 @@ export interface PartnerRequest {
   reopenedFrom?: string;
   /** 하자보수를 작업지시 없이 끝냄 (하자 아님·전화로 처리 등) — 본사가 회신하며 명시 (D-69 점검 반영) */
   closedWithoutRepair?: true;
+  /**
+   * 하자 접수 링크로 들어온 요청 (D-74) — 계정이 없는 사람이 보냈으므로 partnerUserId는 ""이다.
+   * 접수자 이름·연락처는 본사(대표·공무)만 본다. 처리 끝난 뒤 90일이 지나면 이름·연락처를 지운다(purgedAt).
+   */
+  intake?: IntakeContact;
+  /** 진행 확인 주소(/r/s/…)의 비밀값 SHA-256 — 주소 자체는 접수한 사람에게 한 번만 준다 */
+  statusKey?: string;
   history: { at: string; status: PartnerRequestStatus; by: string; note?: string }[];
+}
+
+/** 접수 링크로 하자를 접수한 사람 (D-74) */
+export interface IntakeContact {
+  /** 어느 접수 링크로 들어왔는지 */
+  id: string;
+  /** 접수 번호 (예: 1112-1 — 그날 그 현장의 몇 번째 접수) — 전화로 말하기 쉬운 번호 */
+  no: string;
+  /** 소속 (예: 관리사무소) */
+  org?: string;
+  /** 이름 — 보관 기간이 지나면 지운다 */
+  name?: string;
+  /** 연락처 — 보관 기간이 지나면 지운다 */
+  phone?: string;
+  /** 연락처 제공에 동의한 시각 */
+  consentAt: string;
+  /** 이름·연락처를 지운 시각 */
+  purgedAt?: string;
+}
+
+/**
+ * 하자 접수 링크 (D-74) — 계정이 없는 발주처·관리사무소가 주소·QR로 하자를 접수한다.
+ * 이 주소로는 접수만 할 수 있고 아무것도 볼 수 없다. 그래서 QR을 다시 인쇄할 수 있게 주소(token)를 저장해 둔다
+ * (보고서 링크와 다르다 — 그쪽은 내용을 볼 수 있는 주소라 저장하지 않는다).
+ */
+export interface DefectIntake {
+  /** 주소 비밀값의 SHA-256 (hex) — 서버가 주소로 찾을 때 쓴다 */
+  id: string;
+  /** 주소 비밀값 — 본사에게만 보낸다 */
+  token: string;
+  siteId: string;
+  /** 어디에 둔 링크인지 (예: 관리사무소용) */
+  label: string;
+  createdAt: string;
+  createdBy: string;
+  closedAt?: string;
+  closedBy?: string;
+  /** 이 링크로 들어온 접수 수 */
+  count: number;
+  lastAt?: string;
 }
 
 /** 발주처 화면 전용(서버가 만들어 보냄): 하자보수 진행 — 작업지시의 담당자·메모 없이 단계·기한만 (D-68) */
@@ -776,6 +823,8 @@ export interface DemoDB {
   materialMoves?: MaterialMove[];
   /** 발주처에 보낸 보고서 링크 (D-73) — 주소의 비밀값은 저장하지 않고 해시(id)만 */
   shares?: ReportShare[];
+  /** 하자 접수 링크 (D-74) — 본사만 */
+  intakes?: DefectIntake[];
   /** LIVE: 현재 로그인 사용자 id (서버가 채움). DEMO에서는 없음 */
   me?: string;
   /** LIVE: 서버가 역할별로 걸러 보낸 데이터인지 */

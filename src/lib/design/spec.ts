@@ -78,6 +78,9 @@ export const COMMAND_SPEC: Record<CommandName, { label: string; group: CmdGroup;
   setPhotoShare: { label: "발주처 포털에 현장 사진 공개·비공개", group: "partner", allow: HQ },
   createShare: { label: "보고서 링크 만들기 (읽기 전용 · 기한)", group: "partner", allow: HQ },
   revokeShare: { label: "보고서 링크 닫기", group: "partner", allow: HQ },
+  createIntake: { label: "하자 접수 링크 만들기 (계정 없이 접수)", group: "partner", allow: HQ },
+  closeIntake: { label: "하자 접수 링크 닫기", group: "partner", allow: HQ },
+  renewIntakeStatus: { label: "접수자 진행 확인 주소 다시 만들기", group: "partner", allow: HQ },
   setCompanySettings: { label: "운영 설정 (본사 전화·기본 일당·반영 방식)", group: "ops", allow: HQ },
   setThresholds: { label: "위험 기준 (목표 이익률 등)", group: "ops", allow: HQ },
   importData: { label: "지난 자료 엑셀 가져오기 (기성·변경공사·출력·단가·원가·자재·공정 이력)", group: "ops", allow: HQ },
@@ -136,6 +139,7 @@ export const COLLECTION_SPEC: Record<CollectionName, CollectionSpec> = {
   importBatches: { label: "자료 가져오기 기록", holds: "종류·건수·건너뛴 행·취소 여부", field: DATA_NONE, partner: DATA_NONE, keep: "보관" },
   materialMoves: { label: "자재 반입·설치", holds: "품목·반입/설치·수량·날짜·사진·메모·취소 사유 (금액 없음)", field: "담당 현장 것 (누계가 맞도록 기간 제한 없음)", partner: DATA_NONE, keep: "보관 (취소는 지우지 않고 표시)" },
   shares: { label: "보고서 링크", holds: "종류·기한·열어 본 횟수·고정한 내용 (주소 비밀값은 해시만)", field: DATA_NONE, partner: DATA_NONE, keep: "닫으면 내용 삭제 · 60일 뒤 기록 삭제" },
+  intakes: { label: "하자 접수 링크", holds: "현장·이름·접수 건수·주소 (접수만 되는 주소)", field: DATA_NONE, partner: DATA_NONE, keep: "닫은 뒤에도 보관" },
 };
 
 /** 회사 데이터 밖의 서버 표 */

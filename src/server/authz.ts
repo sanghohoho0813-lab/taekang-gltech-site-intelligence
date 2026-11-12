@@ -201,7 +201,9 @@ export function viewFor(m: Member, db: DemoDB, now = new Date()): DemoDB {
     void _snap;
     return rest;
   });
-  const base = { ...db, idempotencyKeys: [], me: m.id, kiosks, shares };
+  // 하자 접수(D-74): 진행 확인 주소의 해시는 누구에게도 보내지 않는다. 접수자 이름·연락처와 접수 링크 주소는 본사만 (현장·발주처는 아래에서 요청·링크 자체를 받지 않는다)
+  const partnerRequests = db.partnerRequests.some((r) => r.statusKey) ? db.partnerRequests.map(({ statusKey: _k, ...r }) => (void _k, r)) : db.partnerRequests;
+  const base = { ...db, idempotencyKeys: [], me: m.id, kiosks, shares, partnerRequests };
   if (canSeeMoney(m)) {
     if (m.role === "ceo") return { ...base, scope: "full" };
     // 관리자: 대표가 ‘좌표는 대표만’으로 정했거나, 그렇게 정했을 때 모은 좌표는 판정만 (본인 기록은 그대로 · D-43·D-49)
@@ -237,6 +239,7 @@ export function viewFor(m: Member, db: DemoDB, now = new Date()): DemoDB {
     importBatches: [],
     materialMoves: [],
     shares: [],
+    intakes: [],
   } satisfies Partial<DemoDB>;
 
   if (m.role === "field") {

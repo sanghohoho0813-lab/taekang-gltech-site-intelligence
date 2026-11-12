@@ -67,6 +67,22 @@ const nextConfig: NextConfig = {
         ],
       },
       {
+        // 하자 접수 링크(D-74): 접수 화면(/r/…)·진행 확인 화면(/r/s/…)과 그 응답 — 주소에 비밀값이 있으므로 보고서 링크와 같은 머리말
+        source: "/r/:path*",
+        headers: [
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "Cache-Control", value: "private, no-store" },
+          { key: "X-Robots-Tag", value: "noindex, nofollow, noarchive" },
+        ],
+      },
+      {
+        source: "/api/intake/:path*",
+        headers: [
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "X-Robots-Tag", value: "noindex, nofollow, noarchive" },
+        ],
+      },
+      {
         // 알림 서비스워커는 바뀌면 바로 새로 받게 (D-37)
         source: "/sw.js",
         headers: [

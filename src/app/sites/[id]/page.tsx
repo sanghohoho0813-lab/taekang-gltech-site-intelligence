@@ -21,6 +21,7 @@ import { CostEntryList } from "@/components/domain/CostEntryList";
 import { MaterialTab } from "@/components/admin/MaterialTab";
 import { WarrantyCard } from "@/components/admin/WarrantyCard";
 import { SharesCard } from "@/components/admin/ShareLinks";
+import { IntakeCard } from "@/components/admin/IntakeLinks";
 import { ProgressHistory } from "@/components/admin/ProgressHistory";
 import { simulateApprovedClaims, type SiteFinancials } from "@/lib/domain/calc";
 import { receivableAging } from "@/lib/domain/risk";
@@ -665,6 +666,8 @@ function RequestsTab({ db, site }: { db: DemoDB; site: Site }) {
     <CompletionCard site={site} />
     {/* 보낸 보고서 링크 (D-73) — 본사만 */}
     <SharesSection db={db} site={site} />
+    {/* 하자 접수 링크 (D-74) — 본사만 */}
+    <IntakeSection db={db} site={site} />
     <Card>
       <CardHeader title="발주처·협력사 요청함" sub="발주처 포털에서 등록된 요청" right={<Link href="/insights#requests"><Button size="sm" icon={<Handshake size={15} />}>요청 처리</Button></Link>} />
       {reqs.length === 0 ? (
@@ -678,7 +681,7 @@ function RequestsTab({ db, site }: { db: DemoDB; site: Site }) {
                 <b>{r.title}</b>
                 <Badge tone={r.status === "answered" ? "ok" : r.status === "reviewing" ? "theme" : "warn"}>{PARTNER_STATUS_LABEL[r.status]}</Badge>
               </p>
-              <p className="text-[0.78rem] text-ink-3">{fmtDateTime(r.createdAt)} · {userLabel(db, r.partnerUserId)}</p>
+              <p className="text-[0.78rem] text-ink-3">{fmtDateTime(r.createdAt)} · {r.intake ? `링크 접수 · 접수 번호 ${r.intake.no}` : userLabel(db, r.partnerUserId)}</p>
               {r.reply && <p className="mt-1 rounded-lg bg-surface-2 px-2.5 py-1.5 text-[0.8rem]">회신: {r.reply}</p>}
             </li>
           ))}
@@ -711,6 +714,12 @@ function CompletionCard({ site }: { site: Site }) {
       />
     </Card>
   );
+}
+
+function IntakeSection({ db, site }: { db: DemoDB; site: Site }) {
+  const { role } = useMe();
+  if (role !== "ceo" && role !== "manager") return null;
+  return <IntakeCard db={db} siteId={site.id} />;
 }
 
 function SharesSection({ db, site }: { db: DemoDB; site: Site }) {

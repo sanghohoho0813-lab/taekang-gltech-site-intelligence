@@ -85,7 +85,8 @@ export function defectRows(db: DemoDB, today: string): DefectRow[] {
       return {
         req: r,
         site: db.sites.find((s) => s.id === r.siteId),
-        partnerName: db.users.find((u) => u.id === r.partnerUserId)?.name ?? "발주처",
+        // 접수 링크로 들어온 것은 소속·이름 대신 ‘링크 접수’와 접수 번호만 (관리대장은 인쇄해 밖으로 나가므로 사람 이름을 넣지 않는다 · D-74)
+        partnerName: r.intake ? `링크 접수 ${r.intake.no}${r.intake.org ? ` · ${r.intake.org}` : ""}` : (db.users.find((u) => u.id === r.partnerUserId)?.name ?? "발주처"),
         wo,
         repair,
         stage,

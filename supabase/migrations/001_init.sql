@@ -86,3 +86,8 @@ alter table photo_blobs enable row level security;
 
 -- 002_share_lookup
 create index if not exists records_share_id on records(id) where collection = 'shares';
+
+-- 003_intake_lookup
+create index if not exists records_intake_id on records(id) where collection = 'intakes';
+
+create index if not exists records_request_status_key on records((data->>'statusKey')) where collection = 'partnerRequests';

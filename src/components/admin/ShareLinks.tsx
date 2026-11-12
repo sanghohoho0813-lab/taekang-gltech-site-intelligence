@@ -30,7 +30,7 @@ import { useToast } from "@/components/ui/Toast";
  * 예전 방식의 숨은 입력칸은 host(열려 있는 창) 안에 만든다: 창 밖(body)은 창이 떠 있는 동안 비활성이라 선택·복사가 되지 않는다.
  * 실제로 그 입력칸이 선택됐을 때만 성공으로 본다.
  */
-async function copyText(text: string, host: HTMLElement | null): Promise<boolean> {
+export async function copyText(text: string, host: HTMLElement | null): Promise<boolean> {
   try {
     await navigator.clipboard.writeText(text);
     return true;

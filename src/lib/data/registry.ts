@@ -15,6 +15,7 @@ import * as F from "./feedbackCommands";
 import * as M from "./materialCommands";
 import * as PT from "./portalCommands";
 import * as SH from "./shareCommands";
+import * as IN from "./intakeCommands";
 
 type Ctx = C.Ctx;
 
@@ -83,6 +84,10 @@ export const COMMANDS = {
   // 보고서 링크 (D-73) — 본사만. 링크를 열어 본 기록은 명령이 아니라 서버 전용 경로(/api/share)에서 남긴다
   createShare: (db: DemoDB, a: SH.CreateShareInput, ctx: Ctx) => SH.createShare(db, a, ctx),
   revokeShare: (db: DemoDB, a: { shareId: string }, ctx: Ctx) => SH.revokeShare(db, a, ctx),
+  // 하자 접수 링크 (D-74) — 만들기·닫기·진행 확인 주소 다시 만들기는 본사만. 접수·확인(로그인 없는 사람)은 명령이 아니라 서버 전용 경로(/api/intake)
+  createIntake: (db: DemoDB, a: { siteId: string; label?: string }, ctx: Ctx) => IN.createIntake(db, a, ctx),
+  closeIntake: (db: DemoDB, a: { intakeId: string }, ctx: Ctx) => IN.closeIntake(db, a, ctx),
+  renewIntakeStatus: (db: DemoDB, a: { requestId: string }, ctx: Ctx) => IN.renewIntakeStatus(db, a, ctx),
   // pairKiosk는 목록에 넣지 않는다 — 로그인하지 않은 태블릿 전용 경로(/api/kiosk/pair)에서만 실행
 } as const;
 

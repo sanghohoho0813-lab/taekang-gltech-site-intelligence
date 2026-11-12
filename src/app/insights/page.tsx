@@ -6,6 +6,7 @@ import { ChevronDown, UserPlus, Handshake, BadgeCheck, Send, Eye, Plus, Wrench, 
 import { useMe, useSignals, userLabel } from "@/lib/data/hooks";
 import { PageBody, PageHeader } from "@/components/shell/AppShell";
 import { Badge, Button, Card, CardHeader, EmptyState, Field, Notice, PageSkeleton, SeverityBadge, cx, inputCls } from "@/components/ui/primitives";
+import { IntakeContact } from "@/components/admin/IntakeLinks";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { AiReadyButton, Freshness, MethodChip, StatCard } from "@/components/domain/Widgets";
@@ -223,7 +224,7 @@ function PartnerInbox({ db }: { db: DemoDB }) {
                   <Badge tone={r.type === "quote" || r.type === "order" ? "info" : r.type === "defect" ? "warn" : "neutral"}>{PARTNER_TYPE_LABEL[r.type]}</Badge>
                   {/* 줄이 바뀌어도 ‘·’로 시작하지 않게 조각마다 묶는다 (D-69) */}
                   <b className="text-ink-2">{site?.shortName}</b>
-                  <span className="whitespace-nowrap">· {userLabel(db, r.partnerUserId)}</span>
+                  <span className="whitespace-nowrap">· {r.intake ? "링크 접수" : userLabel(db, r.partnerUserId)}</span>
                   <span className="whitespace-nowrap">· {fmtRelative(r.createdAt)}</span>
                 </div>
                 <p className="mt-1 text-[0.9rem] font-bold text-ink">{r.title}</p>
@@ -239,7 +240,9 @@ function PartnerInbox({ db }: { db: DemoDB }) {
                   </p>
                 )}
                 <p className="text-[0.8rem] text-ink-2">{r.description}</p>
-                <PhotoStrip db={db} ids={r.photoIds} label="발주처 사진" testId="request-photos" />
+                {/* 링크로 들어온 접수: 접수자 이름·연락처 (본사만) · 진행 확인 주소 다시 만들기 (D-74) */}
+                <IntakeContact db={db} req={r} />
+                <PhotoStrip db={db} ids={r.photoIds} label={r.intake ? "접수 사진" : "발주처 사진"} testId="request-photos" />
                 {wo && (
                   <p className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[0.78rem] text-ink-2" data-testid="request-wo" data-wo-status={wo.status}>
                     <Wrench size={14} aria-hidden /> 보수 작업지시 · {userLabel(db, wo.assigneeUserId)}
