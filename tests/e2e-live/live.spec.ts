@@ -1065,9 +1065,23 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     await expect(item.getByTestId("request-intake-who")).toHaveText("관리사무소 홍길동");
     await expect(item.getByTestId("request-intake-phone")).toHaveAttribute("href", "tel:01012345678");
     const fieldId = (await (await field.request.get("/api/auth/me")).json()).me.id;
-    const wo = await cmd(hq, "createWorkOrder", { siteId, title: "하자보수 · 5층 501호 발코니 창", assigneeUserId: fieldId, partnerRequestId: req.id, showContact: true, idempotencyKey: "e2e-intake-wo" });
-    expect(wo.status).toBe(200);
-    const woId = wo.body.result.workOrderId;
+    // 작업지시는 하자보수 화면에서 바로 (D-75) — 메뉴 배지에 본사 할 일, 줄의 ‘작업지시 보내기’ → 창 → 보내기
+    await hq.goto("/defects?view=todo");
+    await expect(hq.getByTestId("nav-defects")).toContainText(/\d/);
+    const drow = hq.getByTestId("defect-row").filter({ hasText: "5층 501호 발코니 창" });
+    await expect(drow).toHaveAttribute("data-next", "assign");
+    await drow.getByTestId("defect-order").click();
+    const om = hq.getByTestId("defect-order-modal");
+    await om.getByTestId("defect-order-assignee").selectOption(fieldId);
+    await expect(om.getByTestId("defect-order-contact")).toBeChecked();
+    await om.getByTestId("defect-order-send").click();
+    await expect(om).toHaveCount(0);
+    await expect.poll(async () => (await state(hq)).workOrders.some((w: { sourcePartnerRequestId?: string }) => w.sourcePartnerRequestId === req.id)).toBe(true);
+    const woId = (await state(hq)).workOrders.find((w: { sourcePartnerRequestId?: string }) => w.sourcePartnerRequestId === req.id).id;
+    // 펼치면 처리 이력에 ‘작업지시’가 남는다
+    await hq.getByTestId("defect-view-open").click();
+    await drow.getByTestId("defect-more").click();
+    await expect(drow.getByTestId("defect-timeline")).toContainText("작업지시");
     // 작업지시를 받은 현장 휴대폰: 접수 사진과, 본사가 ‘연락처 보여 주기’를 골랐으므로 방문 전 연락할 분 — 요청 자체·진행 확인 주소는 없다
     await field.goto("/my-actions");
     const woCard = field.locator(`[data-wo="${woId}"]`);

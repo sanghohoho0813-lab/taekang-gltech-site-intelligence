@@ -5,26 +5,21 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronDown, UserPlus, Handshake, BadgeCheck, Send, Eye, Plus, Wrench, CircleCheck, PhoneIncoming, Trash2 } from "lucide-react";
 import { useMe, useSignals, userLabel } from "@/lib/data/hooks";
 import { PageBody, PageHeader } from "@/components/shell/AppShell";
-import { Badge, Button, Card, CardHeader, EmptyState, Field, Notice, PageSkeleton, SeverityBadge, cx, inputCls } from "@/components/ui/primitives";
+import { Badge, Button, Card, CardHeader, EmptyState, PageSkeleton, SeverityBadge, cx } from "@/components/ui/primitives";
 import { DiscardIntakeModal, IntakeContact, PhoneDefectModal } from "@/components/admin/IntakeLinks";
 import { DefectOrderModal, PhotoStrip, ReplyModal, WO_STATE } from "@/components/admin/RequestModals";
 import { intakeVia } from "@/lib/domain/intake";
-import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { AiReadyButton, Freshness, MethodChip, StatCard } from "@/components/domain/Widgets";
 import { ActionCard, AssignModal } from "@/components/domain/Actions";
 import { MyActionsView } from "@/components/domain/MyActionsView";
 import { ACTION_STATUS_LABEL, PARTNER_STATUS_LABEL, PARTNER_TYPE_LABEL, RULE_LABEL } from "@/lib/domain/labels";
-import { fmtDate, fmtDateTime, fmtMan, fmtRelative, todayIso } from "@/lib/domain/format";
-import { uid } from "@/lib/domain/ids";
-import { worksOnSite } from "@/lib/domain/types";
+import { fmtDate, fmtDateTime, fmtRelative, todayIso } from "@/lib/domain/format";
 import { partnerRepairView } from "@/lib/domain/partnerFeed";
 import { defectRows } from "@/lib/domain/defects";
-import { errorMessage } from "@/lib/data/commands";
 import { run } from "@/lib/data/store";
 import type { DemoDB, PartnerRequest, RiskSignal } from "@/lib/domain/types";
 import { ShieldAlert, ListChecks, Inbox } from "lucide-react";
-import { IS_LIVE } from "@/lib/mode";
 
 export default function InsightsPage() {
   const { role } = useMe();

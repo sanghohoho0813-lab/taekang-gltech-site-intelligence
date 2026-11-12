@@ -195,15 +195,34 @@ export async function outboxRemove(id: string) {
   outboxChanged();
 }
 
-let flushing: Promise<FlushResult> | null = null;
-/** 동시에 두 번 보내지 않게 한 번에 하나만 */
-export function flushOutbox(userId: string, runner: Runner): Promise<FlushResult> {
-  if (!flushing)
-    flushing = flushWith(idbStore, userId, runner)
-      .catch(() => ({ sent: 0, failed: 0, waiting: 0, offline: true }))
-      .finally(() => {
-        flushing = null;
-        outboxChanged();
-      });
-  return flushing;
+/**
+ * 동시에 두 번 보내지 않게 한 번에 하나만.
+ * 보내는 도중에 다시 불리면(예: 끊긴 채 시작한 시도가 아직 도는 중에 ‘연결됨’ 신호) 끝난 뒤 한 번 더 보낸다 —
+ * 그렇지 않으면 연결이 돌아와도 다음 30초 재시도까지 기다리게 된다.
+ */
+export function makeFlusher(store: OutboxStore, onDone: () => void = () => {}) {
+  let flushing: Promise<FlushResult> | null = null;
+  let again = false;
+  const once = (userId: string, runner: Runner) =>
+    flushWith(store, userId, runner).catch((): FlushResult => ({ sent: 0, failed: 0, waiting: 0, offline: true }));
+  return (userId: string, runner: Runner): Promise<FlushResult> => {
+    if (flushing) {
+      again = true;
+      return flushing;
+    }
+    again = false;
+    flushing = (async () => {
+      const first = await once(userId, runner);
+      if (!again) return first;
+      again = false;
+      const more = await once(userId, runner);
+      return { sent: first.sent + more.sent, failed: first.failed + more.failed, waiting: more.waiting, offline: more.offline };
+    })().finally(() => {
+      flushing = null;
+      onDone();
+    });
+    return flushing;
+  };
 }
+
+export const flushOutbox = makeFlusher(idbStore, () => outboxChanged());

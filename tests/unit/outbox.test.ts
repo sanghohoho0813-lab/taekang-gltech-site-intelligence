@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CommandError } from "@/lib/data/commands";
-import { flushWith, type OutboxItem, type OutboxStore } from "@/lib/browser/outbox";
+import { flushWith, makeFlusher, type OutboxItem, type OutboxStore } from "@/lib/browser/outbox";
 
 function memStore(items: OutboxItem[]): OutboxStore & { items: Map<string, OutboxItem> } {
   const m = new Map(items.map((i) => [i.id, i]));
@@ -68,4 +68,43 @@ describe("보내지 못한 보고함", () => {
     expect(calls).toBe(0);
     expect(s.items.size).toBe(1);
   });
+
+  it("끊긴 채 시작한 보내기가 도는 중에 ‘연결됨’ 신호가 오면 끝난 뒤 바로 한 번 더 보낸다 (30초 기다리지 않음)", async () => {
+    const s = memStore([item("a", "2026-11-04T01:00:00Z")]);
+    let online = false;
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    let calls = 0;
+    let done = 0;
+    const flush = makeFlusher(s, () => (done += 1));
+    let started!: () => void;
+    const sending = new Promise<void>((r) => (started = r));
+    const runner = async () => {
+      calls += 1;
+      const sentOnline = online; // 요청을 보낸 그 순간의 연결 상태
+      if (calls === 1) {
+        started();
+        await gate; // 끊긴 상태의 첫 시도가 아직 응답을 기다리는 중
+      }
+      if (!sentOnline) throw new CommandError("서버에 연결할 수 없습니다.", "NETWORK");
+    };
+    const first = flush("u-field", runner);
+    await sending;
+    // 신호가 잡힘 → ‘연결됨’으로 다시 부름 (같은 시도에 합쳐짐)
+    online = true;
+    const second = flush("u-field", runner);
+    expect(second).toBe(first);
+    release();
+    const r = await first;
+    expect(calls).toBe(2);
+    expect(r).toMatchObject({ sent: 1, waiting: 0, offline: false });
+    expect(s.items.size).toBe(0);
+    expect(done).toBe(1);
+    // 다시 부르는 일이 없으면 한 번만 보낸다
+    const s2 = memStore([item("b", "2026-11-04T01:00:00Z")]);
+    let c2 = 0;
+    await makeFlusher(s2)("u-field", async () => void (c2 += 1));
+    expect(c2).toBe(1);
+  });
 });
+
