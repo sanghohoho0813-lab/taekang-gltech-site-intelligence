@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { isFrameContext } from "@/lib/data/store";
 import { useEffect, useState } from "react";
-import { ClipboardPen, ChevronLeft, MapPin, CalendarDays, Info, Handshake, ShieldAlert, Image as ImageIcon, FileText } from "lucide-react";
+import { ClipboardPen, ChevronLeft, MapPin, CalendarDays, Info, Handshake, ShieldAlert, Image as ImageIcon, FileText, QrCode, Wrench } from "lucide-react";
 import { useMe, useSignals, siteHealth, useFinancials, userLabel } from "@/lib/data/hooks";
 import { PageBody } from "@/components/shell/AppShell";
 import { Badge, Button, Card, CardHeader, CountUp, DemoBadge, EmptyState, KeyValue, Notice, PageSkeleton, ProgressBar, SeverityBadge, cx } from "@/components/ui/primitives";
@@ -23,6 +23,8 @@ import { WarrantyCard } from "@/components/admin/WarrantyCard";
 import { SharesCard } from "@/components/admin/ShareLinks";
 import { IntakeCard } from "@/components/admin/IntakeLinks";
 import { intakeVia } from "@/lib/domain/intake";
+import { defectRows, defectStats } from "@/lib/domain/defects";
+import { warrantyLine } from "@/lib/domain/warranty";
 import { ProgressHistory } from "@/components/admin/ProgressHistory";
 import { simulateApprovedClaims, type SiteFinancials } from "@/lib/domain/calc";
 import { receivableAging } from "@/lib/domain/risk";
@@ -414,7 +416,34 @@ function OverviewTab({ db, site, f, canSeeMoney }: { db: DemoDB; site: Site; f: 
           </div>
         )}
       </Card>
+      {/* 하자보수 한눈에 (본사 · D-75) — 진행·본사 할 일·기한 지남과 접수 QR, 하자보수 화면으로 바로 */}
+      {canSeeMoney && <DefectSummary db={db} site={site} />}
     </div>
+  );
+}
+
+function DefectSummary({ db, site }: { db: DemoDB; site: Site }) {
+  const rows = defectRows(db, todayIso()).filter((r) => r.req.siteId === site.id);
+  const st = defectStats(rows);
+  const links = (db.intakes ?? []).filter((i) => i.siteId === site.id && !i.closedAt);
+  return (
+    <Card className="@min-[900px]:col-span-2" data-testid="site-defects">
+      <CardHeader
+        title="하자보수"
+        sub={st.total ? `진행 중 ${st.open}건 · 본사 할 일 ${st.hqTodo}건${st.overdue ? ` · 기한 지남 ${st.overdue}건` : ""} · 끝남 ${st.confirmed}건` : "아직 들어온 하자가 없습니다"}
+        right={
+          <Link href={`/defects?site=${site.id}${st.hqTodo ? "&view=todo" : ""}`} className={cx("press inline-flex min-h-11 items-center gap-1.5 rounded-xl px-3.5 text-[0.86rem] font-bold", st.hqTodo ? "bg-cta text-[var(--t-cta-text)]" : "bg-active-soft text-theme-ink")} data-testid="site-defects-open">
+            <Wrench size={15} aria-hidden /> {st.hqTodo ? `처리하기 (${st.hqTodo})` : "하자보수 보기"}
+          </Link>
+        }
+      />
+      <p className="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 pb-4 text-[0.82rem] text-ink-2">
+        <span>{warrantyLine(site, todayIso())}</span>
+        <Link href={`/sites/${site.id}?tab=requests#intake`} className="press inline-flex min-h-9 items-center gap-1 font-bold text-theme-ink underline underline-offset-2" data-testid="site-defects-qr">
+          <QrCode size={14} aria-hidden /> {links.length ? `하자 접수 QR ${links.length}개 · 접수 ${links.reduce((a, i) => a + i.count, 0)}건` : "하자 접수 QR 만들기"}
+        </Link>
+      </p>
+    </Card>
   );
 }
 

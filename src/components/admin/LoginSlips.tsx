@@ -109,7 +109,7 @@ export function SlipPrintDialog({ slips, phone, onClose }: { slips: Slip[]; phon
   useEffect(() => {
     setUrl(loginUrl());
     const el = document.createElement("div");
-    el.className = "slip-print-root";
+    el.className = "slip-print-root print-plain";
     document.body.appendChild(el);
     setHost(el);
     const after = () => document.documentElement.classList.remove("print-slips");

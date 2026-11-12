@@ -52,7 +52,7 @@ function Inner() {
   const phone = db.settings?.publicPhone;
   const place = intakePlace(db, intake);
   return (
-    <div className="bg-[#F6F5F3] print:bg-white" data-testid="intake-notice">
+    <div className="print-plain bg-[#F6F5F3] print:bg-white" data-testid="intake-notice">
       <header className="no-print border-b border-line bg-surface/95">
         <div className="mx-auto flex min-h-16 max-w-[820px] flex-wrap items-center gap-2 px-4 py-2">
           <Link href={`/sites/${site.id}?tab=requests`} className="press inline-flex min-h-11 items-center gap-1.5 rounded-xl px-2.5 text-[0.9rem] font-bold text-ink-2 hover:bg-surface-3">

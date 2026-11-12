@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Lock, Menu, MoreHorizontal, Phone, X } from "lucide-react";
 import { GROUPS, NAV, bottomNavFor, canAccess, homeFor, navFor, navLabel } from "@/lib/nav";
+import { useNavBadges } from "./navBadges";
 import { useDb, usePrefs, useRole, currentUserId, setPrefs, type FontScale } from "@/lib/data/store";
 import { ROLE_LABEL } from "@/lib/domain/labels";
 import { NavIcon } from "@/components/ui/Icon";
@@ -218,6 +219,7 @@ function MobileHeader() {
 
 /** 모바일 전체 메뉴 — PC Sidebar와 같은 Group·색 체계 */
 export function MobileDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const badgeFor = useNavBadges();
   const role = useRole();
   const pathname = usePathname();
   const db = useDb();
@@ -288,10 +290,15 @@ export function MobileDrawer({ open, onClose }: { open: boolean; onClose: () => 
                       className={cx("press flex items-center gap-3 rounded-xl px-2.5 py-2.5 text-[0.95rem] font-semibold", active ? "bg-shell-active text-shell-strong" : "hover:bg-shell-hover")}
                     >
                       <GroupIcon item={item} active={active} />
-                      <span className="min-w-0">
+                      <span className="min-w-0 flex-1">
                         <span className="block">{navLabel(item, role)}</span>
                         <span className="block text-[0.72rem] font-medium text-shell-muted">{item.desc}</span>
                       </span>
+                      {badgeFor(item.href) > 0 && (
+                        <span className="num grid h-6 min-w-[1.5rem] shrink-0 place-items-center rounded-full bg-solid px-1.5 text-[0.74rem] font-bold text-white" aria-label={`${badgeFor(item.href)}건`} data-testid={`drawer-badge-${item.href.slice(1)}`}>
+                          {badgeFor(item.href)}
+                        </span>
+                      )}
                     </Link>
                   );
                 })}
@@ -310,6 +317,11 @@ function BottomNav() {
   const pathname = usePathname();
   const [more, setMore] = useState(false);
   const items = bottomNavFor(role);
+  const badgeFor = useNavBadges();
+  // 아래 메뉴에 없는 화면의 할 일(예: 하자보수)은 ‘더보기’에 숫자로 (D-75)
+  const moreBadge = navFor(role)
+    .filter((n) => !items.some((it) => it.href === n.href))
+    .reduce((a, n) => a + badgeFor(n.href), 0);
   return (
     <>
       <nav
@@ -327,8 +339,13 @@ function BottomNav() {
                   aria-current={active ? "page" : undefined}
                   className={cx("press flex h-[3.9rem] flex-col items-center justify-center gap-0.5 text-[0.7rem] font-semibold", active ? "text-theme-ink" : "text-ink-3")}
                 >
-                  <span className={cx("grid h-7 w-12 place-items-center rounded-full transition-colors", active && "bg-active-soft")}>
+                  <span className={cx("relative grid h-7 w-12 place-items-center rounded-full transition-colors", active && "bg-active-soft")}>
                     <NavIcon name={it.icon} size={21} />
+                    {badgeFor(it.href) > 0 && (
+                      <span className="num absolute -right-0.5 -top-1 grid h-[1.1rem] min-w-[1.1rem] place-items-center rounded-full bg-solid px-1 text-[0.64rem] font-bold text-white" aria-label={`${badgeFor(it.href)}건`}>
+                        {badgeFor(it.href)}
+                      </span>
+                    )}
                   </span>
                   {it.label}
                 </Link>
@@ -337,8 +354,13 @@ function BottomNav() {
           })}
           <li className="flex-1">
             <button type="button" onClick={() => setMore(true)} className="press flex h-[3.9rem] w-full flex-col items-center justify-center gap-0.5 text-[0.7rem] font-semibold text-ink-3" aria-haspopup="dialog" data-testid="bottom-more">
-              <span className="grid h-7 w-12 place-items-center rounded-full">
+              <span className="relative grid h-7 w-12 place-items-center rounded-full">
                 <MoreHorizontal size={21} />
+                {moreBadge > 0 && (
+                  <span className="num absolute -right-0.5 -top-1 grid h-[1.1rem] min-w-[1.1rem] place-items-center rounded-full bg-solid px-1 text-[0.64rem] font-bold text-white" aria-label={`할 일 ${moreBadge}건`} data-testid="bottom-more-badge">
+                    {moreBadge}
+                  </span>
+                )}
               </span>
               더보기
             </button>

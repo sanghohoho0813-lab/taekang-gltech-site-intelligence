@@ -149,3 +149,82 @@ export function defectLedger(rows: DefectRow[], siteId: string, from: string, to
     .sort((a, b) => a.req.createdAt.localeCompare(b.req.createdAt))
     .map((r, i) => ({ ...r, no: i + 1 }));
 }
+
+/** 하자 한 건의 처리 이력 한 줄 (본사 화면 전용 — 담당자 이름이 들어가므로 인쇄물·발주처 화면에는 쓰지 않는다) */
+export interface DefectEvent {
+  at: string;
+  /** 무엇이 있었는지 — ‘접수’, ‘작업지시’, ‘보수 완료 보고’, ‘회신’ … */
+  label: string;
+  /** 누가 (사람 이름 · 접수자 · 발주처 이름) */
+  who?: string;
+  /** 덧붙일 말 (회신 글·완료 메모·보완 사유·확인 메모 — 앞부분만) */
+  detail?: string;
+  tone: "info" | "ok" | "warn" | "neutral";
+}
+
+const clip = (s: string, n = 80) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
+
+/**
+ * 하자 처리 이력 (D-75) — 요청 기록과 그 요청으로 만든 작업지시 기록을 시간순으로 한 줄씩.
+ * ‘언제 접수했는데 왜 아직이냐’는 전화를 받았을 때 날짜로 답할 수 있게 한다.
+ */
+export function defectTimeline(db: Pick<DemoDB, "users" | "partnerRequests" | "workOrders">, req: PartnerRequest): DefectEvent[] {
+  const name = (id: string) => {
+    if (id === "system") return req.intake ? "접수자" : "시스템";
+    const u = db.users.find((x) => x.id === id);
+    return u ? `${u.name}${u.title ? ` ${u.title}` : ""}` : undefined;
+  };
+  const requester = req.intake ? "접수자" : (db.users.find((u) => u.id === req.partnerUserId)?.name ?? "발주처");
+  const out: DefectEvent[] = [];
+  req.history.forEach((h, i) => {
+    const note = (h.note ?? "").trim();
+    if (i === 0) {
+      const how = req.reopenedFrom ? "다시 접수" : req.intake ? (req.intake.id === "phone" ? "전화 접수" : "링크 접수") : "요청 접수";
+      out.push({ at: h.at, label: how, who: req.intake?.id === "phone" ? name(h.by) : requester, ...(note && req.intake?.id !== "phone" && !note.startsWith("전화 접수") ? { detail: note } : {}), tone: "info" });
+      return;
+    }
+    // 작업지시 쪽 기록으로 따로 보여 주는 것은 건너뛴다
+    if (note === "보수 작업 배정" || note.startsWith("추가 보수")) return;
+    if (note.startsWith("발주처 확인")) {
+      const memo = note.replace(/^발주처 확인\s*·?\s*/, "");
+      out.push({ at: h.at, label: `${req.intake ? "접수자" : "발주처"} 확인`, who: req.intake ? "접수자" : requester, ...(memo ? { detail: clip(memo) } : {}), tone: "ok" });
+      return;
+    }
+    if (note.startsWith("아직 문제가 있음")) {
+      out.push({ at: h.at, label: "아직 문제가 있음 → 다시 접수", who: name(h.by), detail: note.replace(/^아직 문제가 있음 → /, ""), tone: "warn" });
+      return;
+    }
+    if (h.status === "reviewing") {
+      out.push({ at: h.at, label: "검토 시작", who: name(h.by), tone: "neutral" });
+      return;
+    }
+    if (h.status === "answered") {
+      const first = !req.history.slice(0, i).some((x) => x.status === "answered" && !(x.note ?? "").startsWith("발주처 확인"));
+      const closing = req.closedWithoutRepair && first;
+      out.push({ at: h.at, label: closing ? "회신 (작업지시 없이 처리 끝)" : first ? "회신" : "추가 회신", who: name(h.by), ...(note ? { detail: clip(note) } : {}), tone: "ok" });
+    }
+  });
+  const wo = req.linkedWorkOrderId ? (db.workOrders ?? []).find((w) => w.id === req.linkedWorkOrderId) : undefined;
+  if (wo) {
+    const WORD: Record<WorkOrder["status"], { label: string; tone: DefectEvent["tone"] }> = {
+      sent: { label: "작업지시", tone: "info" },
+      received: { label: "현장 확인", tone: "neutral" },
+      in_progress: { label: "보수 시작", tone: "neutral" },
+      done: { label: "보수 완료 보고", tone: "ok" },
+      confirmed: { label: "본사 완료 확인", tone: "ok" },
+      returned: { label: "보완 요청 (다시 보수)", tone: "warn" },
+    };
+    for (const h of wo.history) {
+      const w = WORD[h.to];
+      const note = (h.note ?? "").trim();
+      const detail = h.to === "sent" ? [`담당 ${name(wo.assigneeUserId) ?? "—"}`, wo.dueDate ? `기한 ${wo.dueDate.slice(5).replace("-", "/")}` : ""].filter(Boolean).join(" · ") : note && note !== "현장 보고 되돌리기" ? clip(note) : h.to === "done" && wo.doneQty ? wo.doneQty : "";
+      out.push({ at: h.at, label: w.label, who: name(h.by), ...(detail ? { detail } : {}), tone: w.tone });
+    }
+  }
+  const next = db.partnerRequests.find((x) => x.reopenedFrom === req.id);
+  if (next && !out.some((e) => e.label.startsWith("아직 문제가 있음"))) out.push({ at: next.createdAt, label: "다시 요청됨", who: requester, ...(next.intake ? { detail: `접수 번호 ${next.intake.no}` } : { detail: clip(next.title, 40) }), tone: "warn" });
+  return out.sort((a, b) => a.at.localeCompare(b.at));
+}
+
+/** 하자보수 메뉴 배지 — 본사가 지금 손댈 하자 수 (작업지시 보낼 것 + 회신할 것) */
+export const defectTodoCount = (db: DemoDB, today: string) => defectStats(defectRows(db, today)).hqTodo;

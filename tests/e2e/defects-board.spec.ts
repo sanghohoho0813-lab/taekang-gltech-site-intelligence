@@ -41,8 +41,8 @@ test("하자보수 현황: 시연 데이터의 끝난 하자 1건 → 새 요청
   await expect(page.getByTestId("defect-kpi-todo")).toContainText("1건");
   const row = page.getByTestId("defect-row").filter({ hasText: "1층 로비 자동문 옆 유리 금감" });
   await expect(row).toHaveAttribute("data-next", "assign");
-  await expect(row.getByTestId("defect-open")).toHaveText("작업지시 보내기");
-  await expect(row.getByTestId("defect-open")).toHaveAttribute("href", /\/insights\?req=/);
+  // 이 화면에서 바로 작업지시를 보낸다 (D-75)
+  await expect(row.getByTestId("defect-order")).toHaveText("작업지시 보내기");
   await page.goto("/dashboard");
   await expect(page.getByTestId("pending-defect").locator("b")).toHaveText("1");
   // 관리대장: A현장 · 오래된 것부터

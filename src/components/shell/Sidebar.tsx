@@ -6,11 +6,11 @@ import { GROUPS, navFor, navLabel, type NavItem } from "@/lib/nav";
 import { NavIcon } from "@/components/ui/Icon";
 import { cx } from "@/components/ui/primitives";
 import { Logo } from "./Logo";
-import { currentUserId, useDb, useRole, usePrefs, useLiveStatus } from "@/lib/data/store";
+import { useNavBadges } from "./navBadges";
+import { useDb, useRole, usePrefs, useLiveStatus } from "@/lib/data/store";
 import { THEMES } from "@/lib/theme/themes";
 import { fmtTime } from "@/lib/domain/format";
-import { computeSignals } from "@/lib/domain/risk";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { IS_LIVE } from "@/lib/mode";
 
 const ADMIN_KEY = "tk-site-intel:nav-admin";
@@ -64,17 +64,8 @@ export function Sidebar({ compact }: { compact: boolean }) {
   const prefs = usePrefs();
   const items = navFor(role);
   const theme = THEMES.find((t) => t.id === prefs.theme);
-  const openSignals = useMemo(() => (db ? computeSignals(db).length : 0), [db]);
-  const newRequests = db?.partnerRequests.filter((r) => r.status === "received").length ?? 0;
-  // 로그인한 사람에게 배정된 조치 수 (시연용 아이디를 고정해 실제 계정에서 배지가 안 보이던 문제 · D-66)
-  const me = db ? currentUserId() : "";
-  const myActions = db ? db.actions.filter((a) => a.assigneeUserId === me && ["assigned", "in_progress"].includes(a.status)).length : 0;
-
-  const badgeFor = (href: string) => {
-    if (href === "/insights" && openSignals + newRequests > 0) return openSignals + newRequests;
-    if (href === "/my-actions" && role === "field" && myActions > 0) return myActions;
-    return 0;
-  };
+  // 지금 손댈 건수 — 휴대폰 전체 메뉴와 같은 계산 (D-75)
+  const badgeFor = useNavBadges();
 
   return (
     <aside

@@ -413,6 +413,24 @@ html.tk-scroll-lock {
   }
 }
 
+/* 인쇄 쪽 번호 (D-75) — 관리대장·사진대장·공사일보·보고서처럼 여러 장인 문서는 쪽마다 ‘2 / 5’.
+   브라우저가 붙이는 머리말·꼬리말(주소·날짜)과 겹치지 않게 가운데에 둔다. 한 장짜리 안내문·쪽지는 .print-plain 으로 뺀다 */
+@page {
+  @bottom-center {
+    content: counter(page) " / " counter(pages);
+    font-size: 8pt;
+    color: #6b6b6b;
+  }
+}
+@page plain {
+  @bottom-center {
+    content: none;
+  }
+}
+.print-plain {
+  page: plain;
+}
+
 /* 인쇄용 보고서 */
 @media print {
   .no-print {
