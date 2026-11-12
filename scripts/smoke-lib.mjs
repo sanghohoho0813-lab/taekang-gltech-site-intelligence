@@ -124,6 +124,23 @@ export async function smokeCheck(baseUrl, fetchFn = fetch) {
   else if (share.status === 429) add("warn", "share", "보고서 링크 점검이 요청 제한에 걸렸습니다 — 잠시 뒤 다시 실행하세요");
   else add("error", "share", `없는 보고서 링크 주소가 거절되지 않습니다 (HTTP ${share.status})`);
 
+  // 하자 접수 링크 (D-74): 없는 주소는 열리지 않고(404), 접수 화면은 로그인 화면으로 보내지 않으며, 없는 주소로는 접수되지 않는다
+  const FAKE_IN = "A".repeat(22);
+  const intake = await get(`/api/intake/${FAKE_IN}`);
+  const intakeBody = await intake.json().catch(() => null);
+  const intakePage = await get(`/r/${FAKE_IN}`);
+  if (intake.status === 404 && intakeBody?.code === "notfound") {
+    const post = await get(`/api/intake/${FAKE_IN}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    if (post.status < 400) add("error", "intake", `없는 하자 접수 주소로 접수가 됩니다 (HTTP ${post.status})`);
+    else if (intakePage.status !== 200) add("error", "intake", `하자 접수 화면(/r/…)이 로그인 없이 열리지 않습니다 (HTTP ${intakePage.status}) — 접수하는 분이 볼 수 없습니다`);
+    else if (!/no-store/.test(intake.headers.get("cache-control") ?? "")) add("warn", "intake", "하자 접수 응답에 저장 금지(no-store)가 없습니다");
+    else if (!/no-referrer/.test(intakePage.headers.get("referrer-policy") ?? "")) add("warn", "intake", "하자 접수 화면에 주소 유출 방지(Referrer-Policy: no-referrer)가 없습니다");
+    else add("ok", "intake", "하자 접수 링크: 없는 주소는 열리지도 접수되지도 않고, 저장·주소 유출 방지 머리말 정상");
+  } else if (intake.status === 404 && health?.mode !== "live") add("warn", "intake", "시연 빌드에는 하자 접수 서버 기능이 없습니다");
+  else if (intake.status === 404) add("error", "intake", "하자 접수 주소(/api/intake)가 배포되지 않았습니다");
+  else if (intake.status === 429) add("warn", "intake", "하자 접수 점검이 요청 제한에 걸렸습니다 — 잠시 뒤 다시 실행하세요");
+  else add("error", "intake", `없는 하자 접수 주소가 거절되지 않습니다 (HTTP ${intake.status})`);
+
   // 4) 화면 접근: 로그인 안 한 사람은 로그인 화면으로
   const home = await get("/dashboard");
   const loc = home.headers.get("location") ?? "";

@@ -29,10 +29,10 @@ const validPhoto = (v: unknown) => typeof v === "string" && /^data:image\/(jpeg|
 export function createIntake(db0: DemoDB, input: { siteId: string; label?: string }, ctx: Ctx) {
   const site0 = requireSite(db0, typeof input?.siteId === "string" ? input.siteId : "");
   const label = text(input.label) || "하자 접수";
-  if (label.length > 20) throw new CommandError("이름은 20자 이내로 적어 주세요.", "VALIDATION", { label: "20자 이내" });
+  if (label.length > 20) throw new CommandError("이름은 20자 이내로 적어 주세요.", "VALIDATION", { label: "이름은 20자 이내로 적어 주세요." });
   const open = (db0.intakes ?? []).filter((i) => i.siteId === site0.id && intakeState(i) === "open");
   if (open.length >= INTAKE_MAX_OPEN_PER_SITE) throw new CommandError(`이 현장에 열려 있는 접수 링크가 ${INTAKE_MAX_OPEN_PER_SITE}개입니다. 안 쓰는 링크를 닫고 다시 만들어 주세요.`, "STATE");
-  if (open.some((i) => i.label === label)) throw new CommandError(`‘${label}’ 접수 링크가 이미 열려 있습니다. 다른 이름을 적거나 그 링크를 쓰세요.`, "STATE", { label: "같은 이름이 있음" });
+  if (open.some((i) => i.label === label)) throw new CommandError(`‘${label}’ 접수 링크가 이미 열려 있습니다. 다른 이름을 적거나 그 링크를 쓰세요.`, "STATE");
   const db = clone(db0);
   const at = nowIso(ctx);
   const token = newToken(randomBytes, 16);
@@ -156,7 +156,7 @@ export function confirmIntake(db0: DemoDB, input: { requestId: string; note?: st
   if (r0.confirmedAt) throw new CommandError("이미 확인하셨습니다.", "STATE");
   if (!intakeCanConfirm(r0, db0.workOrders ?? [])) throw new CommandError("보수가 끝난 뒤에 확인할 수 있습니다.", "STATE");
   const note = typeof input.note === "string" ? input.note.trim() : "";
-  if (note.length > 200) throw new CommandError("남길 말은 200자 이내로 적어 주세요.", "VALIDATION", { note: "200자 이내" });
+  if (note.length > 200) throw new CommandError("남길 말은 200자 이내로 적어 주세요.", "VALIDATION", { note: "남길 말은 200자 이내로 적어 주세요." });
   const db = clone(db0);
   const r = db.partnerRequests.find((x) => x.id === r0.id)!;
   const at = nowIso(ctx);

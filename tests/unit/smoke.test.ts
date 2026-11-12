@@ -31,6 +31,8 @@ function server(over: Over = {}) {
     "/api/cron/daily": { status: 401 },
     [`/api/share/${"A".repeat(32)}`]: { status: 404, body: { error: "열 수 없는 주소입니다.", code: "notfound" }, headers: { "cache-control": "private, no-store" } },
     [`/s/${"A".repeat(32)}`]: { status: 200, headers: { ...SECURE, "referrer-policy": "no-referrer" } },
+    [`/api/intake/${"A".repeat(22)}`]: { status: 404, body: { error: "열 수 없는 주소입니다.", code: "notfound" }, headers: { "cache-control": "private, no-store" } },
+    [`/r/${"A".repeat(22)}`]: { status: 200, headers: { ...SECURE, "referrer-policy": "no-referrer" } },
     "/dashboard": { status: 307, headers: { location: "/login" } },
     "/api/setup": { body: { needsSetup: false, codeRequired: true } },
     "/sw.js": { headers: { "cache-control": "no-cache, max-age=0" } },
@@ -51,7 +53,19 @@ describe("배포 후 점검", () => {
     const cs = await smokeCheck("https://taekang.example", server());
     const { errors, text } = smokeSummary(cs);
     expect(errors, text).toBe(0);
-    expect(levels(cs)).toMatchObject({ https: "ok", mode: "ok", db: "ok", push: "ok", csp: "ok", headers: "ok", hsts: "ok", auth: "ok", origin: "ok", redirect: "ok", setup: "ok", sw: "ok", manifest: "ok", cron: "ok", share: "ok" });
+    expect(levels(cs)).toMatchObject({ https: "ok", mode: "ok", db: "ok", push: "ok", csp: "ok", headers: "ok", hsts: "ok", auth: "ok", origin: "ok", redirect: "ok", setup: "ok", sw: "ok", manifest: "ok", cron: "ok", share: "ok", intake: "ok" });
+  });
+
+  it("하자 접수 링크 (D-74): 없는 주소가 열리거나 접수되거나, 접수 화면이 로그인으로 넘어가면 오류 · 머리말이 빠지면 경고", async () => {
+    const api = `/api/intake/${"A".repeat(22)}`;
+    const page = `/r/${"A".repeat(22)}`;
+    const notfound = { status: 404, body: { code: "notfound" } };
+    expect(levels(await smokeCheck("https://t.example", server({ [api]: { status: 200, body: { company: "x" } } }))).intake).toBe("error");
+    expect(levels(await smokeCheck("https://t.example", server({ [page]: { status: 307, headers: { location: "/login" } } }))).intake).toBe("error");
+    expect(levels(await smokeCheck("https://t.example", server({ [api]: { ...notfound, headers: {} } }))).intake).toBe("warn");
+    expect(levels(await smokeCheck("https://t.example", server({ [page]: { status: 200, headers: SECURE } }))).intake).toBe("warn");
+    expect(levels(await smokeCheck("https://t.example", server({ [api]: { status: 404, body: undefined } }))).intake).toBe("error");
+    expect(levels(await smokeCheck("https://t.example", server({ [api]: { status: 429, body: {} } }))).intake).toBe("warn");
   });
 
   it("보고서 링크 (D-73): 없는 주소가 열리거나, 받는 분 화면이 로그인으로 넘어가면 오류 · 머리말이 빠지면 경고", async () => {

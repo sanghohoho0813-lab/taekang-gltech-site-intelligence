@@ -104,7 +104,7 @@ export function IntakeCard({ db, siteId }: { db: DemoDB; siteId: string }) {
                         QR·주소
                       </Button>
                       <Button size="sm" onClick={() => close(i)} data-testid="intake-close">
-                        닫기
+                        링크 닫기
                       </Button>
                     </span>
                   )}

@@ -13,6 +13,9 @@ let partnerTemp = "";
 let siteId = "";
 
 /** 시각적으로 숨긴 라디오·체크박스(sr-only)는 사람이 하듯 감싼 label을 눌러 고른다 */
+/** 주소의 한 글자만 다른 값으로 (끝 글자가 우연히 같아 시험이 흔들리지 않게) */
+const flip = (t: string) => `${t.slice(0, 10)}${t[10] === "A" ? "B" : "A"}${t.slice(11)}`;
+
 async function pick(page: Page, testId: string) {
   const input = page.getByTestId(testId);
   await page.locator("label", { has: input }).first().click();
@@ -26,7 +29,14 @@ async function login(browser: Browser, email: string, password: string, vp = { w
   await page.locator("#l-email").fill(email);
   await page.locator("#l-pw").fill(password);
   await page.getByTestId("login-submit").click();
-  await page.waitForURL((u) => !u.pathname.startsWith("/login"));
+  // 로그인이 거절되면 화면의 안내 문구로 바로 실패시킨다 (시간 초과까지 기다리지 않게)
+  const failed = page.getByTestId("login-error");
+  await Promise.race([
+    page.waitForURL((u) => !u.pathname.startsWith("/login")),
+    failed.waitFor({ state: "visible" }).then(async () => {
+      throw new Error(`로그인 실패 (${email}): ${await failed.innerText()}`);
+    }),
+  ]);
   return page;
 }
 
@@ -932,6 +942,176 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     expect(r.status()).toBe(403);
   });
 
+  // 현장소장 계정을 쓰므로 ‘비활성화’ 시험보다 앞에 (D-74)
+  test("하자 접수 링크(D-74): 본사가 만든 주소로 로그인 없는 휴대폰이 접수(사진·연락처) → 진행 확인 주소 → 본사만 연락처 → 보수 사진 회신 → 접수자 확인 → 주소 다시 만들기 → 닫으면 410", async ({ browser }) => {
+    const PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const PNG_FILE = { name: "leak.png", mimeType: "image/png", buffer: Buffer.from(PNG.split(",")[1], "base64") };
+    const cmd = async (page: Page, name: string, args: unknown) => {
+      const r = await page.request.post("/api/commands", { data: { name, args } });
+      return { status: r.status(), body: await r.json().catch(() => null) };
+    };
+    const state = async (page: Page) => (await (await page.request.get("/api/state")).json()).db;
+    const hq = await login(browser, CEO.email, CEO.password);
+
+    // 본사: 현장 상세에서 접수 링크 만들기 → QR·주소
+    await hq.goto(`/sites/${siteId}?tab=requests`);
+    const card = hq.getByTestId("intake-card");
+    await card.getByTestId("intake-label").fill("관리사무소용");
+    await card.getByTestId("intake-create").click();
+    await expect(hq.getByTestId("intake-dialog").getByRole("img", { name: "하자 접수 QR" })).toBeVisible();
+    const url = await hq.getByTestId("intake-url").inputValue();
+    expect(url).toMatch(/\/r\/[A-Za-z0-9_-]{22}$/);
+    const token = url.split("/r/")[1];
+    await hq.getByTestId("intake-dialog-done").click();
+    const row = card.getByTestId("intake-row");
+    await expect(row).toHaveAttribute("data-state", "open");
+
+    // 로그인하지 않은 휴대폰 — 로그인 화면으로 보내지 않고 접수 화면만
+    const anonCtx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const anon = await anonCtx.newPage();
+    const res = await anon.goto(url);
+    expect(res!.status()).toBe(200);
+    expect(res!.headers()["referrer-policy"]).toBe("no-referrer");
+    expect(res!.headers()["x-robots-tag"]).toContain("noindex");
+    const form = anon.getByTestId("intake-page");
+    await expect(form).toHaveAttribute("data-state", "open");
+    await expect(anon).toHaveURL(url);
+    await expect(anon.getByTestId("public-demo")).toHaveCount(0);
+    await expect(anon.getByTestId("intake-site")).not.toBeEmpty();
+    // 접수 주소로는 아무것도 읽지 못한다 — 회사·현장 이름뿐
+    const open = await anon.request.get(`/api/intake/${token}`);
+    expect(open.headers()["cache-control"]).toBe("private, no-store");
+    expect(open.headers()["x-robots-tag"]).toContain("noarchive");
+    expect(Object.keys(await open.json()).sort()).toEqual(["company", "siteName"]);
+    expect((await anon.request.get("/api/state")).status()).toBe(401);
+    expect((await anon.request.get(`/api/intake/${flip(token)}`)).status()).toBe(404);
+    // 서버가 다시 확인한다: 동의 없이·기계가 채운 칸이 있으면 받지 않는다
+    const base = { idempotencyKey: "e2e-intake-bad", location: "1층", description: "x", name: "홍길동", phone: "010-1234-5678", photoDataUrls: [] };
+    expect((await anon.request.post(`/api/intake/${token}`, { data: { ...base, consent: false } })).status()).toBe(400);
+    expect((await anon.request.post(`/api/intake/${token}`, { data: { ...base, consent: true, website: "http://spam.test" } })).status()).toBe(400);
+    expect((await anon.request.post(`/api/intake/${token}`, { data: { ...base, consent: true }, headers: { origin: "https://evil.test" } })).status()).toBe(403);
+    expect((await state(hq)).partnerRequests.some((r: { intake?: unknown }) => r.intake)).toBe(false);
+
+    // 접수 (사진 1장)
+    await anon.getByTestId("intake-location").fill("5층 501호 발코니 창");
+    await anon.getByTestId("intake-description").fill("창이 끝까지 닫히지 않습니다.");
+    await anon.getByTestId("intake-photo-input").setInputFiles(PNG_FILE);
+    await expect(anon.getByTestId("intake-photo")).toHaveCount(1);
+    await anon.getByTestId("intake-name").fill("홍길동");
+    await anon.getByTestId("intake-phone").fill("010-1234-5678");
+    await anon.getByTestId("intake-org").fill("관리사무소");
+    await anon.getByTestId("intake-consent").check();
+    await anon.getByTestId("intake-submit").click();
+    await expect(anon.getByTestId("intake-done")).toBeVisible();
+    const no = await anon.getByTestId("intake-no").innerText();
+    const statusUrl = await anon.getByTestId("intake-status-url").inputValue();
+    expect(statusUrl).toMatch(/\/r\/s\/[A-Za-z0-9_-]{32}$/);
+    const key = statusUrl.split("/r/s/")[1];
+
+    // 본사 데이터: 접수자 이름·연락처는 있고, 진행 확인 주소의 비밀값·해시는 없다
+    const s1 = await state(hq);
+    const req = s1.partnerRequests.find((r: { location?: string }) => r.location === "5층 501호 발코니 창");
+    expect(req.intake).toMatchObject({ no, org: "관리사무소", name: "홍길동", phone: "010-1234-5678" });
+    expect(req.partnerUserId).toBe("");
+    expect(req.statusKey).toBeUndefined();
+    expect(JSON.stringify(s1)).not.toContain(key);
+    expect(s1.intakes[0]).toMatchObject({ label: "관리사무소용", count: 1 });
+    // 활동 이력에는 이름·연락처를 적지 않는다
+    const log = s1.activityLogs.find((l: { summary: string }) => l.summary.includes("하자 접수(링크)"));
+    expect(log.summary).toContain(`접수 번호 ${no}`);
+    expect(JSON.stringify(s1.activityLogs)).not.toMatch(/홍길동|1234-5678/);
+    // 현장 직원·발주처 계정은 접수 링크도, 접수자도 받지 않는다
+    const field = await login(browser, FIELD.email, FIELD.password, { width: 390, height: 844 });
+    const partner = await login(browser, PARTNER.email, PARTNER.password);
+    for (const p of [field, partner]) {
+      const s = await state(p);
+      expect(s.intakes).toEqual([]);
+      expect(JSON.stringify(s)).not.toMatch(/홍길동|1234-5678/);
+      expect(JSON.stringify(s)).not.toContain(token);
+      expect((await cmd(p, "createIntake", { siteId })).status).toBe(403);
+      expect((await cmd(p, "closeIntake", { intakeId: s1.intakes[0].id })).status).toBe(403);
+      expect((await cmd(p, "renewIntakeStatus", { requestId: req.id })).status).toBe(403);
+    }
+
+    // 진행 확인 (로그인 없음): 접수 단계 · 본인이 보낸 사진만 · 이름·연락처 없음
+    await anon.getByTestId("intake-status-open").click();
+    const status = anon.getByTestId("intake-status");
+    await expect(status).toHaveAttribute("data-state", "step-0");
+    await expect(anon.getByTestId("status-no")).toHaveText(no);
+    const sent = anon.getByTestId("status-sent-photos").locator("img");
+    await expect(sent).toHaveCount(1);
+    await expect.poll(() => sent.evaluate((el: HTMLImageElement) => el.naturalWidth)).toBeGreaterThan(0);
+    const api = await anon.request.get(`/api/intake/status/${key}`);
+    expect(api.headers()["cache-control"]).toBe("private, no-store");
+    const view = await api.json();
+    expect(Object.keys(view).sort()).toEqual(["canConfirm", "company", "createdAt", "description", "label", "location", "no", "photos", "siteName", "step", "steps"]);
+    expect(JSON.stringify(view)).not.toMatch(/홍길동|1234-5678/);
+    const sentId = view.photos[0].id;
+    expect((await anon.request.get(`/api/photos/${sentId}`)).status()).toBe(401);
+    expect((await anon.request.get(`/api/intake/status/${key}/photo/${sentId}`)).status()).toBe(200);
+    expect((await anon.request.get(`/api/intake/status/${flip(key)}`)).status()).toBe(404);
+    // 회신 전에는 ‘확인’할 수 없다
+    expect((await anon.request.post(`/api/intake/status/${key}/confirm`, { data: {} })).status()).toBe(409);
+
+    // 본사: 요청함에 접수자 이름·전화 → 작업지시 → 현장 완료(사진) → 보수 사진과 회신
+    await hq.goto("/insights#requests");
+    const item = hq.getByTestId("partner-request").filter({ hasText: "5층 501호 발코니 창" });
+    await expect(item.getByTestId("request-intake-who")).toHaveText("관리사무소 홍길동");
+    await expect(item.getByTestId("request-intake-phone")).toHaveAttribute("href", "tel:01012345678");
+    const fieldId = (await (await field.request.get("/api/auth/me")).json()).me.id;
+    const wo = await cmd(hq, "createWorkOrder", { siteId, title: "하자보수 · 5층 501호 발코니 창", assigneeUserId: fieldId, partnerRequestId: req.id, idempotencyKey: "e2e-intake-wo" });
+    expect(wo.status).toBe(200);
+    const woId = wo.body.result.workOrderId;
+    // 현장 휴대폰: 작업지시와 접수 사진은 보이고, 접수자 이름·연락처는 없다
+    await field.goto("/my-actions");
+    const woCard = field.locator(`[data-wo="${woId}"]`);
+    await expect(woCard.getByTestId("wo-ref-photos").locator("img")).toHaveCount(1);
+    expect(await woCard.innerText()).not.toMatch(/홍길동|1234-5678/);
+    expect(JSON.stringify(await state(field))).not.toMatch(/홍길동|1234-5678/);
+    await anon.getByTestId("status-refresh").click();
+    await expect(status).toHaveAttribute("data-state", "step-1");
+    expect((await cmd(field, "workOrderStep", { workOrderId: woId, action: "complete", note: "창 레일 조정", photoDataUrls: [PNG] })).status).toBe(200);
+    const donePhoto = (await state(hq)).workOrders.find((w: { id: string }) => w.id === woId).donePhotoIds[0];
+    // 회신에 붙이기 전에는 보수 사진을 받을 수 없다
+    expect((await anon.request.get(`/api/intake/status/${key}/photo/${donePhoto}`)).status()).toBe(404);
+    expect((await cmd(hq, "updatePartnerRequest", { requestId: req.id, patch: { status: "answered", reply: "창 레일을 조정했습니다. 여닫이 확인했습니다.", sharePhotoIds: [donePhoto] } })).status).toBe(200);
+    expect((await anon.request.get(`/api/intake/status/${key}/photo/${donePhoto}`)).status()).toBe(200);
+
+    // 접수자: 회신·보수 사진 → ‘보수 확인했습니다’ (한 번만)
+    await anon.getByTestId("status-refresh").click();
+    await expect(anon.getByTestId("status-reply")).toContainText("창 레일을 조정했습니다");
+    await expect(anon.getByTestId("status-repair-photos").locator("img")).toHaveCount(1);
+    await anon.getByTestId("status-note").fill("감사합니다");
+    await anon.getByTestId("status-confirm-btn").click();
+    await expect(anon.getByTestId("status-confirmed")).toBeVisible();
+    await expect(status).toHaveAttribute("data-state", "confirmed");
+    expect((await anon.request.post(`/api/intake/status/${key}/confirm`, { data: {} })).status()).toBe(409);
+    expect(await anon.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+    await hq.goto("/insights#requests");
+    await expect(item.getByTestId("request-confirmed")).toContainText("감사합니다");
+
+    // 본사: 진행 확인 주소 다시 만들기 → 앞의 주소는 404, 새 주소는 열린다
+    const renewed = await cmd(hq, "renewIntakeStatus", { requestId: req.id });
+    expect(renewed.status).toBe(200);
+    expect(renewed.body.result.statusToken).toMatch(/^[A-Za-z0-9_-]{32}$/);
+    expect((await anon.request.get(`/api/intake/status/${key}`)).status()).toBe(404);
+    expect((await anon.request.get(`/api/intake/status/${key}/photo/${sentId}`)).status()).toBe(404);
+    expect((await anon.request.get(`/api/intake/status/${renewed.body.result.statusToken}`)).status()).toBe(200);
+
+    // 닫으면 바로 접수되지 않는다 (화면 안내 · API 410)
+    await hq.goto(`/sites/${siteId}?tab=requests`);
+    hq.once("dialog", (d) => d.accept());
+    await row.getByTestId("intake-close").click();
+    await expect(row).toHaveAttribute("data-state", "closed");
+    const gone = await anon.request.get(`/api/intake/${token}`);
+    expect(gone.status()).toBe(410);
+    expect((await gone.json()).code).toBe("closed");
+    expect((await anon.request.post(`/api/intake/${token}`, { data: { ...base, idempotencyKey: "e2e-intake-closed", consent: true } })).status()).toBe(410);
+    await anon.goto(url);
+    await expect(form).toHaveAttribute("data-state", "closed");
+    for (const c of [anonCtx, partner.context(), field.context(), hq.context()]) await c.close();
+  });
+
   test("비활성화하면 그 사람의 로그인이 즉시 끊긴다", async ({ browser }) => {
     const field = await login(browser, FIELD.email, FIELD.password, { width: 390, height: 844 });
     expect((await field.request.get("/api/state")).status()).toBe(200);
@@ -1038,7 +1218,7 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     expect(Object.keys(await api.json()).sort()).toEqual(["createdAt", "doc", "expiresAt", "hiddenPhotos", "title"]);
     expect(api.headers()["referrer-policy"]).toBe("no-referrer");
     expect(api.headers()["x-robots-tag"]).toContain("noarchive");
-    expect((await anon.request.get(`/api/share/${token.slice(0, 31)}A`)).status()).toBe(404);
+    expect((await anon.request.get(`/api/share/${flip(token)}`)).status()).toBe(404);
 
     // 열어 본 횟수: 본사 화면에 1번 (다시 열어도 30분 안에는 한 번)
     await expect.poll(async () => (await state(hq)).shares[0].views).toBe(1);
