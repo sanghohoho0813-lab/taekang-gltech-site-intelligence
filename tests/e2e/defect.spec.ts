@@ -104,6 +104,8 @@ test("하자보수: 발주처 사진 첨부 → 본사 작업지시 → 현장 �
   // 7) 본사 요청함: 발주처 확인 완료
   await asRole(page, "ceo");
   await page.goto("/insights#requests");
+  // 요청함은 ‘처리할 것’만 먼저 보여 준다 (D-74) — 끝난 요청은 ‘전체’에서
+  await page.getByTestId("inbox-show-all").click();
   await expect(req.getByTestId("request-confirmed")).toBeVisible();
 });
 

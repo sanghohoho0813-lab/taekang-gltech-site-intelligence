@@ -18,12 +18,13 @@ export function SettingsAdmin({ db }: { db: DemoDB }) {
   const [rate, setRate] = useState(wonText(s.laborDayRate));
   const [name, setName] = useState(db.company.name);
   const [phone, setPhone] = useState(s.helpPhone ?? "");
+  const [publicPhone, setPublicPhone] = useState(s.publicPhone ?? "");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const save = async () => {
     setBusy(true);
     try {
-      await run("setCompanySettings", { costApproval: approval, laborDayRate: toWon(rate), companyName: name, helpPhone: phone });
+      await run("setCompanySettings", { costApproval: approval, laborDayRate: toWon(rate), companyName: name, helpPhone: phone, publicPhone });
       setErrors({});
       toast.push({ tone: "ok", title: "운영 설정을 저장했습니다" });
     } catch (e) {
@@ -61,6 +62,9 @@ export function SettingsAdmin({ db }: { db: DemoDB }) {
           </Field>
           <Field label="현장 문의 전화번호" htmlFor="set-phone" error={errors.helpPhone} hint="현장 직원 첫 화면에 ‘본사에 전화하기’ 버튼으로 나옵니다 (비우면 숨김)">
             <input id="set-phone" type="tel" inputMode="tel" className={inputCls} value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="예) 02-1234-5678" data-testid="settings-phone" />
+          </Field>
+          <Field label="하자 접수 화면에 보일 전화번호" htmlFor="set-public-phone" error={errors.publicPhone} hint="계정 없는 분이 쓰는 하자 접수 화면·안내문에 나옵니다 — 밖에 알려도 되는 회사 번호를 넣으세요 (비우면 숨김)">
+            <input id="set-public-phone" type="tel" inputMode="tel" className={inputCls} value={publicPhone} onChange={(e) => setPublicPhone(e.target.value)} placeholder="예) 031-123-4567" data-testid="settings-public-phone" />
           </Field>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2">

@@ -2,7 +2,7 @@
 
 /** 본사 작업지시 카드 (현장 직원) — 확인했어요 → 시작했어요 → 다 했어요(한 일·작업량·사진) */
 import { useState } from "react";
-import { Camera, CircleCheck, Play, ThumbsUp, X } from "lucide-react";
+import { Camera, CircleCheck, Phone, Play, ThumbsUp, X } from "lucide-react";
 import { run } from "@/lib/data/store";
 import type { DemoDB, WorkOrder } from "@/lib/domain/types";
 import { todayIso } from "@/lib/domain/format";
@@ -13,6 +13,7 @@ import { Chip, VoiceHint, easyTextareaCls } from "./ui";
 import { dueText, easyDate } from "./words";
 import { downscalePhoto } from "./photo";
 import { errorMessage } from "@/lib/data/commands";
+import { telHref, workOrderContact } from "@/lib/domain/intake";
 
 export const WO_STATUS: Record<WorkOrder["status"], string> = {
   sent: "새 지시 — 확인해 주세요",
@@ -37,6 +38,9 @@ export function EasyWorkOrderCard({ db, wo }: { db: DemoDB; wo: WorkOrder }) {
   const doneAt = doneIso ? new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul" }).format(new Date(doneIso)) : undefined;
   const refPhotos = (wo.refPhotoIds ?? []).map((id) => db.photos.find((p) => p.id === id)).filter((p): p is NonNullable<typeof p> => !!p);
   const due = wo.dueDate && !["done", "confirmed"].includes(wo.status) ? dueText(wo.dueDate, todayIso()) : null;
+  // 링크·전화로 접수된 하자: 본사가 ‘연락처 보여 주기’를 고른 작업지시만, 본사가 완료를 확인하기 전까지 (방문 약속용 · D-74 점검 10차)
+  // 실제 운영판은 서버가 붙여 보낸 것(contactView)만 쓴다 — 현장 휴대폰에는 접수 내용 자체가 오지 않는다
+  const contact = wo.contactView ?? workOrderContact(db, wo);
   const step = async (action: "receive" | "start") => {
     setBusy(true);
     setErr(null);
@@ -57,10 +61,24 @@ export function EasyWorkOrderCard({ db, wo }: { db: DemoDB; wo: WorkOrder }) {
         <span className={cx("rounded-lg px-2 py-0.5 text-[0.98rem] font-bold", wo.status === "returned" ? "bg-err-bg text-err" : wo.status === "confirmed" || wo.status === "done" ? "bg-ok-bg text-ok" : "bg-surface-3 text-ink-2")}>{WO_STATUS[wo.status]}</span>
       </p>
       <h2 className="mt-2 text-[1.3rem] font-extrabold leading-snug">{wo.title}</h2>
-      {wo.detail && <p className="mt-1.5 text-[1.05rem] leading-relaxed text-ink-2">{wo.detail}</p>}
+      {wo.detail && <p className="mt-1.5 whitespace-pre-wrap text-[1.05rem] leading-relaxed text-ink-2">{wo.detail}</p>}
+      {contact && (
+        <div className="mt-2.5 rounded-2xl bg-surface-2 px-3.5 py-3" data-testid="wo-contact">
+          <p className="text-[0.98rem] font-bold text-ink-2">방문 전에 연락할 분</p>
+          <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-2 text-[1.1rem]">
+            <b className="[overflow-wrap:anywhere]">{contact.who}</b>
+            {contact.phone && (
+              <a href={telHref(contact.phone)} className="press num inline-flex min-h-12 items-center gap-2 rounded-full bg-active-soft px-4 text-[1.15rem] font-extrabold text-theme-ink" data-testid="wo-contact-phone">
+                <Phone size={19} aria-hidden /> {contact.phone}
+              </a>
+            )}
+          </p>
+          <p className="mt-1 text-[0.9rem] text-ink-3">방문 약속에만 써 주세요. 본사가 완료를 확인하면 가려집니다.</p>
+        </div>
+      )}
       {refPhotos.length > 0 && (
         <div className="mt-2.5" data-testid="wo-ref-photos">
-          <p className="text-[0.98rem] font-bold text-ink-2">발주처가 보낸 하자 사진</p>
+          <p className="text-[0.98rem] font-bold text-ink-2">접수된 하자 사진</p>
           <div className="mt-1.5 flex gap-2">
             {refPhotos.map((p, i) => (
               <button key={p.id} type="button" onClick={() => setBigIdx(i)} className="press aspect-square w-[30%] max-w-24 overflow-hidden rounded-xl border border-line" aria-label={`하자 사진 ${i + 1} 크게 보기`}>
@@ -108,7 +126,7 @@ export function EasyWorkOrderCard({ db, wo }: { db: DemoDB; wo: WorkOrder }) {
       </div>
       {finish && <FinishModal wo={wo} onClose={() => setFinish(false)} />}
       {/* 크게 보기: 여러 장이면 ‘이전·다음’ 큰 버튼으로 넘겨 본다 (D-68 점검 반영) */}
-      <Modal open={bigIdx !== null} onClose={() => setBigIdx(null)} title={`발주처가 보낸 하자 사진${refPhotos.length > 1 && bigIdx !== null ? ` ${bigIdx + 1}/${refPhotos.length}` : ""}`} size="lg">
+      <Modal open={bigIdx !== null} onClose={() => setBigIdx(null)} title={`접수된 하자 사진${refPhotos.length > 1 && bigIdx !== null ? ` ${bigIdx + 1}/${refPhotos.length}` : ""}`} size="lg">
         {bigIdx !== null && refPhotos[bigIdx] && (
           <div className="space-y-3" data-testid="wo-ref-viewer">
             {/* eslint-disable-next-line @next/next/no-img-element */}

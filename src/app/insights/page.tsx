@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { ChevronDown, UserPlus, Handshake, BadgeCheck, Send, Eye, Plus, Wrench, CircleCheck } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ChevronDown, UserPlus, Handshake, BadgeCheck, Send, Eye, Plus, Wrench, CircleCheck, PhoneIncoming, Trash2 } from "lucide-react";
 import { useMe, useSignals, userLabel } from "@/lib/data/hooks";
 import { PageBody, PageHeader } from "@/components/shell/AppShell";
 import { Badge, Button, Card, CardHeader, EmptyState, Field, Notice, PageSkeleton, SeverityBadge, cx, inputCls } from "@/components/ui/primitives";
-import { IntakeContact } from "@/components/admin/IntakeLinks";
+import { DiscardIntakeModal, IntakeContact, PhoneDefectModal } from "@/components/admin/IntakeLinks";
+import { intakeVia } from "@/lib/domain/intake";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { AiReadyButton, Freshness, MethodChip, StatCard } from "@/components/domain/Widgets";
@@ -195,23 +196,64 @@ function PartnerInbox({ db }: { db: DemoDB }) {
   const [reply, setReply] = useState<PartnerRequest | null>(null);
   const [toOrder, setToOrder] = useState<PartnerRequest | null>(null);
   const [focus, setFocus] = useState<string | null>(null);
+  const [discard, setDiscard] = useState(false);
+  const [phone, setPhone] = useState(false);
+  // 처리할 것만(오래된 것부터) / 전체(최근 것부터) — 건수가 늘어도 손댈 것이 위에 오게 (D-74 점검 10차)
+  const [show, setShow] = useState<"todo" | "all" | null>(null);
   useEffect(() => setFocus(new URLSearchParams(window.location.search).get("req")), []);
-  const list = db.partnerRequests;
+  const reopened = new Set(db.partnerRequests.map((r) => r.reopenedFrom).filter(Boolean));
+  /** 본사가 지금 손댈 요청: 아직 회신 전 · 현장이 끝냈는데 회신 전 (다시 접수된 앞 건은 뺀다) */
+  const isTodo = (r: PartnerRequest) => !reopened.has(r.id) && (r.status !== "answered" || (r.type === "defect" && partnerRepairView(db, r)?.stage === "checking"));
+  const todo = db.partnerRequests.filter(isTodo).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const focusInTodo = !focus || todo.some((r) => r.id === focus);
+  const mode = show ?? (todo.length > 0 && focusInTodo ? "todo" : "all");
+  // 방금 처리한 요청이 ‘처리할 것’에서 바로 사라지지 않게 — 이 화면에 머무는 동안은 그대로 둔다 (회신 직후 결과를 확인할 수 있게)
+  const kept = useRef(new Set<string>());
+  for (const r of todo) kept.current.add(r.id);
+  const list = mode === "todo" ? db.partnerRequests.filter((r) => kept.current.has(r.id)).sort((a, b) => a.createdAt.localeCompare(b.createdAt)) : db.partnerRequests;
+  const junkable = db.partnerRequests.filter((r) => r.intake && !r.confirmedAt && !r.linkedWorkOrderId && !reopened.has(r.id)).length;
   return (
     <Card id="requests" data-testid="partner-inbox">
       <CardHeader
         title="발주처·협력사 요청함"
-        sub="발주처 포털 → 본사 검토 → 회신 → 포털 상태 갱신"
+        sub="발주처 포털·하자 접수 링크·전화 접수 → 본사 검토 → 회신"
         right={
-          <Link href="/partner">
-            <Button size="sm" variant="ghost" icon={<Eye size={15} />}>
-              포털 보기
+          <span className="flex flex-wrap justify-end gap-1.5">
+            <Button size="sm" variant="ghost" icon={<PhoneIncoming size={15} />} onClick={() => setPhone(true)} data-testid="inbox-phone-register">
+              전화 받은 하자 등록
             </Button>
-          </Link>
+            <Link href="/partner">
+              <Button size="sm" variant="ghost" icon={<Eye size={15} />}>
+                포털 보기
+              </Button>
+            </Link>
+          </span>
         }
       />
+      {db.partnerRequests.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 px-4 pb-3" data-testid="inbox-filter">
+          <div className="inline-flex rounded-full bg-surface-2 p-1" role="group" aria-label="요청 보기">
+            {(
+              [
+                ["todo", `처리할 것 ${todo.length}`],
+                ["all", `전체 ${db.partnerRequests.length}`],
+              ] as const
+            ).map(([k, label]) => (
+              <button key={k} type="button" onClick={() => setShow(k)} aria-pressed={mode === k} className={cx("press min-h-9 rounded-full px-3.5 text-[0.82rem] font-bold", mode === k ? "bg-surface text-ink shadow-card" : "text-ink-2")} data-testid={`inbox-show-${k}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <span className="text-[0.76rem] text-ink-3">{mode === "todo" ? "오래된 것부터" : "최근 것부터"}</span>
+          {junkable > 0 && (
+            <Button size="sm" variant="ghost" icon={<Trash2 size={14} />} className="ml-auto" onClick={() => setDiscard(true)} data-testid="inbox-discard">
+              장난·중복 접수 버리기
+            </Button>
+          )}
+        </div>
+      )}
       {list.length === 0 ? (
-        <EmptyState icon={<Handshake size={26} />} title="요청이 없습니다." />
+        <EmptyState icon={<Handshake size={26} />} title={db.partnerRequests.length ? "지금 처리할 요청이 없습니다." : "요청이 없습니다."} desc={db.partnerRequests.length ? "‘전체’를 누르면 회신한 요청을 볼 수 있습니다." : undefined} />
       ) : (
         <ul className="space-y-2.5 px-4 pb-4">
           {list.map((r) => {
@@ -224,7 +266,7 @@ function PartnerInbox({ db }: { db: DemoDB }) {
                   <Badge tone={r.type === "quote" || r.type === "order" ? "info" : r.type === "defect" ? "warn" : "neutral"}>{PARTNER_TYPE_LABEL[r.type]}</Badge>
                   {/* 줄이 바뀌어도 ‘·’로 시작하지 않게 조각마다 묶는다 (D-69) */}
                   <b className="text-ink-2">{site?.shortName}</b>
-                  <span className="whitespace-nowrap">· {r.intake ? "링크 접수" : userLabel(db, r.partnerUserId)}</span>
+                  <span className="whitespace-nowrap">· {r.intake ? intakeVia(r.intake) : userLabel(db, r.partnerUserId)}</span>
                   <span className="whitespace-nowrap">· {fmtRelative(r.createdAt)}</span>
                 </div>
                 <p className="mt-1 text-[0.9rem] font-bold text-ink">{r.title}</p>
@@ -236,13 +278,18 @@ function PartnerInbox({ db }: { db: DemoDB }) {
                 {r.location && <p className="text-[0.8rem] font-semibold text-ink" data-testid="request-location">위치: {r.location}</p>}
                 {r.reopenedFrom && (
                   <p className="text-[0.78rem] font-semibold text-warn" data-testid="request-reopened">
-                    다시 요청 · 원래 요청: {db.partnerRequests.find((x) => x.id === r.reopenedFrom)?.title ?? "—"}
+                    {r.intake ? `다시 접수 (아직 문제가 있음) · 앞 접수 번호 ${db.partnerRequests.find((x) => x.id === r.reopenedFrom)?.intake?.no ?? "—"}` : `다시 요청 · 원래 요청: ${db.partnerRequests.find((x) => x.id === r.reopenedFrom)?.title ?? "—"}`}
                   </p>
                 )}
                 <p className="text-[0.8rem] text-ink-2">{r.description}</p>
                 {/* 링크로 들어온 접수: 접수자 이름·연락처 (본사만) · 진행 확인 주소 다시 만들기 (D-74) */}
                 <IntakeContact db={db} req={r} />
                 <PhotoStrip db={db} ids={r.photoIds} label={r.intake ? "접수 사진" : "발주처 사진"} testId="request-photos" />
+                {reopened.has(r.id) && (
+                  <p className="mt-1 text-[0.78rem] font-semibold text-ink-3" data-testid="request-superseded">
+                    다시 접수되어 새 접수로 이어서 처리합니다.
+                  </p>
+                )}
                 {wo && (
                   <p className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[0.78rem] text-ink-2" data-testid="request-wo" data-wo-status={wo.status}>
                     <Wrench size={14} aria-hidden /> 보수 작업지시 · {userLabel(db, wo.assigneeUserId)}
@@ -255,11 +302,12 @@ function PartnerInbox({ db }: { db: DemoDB }) {
                 <PhotoStrip db={db} ids={r.replyPhotoIds} label="보낸 보수 사진" testId="request-reply-photos" />
                 {r.confirmedAt && (
                   <p className="mt-1.5 text-[0.78rem] font-semibold text-ok" data-testid="request-confirmed">
-                    <CircleCheck size={14} className="mr-1 inline" aria-hidden />발주처 확인 완료 · {fmtDateTime(r.confirmedAt)}
+                    <CircleCheck size={14} className="mr-1 inline" aria-hidden />
+                    {r.intake ? "접수자" : "발주처"} 확인 완료 · {fmtDateTime(r.confirmedAt)}
                     {r.confirmNote ? ` · ${r.confirmNote}` : ""}
                   </p>
                 )}
-                {r.status !== "answered" && (
+                {r.status !== "answered" && !reopened.has(r.id) && (
                   <div className="mt-2.5 flex flex-wrap gap-2">
                     {r.type === "defect" && !wo && (
                       <Button size="sm" variant="soft" icon={<Wrench size={15} />} onClick={() => setToOrder(r)} data-testid="request-to-order">
@@ -273,7 +321,7 @@ function PartnerInbox({ db }: { db: DemoDB }) {
                         onClick={async () => {
                           try {
                             await run("updatePartnerRequest", { requestId: r.id, patch: { status: "reviewing" } });
-                            toast.push({ tone: "ok", title: "검토를 시작했습니다", desc: "발주처 포털에 ‘검토 중’으로 표시됩니다." });
+                            toast.push({ tone: "ok", title: "검토를 시작했습니다", desc: r.intake ? "접수자의 진행 확인 화면에 ‘검토 중’으로 표시됩니다." : "발주처 포털에 ‘검토 중’으로 표시됩니다." });
                           } catch (e) {
                             toast.push({ tone: "err", title: e instanceof Error ? e.message : "실패" });
                           }
@@ -298,7 +346,7 @@ function PartnerInbox({ db }: { db: DemoDB }) {
                 )}
                 {/* 작업지시는 확인했지만 발주처에 아직 회신하지 않은 하자 (D-69 점검 반영) */}
                 {r.status !== "answered" && r.type === "defect" && partnerRepairView(db, r)?.stage === "done" && (
-                  <p className="mt-2 text-[0.78rem] font-semibold text-warn" data-testid="request-reply-needed">보수는 끝났는데 발주처에 아직 회신하지 않았습니다 — ‘회신하기’로 알려 주세요.</p>
+                  <p className="mt-2 text-[0.78rem] font-semibold text-warn" data-testid="request-reply-needed">보수는 끝났는데 {r.intake ? "접수자" : "발주처"}에게 아직 회신하지 않았습니다 — ‘회신하기’로 알려 주세요.</p>
                 )}
                 {/* 일정 안내로 먼저 회신한 하자보수 — 보수가 끝나면 보수 사진을 한 번 더 보낸다 (D-68 점검 반영) */}
                 {r.status === "answered" && r.type === "defect" && partnerRepairView(db, r)?.stage === "checking" && (
@@ -315,6 +363,8 @@ function PartnerInbox({ db }: { db: DemoDB }) {
       )}
       {reply && <ReplyModal db={db} req={reply} onClose={() => setReply(null)} />}
       {toOrder && <DefectOrderModal db={db} req={toOrder} onClose={() => setToOrder(null)} />}
+      {discard && <DiscardIntakeModal db={db} onClose={() => setDiscard(false)} />}
+      {phone && <PhoneDefectModal db={db} onClose={() => setPhone(false)} />}
     </Card>
   );
 }
@@ -328,11 +378,18 @@ function DefectOrderModal({ db, req, onClose }: { db: DemoDB; req: PartnerReques
   const [due, setDue] = useState(req.desiredDate && req.desiredDate >= todayIso() ? req.desiredDate : "");
   const [urgent, setUrgent] = useState(false);
   // 현장 카드에 ‘하자보수’ 표시가 따로 붙으므로 제목에는 붙이지 않는다 (D-68 점검 반영)
-  const [title, setTitle] = useState(req.title.slice(0, 80));
+  // 링크·전화 접수: ‘위치 — 문제’ (제목만 보고 어디의 무엇인지 알게 · D-74 점검 10차)
+  const [title, setTitle] = useState((req.intake && req.location ? `${req.location} — ${req.title}` : req.title).slice(0, 80));
+  const who = req.intake ? "접수자" : "발주처";
+  const hasContact = !!req.intake && !!(req.intake.name || req.intake.phone);
+  // 방문 약속을 잡으려면 보수 담당자가 접수자에게 전화해야 한다 — 기본으로 보여 준다 (접수 화면의 개인정보 안내에 ‘배정된 보수 담당자’가 적혀 있다)
+  const [showContact, setShowContact] = useState(hasContact);
+  const [memo, setMemo] = useState("");
   const [key] = useState(() => uid("idem"));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
-  const detail = [req.location ? `위치: ${req.location}` : "", req.description].filter(Boolean).join(" — ").slice(0, 500);
+  const base = [req.location ? `위치: ${req.location}` : "", req.description].filter(Boolean).join(" — ");
+  const detail = [base.slice(0, memo.trim() ? 380 : 500), memo.trim() ? `본사 메모: ${memo.trim()}` : ""].filter(Boolean).join("\n").slice(0, 500);
   return (
     <Modal
       open
@@ -352,8 +409,8 @@ function DefectOrderModal({ db, req, onClose }: { db: DemoDB; req: PartnerReques
             onClick={async () => {
               setBusy(true);
               try {
-                await run("createWorkOrder", { siteId: req.siteId, title, detail, assigneeUserId: assignee, dueDate: due || undefined, urgent, idempotencyKey: key, partnerRequestId: req.id });
-                toast.push({ tone: "ok", title: "작업지시를 보냈습니다", desc: "발주처 포털에 ‘보수 작업 배정’으로 표시됩니다." });
+                await run("createWorkOrder", { siteId: req.siteId, title, detail, assigneeUserId: assignee, dueDate: due || undefined, urgent, idempotencyKey: key, partnerRequestId: req.id, ...(hasContact && showContact ? { showContact: true } : {}) });
+                toast.push({ tone: "ok", title: "작업지시를 보냈습니다", desc: req.intake ? "접수자의 진행 확인 화면에 ‘보수 배정’으로 표시됩니다 (알림은 가지 않습니다)." : "발주처 포털에 ‘보수 작업 배정’으로 표시됩니다." });
                 onClose();
               } catch (e) {
                 const fe = (e as { fieldErrors?: Record<string, string> }).fieldErrors;
@@ -370,14 +427,14 @@ function DefectOrderModal({ db, req, onClose }: { db: DemoDB; req: PartnerReques
       }
     >
       <div className="space-y-3">
-        <p className="rounded-lg bg-surface-2 px-3 py-2 text-[0.82rem] text-ink-2">{detail}</p>
+        <p className="whitespace-pre-wrap rounded-lg bg-surface-2 px-3 py-2 text-[0.82rem] text-ink-2" data-testid="defect-order-detail">{detail}</p>
         {req.desiredDate && (
           <p className="text-[0.8rem] font-semibold text-ink-2" data-testid="defect-order-desired">
             발주처 보수 희망일: {fmtDate(req.desiredDate)}
             {req.desiredDate < todayIso() ? " (지남)" : ""}
           </p>
         )}
-        <PhotoStrip db={db} ids={req.photoIds} label="함께 가는 발주처 사진" testId="defect-order-photos" />
+        <PhotoStrip db={db} ids={req.photoIds} label={`함께 가는 ${req.intake ? "접수" : "발주처"} 사진`} testId="defect-order-photos" />
         <Field label="지시 제목" htmlFor="do-title" required error={errors.title}>
           <input id="do-title" className={inputCls} value={title} onChange={(e) => setTitle(e.target.value)} maxLength={80} />
         </Field>
@@ -391,14 +448,26 @@ function DefectOrderModal({ db, req, onClose }: { db: DemoDB; req: PartnerReques
           </select>
         </Field>
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="기한 (선택)" htmlFor="do-due" error={errors.dueDate}>
+          <Field label="기한 (선택)" htmlFor="do-due" error={errors.dueDate} hint={req.intake ? "접수자 화면에 ‘보수 목표일’로 보입니다" : undefined}>
             <input id="do-due" type="date" min={todayIso()} className={inputCls} value={due} onChange={(e) => setDue(e.target.value)} />
           </Field>
           <label className="flex items-center gap-2.5 self-end pb-2 text-[0.88rem] font-semibold">
             <input type="checkbox" checked={urgent} onChange={(e) => setUrgent(e.target.checked)} className="size-4 accent-[var(--t-active)]" /> 긴급
           </label>
         </div>
-        <p className="text-[0.74rem] text-ink-3">발주처에는 ‘보수 작업 배정 → 보수 중 → 보수 완료’ 단계와 기한만 보입니다. 담당자 이름·현장 메모는 보이지 않습니다.</p>
+        <Field label="현장 전달 메모 (선택)" htmlFor="do-memo" hint={`보수 담당자만 봅니다 — ${who}에게는 보이지 않습니다`}>
+          <input id="do-memo" className={inputCls} value={memo} onChange={(e) => setMemo(e.target.value)} maxLength={100} placeholder="예: 방문 전 관리사무소에 먼저 들를 것" data-testid="defect-order-memo" />
+        </Field>
+        {hasContact && (
+          <label className="flex items-start gap-2.5 rounded-xl border border-line bg-surface-2 p-3 text-[0.85rem]">
+            <input type="checkbox" checked={showContact} onChange={(e) => setShowContact(e.target.checked)} className="mt-1 size-4 accent-[var(--t-active)]" data-testid="defect-order-contact" />
+            <span>
+              <b>접수자 연락처를 보수 담당자에게 보여 주기</b>
+              <span className="block text-[0.74rem] text-ink-3">방문 약속용입니다. 받을 사람의 작업지시 카드에만 보이고, 본사가 완료를 확인하면 가려집니다. 끄면 본사가 대신 연락해야 합니다.</span>
+            </span>
+          </label>
+        )}
+        <p className="text-[0.74rem] text-ink-3">{who}에게는 ‘보수 배정 → 보수 중 → 보수 완료’ 단계와 기한만 보입니다. 담당자 이름·현장 메모는 보이지 않습니다.</p>
       </div>
     </Modal>
   );
@@ -436,7 +505,7 @@ function ReplyModal({ db, req, onClose }: { db: DemoDB; req: PartnerRequest; onC
     <Modal
       open
       onClose={onClose}
-      title={followUp ? "보수 완료 회신" : "발주처 요청 회신"}
+      title={followUp ? "보수 완료 회신" : req.intake ? "접수자에게 회신" : "발주처 요청 회신"}
       description={req.title}
       size="md"
       testId="reply-modal"
@@ -459,7 +528,11 @@ function ReplyModal({ db, req, onClose }: { db: DemoDB; req: PartnerRequest; onC
               try {
                 await run("updatePartnerRequest", { requestId: req.id, patch: { status: "answered", reply: text, registerChangeOrder: register && amount > 0 ? { title: req.title, amount } : undefined, ...(share.length ? { sharePhotoIds: share } : {}), ...(closeNoRepair ? { closeWithoutRepair: true } : {}) } });
                 if (wo && wo.status === "done" && confirmWo) await run("reviewWorkOrder", { workOrderId: wo.id, decision: "confirm" }).catch(() => {});
-                toast.push({ tone: "ok", title: "회신했습니다", desc: req.type === "defect" && woDone ? "발주처 포털에 ‘보수 완료’와 회신이 표시됩니다." : "발주처 포털에 ‘회신 완료’와 회신 내용이 표시됩니다." });
+                toast.push(
+                  req.intake
+                    ? { tone: "ok", title: "회신했습니다 — 접수자에게 알려 주세요", desc: "알림이 가지 않는 접수입니다. 요청 카드의 ‘접수자에게 알리기’로 문자를 보내 주세요." }
+                    : { tone: "ok", title: "회신했습니다", desc: req.type === "defect" && woDone ? "발주처 포털에 ‘보수 완료’와 회신이 표시됩니다." : "발주처 포털에 ‘회신 완료’와 회신 내용이 표시됩니다." },
+                );
                 onClose();
               } catch (e) {
                 setErr(e instanceof Error ? e.message : "실패");
@@ -493,7 +566,9 @@ function ReplyModal({ db, req, onClose }: { db: DemoDB; req: PartnerRequest; onC
               <input type="checkbox" checked={closeNoRepair} onChange={(e) => setCloseNoRepair(e.target.checked)} className="mt-1 size-4 accent-[var(--t-active)]" data-testid="reply-close-no-repair" />
               <span>
                 <b>작업지시 없이 처리 끝</b>
-                <span className="block text-[0.74rem] text-ink-3">하자가 아니거나 전화로 해결한 경우만. 발주처에 ‘처리 완료 (보수 없음)’로 보이고 확인을 받을 수 있습니다.</span>
+                <span className="block text-[0.74rem] text-ink-3">
+                  {req.intake ? "하자가 아니거나 전화로 해결한 경우만. 접수자 화면에 ‘답변 완료’로 보이고 확인을 받을 수 있습니다. 장난·중복 접수는 회신하지 말고 요청 카드의 ‘버리기’를 쓰세요." : "하자가 아니거나 전화로 해결한 경우만. 발주처에 ‘처리 완료 (보수 없음)’로 보이고 확인을 받을 수 있습니다."}
+                </span>
               </span>
             </label>
           </div>
@@ -501,7 +576,7 @@ function ReplyModal({ db, req, onClose }: { db: DemoDB; req: PartnerRequest; onC
         {(req.type === "quote" || req.type === "order") && (
           <p className="text-[0.76rem] text-ink-3">회신 내용은 발주처에 그대로 보입니다. 금액·내부 원가는 적지 말고, 견적서는 별도로 보내세요.</p>
         )}
-        <Field label="회신 내용 (발주처에 표시)" htmlFor="rp-text" required>
+        <Field label={req.intake ? "회신 내용 (접수자의 진행 확인 화면에 그대로 보입니다)" : "회신 내용 (발주처에 표시)"} htmlFor="rp-text" required>
           <textarea id="rp-text" rows={3} className={inputCls} value={text} onChange={(e) => setText(e.target.value)} maxLength={400} placeholder={PH[req.type] ?? "예) 확인했습니다. 담당자가 곧 연락드리겠습니다."} />
         </Field>
         {!IS_LIVE && (
@@ -538,7 +613,9 @@ function ReplyModal({ db, req, onClose }: { db: DemoDB; req: PartnerRequest; onC
                 </label>
               ))}
             </div>
-            <p className="mt-1.5 text-[0.72rem] text-ink-3">고른 사진은 요청한 발주처에게만 보입니다 (다른 발주처의 ‘공정 사진’에는 나오지 않음).</p>
+            <p className="mt-1.5 text-[0.72rem] text-ink-3">
+              {req.intake ? "고른 사진은 진행 확인 주소를 가진 사람이 볼 수 있습니다. 집 안·사람이 찍힌 사진은 빼 주세요." : "고른 사진은 요청한 발주처에게만 보입니다 (다른 발주처의 ‘공정 사진’에는 나오지 않음)."}
+            </p>
           </fieldset>
         )}
         {wo && wo.status === "done" && (

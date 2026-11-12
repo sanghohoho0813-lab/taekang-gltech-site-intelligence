@@ -6,7 +6,7 @@
  */
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { AlarmClock, CircleCheck, Hourglass, Printer, Wrench } from "lucide-react";
+import { AlarmClock, CircleCheck, Hourglass, PhoneIncoming, Printer, QrCode, Wrench } from "lucide-react";
 import { useMe } from "@/lib/data/hooks";
 import { DEFECT_NEXT_LABEL, defectLedger, defectRows, defectStats, repairingLabel, type DefectRow } from "@/lib/domain/defects";
 import { fmtDate, todayIso } from "@/lib/domain/format";
@@ -18,11 +18,14 @@ import { PageBody, PageHeader } from "@/components/shell/AppShell";
 import { StatCard } from "@/components/domain/Widgets";
 import { Badge, Button, Card, CardHeader, EmptyState, PageSkeleton, Segmented, cx, inputCls } from "@/components/ui/primitives";
 import { Modal } from "@/components/ui/Modal";
+import { PhoneDefectModal } from "@/components/admin/IntakeLinks";
+import { intakeState, intakeVia } from "@/lib/domain/intake";
 
 type View = "open" | "all" | "ledger";
 // 본사가 손댈 것만 진한 색 — ‘현장 보수 중’은 기다리는 상태라 중립 (D-69 점검 반영)
 const NEXT_TONE = { assign: "err", reply: "warn", repairing: "neutral", client: "info", closed: "ok", reopened: "neutral" } as const;
-const nextLabel = (r: DefectRow) => (r.next === "repairing" ? repairingLabel(r.wo) : DEFECT_NEXT_LABEL[r.next]);
+// 링크·전화 접수는 ‘발주처’가 아니라 ‘접수자’ (D-74 점검 10차)
+const nextLabel = (r: DefectRow) => (r.next === "repairing" ? repairingLabel(r.wo) : r.req.intake ? DEFECT_NEXT_LABEL[r.next].replace("발주처", "접수자").replace("다시 요청됨", "다시 접수됨") : DEFECT_NEXT_LABEL[r.next]);
 const daysText = (r: DefectRow) => (r.repairedDate ? (r.days === 0 ? "접수 당일 보수" : `보수까지 ${r.days}일`) : r.days === 0 ? "오늘 접수" : `${r.days}일째`);
 const reqHref = (r: DefectRow) => (r.next === "repairing" && r.wo ? `/orders?wo=${r.wo.id}` : `/insights?req=${r.req.id}#requests`);
 
@@ -31,6 +34,7 @@ export function DefectBoard() {
   const today = todayIso();
   const [view, setView] = useState<View>("open");
   const [siteId, setSiteId] = useState("all");
+  const [phone, setPhone] = useState(false);
   const rows = useMemo(() => (db ? defectRows(db, today) : []), [db, today]);
   if (!db) return <PageSkeleton />;
   const scoped = siteId === "all" ? rows : rows.filter((r) => r.req.siteId === siteId);
@@ -41,17 +45,23 @@ export function DefectBoard() {
       <PageHeader
         className="no-print"
         title="하자보수"
-        desc="발주처가 포털로 보낸 하자보수 요청의 진행·기한·처리 기간입니다. 작업지시 보내기와 회신은 ‘요청함’에서 합니다. 금액은 들어가지 않습니다."
+        desc="발주처 포털, 하자 접수 링크(QR), 전화로 들어온 하자의 진행·기한·처리 기간입니다. 계정이 없는 관리사무소에는 아래 ‘하자 접수 QR’을 만들어 주세요. 작업지시 보내기와 회신은 ‘요청함’에서 합니다. 금액은 들어가지 않습니다."
         right={
-          <Link href="/insights#requests">
-            <Button variant="soft" icon={<Wrench size={16} />} data-testid="defects-to-inbox">
-              요청함에서 처리
+          <span className="flex flex-wrap justify-end gap-2">
+            <Button icon={<PhoneIncoming size={16} />} onClick={() => setPhone(true)} data-testid="defects-phone-register">
+              전화 받은 하자 등록
             </Button>
-          </Link>
+            <Link href="/insights#requests">
+              <Button variant="soft" icon={<Wrench size={16} />} data-testid="defects-to-inbox">
+                요청함에서 처리
+              </Button>
+            </Link>
+          </span>
         }
       />
+      {phone && <PhoneDefectModal db={db} onClose={() => setPhone(false)} />}
       <div className="no-print grid grid-cols-2 gap-3 @min-[900px]:grid-cols-4" data-testid="defect-kpis">
-        <StatCard testId="defect-kpi-open" label="진행 중" value={`${st.open}건`} sub={`발주처 확인 대기 ${st.waiting} · 끝남 ${st.confirmed}`} icon={<Hourglass size={20} />} group="growth" />
+        <StatCard testId="defect-kpi-open" label="진행 중" value={`${st.open}건`} sub={`확인 대기 ${st.waiting} · 끝남 ${st.confirmed}`} icon={<Hourglass size={20} />} group="growth" />
         <StatCard testId="defect-kpi-todo" label="본사 할 일" value={`${st.hqTodo}건`} sub={`작업지시 보낼 것 ${st.assign} · 회신할 것 ${st.reply}`} icon={<Wrench size={20} />} group="ops" />
         <StatCard testId="defect-kpi-overdue" label="기한 지남" value={`${st.overdue}건`} sub="발주처 희망일·작업지시 기한 기준" icon={<AlarmClock size={20} />} group="ops" />
         <StatCard testId="defect-kpi-days" label="보수 완료까지" value={st.avgDays === null ? "—" : `평균 ${st.avgDays}일`} sub={st.repaired ? `보수한 ${st.repaired}건 기준 (접수 → 본사 확인)` : "아직 보수한 건 없음"} icon={<CircleCheck size={20} />} group="ax" />
@@ -103,7 +113,7 @@ function DefectList({ rows, today, empty, emptyHint }: { rows: DefectRow[]; toda
   return (
     <Card data-testid="defect-list">
       {rows.length === 0 ? (
-        <EmptyState icon={<Wrench size={26} />} title={empty} desc={emptyHint ?? "발주처가 포털 ‘요청하기’에서 하자보수 요청을 보내면 여기에 모입니다."} />
+        <EmptyState icon={<Wrench size={26} />} title={empty} desc={emptyHint ?? "발주처 포털 ‘요청하기’, 하자 접수 QR, 전화 접수로 들어온 하자가 여기에 모입니다."} />
       ) : (
         <ul className="divide-y divide-line">
           {rows.map((r) => {
@@ -117,7 +127,7 @@ function DefectList({ rows, today, empty, emptyHint }: { rows: DefectRow[]; toda
                     <b className="text-ink-2">{r.site?.shortName}</b>
                     <span>{r.partnerName}</span>
                     <span className="num">접수 {fmtDate(r.req.createdAt)}</span>
-                    {r.req.reopenedFrom && <Badge tone="warn">다시 요청</Badge>}
+                    {r.req.reopenedFrom && <Badge tone="warn">{r.req.intake ? "다시 접수" : "다시 요청"}</Badge>}
                     {r.warranty && (
                       <Badge tone={r.warranty === "after" ? "warn" : r.warranty === "in" ? "ok" : "neutral"} data-testid="defect-warranty">
                         {DEFECT_WARRANTY_LABEL[r.warranty]}
@@ -128,7 +138,7 @@ function DefectList({ rows, today, empty, emptyHint }: { rows: DefectRow[]; toda
                   {r.req.location && <p className="text-[0.84rem] font-semibold text-ink-2">위치: {r.req.location}</p>}
                   <p className="mt-1 flex flex-wrap items-center gap-1.5 text-[0.8rem]">
                     <Badge tone={NEXT_TONE[r.next]} data-testid="defect-next">{nextLabel(r)}</Badge>
-                    <span className="text-ink-3">발주처 화면: {r.stage.label}</span>
+                    <span className="text-ink-3">{r.req.intake ? "접수자" : "발주처"} 화면: {r.stage.label}</span>
                     <span className={cx("num font-semibold", r.repairedDate || r.next === "reopened" ? "text-ink-2" : r.days >= 7 ? "text-err" : "text-ink-2")} data-testid="defect-days">
                       {daysText(r)}
                     </span>
@@ -228,7 +238,7 @@ function Ledger({ rows, siteId, today }: { rows: DefectRow[]; siteId: string; to
                   <th className="px-1.5 py-1.5 font-semibold">위치 · 하자 내용</th>
                   <th className="px-1.5 py-1.5 font-semibold">조치 내용</th>
                   <th className="w-[6.4rem] px-1.5 py-1.5 font-semibold">보수 완료</th>
-                  <th className="w-[5.2rem] px-1.5 py-1.5 font-semibold">발주처 확인</th>
+                  <th className="w-[5.2rem] px-1.5 py-1.5 font-semibold">요청자 확인</th>
                   <th className="w-[8rem] px-1.5 py-1.5 font-semibold">사진 (전·후)</th>
                 </tr>
               </thead>
@@ -241,7 +251,8 @@ function Ledger({ rows, siteId, today }: { rows: DefectRow[]; siteId: string; to
                       <td className="num px-1.5 py-1.5 font-bold" data-label="번호">{r.no}</td>
                       <td className="num px-1.5 py-1.5" data-label="접수">
                         {fmtDate(r.req.createdAt)}
-                        <span className="block text-[0.72rem] text-ink-3">{r.partnerName}</span>
+                        {/* 링크·전화 접수는 접수 번호만 — 소속 칸은 접수자가 자유롭게 적은 글이라 인쇄물에 넣지 않는다 (D-74 점검 10차) */}
+                        <span className="block text-[0.72rem] text-ink-3">{r.req.intake ? `${intakeVia(r.req.intake)} ${r.req.intake.no}` : r.partnerName}</span>
                         {r.warranty && <span className="block text-[0.72rem] font-semibold text-ink-2">{DEFECT_WARRANTY_LABEL[r.warranty]}</span>}
                       </td>
                       <td className="px-1.5 py-1.5 [overflow-wrap:anywhere]" data-label="위치 · 하자 내용">
@@ -261,7 +272,7 @@ function Ledger({ rows, siteId, today }: { rows: DefectRow[]; siteId: string; to
                           <span className="text-ink-2">진행 중 · {r.days === 0 ? "오늘 접수" : `${r.days}일째`}</span>
                         )}
                       </td>
-                      <td className="num px-1.5 py-1.5" data-label="발주처 확인">{r.confirmedDate ? fmtDate(r.confirmedDate) : r.next === "reopened" ? "다시 요청됨" : "—"}</td>
+                      <td className="num px-1.5 py-1.5" data-label="요청자 확인">{r.confirmedDate ? fmtDate(r.confirmedDate) : r.next === "reopened" ? "다시 요청됨" : "—"}</td>
                       <td className="px-1.5 py-1.5" data-label="사진 (전·후)">
                         <span className="flex gap-1">
                           {[["전", before], ["후", after]].map(([k, src]) =>
@@ -284,7 +295,7 @@ function Ledger({ rows, siteId, today }: { rows: DefectRow[]; siteId: string; to
           </div>
         )}
         <footer className="mt-4 border-t border-line pt-2 text-[0.72rem] text-ink-3 [break-inside:avoid]">
-          발주처 포털 하자보수 요청·본사 작업지시·회신 기록으로 자동 작성했습니다. 금액은 들어가지 않습니다. 보수 완료일은 태강지엘텍이 완료를 확인(작업지시 확인 또는 회신)한 날입니다.
+          발주처 포털·하자 접수 링크·전화로 들어온 하자보수 요청과 본사 작업지시·회신 기록으로 자동 작성했습니다. 금액은 들어가지 않습니다. 보수 완료일은 태강지엘텍이 완료를 확인(작업지시 확인 또는 회신)한 날입니다.
         </footer>
       </article>
     </>
@@ -301,7 +312,7 @@ function WarrantyOverview() {
     .sort((a, b) => ({ soon: 0, active: 1, pending: 2, expired: 3, none: 4 })[a.w.state] - ({ soon: 0, active: 1, pending: 2, expired: 3, none: 4 })[b.w.state] || (a.w.daysLeft ?? 9e9) - (b.w.daysLeft ?? 9e9));
   return (
     <Card id="warranty" className="no-print scroll-mt-24" data-testid="warranty-overview">
-      <CardHeader title="현장별 하자보증" sub="계약서 기준 보증 기간 · 현장 상세 ‘발주처·하자보증’ 탭에서 넣고 고칩니다" />
+      <CardHeader title="현장별 하자보증 · 하자 접수 QR" sub="계약서 기준 보증 기간 · 계정이 없는 관리사무소·발주처 담당은 ‘하자 접수 QR’로 접수합니다 · 현장 상세 ‘발주처·하자보증’ 탭에서 넣고 고칩니다" />
       <ul className="divide-y divide-line border-t border-line">
         {rows.map(({ s, w }) => (
           <li key={s.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-2.5 text-[0.86rem]" data-testid="warranty-row" data-state={w.state}>
@@ -312,6 +323,15 @@ function WarrantyOverview() {
             <Link href={`/sites/${s.id}?tab=requests`} className="press inline-flex min-h-11 items-center rounded-xl px-2 text-[0.82rem] font-bold text-theme-ink underline" data-testid="warranty-row-edit">
               {s.warranty ? "보기·고치기" : "보증 기간 넣기"}
             </Link>
+            {(() => {
+              const links = (db.intakes ?? []).filter((i) => i.siteId === s.id && intakeState(i) === "open");
+              const got = links.reduce((a, i) => a + i.count, 0);
+              return (
+                <Link href={`/sites/${s.id}?tab=requests#intake`} className={cx("press inline-flex min-h-11 items-center gap-1.5 rounded-xl px-2.5 text-[0.82rem] font-bold", links.length ? "text-ink-2 underline" : "bg-active-soft text-theme-ink")} data-testid="warranty-row-intake">
+                  <QrCode size={15} aria-hidden /> {links.length ? `접수 QR ${links.length}개 · 접수 ${got}건` : "하자 접수 QR 만들기"}
+                </Link>
+              );
+            })()}
           </li>
         ))}
       </ul>

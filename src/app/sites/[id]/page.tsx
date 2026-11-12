@@ -22,6 +22,7 @@ import { MaterialTab } from "@/components/admin/MaterialTab";
 import { WarrantyCard } from "@/components/admin/WarrantyCard";
 import { SharesCard } from "@/components/admin/ShareLinks";
 import { IntakeCard } from "@/components/admin/IntakeLinks";
+import { intakeVia } from "@/lib/domain/intake";
 import { ProgressHistory } from "@/components/admin/ProgressHistory";
 import { simulateApprovedClaims, type SiteFinancials } from "@/lib/domain/calc";
 import { receivableAging } from "@/lib/domain/risk";
@@ -660,16 +661,10 @@ function RequestsTab({ db, site }: { db: DemoDB; site: Site }) {
   const reqs = db.partnerRequests.filter((r) => r.siteId === site.id);
   return (
     <div className="space-y-5">
-    {/* 하자보증 (D-70) — 발주처 요청과 같은 탭에서 */}
-    <WarrantyCard site={site} />
-    {/* 준공 보고서 (D-72) — 발주처 제출용, 본사만 */}
-    <CompletionCard site={site} />
-    {/* 보낸 보고서 링크 (D-73) — 본사만 */}
-    <SharesSection db={db} site={site} />
-    {/* 하자 접수 링크 (D-74) — 본사만 */}
+    {/* 하자 접수 링크 (D-74) — 본사만. 이 탭에서 가장 자주 찾는 것이라 맨 위에 둔다 (점검 10차) */}
     <IntakeSection db={db} site={site} />
     <Card>
-      <CardHeader title="발주처·협력사 요청함" sub="발주처 포털에서 등록된 요청" right={<Link href="/insights#requests"><Button size="sm" icon={<Handshake size={15} />}>요청 처리</Button></Link>} />
+      <CardHeader title="발주처·협력사 요청함" sub="발주처 포털·하자 접수 링크·전화로 들어온 요청" right={<Link href="/insights#requests"><Button size="sm" icon={<Handshake size={15} />}>요청 처리</Button></Link>} />
       {reqs.length === 0 ? (
         <EmptyState title="요청이 없습니다." />
       ) : (
@@ -681,13 +676,19 @@ function RequestsTab({ db, site }: { db: DemoDB; site: Site }) {
                 <b>{r.title}</b>
                 <Badge tone={r.status === "answered" ? "ok" : r.status === "reviewing" ? "theme" : "warn"}>{PARTNER_STATUS_LABEL[r.status]}</Badge>
               </p>
-              <p className="text-[0.78rem] text-ink-3">{fmtDateTime(r.createdAt)} · {r.intake ? `링크 접수 · 접수 번호 ${r.intake.no}` : userLabel(db, r.partnerUserId)}</p>
+              <p className="text-[0.78rem] text-ink-3">{fmtDateTime(r.createdAt)} · {r.intake ? `${intakeVia(r.intake)} · 접수 번호 ${r.intake.no}` : userLabel(db, r.partnerUserId)}</p>
               {r.reply && <p className="mt-1 rounded-lg bg-surface-2 px-2.5 py-1.5 text-[0.8rem]">회신: {r.reply}</p>}
             </li>
           ))}
         </ul>
       )}
     </Card>
+    {/* 하자보증 (D-70) — 발주처 요청과 같은 탭에서 */}
+    <WarrantyCard site={site} />
+    {/* 준공 보고서 (D-72) — 발주처 제출용, 본사만 */}
+    <CompletionCard site={site} />
+    {/* 보낸 보고서 링크 (D-73) — 본사만 */}
+    <SharesSection db={db} site={site} />
     </div>
   );
 }

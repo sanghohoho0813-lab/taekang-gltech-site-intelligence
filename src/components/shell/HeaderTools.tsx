@@ -1,5 +1,6 @@
 "use client";
 
+import { intakeVia } from "@/lib/domain/intake";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -49,8 +50,15 @@ export function GlobalSearch({ className }: { className?: string }) {
     if (role === "ceo" || role === "manager") {
       for (const a of db.actions)
         if (a.title.toLowerCase().includes(k)) out.push({ href: "/insights", label: a.title, sub: db.sites.find((s) => s.id === a.siteId)?.shortName ?? "", kind: "조치" });
-      for (const r of db.partnerRequests)
-        if (r.title.toLowerCase().includes(k)) out.push({ href: "/insights#requests", label: r.title, sub: "발주처 요청", kind: "요청" });
+      // 링크·전화 접수는 접수 번호·위치·접수자 이름·전화번호·소속으로도 찾는다 (전화가 오면 번호만 듣고 찾을 수 있게 · D-74 점검 10차)
+      const digits = k.replace(/[^\d]/g, "");
+      for (const r of db.partnerRequests) {
+        const c = r.intake;
+        const hit =
+          r.title.toLowerCase().includes(k) ||
+          (!!c && ([c.no, r.location ?? "", c.name ?? "", c.org ?? ""].some((x) => x.toLowerCase().includes(k)) || (digits.length >= 4 && (c.phone ?? "").replace(/[^\d]/g, "").includes(digits))));
+        if (hit) out.push({ href: `/insights?req=${r.id}#requests`, label: r.title, sub: c ? `${intakeVia(c)} · 접수 번호 ${c.no} · ${db.sites.find((x) => x.id === r.siteId)?.shortName ?? ""}` : "발주처 요청", kind: "요청" });
+      }
     }
     for (const r of db.reports)
       if (r.status === "submitted" && !r.importBatchId && (r.workDone + r.issues).toLowerCase().includes(k))
@@ -128,7 +136,7 @@ export function NotificationBell() {
       for (const s of computeSignals(db).slice(0, 6))
         out.push({ href: `/sites/${s.siteId}`, title: s.title, sub: s.summary, at: s.detectedAt, icon: <ShieldAlert size={16} />, sev: s.severity });
       for (const r of db.partnerRequests.filter((x) => x.status === "received"))
-        out.push({ href: "/insights#requests", title: `발주처 요청: ${r.title}`, sub: "신규 접수 — 검토 필요", at: r.createdAt, icon: <Handshake size={16} /> });
+        out.push({ href: `/insights?req=${r.id}#requests`, title: r.intake ? `${intakeVia(r.intake)} ${r.intake.no}: ${r.title}` : `발주처 요청: ${r.title}`, sub: "신규 접수 — 검토 필요", at: r.createdAt, icon: <Handshake size={16} /> });
     }
     if (role === "field") {
       for (const a of db.actions.filter((x) => x.assigneeUserId === currentUserId() && ["assigned", "in_progress"].includes(x.status)))

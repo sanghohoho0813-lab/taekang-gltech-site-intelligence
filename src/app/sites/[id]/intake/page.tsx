@@ -13,7 +13,7 @@ import { IS_LIVE } from "@/lib/mode";
 import { intakeState } from "@/lib/domain/intake";
 import { Button, DemoBadge, EmptyState, PageSkeleton } from "@/components/ui/primitives";
 import { LogoMark } from "@/components/shell/Logo";
-import { QrBox, intakeUrl } from "@/components/admin/IntakeLinks";
+import { QrBox, intakePlace, intakeUrl } from "@/components/admin/IntakeLinks";
 
 export default function IntakeNoticePage() {
   return (
@@ -49,6 +49,8 @@ function Inner() {
       />
     );
   const url = intakeUrl(intake.token);
+  const phone = db.settings?.publicPhone;
+  const place = intakePlace(db, intake);
   return (
     <div className="bg-[#F6F5F3] print:bg-white" data-testid="intake-notice">
       <header className="no-print border-b border-line bg-surface/95">
@@ -57,6 +59,11 @@ function Inner() {
             <ArrowLeft size={17} aria-hidden /> {site.shortName}
           </Link>
           <span className="text-[0.8rem] text-ink-3">하자 접수 안내문 · {intake.label}</span>
+          {!phone && (
+            <span className="basis-full rounded-xl bg-warn-bg px-3 py-1.5 text-[0.82rem] font-semibold text-ink sm:basis-auto" data-testid="intake-notice-nophone">
+              회사 전화번호가 없습니다 — 현장 상세 ‘하자 접수 링크’에서 넣으면 안내문에 인쇄됩니다.
+            </span>
+          )}
           <span className="ml-auto flex items-center gap-2">
             <DemoBadge compact />
             <Button icon={<Printer size={17} />} onClick={() => window.print()} data-testid="intake-notice-print">
@@ -67,24 +74,27 @@ function Inner() {
       </header>
       <div className="mx-auto max-w-[820px] px-4 py-6 print:max-w-none print:p-0">
         <article className="rounded-2xl border border-line bg-surface p-8 shadow-card print:rounded-none print:border-0 print:p-0 print:shadow-none sm:p-12" data-testid="intake-notice-body">
-          <header className="flex items-center gap-3 border-b-2 border-ink pb-4">
+          <header className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b-2 border-ink pb-4">
             <LogoMark size={36} />
-            <div>
-              <p className="text-[0.9rem] font-extrabold tracking-[0.04em] text-ink-2">{db.company.name}</p>
-              <h1 className="text-[1.9rem] font-extrabold leading-tight">하자 접수 안내</h1>
-            </div>
+            <p className="text-[1.05rem] font-extrabold tracking-[0.02em] text-ink">{db.company.name}</p>
+            {phone && (
+              <p className="num ml-auto text-[1.05rem] font-extrabold" data-testid="intake-notice-phone">
+                ☎ {phone}
+              </p>
+            )}
           </header>
-          <p className="mt-5 text-[1.15rem] font-bold" data-testid="intake-notice-site">{site.name}</p>
-          <p className="mt-2 text-[1.02rem] leading-relaxed text-ink-2">창호·유리·실링 등에 문제가 있으면 아래 QR로 접수해 주세요. 사진과 함께 보내 주시면 더 빨리 확인합니다.</p>
+          <h1 className="mt-6 text-center text-[3rem] font-extrabold leading-tight tracking-[-0.01em] print:mt-5 print:text-[36pt]">하자 접수 안내</h1>
+          <p className="mt-3 text-center text-[1.3rem] font-bold [overflow-wrap:anywhere] print:mt-2" data-testid="intake-notice-site">{place}</p>
+          <p className="mx-auto mt-3 max-w-[34rem] text-center text-[1.05rem] leading-relaxed text-ink-2">창문·유리·실리콘(코킹) 등에 문제가 있으면 아래 QR로 접수해 주세요. 사진과 함께 보내 주시면 더 빨리 확인합니다.</p>
 
-          <div className="mt-8 flex flex-col items-center gap-3">
-            <QrBox text={url} label="하자 접수 QR" className="size-[15rem] print:size-[72mm]" />
-            <p className="text-[1.05rem] font-extrabold">휴대폰 카메라로 QR을 비춰 주세요</p>
+          <div className="mt-7 flex flex-col items-center gap-3 print:mt-5 print:gap-2">
+            <QrBox text={url} label="하자 접수 QR" className="size-[15rem] print:size-[68mm]" />
+            <p className="text-[1.2rem] font-extrabold">휴대폰 카메라로 QR을 비춰 주세요</p>
             <p className="num max-w-full text-center text-[0.86rem] text-ink-2 [overflow-wrap:anywhere]" data-testid="intake-notice-url">{url}</p>
           </div>
 
-          <ol className="mt-8 space-y-3 text-[1.02rem]">
-            {["QR을 찍으면 접수 화면이 열립니다 (앱 설치·로그인 없음).", "문제가 있는 곳과 내용을 적고, 사진을 넣고, 연락받으실 번호를 적어 보냅니다.", "접수 번호와 ‘진행 확인 주소’를 받습니다. 그 주소에서 보수 진행과 회신을 볼 수 있습니다."].map((t, i) => (
+          <ol className="mx-auto mt-7 max-w-[36rem] space-y-3 text-[1.05rem] print:mt-5 print:space-y-2">
+            {["QR을 찍으면 접수 화면이 열립니다 (앱 설치·로그인 없음).", "문제가 있는 곳과 내용을 적고, 사진을 넣고, 연락받으실 번호를 적어 보냅니다.", "접수 번호와 ‘진행 확인 주소’가 화면에 나옵니다. 주소를 보관해 두면 보수 진행과 답변을 볼 수 있습니다."].map((t, i) => (
               <li key={i} className="flex gap-3">
                 <span className="grid size-8 shrink-0 place-items-center rounded-full bg-ink text-[0.95rem] font-extrabold text-white print:border print:border-ink print:bg-white print:text-ink">{i + 1}</span>
                 <span className="leading-relaxed">{t}</span>
@@ -92,8 +102,14 @@ function Inner() {
             ))}
           </ol>
 
-          <p className="mt-8 border-t border-line pt-3 text-[0.84rem] leading-relaxed text-ink-3">
-            급한 일은 전화로 알려 주세요. 접수하신 이름·연락처는 하자 처리와 연락에만 쓰고, 처리 뒤 일정 기간이 지나면 지웁니다.
+          {phone && (
+            <p className="mt-7 rounded-2xl border-2 border-ink px-5 py-3 text-center text-[1.2rem] font-extrabold [break-inside:avoid] print:mt-5 print:py-2" data-testid="intake-notice-call">
+              전화 접수 <span className="num">☎ {phone}</span>
+            </p>
+          )}
+
+          <p className="mt-7 border-t border-line pt-3 text-[0.84rem] leading-relaxed text-ink-3 [break-inside:avoid] print:mt-4 print:pt-2">
+            급한 일은 전화로 알려 주세요. 접수하신 이름·연락처는 하자 처리와 연락에만 쓰고, 처리가 끝난 뒤 일정 기간이 지나면 지웁니다. <span className="whitespace-nowrap">({intake.label})</span>
             {!IS_LIVE && " DEMO — 가상 시연 데이터이며 이 QR은 시연 브라우저에서만 열립니다."}
           </p>
         </article>
