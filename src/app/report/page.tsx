@@ -84,7 +84,7 @@ export default function ReportPage() {
           <Tile label="예상이익 합계" before={fmtEok(base.profit)} after={fmtEok(total.expectedProfit)} delta={<Delta value={total.expectedProfit - base.profit} format={(v) => fmtMan(v)} />} />
           <Tile label="평균 예상이익률" before={fmtPct(base.margin)} after={fmtPct(total.marginPct)} delta={<span className={cx("font-bold num", total.marginPct < base.margin - 0.05 ? "text-err" : "text-ink-3")}>{Math.abs(total.marginPct - base.margin) < 0.05 ? "변동 없음" : fmtPp(total.marginPct - base.margin)}</span>} />
           <Tile label="위험 신호" after={`${signals.length}건`} delta={<span className="text-ink-3">경고 {signals.filter((s) => s.severity === "high").length} · 주의 {signals.filter((s) => s.severity === "medium").length} · 확인 {signals.filter((s) => s.severity === "low").length}</span>} />
-          <Tile label="조치 · 성과 기록" after={`${doneActions.length}/${doneActions.length + openActions.length} 완료`} delta={<span className="text-ink-3">성과 기록 {db.proofEvents.length}건 (확인 {db.proofEvents.filter((p) => p.status === "confirmed").length})</span>} />
+          <Tile label="조치 · 성과 기록" after={doneActions.length + openActions.length ? `${doneActions.length}/${doneActions.length + openActions.length} 완료` : "아직 조치 없음"} delta={<span className="text-ink-3">성과 기록 {db.proofEvents.length}건 (확인 {db.proofEvents.filter((p) => p.status === "confirmed").length})</span>} />
         </div>
         <ul className="space-y-1.5 px-5 py-4" data-testid="report-bullets">
           {bullets.map((b, i) => (
@@ -357,7 +357,7 @@ export default function ReportPage() {
         <Card className="print-card">
           <CardHeader title="7. 다음 권장 조치 (규칙 기반)" />
           {unhandled.length === 0 ? (
-            <EmptyState title="모든 위험 신호에 조치가 배정되었습니다." />
+            <EmptyState title={signals.length === 0 ? "감지된 위험 신호가 없습니다." : "모든 위험 신호에 조치가 배정되었습니다."} />
           ) : (
             <ul className="space-y-2 px-5 pb-4">
               {unhandled.map((s) => (

@@ -386,6 +386,14 @@ export function EasyAttendance({ db, userId, sites, autoQr }: { db: DemoDB; user
               위치 허용했어요 · 다시 잡기
             </button>
           </>
+        ) : !phase.site.geo ? (
+          // 본사가 현장 위치를 아직 안 넣은 현장 — 다시 잡아도 소용없다 → 기록이 큰 버튼 (D-77 리허설)
+          <>
+            <p className="text-[1.05rem] text-ink-2" data-testid="att-nogeo">본사가 이 현장 위치를 아직 등록하지 않아 현장 안·밖을 알 수 없어요. 그대로 기록하면 됩니다.</p>
+            <button type="button" onClick={() => commit(phase.mode, phase.site, phase.sample, phase.reason, phase.consent)} disabled={busy} className={cx(bigBtn, "bg-cta text-cta-text")} data-testid="att-anyway">
+              {phase.mode === "in" ? "출근" : "퇴근"} 기록
+            </button>
+          </>
         ) : (
           <>
             <p className="text-[1.05rem] text-ink-2">현장에 도착했다면 ‘다시 위치 잡기’를 누르세요. 그대로 기록하면 본사 화면에 표시됩니다.</p>

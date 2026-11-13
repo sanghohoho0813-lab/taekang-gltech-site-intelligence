@@ -3,7 +3,7 @@
  * 흩어져 있던 확인(운영 설정·개인위치정보·현장 위치·담당·공정·첫 로그인·휴대폰 점검·위치 동의·첫 출근)을 규칙으로 판정한다.
  * 법률 검토 여부는 판단하지 않는다(보관 기간을 ‘정했는지’만 본다).
  */
-import type { DemoDB, DemoUser, Site } from "./types";
+import { worksOnSite, type DemoDB, type DemoUser, type Site } from "./types";
 import { deviceVerdict } from "./device";
 import { consentState, locationPolicy, retentionText, viewersText } from "./privacy";
 
@@ -58,6 +58,7 @@ export interface LaunchReport {
 export function launchReport(db: DemoDB, members: MemberInfo[] | null): LaunchReport {
   const active = (u: DemoUser) => !u.inactive;
   const userById = new Map(db.users.map((u) => [u.id, u]));
+  const crewOf = (site: Site) => db.users.filter((u) => u.role === "field" && active(u) && worksOnSite(u, site));
   const memberById = new Map((members ?? []).map((m) => [m.id, m]));
   const policy = locationPolicy(db);
   const hq = db.users.filter((u) => active(u) && (u.role === "ceo" || u.role === "manager")).length;
@@ -84,7 +85,10 @@ export function launchReport(db: DemoDB, members: MemberInfo[] | null): LaunchRe
         : { key: "geo", label: "현장 위치·반경", status: "missing", text: "미등록 — 출근해도 현장 안/밖을 판단할 수 없습니다. 현장에서 ‘지금 내 위치로’ 등록이 가장 정확합니다", fix: "geo" },
       owner && active(owner) && owner.role === "field"
         ? { key: "owner", label: "현장 담당", status: "ok", text: `${owner.name} ${owner.title}` }
-        : { key: "owner", label: "현장 담당", status: "missing", text: "현장 직원이 지정되지 않았습니다 — 보고·작업지시를 받을 사람이 없습니다", fix: "sites" },
+        : crewOf(site).length
+          ? // 사용자 화면에서 이 현장을 배정한 직원은 출근·보고·작업지시는 받는다 — 공정률을 올릴 담당만 없다 (D-77 리허설)
+            { key: "owner", label: "현장 담당", status: "warn", text: `담당 미지정 — ${crewOf(site)[0].name}${crewOf(site).length > 1 ? ` 외 ${crewOf(site).length - 1}명` : ""}이 일하지만 공정률은 현장 담당만 올립니다. 한 명을 담당으로 정하세요`, fix: "sites" }
+          : { key: "owner", label: "현장 담당", status: "missing", text: "현장 직원이 지정되지 않았습니다 — 보고·작업지시를 받을 사람이 없습니다", fix: "sites" },
       site.stages.length
         ? { key: "stages", label: "공정 단계", status: "ok", text: `${site.stages.length}개` }
         : { key: "stages", label: "공정 단계", status: "warn", text: "없음 — 공정 일정·보고의 ‘공정 진척’이 비어 보입니다", fix: "sites" },

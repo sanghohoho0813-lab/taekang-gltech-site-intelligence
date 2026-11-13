@@ -172,6 +172,7 @@ export default function FinancePage() {
       <div className="grid gap-5 @min-[900px]:grid-cols-2">
         <Card>
           <CardHeader title="기성청구 이력 (확정)" />
+          {db.billings.length === 0 && <p className="px-5 pb-4 text-[0.84rem] text-ink-3">아직 확정 기성이 없습니다. 위 ‘기성청구 등록’으로 넣거나, 지난 기록은 ‘자료 이관·점검’에서 엑셀로 가져옵니다.</p>}
           <ul className="divide-y divide-line px-5 pb-3 text-[0.84rem]">
             {[...db.billings].sort((a, b) => b.billedDate.localeCompare(a.billedDate)).map((b) => (
               <li key={b.id} className="flex justify-between py-2">
@@ -185,6 +186,7 @@ export default function FinancePage() {
         </Card>
         <Card>
           <CardHeader title="입금 이력" />
+          {db.payments.length === 0 && <p className="px-5 pb-4 text-[0.84rem] text-ink-3">아직 입금 기록이 없습니다.</p>}
           <ul className="divide-y divide-line px-5 pb-3 text-[0.84rem]">
             {[...db.payments].sort((a, b) => b.receivedDate.localeCompare(a.receivedDate)).map((p) => (
               <li key={p.id} className="flex justify-between py-2">

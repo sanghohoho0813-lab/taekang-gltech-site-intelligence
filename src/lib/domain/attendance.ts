@@ -38,6 +38,8 @@ const att = (db: DemoDB) => db.attendance ?? [];
 export function siteCrew(db: DemoDB, site: Site, date: string): string[] {
   const ids = new Set<string>();
   if (site.fieldUserId && db.users.some((u) => u.id === site.fieldUserId && !u.inactive)) ids.add(site.fieldUserId);
+  // 이 현장 하나만 배정된 현장 직원도 매일 나올 사람으로 본다 — 담당 미지정 현장의 미출근이 안 잡히던 문제 (D-77 리허설). 여러 현장을 도는 사람은 출근한 날만
+  for (const u of db.users) if (u.role === "field" && !u.inactive && (u.siteIds ?? []).length === 1 && u.siteIds![0] === site.id) ids.add(u.id);
   for (const r of att(db)) if (r.siteId === site.id && r.workDate === date) ids.add(r.userId);
   return [...ids];
 }
@@ -142,7 +144,12 @@ export interface MonthRow {
 }
 
 /** 기간 합계 (급여·공수 정산 근거) */
-export function periodSummary(db: DemoDB, from: string, to: string): MonthRow[] {
+/** 오늘 출근하고 아직 일하는 중(퇴근 전) — 퇴근 누락으로 세지 않는다 (D-77 리허설: 오늘 근무가 월 합계·사용 현황·인건비에 ‘퇴근 누락’으로 찍히던 문제) */
+export function isOpenShift(r: Pick<AttendanceRecord, "outAt" | "workDate">, today = todayIso()): boolean {
+  return !r.outAt && r.workDate >= today;
+}
+
+export function periodSummary(db: DemoDB, from: string, to: string, today = todayIso()): MonthRow[] {
   const rows = new Map<string, MonthRow>();
   // 출근일수는 ‘서로 다른 날’ 수 — 하루에 두 현장을 오가도 1일 (급여 근거 · D-66 점검 반영)
   const dates = new Map<string, Set<string>>();
@@ -154,8 +161,9 @@ export function periodSummary(db: DemoDB, from: string, to: string): MonthRow[] 
     dates.set(r.userId, ds);
     row.days = ds.size;
     const m = minutesOf(r);
-    if (m === null) row.noCheckout += 1;
-    else row.minutes += m;
+    if (m === null) {
+      if (!isOpenShift(r, today)) row.noCheckout += 1;
+    } else row.minutes += m;
     if ([r.inGeo, r.outGeo].some((g) => g?.status === "outside")) row.outside += 1;
     if (r.inGeo.status === "none") row.noLocation += 1;
     if (r.corrections?.length) row.corrected += 1;

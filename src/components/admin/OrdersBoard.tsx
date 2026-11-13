@@ -154,13 +154,16 @@ function Orders({ db }: { db: DemoDB }) {
   const site = db.sites.find((s) => s.id === f.siteId);
   // 이 현장을 맡은 현장 직원과 본사 직원만 (D-65 점검 반영)
   const people = db.users.filter((u) => !u.inactive && u.role !== "partner" && u.role !== "ceo" && (!site || worksOnSite(u, site)));
+  // 현장 담당이 없는 현장은 ‘현장 담당’ 칸을 빼고 첫 사람을 고른다 — 보내면 ‘받을 사람을 골라 주세요’로 막히던 문제 (D-77 리허설)
+  const ownerOk = !!site && db.users.some((u) => u.id === site.fieldUserId && !u.inactive);
+  const assignee = f.assignee || (ownerOk ? "" : (people[0]?.id ?? ""));
   const today = todayIso();
   const orders = [...(db.workOrders ?? [])].sort((a, b) => order(a) - order(b) || b.createdAt.localeCompare(a.createdAt));
   // 하자 작업지시의 ‘하자보수에서 …’ 문구는 하자보수 화면의 다음 할 일과 같게 (점검 12차)
   const defectNext = new Map(db.workOrders?.some((w) => w.sourcePartnerRequestId) ? defectRows(db, today).map((r) => [r.req.id, r.next] as const) : []);
   const create = async () => {
     try {
-      await run("createWorkOrder", { siteId: f.siteId, title: f.title, detail: f.detail, assigneeUserId: f.assignee || undefined, dueDate: f.dueDate || undefined, urgent: f.urgent, idempotencyKey: key });
+      await run("createWorkOrder", { siteId: f.siteId, title: f.title, detail: f.detail, assigneeUserId: assignee || undefined, dueDate: f.dueDate || undefined, urgent: f.urgent, idempotencyKey: key });
       setF({ ...f, title: "", detail: "", dueDate: "", urgent: false });
       setErrors({});
       setKey(uid("idem"));
@@ -184,9 +187,9 @@ function Orders({ db }: { db: DemoDB }) {
               ))}
             </select>
           </Field>
-          <Field label="받는 사람" htmlFor="wo-assignee" error={errors.assigneeUserId} hint={site ? `비우면 현장 담당 ${nameOf(db, site.fieldUserId)}` : undefined}>
-            <select id="wo-assignee" className={inputCls} value={f.assignee} onChange={(e) => setF({ ...f, assignee: e.target.value })}>
-              <option value="">현장 담당</option>
+          <Field label="받는 사람" htmlFor="wo-assignee" error={errors.assigneeUserId} hint={site && ownerOk ? `비우면 현장 담당 ${nameOf(db, site.fieldUserId)}` : site && !people.length ? "이 현장을 맡은 직원이 없습니다. 운영 관리에서 먼저 배정하세요." : undefined}>
+            <select id="wo-assignee" className={inputCls} value={assignee} onChange={(e) => setF({ ...f, assignee: e.target.value })}>
+              {ownerOk && <option value="">현장 담당</option>}
               {people.map((u) => (
                 <option key={u.id} value={u.id}>
                   {u.name} · {u.title}

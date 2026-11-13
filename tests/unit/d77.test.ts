@@ -137,3 +137,51 @@ describe("D-77 감액 변경공사", () => {
     expect(siteFinancials(r.db, "site-a").adjustedContract).toBe(before - 2_500_000);
   });
 });
+
+describe("D-77 빈 회사 점검(버그 배시) 반영", () => {
+  it("현장 담당 없이 사용자 화면에서 배정한 직원이 있으면 ‘보고·출근 불가’가 아니라 담당 지정 권고", async () => {
+    const { siteReadiness } = await import("@/lib/domain/readiness");
+    const { launchReport } = await import("@/lib/domain/launch");
+    const db = createSeed(NOW);
+    const site = db.sites[0];
+    const worker = db.users.find((u) => u.id === site.fieldUserId)!;
+    site.fieldUserId = "";
+    worker.siteIds = [site.id];
+    const item = siteReadiness(db, site, "2026-11-13").items.find((i) => i.key === "field-user")!;
+    expect(item.status).toBe("warn");
+    expect(item.text).toContain(worker.name);
+    const owner = launchReport(db, null).sites.find((s) => s.site.id === site.id)!.items.find((i) => i.key === "owner")!;
+    expect(owner.status).toBe("warn");
+    // 아무도 없으면 그대로 ‘없음’
+    worker.siteIds = [];
+    expect(siteReadiness(db, site, "2026-11-13").items.find((i) => i.key === "field-user")!.status).toBe("missing");
+  });
+
+  it("오늘 아직 일하는 중인 출근은 퇴근 누락으로 세지 않는다", async () => {
+    const { periodSummary, isOpenShift } = await import("@/lib/domain/attendance");
+    const db = createSeed(NOW);
+    const base = { siteId: "site-a", userId: "u-x", inGeo: { status: "none" as const } };
+    db.attendance = [
+      { ...base, id: "a1", workDate: "2026-11-12", inAt: "2026-11-12T00:00:00Z" },
+      { ...base, id: "a2", workDate: "2026-11-13", inAt: "2026-11-13T00:00:00Z" },
+    ] as never;
+    const row = periodSummary(db, "2026-11-01", "2026-11-30", "2026-11-13").find((r) => r.userId === "u-x")!;
+    expect(row.noCheckout).toBe(1);
+    expect(isOpenShift({ workDate: "2026-11-13" }, "2026-11-13")).toBe(true);
+    expect(isOpenShift({ workDate: "2026-11-12" }, "2026-11-13")).toBe(false);
+  });
+
+  it("나중에 등록한 현장의 위험 감지 시각은 회사 시작이 아니라 현장 등록 시각", async () => {
+    const { computeSignals } = await import("@/lib/domain/risk");
+    const db = createSeed(NOW);
+    const later = new Date(new Date(db.seededAt).getTime() + 30 * 86_400_000);
+    const r = saveSite(db, { name: "나중 현장", shortName: "나중", workType: "창호", region: "", clientName: "원청", status: "active", startDate: "2026-12-01", endDate: "2027-03-31", contractAmount: 100_000_000, budgets: { material: 60_000_000, labor: 30_000_000, equipment: 5_000_000, subcontract: 5_000_000, overhead: 2_000_000 }, stages: [] } as never, { userId: "u-manager", now: later } as never);
+    const id = (r.result as { siteId: string }).siteId;
+    const sig = computeSignals(r.db, later).find((s) => s.siteId === id)!;
+    expect(sig.rule).toBe("BELOW_TARGET_MARGIN");
+    expect(sig.detectedAt).toBe(later.toISOString());
+    // 처음부터 적자면 높음
+    expect(sig.severity).toBe("high");
+    expect(sig.title).toContain("적자 예상");
+  });
+});

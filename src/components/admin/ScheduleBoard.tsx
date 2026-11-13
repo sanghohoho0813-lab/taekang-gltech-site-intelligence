@@ -120,14 +120,15 @@ function SiteSchedule({ p, canSeeMoney, today }: { p: SitePlan; canSeeMoney: boo
             </span>
             <span className="num">
               준공 예정 {fmtDate(p.plannedEnd)}
-              {p.delayDays > 0 && <b className="text-err"> → 예상 {fmtDate(p.forecastEnd)} (+{p.delayDays}일)</b>}
+              {/* ‘계획대로’ 범위 안의 작은 차이는 빨간 예상일·지연 경비로 보이지 않는다 — 배지와 엇갈리던 문제 (D-77 리허설) */}
+              {p.status === "behind" && p.delayDays > 0 && <b className="text-err"> → 예상 {fmtDate(p.forecastEnd)} (+{p.delayDays}일)</b>}
             </span>
           </span>
         }
       />
       <div className="space-y-3 px-5 pb-5">
         <PlanBar planned={p.plannedPct} actual={p.actualPct} label={`${p.site.shortName} 전체`} />
-        {canSeeMoney && p.delayDays > 0 && p.dailyOverhead > 0 && (
+        {canSeeMoney && p.status === "behind" && p.delayDays > 0 && p.dailyOverhead > 0 && (
           <p className="rounded-xl bg-err-bg px-3 py-2 text-[0.84rem]" data-testid="sched-cost">
             지연 경비 추정 <b className="num">{fmtMan(p.delayCost)}</b> — 현장경비 하루 약 {fmtMan(p.dailyOverhead)} × {p.delayDays}일 (인건비·장비 대기비 제외)
           </p>

@@ -2,7 +2,7 @@
  * 운영 자료 준비 점검 — 현장별로 ‘실제 운영·검수에 필요한 자료’가 들어왔는지 확인 (결정론적 규칙).
  * 계약 3단계 ‘실제 자료 연결’과 2단계 실사용 준비(위치·담당자)를 한 화면에서 확인하기 위한 목록.
  */
-import type { DemoDB, Site } from "./types";
+import { worksOnSite, type DemoDB, type Site } from "./types";
 import { COST_CATEGORIES } from "./labels";
 import { daysBetween } from "./format";
 import { shiftDate } from "./attendance";
@@ -42,7 +42,21 @@ export function siteReadiness(db: DemoDB, site: Site, today: string): SiteReadin
   else if (zeroCats >= 3) add("budgets", "실행예산 항목", "warn", `원가 항목 ${zeroCats}개가 0원 — 항목별 예산 확인`, "site");
 
   const fieldUser = db.users.find((u) => u.id === site.fieldUserId);
-  add("field-user", "현장 담당자", fieldUser && !fieldUser.inactive ? "ok" : "missing", fieldUser ? (fieldUser.inactive ? `${fieldUser.name} — 비활성 계정` : `${fieldUser.name} ${fieldUser.title}`) : "현장 담당자가 지정되지 않았습니다 (현장 보고·출근 불가)", "site");
+  // 사용자 화면에서 이 현장을 배정한 직원도 출근·보고는 한다 — 현장 담당(공정률·발주처에 보이는 진척 책임)만 없을 뿐 (D-77 리허설)
+  const crew = db.users.filter((u) => u.role === "field" && !u.inactive && worksOnSite(u, site));
+  add(
+    "field-user",
+    "현장 담당자",
+    fieldUser && !fieldUser.inactive ? "ok" : crew.length ? "warn" : "missing",
+    fieldUser && !fieldUser.inactive
+      ? `${fieldUser.name} ${fieldUser.title}`
+      : crew.length
+        ? `현장 담당이 정해지지 않았습니다 — ${crew[0].name}${crew.length > 1 ? ` 외 ${crew.length - 1}명` : ""}이 출근·보고는 하지만 공정률은 현장 담당만 올립니다`
+        : fieldUser
+          ? `${fieldUser.name} — 비활성 계정`
+          : "이 현장에서 일하는 현장 직원이 없습니다 (현장 보고·출근 불가)",
+    "site",
+  );
   add("geo", "현장 위치(출근 기준점)", site.geo ? "ok" : "missing", site.geo ? `반경 ${site.geo.radiusM}m` : "위치가 없어 출근·보고 위치를 ‘현장 안/밖’으로 판정할 수 없습니다", "geo");
   add("stages", "공정 단계", site.stages.length ? "ok" : "warn", site.stages.length ? `${site.stages.length}단계` : "공정 단계가 없어 늦은 공정을 단계별로 볼 수 없습니다", "site");
 

@@ -15,7 +15,8 @@ function daysBetween(a: string, b: string) {
 
 export function TodayReports({ db }: { db: DemoDB }) {
   const today = todayIso();
-  const sites = db.sites.filter((s) => s.status === "active");
+  // 아직 착공 전인 현장은 ‘오늘 보고 없음’으로 세지 않는다 (D-77 리허설)
+  const sites = db.sites.filter((s) => s.status === "active" && s.startDate <= today);
   if (sites.length === 0) return null;
   const pending = db.costEntries.filter((e) => e.status === "pending").length;
   const rows = sites.map((s) => {

@@ -105,7 +105,7 @@ export default function SettingsPage() {
 
       {IS_LIVE && (
         <Card>
-          <CardHeader title="계정 · 운영 관리" sub="로그인한 사용자 기준으로 메뉴와 데이터가 정해집니다 (서버 권한 검사)" />
+          <CardHeader title={isManager ? "계정 · 운영 관리" : "내 계정"} sub={isManager ? "로그인한 사용자 기준으로 메뉴와 데이터가 정해집니다 (서버 권한 검사)" : "비밀번호를 바꿀 수 있습니다"} />
           <div className="flex flex-wrap gap-2 px-5 pb-5">
             <Button onClick={() => router.push("/account")}>내 계정 · 비밀번호 변경</Button>
             {isManager && (

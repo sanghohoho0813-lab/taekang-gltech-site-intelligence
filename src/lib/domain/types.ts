@@ -63,6 +63,8 @@ export interface Site {
   progressPct: number; // 물리적 공정률 (%)
   managerUserId: string;
   fieldUserId: string;
+  /** 손익 기준선을 잡은 시각(현장 등록·입력 전 금액 수정) — 위험 감지 시각의 출발점. 없으면 회사 시작 시각 (D-77 리허설) */
+  baselineAt?: string;
   stages: SiteStage[];
   illustration: "logistics" | "office" | "civic";
   /** 출퇴근 확인용 현장 위치 (본사가 등록) */

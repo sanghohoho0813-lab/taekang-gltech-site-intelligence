@@ -4,7 +4,7 @@
  * - 작업일 = 월~토 + 실제로 일한 일요일 (공휴일 미반영), 그 사람의 첫 기록일부터 센다 (늦게 합류한 사람을 불리하게 보지 않음)
  */
 import type { DemoDB, DemoUser } from "./types";
-import { shiftDate } from "./attendance";
+import { isOpenShift, shiftDate } from "./attendance";
 
 export type Adoption = "settled" | "partial" | "none";
 
@@ -115,7 +115,11 @@ export function fieldUsage(db: DemoDB, user: DemoUser, from: string, to: string)
     const idleDays = workdaysBetween(shiftDate(kstDate(lastAt), 1), to);
     if (idleDays >= 3) notes.push(`마지막 기록 후 작업일 ${idleDays}일째 기록 없음`);
   }
-  if (attendDays && outDays / attendDays < 0.7) notes.push(`퇴근을 찍지 않은 날이 많음 (${attendDays - outDays}일)`);
+  // 오늘 아직 일하는 중인 날은 빼고 본다 (D-77 리허설)
+  const openDates = new Set(att.filter((r) => isOpenShift(r)).map((r) => r.workDate));
+  for (const r of att) if (r.outAt) openDates.delete(r.workDate);
+  const closedDays = attendDays - openDates.size;
+  if (closedDays > 0 && outDays / closedDays < 0.7) notes.push(`퇴근을 찍지 않은 날이 많음 (${closedDays - outDays}일)`);
   if (reports.length && reports.filter((r) => r.photoIds.length).length / reports.length < 0.5) notes.push("사진 없는 보고가 절반 이상");
   const unacked = orders.filter((w) => w.status === "sent").length;
   if (unacked) notes.push(`확인 안 한 작업지시 ${unacked}건`);

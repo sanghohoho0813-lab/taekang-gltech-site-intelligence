@@ -7,7 +7,7 @@
  */
 import type { CrewCheck, DemoDB, Site } from "./types";
 import { DEFAULT_SETTINGS } from "./types";
-import { minutesOf } from "./attendance";
+import { isOpenShift, minutesOf } from "./attendance";
 
 export type LaborFlagKind = "no_actual" | "actual_over" | "estimate_over" | "no_crew" | "rate_missing" | "hours_uncertain";
 
@@ -92,7 +92,7 @@ export function laborEstimate(db: DemoDB, site: Site, from: string, to: string):
   const att = (db.attendance ?? []).filter((r) => r.siteId === site.id && r.workDate >= from && r.workDate <= to);
   const staffDays = new Set(att.map((r) => `${r.userId}|${r.workDate}`)).size;
   const staffMinutes = att.reduce((a, r) => a + (minutesOf(r) ?? 0), 0);
-  const noCheckout = att.filter((r) => !r.outAt).length;
+  const noCheckout = att.filter((r) => !r.outAt && !isOpenShift(r)).length;
   const laborBudget = db.budgets.find((b) => b.siteId === site.id && b.category === "labor")?.amount ?? 0;
   const laborToDate = labor.filter((e) => e.status === "active").reduce((a, e) => a + e.amount, 0);
 

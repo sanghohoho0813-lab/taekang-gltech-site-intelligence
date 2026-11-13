@@ -164,7 +164,7 @@ function ProofItem({ p, site, approver, user, canConfirm, onConfirm }: { p: Proo
         </Badge>
         <Badge tone={p.data_source === "LIVE" ? "info" : "demo"}>{p.data_source === "LIVE" ? "실제 기록" : "시연 기록"}</Badge>
         <b className="text-ink-2">{site}</b> · {fmtDateTime(p.created_at)}
-        {typeof p.response_minutes === "number" && <span>· 감지→완료 {p.response_minutes ? `${p.response_minutes}분` : "1분 미만"} (시연 측정값)</span>}
+        {typeof p.response_minutes === "number" && <span>· 감지→완료 {p.response_minutes ? `${p.response_minutes}분` : "1분 미만"}{p.data_source === "LIVE" ? "" : " (시연 측정값)"}</span>}
       </div>
       <div className="mt-2 grid gap-2 @min-[900px]:grid-cols-[1fr_1fr]">
         <dl className="space-y-1.5 text-[0.82rem]">

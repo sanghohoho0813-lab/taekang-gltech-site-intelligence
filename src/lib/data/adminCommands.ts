@@ -186,6 +186,7 @@ export function saveSite(db0: DemoDB, input: SaveSiteInput, ctx: Ctx) {
   if (isNew) {
     for (const c of COST_CATEGORIES) db.forecasts.push({ siteId: id, category: c, remaining: input.budgets[c], basisDate: todayIso(ctx.now), basisAt: at, note: "현장 등록 시 실행예산 기준" });
     db.baseline[id] = snapshotOf(siteFinancials(db, id));
+    site.baselineAt = at;
   }
   // 현장에서 아직 아무것도 입력하지 않았는데 계약금액·실행예산을 고치면 = 등록 때 잘못 친 값을 바로잡는 것 —
   // 손익 기준(‘현장 등록 시점’)과 잔여예상원가를 새 값으로 다시 잡는다. 그대로 두면 대시보드·대표 보고서에 ‘기준 대비 ▲17억’이 영원히 남았다 (D-77 리허설)
@@ -199,6 +200,7 @@ export function saveSite(db0: DemoDB, input: SaveSiteInput, ctx: Ctx) {
         for (const c of COST_CATEGORIES) db.forecasts.push({ siteId: id, category: c, remaining: input.budgets[c], basisDate: todayIso(ctx.now), basisAt: at, note: "실행예산 수정 반영 (현장 입력 전)" });
       }
       db.baseline[id] = snapshotOf(siteFinancials(db, id));
+      site.baselineAt = at;
       rebased = true;
     }
   }

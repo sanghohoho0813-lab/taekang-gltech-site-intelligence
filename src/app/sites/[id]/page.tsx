@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { isFrameContext } from "@/lib/data/store";
+import { currentUserId, isFrameContext } from "@/lib/data/store";
 import { useEffect, useState } from "react";
 import { ClipboardPen, ChevronLeft, MapPin, CalendarDays, Info, Handshake, ShieldAlert, Image as ImageIcon, FileText, QrCode, Wrench } from "lucide-react";
 import { useMe, useSignals, siteHealth, useFinancials, userLabel } from "@/lib/data/hooks";
@@ -350,7 +350,9 @@ function Metric({ label, value, sub, strong, testId }: { label: string; value: R
 }
 
 function FieldSiteSummary({ db, site }: { db: DemoDB; site: Site }) {
-  const mine = db.costEntries.filter((e) => e.siteId === site.id && e.source !== "SEED" && e.status === "active");
+  // 운영판: 본인이 입력한 것만 (현장 전체 합계가 ‘내 입력’처럼 보이던 문제 · D-77 리허설)
+  const me = currentUserId();
+  const mine = db.costEntries.filter((e) => e.siteId === site.id && e.source !== "SEED" && e.status === "active" && (!IS_LIVE || e.createdBy === me));
   const sum = mine.reduce((s, e) => s + e.amount, 0);
   return (
     <Card data-tour="profit-engine" data-testid="field-site-summary">
@@ -358,7 +360,7 @@ function FieldSiteSummary({ db, site }: { db: DemoDB; site: Site }) {
       <div className="space-y-3 px-5 pb-5">
         <div className="grid grid-cols-2 gap-3">
           <div className="rounded-xl border border-line bg-surface-2 p-3">
-            <p className="text-[0.75rem] font-semibold text-ink-3">이번 시연 중 입력한 원가</p>
+            <p className="text-[0.75rem] font-semibold text-ink-3">{IS_LIVE ? "내가 입력한 원가 (이 현장)" : "이번 시연 중 입력한 원가"}</p>
             <p className="text-[1.4rem] font-extrabold num">{fmtMan(sum)}</p>
           </div>
           <div className="rounded-xl border border-line bg-surface-2 p-3">

@@ -44,6 +44,8 @@ export function computeSignals(db: DemoDB, now = new Date()): RiskSignal[] {
 
   for (const site of db.sites) {
     if (site.status !== "active") continue;
+    // 감지 시각의 출발점: 회사 시작이 아니라 이 현장의 기준선 시각 — 나중에 등록한 현장의 대응 시간이 부풀던 문제 (D-77 리허설)
+    const since = site.baselineAt && site.baselineAt > db.seededAt ? site.baselineAt : db.seededAt;
     const f = siteFinancials(db, site.id);
     const entries = db.costEntries.filter((e) => e.siteId === site.id && e.status === "active");
     const additional = entries.filter((e) => e.forecastImpact === "additional");
@@ -77,7 +79,7 @@ export function computeSignals(db: DemoDB, now = new Date()): RiskSignal[] {
           actionTitle: "원가 상승 원인 확인 및 현장 손익 재검토",
           description: "추가원가 발생 원인·잔여 공정 원가를 현장소장과 확인하고 손익 회복 방안을 정리합니다.",
         },
-        detectedAt: latest(additional, db.seededAt),
+        detectedAt: latest(additional, since),
         causeEntryIds: additional.map((e) => e.id),
         amountAtRisk: plannedProfit - f.expectedProfit,
       });
@@ -87,12 +89,13 @@ export function computeSignals(db: DemoDB, now = new Date()): RiskSignal[] {
         key: `BELOW_TARGET_MARGIN:${site.id}`,
         rule: "BELOW_TARGET_MARGIN",
         siteId: site.id,
-        severity: "low",
-        title: `${name} 예상이익률 ${fmtPct(f.marginPct)} — 목표 ${t.targetMarginPct}% 미달`,
+        // 처음부터 적자로 잡힌 현장은 가장 낮은 ‘확인’이 아니라 높음으로 (D-77 리허설)
+        severity: f.marginPct < 0 ? "high" : "low",
+        title: f.marginPct < 0 ? `${name} 적자 예상 — 예상이익률 ${fmtPct(f.marginPct)}` : `${name} 예상이익률 ${fmtPct(f.marginPct)} — 목표 ${t.targetMarginPct}% 미달`,
         summary: `목표 대비 ${fmtPp(f.marginPct - t.targetMarginPct)} 낮습니다.`,
         why: [
           `예상이익 ${fmtEok(f.expectedProfit)} ÷ 변경 반영 계약 ${fmtEok(f.adjustedContract)} = ${fmtPct(f.marginPct)}`,
-          `회사 목표 이익률 기준 ${t.targetMarginPct}% (DEMO 설정값)`,
+          `회사 목표 이익률 기준 ${t.targetMarginPct}% (설정에서 바꿈)`,
           f.pendingChangeAmount > 0 ? `승인 대기 변경공사 ${fmtMan(f.pendingChangeAmount)}는 이익에 미반영` : `승인 대기 변경공사 없음`,
         ],
         dataUsed: ["site_contracts", "cost_entries", "cost_forecasts", "change_orders"],
@@ -102,7 +105,7 @@ export function computeSignals(db: DemoDB, now = new Date()): RiskSignal[] {
           actionTitle: "잔여 공정 원가 절감안 검토",
           description: "잔여 자재 발주 단가·외주 범위를 재검토해 목표 이익률과의 차이를 줄입니다.",
         },
-        detectedAt: db.seededAt,
+        detectedAt: since,
         causeEntryIds: [],
       });
     }
@@ -132,7 +135,7 @@ export function computeSignals(db: DemoDB, now = new Date()): RiskSignal[] {
             actionTitle: `${CATEGORY_LABEL[c.category]} 잔여 발주 단가·물량 재검토`,
             description: "설계변경분은 변경공사 청구로 분리하고, 그 외 초과분은 잔여 발주 단가·물량을 재확인합니다.",
           },
-          detectedAt: latest(causes, db.seededAt),
+          detectedAt: latest(causes, since),
           causeEntryIds: causes.map((e) => e.id),
           amountAtRisk: c.variance,
         });
@@ -158,7 +161,7 @@ export function computeSignals(db: DemoDB, now = new Date()): RiskSignal[] {
         threshold: `원가 진척률 − 공정률 > ${t.costProgressGapPp}%p`,
         metric: { label: "원가·공정 차이", current: fmtPp(gap) },
         recommendation: { actionTitle: "공정률·기성 산정 재확인", description: "공정률 산정과 선투입 자재를 확인합니다." },
-        detectedAt: latest(entries, db.seededAt),
+        detectedAt: latest(entries, since),
         causeEntryIds: [],
       });
     }
@@ -188,7 +191,7 @@ export function computeSignals(db: DemoDB, now = new Date()): RiskSignal[] {
           actionTitle: "추가공사 청구가능성 검토",
           description: "현장: 원청 서면 작업지시서·회의록·사진·추가 물량 정리 → 본사 공무: 내역단가 기준 변경견적 작성. 청구 가능 여부와 금액을 검토합니다.",
         },
-        detectedAt: latest(unbilled, db.seededAt),
+        detectedAt: latest(unbilled, since),
         causeEntryIds: unbilled.map((e) => e.id),
         amountAtRisk: sum,
       });
