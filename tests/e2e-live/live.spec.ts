@@ -985,11 +985,13 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     await expect(anon).toHaveURL(url);
     await expect(anon.getByTestId("public-demo")).toHaveCount(0);
     await expect(anon.getByTestId("intake-site")).not.toBeEmpty();
-    // 접수 주소로는 아무것도 읽지 못한다 — 회사·현장 이름뿐
+    // 접수 주소로는 아무것도 읽지 못한다 — 회사·현장 이름과 공개 대표 번호뿐 (D-77: 첫 설정에서 대표 번호가 필수가 되어 늘 들어 있다)
     const open = await anon.request.get(`/api/intake/${token}`);
     expect(open.headers()["cache-control"]).toBe("private, no-store");
     expect(open.headers()["x-robots-tag"]).toContain("noarchive");
-    expect(Object.keys(await open.json()).sort()).toEqual(["company", "siteName"]);
+    const openBody = await open.json();
+    expect(Object.keys(openBody).sort()).toEqual(["company", "phone", "siteName"]);
+    expect(openBody.phone).toBe("031-123-4567");
     expect((await anon.request.get("/api/state")).status()).toBe(401);
     expect((await anon.request.get(`/api/intake/${flip(token)}`)).status()).toBe(404);
     // 서버가 다시 확인한다: 동의 없이·기계가 채운 칸이 있으면 받지 않는다
@@ -1056,7 +1058,8 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     const api = await anon.request.get(`/api/intake/status/${key}`);
     expect(api.headers()["cache-control"]).toBe("private, no-store");
     const view = await api.json();
-    expect(Object.keys(view).sort()).toEqual(["canConfirm", "canReopen", "company", "createdAt", "description", "hint", "label", "location", "no", "photos", "sentPhotos", "siteName", "step", "steps"]);
+    // 공개 대표 번호는 첫 설정에서 필수 (D-77) — 그 밖의 키는 그대로
+    expect(Object.keys(view).sort()).toEqual(["canConfirm", "canReopen", "company", "createdAt", "description", "hint", "label", "location", "no", "phone", "photos", "sentPhotos", "siteName", "step", "steps"]);
     expect(view).toMatchObject({ sentPhotos: 1, photos: [] });
     expect(JSON.stringify(view)).not.toMatch(/홍길동|1234-5678/);
     expect(JSON.stringify(view)).not.toContain(sentId);
