@@ -67,7 +67,9 @@ export default function CompletionReportPage() {
           {/* 화면 안내 — 인쇄물에는 나오지 않는다 */}
           {!r.completedDate && (
             <p className="no-print mb-3 rounded-xl bg-warn-bg px-3.5 py-2 text-[0.84rem] font-semibold text-ink-2" data-testid="completion-not-done">
-              아직 준공(인도)일이 없습니다 — 작성일 기준 ‘공사 진행 정리’로 나옵니다. 준공하면 현장 상세 ‘발주처·하자보증’에서 준공일을 넣으세요.
+              {site.status === "completed"
+                ? "현장 상태는 ‘준공’인데 준공(인도)일이 비어 있습니다 — 이대로 보내면 ‘준공 전 공사 진행 정리’로 나갑니다. 현장 상세 ‘발주처·하자보증’에서 준공일을 넣으세요."
+                : "아직 준공(인도)일이 없습니다 — 작성일 기준 ‘공사 진행 정리’로 나옵니다. 준공하면 현장 상세 ‘발주처·하자보증’에서 준공일을 넣으세요."}
             </p>
           )}
           {r.completedDate && !r.finished && (
