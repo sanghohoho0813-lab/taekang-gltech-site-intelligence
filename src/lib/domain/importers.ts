@@ -84,11 +84,11 @@ export const IMPORT_SPECS: Record<ImportKind, { title: string; desc: string; col
   },
   change: {
     title: "변경공사",
-    desc: "설계변경·추가공사 이력. ‘승인’만 계약금액에 더해지고, 나머지는 검토·청구 중으로 표시됩니다.",
+    desc: "설계변경·추가공사 이력. ‘승인’만 계약금액에 더해지고(감액은 빠지고), 나머지는 검토·청구 중으로 표시됩니다.",
     columns: [
       SITE_COL,
       { key: "title", label: "제목", aliases: ["제목", "공사명", "내용", "title"], required: true, desc: "80자 이내", example: "3층 유리 사양 변경" },
-      { key: "amount", label: "금액", aliases: ["금액", "청구금액", "요청금액", "amount"], required: true, desc: "청구(요청) 금액, 원 단위", example: "25000000" },
+      { key: "amount", label: "금액", aliases: ["금액", "청구금액", "요청금액", "amount"], required: true, desc: "청구(요청) 금액, 원 단위 · 감액은 앞에 − (예: -6000000)", example: "25000000" },
       { key: "status", label: "상태", aliases: ["상태", "status"], required: true, desc: "검토 · 청구 · 승인 · 반려", example: "승인" },
       { key: "requested", label: "요청일", aliases: ["요청일", "청구일", "날짜", "requested_date", "date"], required: true, desc: "YYYY-MM-DD", example: "2026-07-15" },
       { key: "approved", label: "승인금액", aliases: ["승인금액", "approved_amount"], required: false, desc: "승인일 때만. 비우면 청구 금액과 같게", example: "23000000" },
@@ -323,13 +323,15 @@ export function planImport(db: DemoDB, kind: ImportKind, text: string, today: st
       if (!s) err("현장", ref ? `‘${ref}’ 현장을 찾을 수 없습니다 (현장코드·약칭·현장명)` : "현장을 적어주세요");
       return s;
     };
-    const amountOf = (k: string, label: string, required = true): number | undefined => {
+    const amountOf = (k: string, label: string, required = true, allowMinus = false): number | undefined => {
       const v = get(k);
       if (!v && !required) return undefined;
-      const n = parseWonCell(v);
-      if (!Number.isInteger(n) || n <= 0) err(label, `${label}은 0보다 큰 원 단위 숫자`);
+      // 변경공사 감액: ‘-6,000,000’·‘−6,000,000’·‘감액 6,000,000’ (D-77 리허설: 감액 이력을 넣을 방법이 없던 문제)
+      const minus = allowMinus && /^\s*(?:[-−–]|감액)/.test(v);
+      const n = parseWonCell(minus ? v.replace(/^\s*(?:[-−–]|감액)\s*/, "") : v);
+      if (!Number.isInteger(n) || n <= 0) err(label, allowMinus ? `${label}은 원 단위 숫자 (감액은 앞에 −)` : `${label}은 0보다 큰 원 단위 숫자`);
       else if (n > MAX_AMOUNT) err(label, `${label}이 너무 큽니다 (1건 50억 원 이하)`);
-      return n;
+      return minus ? -n : n;
     };
     const dateOf = (k: string, label: string, required = true): string | undefined => {
       const v = normDate(get(k));
@@ -358,11 +360,14 @@ export function planImport(db: DemoDB, kind: ImportKind, text: string, today: st
       const title = get("title");
       if (!title) err("제목", "제목을 적어주세요");
       else if (title.length > 80) err("제목", "제목은 80자 이내");
-      const amount = amountOf("amount", "금액");
+      const amount = amountOf("amount", "금액", true, true);
       const status = CHANGE_STATUS[norm(get("status"))];
       if (!status) err("상태", "상태는 검토 · 청구 · 승인 · 반려 중 하나");
       const requestedDate = dateOf("requested", "요청일");
-      const approvedAmount = amountOf("approved", "승인금액", false);
+      const approvedRaw = amountOf("approved", "승인금액", false, true);
+      // 감액 건의 승인금액은 부호 없이 적어도 감액으로 본다 (증액 건에 −를 적으면 오류)
+      if (approvedRaw !== undefined && amount !== undefined && amount > 0 && approvedRaw < 0) err("승인금액", "증액 건의 승인금액에는 −를 붙이지 않습니다");
+      const approvedAmount = approvedRaw !== undefined && amount !== undefined && amount < 0 ? -Math.abs(approvedRaw) : approvedRaw;
       if (approvedAmount !== undefined && status && status !== "approved") err("승인금액", "승인금액은 ‘승인’일 때만 적습니다");
       if (requestedDate && validDate(requestedDate) && requestedDate > today) err("요청일", "오늘 이후 날짜는 넣을 수 없습니다");
       const decidedDate = dateOf("decided", "결정일", false);

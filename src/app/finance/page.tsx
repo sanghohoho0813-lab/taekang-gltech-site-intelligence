@@ -141,6 +141,7 @@ export default function FinancePage() {
                     <p className="flex flex-wrap items-center gap-1.5 text-[0.88rem]">
                       <b>{s?.shortName}</b> {c.title}
                       <Badge tone={c.status === "approved" ? "ok" : c.status === "rejected" ? "neutral" : "warn"}>{CO_STATUS_LABEL[c.status]}</Badge>
+                      {c.amount < 0 && <Badge tone="neutral">감액</Badge>}
                     </p>
                     <p className="text-[0.76rem] text-ink-3 num">
                       {fmtMan(c.amount)} · 요청 {fmtDate(c.requestedAt)} {c.decidedAt && `· 결정 ${fmtDate(c.decidedAt)}`} · {c.note}
@@ -205,9 +206,11 @@ export default function FinancePage() {
 
 function ChangeOrderModal({ db, c, to, onClose }: { db: DemoDB; c: ChangeOrder; to: "submitted" | "approved" | "rejected"; onClose: () => void }) {
   const toast = useToast();
-  const [amountText, setAmountText] = useState(c.amount.toLocaleString("ko-KR"));
+  const [amountText, setAmountText] = useState(Math.abs(c.amount).toLocaleString("ko-KR"));
   const [err, setErr] = useState("");
-  const amount = Number(amountText.replace(/[^\d]/g, ""));
+  // 감액 건은 칸에 크기만 적고 계산은 −로 (D-77)
+  const minus = c.amount < 0;
+  const amount = (minus ? -1 : 1) * Number(amountText.replace(/[^\d]/g, ""));
   const f = siteFinancials(db, c.siteId);
   const afterAdj = f.adjustedContract + (to === "approved" ? amount : 0);
   const afterMargin = afterAdj ? ((afterAdj - f.eac) / afterAdj) * 100 : 0;
@@ -243,7 +246,7 @@ function ChangeOrderModal({ db, c, to, onClose }: { db: DemoDB; c: ChangeOrder; 
       <div className="space-y-3 text-[0.88rem]">
         {to === "approved" ? (
           <>
-            <Field label="승인 금액 (원)" htmlFor="co-amt" hint={amount ? `= ${fmtMan(amount)}` : undefined}>
+            <Field label={minus ? "승인 감액 (원)" : "승인 금액 (원)"} htmlFor="co-amt" hint={amount ? `= ${minus ? "감액 " : ""}${fmtMan(Math.abs(amount))}` : undefined}>
               <input id="co-amt" inputMode="numeric" className={cx(inputCls, "num text-right")} value={amountText} onChange={(e) => setAmountText(e.target.value.replace(/[^\d]/g, "") ? Number(e.target.value.replace(/[^\d]/g, "")).toLocaleString("ko-KR") : "")} />
             </Field>
             <Notice tone="info" title="반영 결과 (확정)">

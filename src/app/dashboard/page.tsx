@@ -283,13 +283,25 @@ function CeoDashboard() {
         <Card>
           <CardHeader title="현장별 예상이익률" sub="계획(계약 시 실행예산 기준) vs 현재" />
           <div className="px-5 pb-5">
-            <MarginBars rows={db.sites.map((s) => ({ label: s.shortName, planned: fin[s.id].plannedMarginPct, current: fin[s.id].marginPct }))} target={db.thresholds.targetMarginPct} />
+            {/* 첫날(현장 없음)에는 범례만 남던 빈 그래프 대신 무엇을 하면 채워지는지 (D-77 리허설) */}
+            {db.sites.length === 0 ? (
+              <EmptyState title="아직 등록한 현장이 없습니다" desc="‘운영 관리 → 현장’에서 계약금액·실행예산을 넣으면 현장별 계획·현재 이익률 막대가 생깁니다." />
+            ) : (
+              <MarginBars rows={db.sites.map((s) => ({ label: s.shortName, planned: fin[s.id].plannedMarginPct, current: fin[s.id].marginPct }))} target={db.thresholds.targetMarginPct} />
+            )}
           </div>
         </Card>
         <Card>
           <CardHeader title="기성·수금 현황" sub="확정 기성청구액과 실제 입금액은 다른 개념입니다" />
           <div className="px-5 pb-5">
-            <BillingBars rows={db.sites.map((s) => ({ label: s.shortName, billed: fin[s.id].billed, received: fin[s.id].received, outstanding: fin[s.id].outstanding }))} />
+            {db.sites.every((s) => fin[s.id].billed === 0 && fin[s.id].received === 0) ? (
+              <EmptyState
+                title="아직 확정 기성·입금 기록이 없습니다"
+                desc={db.sites.length === 0 ? "현장을 등록한 뒤 ‘기성·수금’에서 기성청구·입금을 넣으면 현장별 막대가 생깁니다." : "‘기성·수금’에서 기성청구·입금을 넣거나, 지난 기록은 ‘자료 이관·점검’에서 엑셀로 가져오면 막대가 생깁니다."}
+              />
+            ) : (
+              <BillingBars rows={db.sites.map((s) => ({ label: s.shortName, billed: fin[s.id].billed, received: fin[s.id].received, outstanding: fin[s.id].outstanding }))} />
+            )}
           </div>
         </Card>
         <Card className="@min-[760px]:col-span-2 @min-[1080px]:col-span-3">
@@ -301,6 +313,7 @@ function CeoDashboard() {
               </Link>
             }
           />
+          {recentReports.length === 0 && <EmptyState title="아직 들어온 현장 보고가 없습니다" desc="현장 직원이 휴대폰에서 ‘오늘 보고’를 보내면 여기에 최근 보고가 쌓입니다." />}
           <ul className="divide-y divide-line px-2 pb-2">
             {recentReports.map((r) => {
               const site = db.sites.find((s) => s.id === r.siteId)!;

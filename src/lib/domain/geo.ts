@@ -69,3 +69,16 @@ export function geoText(g: GeoStamp | undefined, withDistance = true): string {
 export function mapLink(lat: number, lng: number, label = "위치"): string {
   return `https://map.kakao.com/link/map/${encodeURIComponent(label)},${lat},${lng}`;
 }
+
+/**
+ * 지도 앱에서 복사한 ‘37.2281, 127.3719’ 한 줄 → 위도·경도. 한 칸에 붙여 넣으면 둘로 나눈다 (D-77 리허설).
+ * 한국 좌표 기준으로 순서가 바뀌어 있으면(127…, 37…) 바로잡는다. 숫자 두 개가 아니면 null.
+ */
+export function splitLatLng(text: string): { lat: string; lng: string } | null {
+  const nums = text.trim().match(/-?\d+(?:\.\d+)?/g);
+  if (!nums || nums.length !== 2) return null;
+  if (!/^[\s(]*-?\d+(?:\.\d+)?[\s,/]+-?\d+(?:\.\d+)?[\s)]*$/.test(text)) return null;
+  const [a, b] = nums;
+  if (Math.abs(Number(a)) > 90 && Math.abs(Number(b)) <= 90) return { lat: b, lng: a };
+  return { lat: a, lng: b };
+}

@@ -90,6 +90,10 @@ export function AcceptanceBoard() {
                 {gaps.map((g) => g.title).join(" · ")} — 시범 사용으로 기록이 쌓인 뒤 검수하면 확인이 쉽습니다. 각 항목의 ‘확인 방법’ 순서대로 시연해도 됩니다.
               </p>
             </Notice>
+          ) : !items.some((i) => i.evidence.some((e) => e.counted)) ? (
+            <Notice tone="info" title="이 단계는 문서·화면으로 확인하는 항목입니다">
+              <p className="text-[0.86rem]" data-testid="acc-doc-stage">운영 기록 수로 보는 항목이 없습니다. 각 항목의 ‘확인 방법’대로 문서와 화면을 직접 확인하세요.</p>
+            </Notice>
           ) : (
             <Notice tone="ok" title="모든 항목에 확인할 기록이 있습니다">
               <p className="text-[0.86rem]">기록 수는 확인 거리일 뿐 합격 판단이 아닙니다. 발주자가 화면으로 직접 확인합니다.</p>

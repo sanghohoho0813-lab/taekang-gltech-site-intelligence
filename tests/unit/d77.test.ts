@@ -94,3 +94,46 @@ describe("금액 표기", () => {
     expect(fmtMan(250_000_000)).toBe("2억 5,000만 원");
   });
 });
+
+describe("D-77 지도 앱 좌표 붙여 넣기", () => {
+  it("‘위도, 경도’ 한 줄을 둘로 나눈다", async () => {
+    const { splitLatLng } = await import("@/lib/domain/geo");
+    expect(splitLatLng("37.2281, 127.3719")).toEqual({ lat: "37.2281", lng: "127.3719" });
+    expect(splitLatLng("37.2281 127.3719")).toEqual({ lat: "37.2281", lng: "127.3719" });
+    expect(splitLatLng("(37.2281,127.3719)")).toEqual({ lat: "37.2281", lng: "127.3719" });
+    // 순서가 바뀌어 있으면(경도 먼저) 바로잡는다
+    expect(splitLatLng("127.3719, 37.2281")).toEqual({ lat: "37.2281", lng: "127.3719" });
+  });
+  it("숫자 하나나 글이 섞이면 그대로 둔다", async () => {
+    const { splitLatLng } = await import("@/lib/domain/geo");
+    expect(splitLatLng("37.2281")).toBeNull();
+    expect(splitLatLng("37.")).toBeNull();
+    expect(splitLatLng("경기 용인시 37.2 127.3")).toBeNull();
+    expect(splitLatLng("1, 2, 3")).toBeNull();
+  });
+});
+
+describe("D-77 감액 변경공사", () => {
+  it("가져오기에서 −금액은 감액으로 들어가고, 승인하면 계약금액이 줄어든다", async () => {
+    const { planImport } = await import("@/lib/domain/importers");
+    const { setChangeOrderStatus } = await import("@/lib/data/commands");
+    const db0 = createSeed(new Date("2026-11-13T00:00:00Z"));
+    const text = "현장,제목,금액,상태,요청일,승인금액\nA현장,3층 사양 축소,-6000000,승인,2026-10-10,5000000\nA현장,외부 창 일부 제외,\"감액 2,000,000\",청구,2026-10-12,\nA현장,추가창,−1000000,검토,2026-10-12,";
+    const p = planImport(db0, "change", text, "2026-11-13");
+    expect(p.errors).toEqual([]);
+    const rows = p.rows as { amount: number; approvedAmount?: number }[];
+    expect(rows.map((r) => r.amount)).toEqual([-6_000_000, -2_000_000, -1_000_000]);
+    // 감액 건의 승인금액은 부호 없이 적어도 감액
+    expect(rows[0].approvedAmount).toBe(-5_000_000);
+    // 증액 건에 − 승인금액은 오류
+    const bad = planImport(db0, "change", "현장,제목,금액,상태,요청일,승인금액\nA현장,추가창,6000000,승인,2026-10-10,-5000000", "2026-11-13");
+    expect(bad.errors.length).toBe(1);
+    // 화면에서 승인: 크기만 적어도 감액으로 반영
+    const co = { id: "co-minus", siteId: "site-a", title: "감액", amount: -3_000_000, status: "submitted" as const, requestedAt: "2026-10-10T00:00:00Z", sourceEntryIds: [], note: "" };
+    const db1 = { ...db0, changeOrders: [...db0.changeOrders, co] } as DemoDB;
+    const before = siteFinancials(db1, "site-a").adjustedContract;
+    const r = setChangeOrderStatus(db1, "co-minus", "approved", 2_500_000, { userId: "u-manager", role: "manager", now: new Date("2026-11-13T01:00:00Z") } as never);
+    expect(r.db.changeOrders.find((c) => c.id === "co-minus")!.approvedAmount).toBe(-2_500_000);
+    expect(siteFinancials(r.db, "site-a").adjustedContract).toBe(before - 2_500_000);
+  });
+});

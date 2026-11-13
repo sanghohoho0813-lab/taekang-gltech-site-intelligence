@@ -58,7 +58,7 @@ function Inner() {
           <Link href={`/sites/${site.id}?tab=requests`} className="press inline-flex min-h-11 items-center gap-1.5 rounded-xl px-2.5 text-[0.9rem] font-bold text-ink-2 hover:bg-surface-3">
             <ArrowLeft size={17} aria-hidden /> {site.shortName}
           </Link>
-          <span className="text-[0.8rem] text-ink-3">하자 접수 안내문 · {intake.label}</span>
+          <span className="text-[0.8rem] text-ink-3">하자 접수 안내문 · {intake.label} <span className="text-ink-3">(이 이름은 인쇄되지 않습니다)</span></span>
           {!phone && (
             <span className="basis-full rounded-xl bg-warn-bg px-3 py-1.5 text-[0.82rem] font-semibold text-ink sm:basis-auto" data-testid="intake-notice-nophone">
               회사 전화번호가 없습니다 — 현장 상세 ‘하자 접수 링크’에서 넣으면 안내문에 인쇄됩니다.
@@ -109,7 +109,7 @@ function Inner() {
           )}
 
           <p className="mt-7 border-t border-line pt-3 text-[0.84rem] leading-relaxed text-ink-3 [break-inside:avoid] print:mt-4 print:pt-2">
-            급한 일은 전화로 알려 주세요. 접수하신 이름·연락처는 하자 처리와 연락에만 쓰고, 처리가 끝난 뒤 일정 기간이 지나면 지웁니다. <span className="whitespace-nowrap">({intake.label})</span>
+            급한 일은 전화로 알려 주세요. 접수하신 이름·연락처는 하자 처리와 연락에만 쓰고, 처리가 끝난 뒤 일정 기간이 지나면 지웁니다.
             {!IS_LIVE && " DEMO — 가상 시연 데이터이며 이 QR은 시연 브라우저에서만 열립니다."}
           </p>
         </article>

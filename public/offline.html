@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>인터넷 연결 없음 · TAEKANG 현장</title>
+<style>
+  :root { color-scheme: light dark; --bg:#F6F5F3; --card:#fff; --ink:#1B1F1E; --ink2:#4A524F; --line:#D9DCDA; --pri:#0E7663; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#121615; --card:#1C2220; --ink:#EEF1EF; --ink2:#B5BDB9; --line:#33403B; --pri:#3FB59A; } }
+  * { box-sizing: border-box; }
+  body { margin:0; min-height:100vh; background:var(--bg); color:var(--ink); font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif; display:flex; align-items:center; justify-content:center; padding:24px 16px; }
+  main { width:100%; max-width:420px; background:var(--card); border:1px solid var(--line); border-radius:24px; padding:28px 22px; }
+  h1 { font-size:1.55rem; line-height:1.35; margin:0 0 12px; word-break:keep-all; }
+  p, li { font-size:1.12rem; line-height:1.6; color:var(--ink2); word-break:keep-all; }
+  ul { padding-left:1.2em; margin:12px 0 22px; }
+  li + li { margin-top:6px; }
+  button { width:100%; min-height:64px; border:0; border-radius:999px; background:var(--pri); color:#fff; font-size:1.25rem; font-weight:800; cursor:pointer; }
+  small { display:block; margin-top:16px; color:var(--ink2); font-size:0.9rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>인터넷이 연결되지 않았어요</h1>
+  <p>휴대폰 전파나 와이파이가 잡히지 않아 화면을 열 수 없어요.</p>
+  <ul>
+    <li>지하라면 <b>지상이나 창가</b>로 나가 주세요.</li>
+    <li>잠시 뒤 아래 <b>다시 열기</b>를 눌러 주세요.</li>
+    <li>앱을 열어 둔 채로 보낸 보고·출퇴근은 휴대폰에 저장됐다가, 연결되면 저절로 보내져요.</li>
+  </ul>
+  <button type="button" onclick="location.reload()">다시 열기</button>
+  <small>급한 일은 본사로 전화해 주세요.</small>
+</main>
+<script>window.addEventListener("online", function () { location.reload(); });</script>
+</body>
+</html>

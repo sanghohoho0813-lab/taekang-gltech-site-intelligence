@@ -12,7 +12,7 @@ import type { AttendanceRecord, DemoDB, GeoStamp, Kiosk, QrStamp, Site } from "@
 import { QR_LABEL } from "@/lib/domain/qr";
 import { CREW_FLAG_LABEL, crewFlags, crewSummary, mandayGap, mandayOver } from "@/lib/domain/crew";
 import { qrPath } from "@/lib/geo/qrClient";
-import { GEO_LABEL, geoText, mapLink } from "@/lib/domain/geo";
+import { GEO_LABEL, geoText, mapLink, splitLatLng } from "@/lib/domain/geo";
 import { FLAG_LABEL, FLAG_ORDER, backdatedDays, dayFlags, hhmm, minutesOf, periodSummary, recentFlags, shiftDate, siteCrew, type AttendanceFlag } from "@/lib/domain/attendance";
 import { todayIso } from "@/lib/domain/format";
 import { locateOnce } from "@/lib/geo/client";
@@ -394,6 +394,14 @@ function GeoModal({ site, onClose }: { site: Site; onClose: () => void }) {
       toast.push({ tone: "err", title: e instanceof Error ? e.message : "저장 실패" });
     }
   };
+  // ‘37.2281, 127.3719’를 한 칸에 붙여 넣으면 둘로 나눈다 — 위도 칸에 통째로 들어가 저장이 막히던 문제 (D-77 리허설)
+  const setPair = (v: string, setOne: (x: string) => void) => {
+    const pair = splitLatLng(v);
+    if (pair) {
+      setLat(pair.lat);
+      setLng(pair.lng);
+    } else setOne(v);
+  };
   const nLat = Number(lat);
   const nLng = Number(lng);
   return (
@@ -419,12 +427,13 @@ function GeoModal({ site, onClose }: { site: Site; onClose: () => void }) {
         </Button>
         <div className="grid grid-cols-2 gap-2">
           <Field label="위도" htmlFor="g-lat" error={errors.lat}>
-            <input id="g-lat" inputMode="decimal" className={cx(inputCls, "num")} value={lat} onChange={(e) => setLat(e.target.value)} placeholder="37.5665" />
+            <input id="g-lat" inputMode="decimal" className={cx(inputCls, "num")} value={lat} onChange={(e) => setPair(e.target.value, setLat)} placeholder="37.5665" data-testid="geo-lat" />
           </Field>
           <Field label="경도" htmlFor="g-lng" error={errors.lng}>
-            <input id="g-lng" inputMode="decimal" className={cx(inputCls, "num")} value={lng} onChange={(e) => setLng(e.target.value)} placeholder="126.9780" />
+            <input id="g-lng" inputMode="decimal" className={cx(inputCls, "num")} value={lng} onChange={(e) => setPair(e.target.value, setLng)} placeholder="126.9780" data-testid="geo-lng" />
           </Field>
         </div>
+        <p className="-mt-1 text-[0.8rem] text-ink-3">지도 앱에서 복사한 ‘37.2281, 127.3719’를 한 칸에 붙여 넣으면 위도·경도로 나눠 들어갑니다.</p>
         <Field label="현장으로 인정할 반경 (m)" htmlFor="g-rad" error={errors.radiusM} hint="보통 200~500m. 대형 현장·지하 주차장이 넓으면 크게">
           <input id="g-rad" inputMode="numeric" className={cx(inputCls, "num")} value={radius} onChange={(e) => setRadius(e.target.value.replace(/[^\d]/g, ""))} />
         </Field>

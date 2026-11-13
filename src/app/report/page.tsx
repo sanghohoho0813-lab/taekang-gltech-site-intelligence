@@ -206,7 +206,8 @@ export default function ReportPage() {
                       {e.status === "voided" ? <Badge>무효</Badge> : <span className="text-[0.74rem] font-bold text-err num">예상 총원가 {impact ? `+${fmtMan(impact)}` : "변동 없음"}</span>}
                     </p>
                     <p className="text-[0.75rem] text-ink-3">
-                      {fmtDateTime(e.createdAt)} · {REASON_LABEL[e.reason]} · {userLabel(db, e.createdBy)}
+                      {/* 엑셀로 옮긴 지난 원가는 가져온 시각이 아니라 발생일로 (D-77 리허설) */}
+                      {e.importBatchId ? `${fmtDate(e.date)} 발생 · 자료 이관` : fmtDateTime(e.createdAt)} · {REASON_LABEL[e.reason]} · {userLabel(db, e.createdBy)}
                     </p>
                     {report?.workDone && <p className="mt-0.5 line-clamp-2 text-[0.78rem] text-ink-2">현장보고: {report.workDone}</p>}
                   </li>

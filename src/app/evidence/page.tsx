@@ -129,6 +129,8 @@ export default function EvidencePage() {
             ))}
           </ol>
         </Card>
+        {/* 시연판 전용 — 운영판에서는 실제 사용 기록(위)이 답을 대신한다 (D-77 리허설: 영업 질문이 운영 화면에 남던 문제) */}
+        {!IS_LIVE && (
         <Card>
           <CardHeader title="정식 운영 전 5가지 질문 — 현재 정직한 답" />
           <ul className="space-y-2.5 px-5 pb-5 text-[0.84rem]">
@@ -146,6 +148,7 @@ export default function EvidencePage() {
             ))}
           </ul>
         </Card>
+        )}
       </div>
     </PageBody>
   );

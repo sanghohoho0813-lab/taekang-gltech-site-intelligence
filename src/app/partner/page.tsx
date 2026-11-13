@@ -339,7 +339,7 @@ function RequestForm({ siteId, disabled, draft, warrantyState }: { siteId: strin
           }}
           noValidate
         >
-          {disabled && <Notice tone="info">미리보기 모드에서는 요청을 등록할 수 없습니다. 위의 ‘발주처 역할로 전환’을 누르세요.</Notice>}
+          {disabled && <Notice tone="info">{IS_LIVE ? "관리자 미리보기에서는 요청을 등록할 수 없습니다. 발주처 담당자 계정으로 로그인하면 등록할 수 있습니다." : "미리보기 모드에서는 요청을 등록할 수 없습니다. 위의 ‘발주처 역할로 전환’을 누르세요."}</Notice>}
           {reopen && defect && (
             <Notice tone="info" title={`다시 요청: ‘${reopen.title}’`}>
               <span data-testid="partner-redo-notice">위치·제목을 채워 두었습니다. 지금 상태를 적고 사진을 다시 올린 뒤 ‘요청 보내기’를 누르세요.</span>

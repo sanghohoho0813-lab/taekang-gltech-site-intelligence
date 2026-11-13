@@ -43,8 +43,10 @@ export function Freshness({ className }: { className?: string }) {
 }
 
 /** AI Ready 마커 — 실제 AI API는 연결되지 않았음을 정직하게 설명 */
-export function AiReadyButton({ context = "risk" }: { context?: "risk" | "report" }) {
+export function AiReadyButton({ context = "risk", force = false }: { context?: "risk" | "report"; force?: boolean }) {
   const [open, setOpen] = useState(false);
+  // 운영판(LIVE) 업무 화면에는 ‘연결 예정’ 칩을 두지 않는다 — 영업용 표시가 매일 쓰는 화면에 남던 문제 (D-77 리허설). 설정의 ‘AI 연결 상태’ 카드에서만 보인다.
+  if (IS_LIVE && !force) return null;
   return (
     <>
       <button

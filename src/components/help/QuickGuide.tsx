@@ -71,23 +71,28 @@ export function QuickGuide() {
         <section className="mt-3 break-inside-avoid rounded-xl bg-surface-2 px-4 py-3 print:bg-transparent print:px-0 print:py-1" aria-label="알아 두면 좋은 것">
           <ul className="space-y-1.5 text-[1.02rem] leading-relaxed print:space-y-0.5 print:text-[10.5pt]">
             {QUICK_TIPS.map((t) => (
-              <li key={t.text} className="flex flex-wrap items-center gap-2 break-keep">
-                <span aria-hidden>•</span>
-                <span>{strong(t.text)}</span>
-                {t.img && <img src={t.img} alt={t.alt ?? ""} className="h-9 w-auto rounded-md border border-line print:h-7" />}
+              // 글머리 기호와 글을 나눠 둔다 — 글이 길면 ‘•’만 윗줄에 혼자 남던 문제 (D-77 리허설)
+              <li key={t.text} className="flex items-start gap-2 break-keep">
+                <span aria-hidden className="shrink-0">•</span>
+                <span className="flex min-w-0 flex-wrap items-center gap-2">
+                  <span>{strong(t.text)}</span>
+                  {t.img && <img src={t.img} alt={t.alt ?? ""} className="h-9 w-auto rounded-md border border-line print:h-7" />}
+                </span>
               </li>
             ))}
-            <li className="flex flex-wrap items-center gap-2 font-bold" data-testid="quick-phone">
-              <span aria-hidden>•</span>
-              모르는 게 있으면 본사로 전화:{" "}
-              {phone ? <span className="num text-[1.15rem] print:text-[12pt]">{phone}</span> : <>
-                  <span className="inline-block w-48 border-b-2 border-ink-3" aria-hidden />
-                  <span className="sr-only">(직접 적는 칸)</span>
-                </>}
+            <li className="flex items-start gap-2 font-bold" data-testid="quick-phone">
+              <span aria-hidden className="shrink-0">•</span>
+              <span className="flex min-w-0 flex-wrap items-center gap-2">
+                모르는 게 있으면 본사로 전화:{" "}
+                {phone ? <span className="num text-[1.15rem] print:text-[12pt]">{phone}</span> : <>
+                    <span className="inline-block w-48 border-b-2 border-ink-3" aria-hidden />
+                    <span className="sr-only">(직접 적는 칸)</span>
+                  </>}
+              </span>
             </li>
           </ul>
         </section>
-        <p className="mt-2 text-[0.74rem] text-ink-3 print:text-[7.5pt]">그림은 예시 화면(가상 데이터)입니다. 실제 화면은 이름·현장·시각이 다릅니다. · TAEKANG SITE INTELLIGENCE</p>
+        <p className="mt-2 text-[0.74rem] text-ink-3 print:text-[7.5pt]">그림은 예시 화면입니다. 실제 화면은 이름·현장·시각이 다릅니다.</p>
       </article>
     </PageBody>
   );

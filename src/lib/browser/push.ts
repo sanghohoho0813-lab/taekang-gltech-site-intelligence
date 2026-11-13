@@ -90,3 +90,12 @@ export async function testPush(): Promise<number> {
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "시험 알림을 보내지 못했습니다.");
   return Number((await r.json()).sent ?? 0);
 }
+
+/**
+ * 운영판: 알림을 켜지 않은 휴대폰에도 서비스워커를 올려 ‘인터넷 연결 없음’ 안내를 쓸 수 있게 한다 (D-77 리허설).
+ * 서비스워커는 안내 한 장만 저장하고 화면·데이터는 저장하지 않는다. 실패해도 조용히 넘어간다.
+ */
+export function registerOfflinePage(live: boolean): void {
+  if (!live || typeof window === "undefined" || !("serviceWorker" in navigator) || !window.isSecureContext) return;
+  navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => {});
+}

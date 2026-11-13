@@ -505,7 +505,8 @@ export function FixLink() {
 /** 위치가 막혔을 때 고치는 방법 — 접어 두어 현장 버튼이 화면 밖으로 밀리지 않게 (D-67 점검 반영) */
 function DeniedHelp() {
   return (
-    <details className="rounded-2xl bg-surface px-4 py-3 text-[1rem] leading-relaxed text-ink">
+    // 처음부터 펼쳐 둔다 — 접혀 있어 아무도 열지 않고 매일 ‘위치 없음’으로 쌓이던 문제 (D-77 리허설). 큰 버튼 순서(기록 먼저)는 D-66 그대로.
+    <details open className="rounded-2xl bg-surface px-4 py-3 text-[1rem] leading-relaxed text-ink" data-testid="att-denied-help">
       <summary className="cursor-pointer font-bold">휴대폰이 위치를 막고 있어요 · 허용하는 방법</summary>
       <p className="mt-1">
         <b>아이폰</b>: 설정 → 앱(Safari) → 위치 → ‘허용’

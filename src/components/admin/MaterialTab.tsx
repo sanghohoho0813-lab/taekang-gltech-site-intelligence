@@ -194,7 +194,7 @@ function SetupModal({ site, db, onClose, onSaved }: { site: Site; db: DemoDB; on
   const used = new Set((db.materialMoves ?? []).filter((m) => m.siteId === site.id).map((m) => m.itemId));
   const [rows, setRows] = useState<Draft[]>(() => {
     const now = (site.materials ?? []).map((i) => ({ id: i.id, name: i.name, unit: i.unit, planned: String(i.plannedQty || ""), archived: i.archived }));
-    return now.length ? now : [{ name: "", unit: "EA", planned: "" }];
+    return now.length ? now : [{ name: "", unit: "개", planned: "" }];
   });
   const [errs, setErrs] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
@@ -245,7 +245,7 @@ function SetupModal({ site, db, onClose, onSaved }: { site: Site; db: DemoDB; on
               <input id={`mat-name-${i}`} maxLength={40} value={r.name} onChange={(e) => set(i, { name: e.target.value })} className={inputCls} placeholder="예) 커튼월 유닛" data-testid="material-setup-name" />
             </Field>
             <Field label="단위" htmlFor={`mat-unit-${i}`} error={errs[`items.${i}.unit`]}>
-              <input id={`mat-unit-${i}`} maxLength={10} value={r.unit} onChange={(e) => set(i, { unit: e.target.value })} className={inputCls} placeholder="EA" data-testid="material-setup-unit" />
+              <input id={`mat-unit-${i}`} maxLength={10} value={r.unit} onChange={(e) => set(i, { unit: e.target.value })} className={inputCls} placeholder="개" data-testid="material-setup-unit" />
             </Field>
             <Field label="설계 수량" htmlFor={`mat-plan-${i}`} error={errs[`items.${i}.plannedQty`]}>
               <input id={`mat-plan-${i}`} inputMode="decimal" value={r.planned} onChange={(e) => set(i, { planned: e.target.value })} className={cx(inputCls, "num")} placeholder="모르면 비움" data-testid="material-setup-planned" />
@@ -263,7 +263,7 @@ function SetupModal({ site, db, onClose, onSaved }: { site: Site; db: DemoDB; on
             </div>
           </div>
         ))}
-        <Button icon={<Plus size={16} />} onClick={() => setRows((r) => [...r, { name: "", unit: "EA", planned: "" }])} disabled={rows.length >= 30} data-testid="material-setup-add">
+        <Button icon={<Plus size={16} />} onClick={() => setRows((r) => [...r, { name: "", unit: "개", planned: "" }])} disabled={rows.length >= 30} data-testid="material-setup-add">
           품목 추가
         </Button>
         {(errs._ || errs.items) && <Notice tone="err">{errs.items ?? errs._}</Notice>}

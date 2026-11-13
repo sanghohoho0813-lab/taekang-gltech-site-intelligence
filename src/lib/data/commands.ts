@@ -898,7 +898,8 @@ export function setChangeOrderStatus(db0: DemoDB, coId: string, status: ChangeOr
   if (status === "review") throw new CommandError("검토 단계로 되돌릴 수 없습니다.", "STATE");
   const before = siteFinancials(db0, co.siteId);
   co.status = status;
-  if (status === "approved") co.approvedAmount = validateAmount(approvedAmount ?? co.amount, "approvedAmount");
+  // 감액 변경공사(가져온 이력의 − 금액, D-77): 승인 금액도 감액으로 — 크기만 검사한다
+  if (status === "approved") co.approvedAmount = co.amount < 0 ? -validateAmount(Math.abs(approvedAmount ?? co.amount), "approvedAmount") : validateAmount(approvedAmount ?? co.amount, "approvedAmount");
   if (status === "approved" || status === "rejected") co.decidedAt = nowIso(ctx);
   if (status === "submitted") co.submittedAt = nowIso(ctx);
   co.statusChangedAt = nowIso(ctx);
@@ -909,7 +910,7 @@ export function setChangeOrderStatus(db0: DemoDB, coId: string, status: ChangeOr
     ctx,
     "change_order",
     status === "approved"
-      ? `${site.shortName} 변경공사 승인 ${fmtMan(co.approvedAmount ?? 0)} → 변경 반영 계약 ${fmtEok(before.adjustedContract)} → ${fmtEok(after.adjustedContract)}, 이익률 ${fmtPct(before.marginPct)} → ${fmtPct(after.marginPct)}`
+      ? `${site.shortName} 변경공사 ${co.amount < 0 ? "감액 " : ""}승인 ${fmtMan(co.approvedAmount ?? 0)} → 변경 반영 계약 ${fmtEok(before.adjustedContract)} → ${fmtEok(after.adjustedContract)}, 이익률 ${fmtPct(before.marginPct)} → ${fmtPct(after.marginPct)}`
       : `${site.shortName} 변경공사 ${status === "submitted" ? "발주처 청구" : "반려"}: ${co.title}`,
     co.siteId,
     "/finance",

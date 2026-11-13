@@ -252,7 +252,7 @@ export function EasyCrew() {
               <b>{site?.shortName}</b> · {easyDate(todayIso())}
             </p>
             <p data-testid="crew-confirm-text">
-              {team} ({kind === "direct" ? "직영" : "외주"}) <b className="num">{count}명</b>
+              {team}{/(직영|외주)\)?\s*$/.test(team) ? "" : ` (${kind === "direct" ? "직영" : "외주"})`} <b className="num">{count}명</b>
             </p>
             <p className={photo ? "text-ok" : "text-warn"}>{photo ? "단체 사진 있음" : "단체 사진 없음 — 본사에 표시됩니다"}</p>
             {consented && (

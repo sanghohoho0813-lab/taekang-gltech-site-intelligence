@@ -28,6 +28,8 @@ export interface Evidence {
   has: boolean;
   /** 근거가 없을 때 붙이는 말 (기본 ‘기록 없음’) */
   missing?: string;
+  /** 운영 기록 수로 센 근거인가 (문서·설명 근거는 아님) — 첫날 ‘모든 항목에 기록 있음’으로 보이던 문제 (D-77 리허설) */
+  counted?: true;
 }
 
 export interface AcceptanceItem {
@@ -42,7 +44,7 @@ export interface AcceptanceItem {
 
 const kst = (iso: string) => new Date(new Date(iso).getTime() + 9 * 3_600_000).toISOString().slice(0, 10);
 const n = (x: number, unit = "건") => `${x.toLocaleString("ko-KR")}${unit}`;
-const ev = (label: string, count: number, unit = "건", extra = ""): Evidence => ({ label, value: `${n(count, unit)}${extra}`, has: count > 0 });
+const ev = (label: string, count: number, unit = "건", extra = ""): Evidence => ({ label, value: `${n(count, unit)}${extra}`, has: count > 0, counted: true });
 const txt = (label: string, value: string, has = true, missing?: string): Evidence => ({ label, value, has, ...(missing ? { missing } : {}) });
 
 /**

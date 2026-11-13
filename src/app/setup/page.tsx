@@ -93,7 +93,7 @@ export default function SetupPage() {
           <Field label="회사 전화번호" htmlFor="s-phone" required error={errors.phone ?? errors.publicPhone} hint="현장 직원·발주처·하자 접수자가 ‘모르면 전화’할 번호 (예: 031-123-4567)">
             <input id="s-phone" type="tel" inputMode="tel" className={inputCls} value={f.phone} onChange={set("phone")} autoComplete="tel" data-testid="setup-phone" />
           </Field>
-          <Field label="비밀번호" htmlFor="s-pw" required error={errors.password} hint="8자 이상, 영문·숫자 포함">
+          <Field label="비밀번호" htmlFor="s-pw" required error={errors.password} hint="8자 이상, 영문·숫자 포함 · 대표 계정은 모든 금액을 보므로 10자 이상, 회사 이름이 들어가지 않게 권장">
             <input id="s-pw" type="password" className={inputCls} value={f.password} onChange={set("password")} autoComplete="new-password" />
           </Field>
           <Field label="비밀번호 확인" htmlFor="s-pw2" required error={errors.confirm}>

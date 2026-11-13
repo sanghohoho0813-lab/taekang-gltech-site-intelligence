@@ -197,7 +197,7 @@ export default function SettingsPage() {
       {isManager && (
       <div className="grid gap-5 @min-[1000px]:grid-cols-2">
         <Card>
-          <CardHeader title="AI 연결 상태" right={<AiReadyButton />} />
+          <CardHeader title="AI 연결 상태" right={<AiReadyButton force />} />
           <div className="space-y-2 px-5 pb-5 text-[0.85rem] text-ink-2">
             <p className="flex items-center gap-2">
               <Sparkles size={17} className="text-ink-3" /> <b>규칙 기반 진단</b> 사용 중 — 외부 AI 연결 안 됨

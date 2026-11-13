@@ -18,6 +18,7 @@ import { GlobalSearch, NotificationBell, UserMenu } from "./HeaderTools";
 import { LogoMark } from "./Logo";
 import { OutboxRunner } from "@/components/easy/Outbox";
 import { installErrorReporter } from "@/lib/browser/errorReport";
+import { registerOfflinePage } from "@/lib/browser/push";
 
 /** 내부(Business AX) Surface 셸. /partner는 별도 Customer Surface 셸을 사용한다. */
 export function AppShell({ children, compactSidebar }: { children: ReactNode; compactSidebar: boolean }) {
@@ -25,6 +26,8 @@ export function AppShell({ children, compactSidebar }: { children: ReactNode; co
   const role = useRole();
   // 운영 모드: 화면 오류를 본사 오류 기록으로 자동 보냄 (D-47)
   useEffect(() => installErrorReporter(), []);
+  // 운영 모드: 지하에서 홈 화면 아이콘으로 열어도 한국어 ‘인터넷 연결 없음’ 안내가 뜨게 (D-77 리허설)
+  useEffect(() => registerOfflinePage(IS_LIVE), []);
   const isPartnerSurface = pathname === "/partner" || pathname.startsWith("/partner/");
   // 로그인·최초 설정 화면은 메뉴 없이
   if (isPartnerSurface || pathname === "/login" || pathname === "/setup" || pathname === "/account") return <>{children}</>;
