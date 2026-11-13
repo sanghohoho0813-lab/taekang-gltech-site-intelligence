@@ -7,7 +7,7 @@
 import Link from "next/link";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { AlarmClock, ChevronDown, CircleCheck, Hourglass, PhoneIncoming, Printer, QrCode, Send, Wrench } from "lucide-react";
+import { AlarmClock, ChevronDown, CircleCheck, Hourglass, PhoneIncoming, Printer, QrCode, Send, Trash2, Undo2, Wrench } from "lucide-react";
 import { useMe } from "@/lib/data/hooks";
 import { DEFECT_HQ_TODO, DEFECT_NEXT_LABEL, defectLedger, defectRows, defectStats, defectTimeline, repairingLabel, type DefectRow } from "@/lib/domain/defects";
 import { fmtDate, fmtDateTime, todayIso } from "@/lib/domain/format";
@@ -19,7 +19,7 @@ import { PageBody, PageHeader } from "@/components/shell/AppShell";
 import { StatCard } from "@/components/domain/Widgets";
 import { Badge, Button, Card, CardHeader, EmptyState, PageSkeleton, Segmented, cx, inputCls } from "@/components/ui/primitives";
 import { Modal } from "@/components/ui/Modal";
-import { IntakeContact, PhoneDefectModal } from "@/components/admin/IntakeLinks";
+import { DiscardIntakeModal, IntakeContact, PhoneDefectModal, discardableIntakes } from "@/components/admin/IntakeLinks";
 import { CheckModal, DefectOrderModal, PhotoStrip, ReplyModal } from "@/components/admin/RequestModals";
 import { userLabel } from "@/lib/data/hooks";
 import type { DemoDB, PartnerRequest } from "@/lib/domain/types";
@@ -63,6 +63,7 @@ function Board() {
   const [siteId, setSiteState] = useState("all");
   const [focusReq, setFocusReq] = useState<string | null>(null);
   const [phone, setPhone] = useState(false);
+  const [discard, setDiscard] = useState(false);
   const rows = useMemo(() => (db ? defectRows(db, today) : []), [db, today]);
   // 주소 → 화면 (처음 열 때·메뉴나 다른 화면의 링크로 다시 들어올 때). 이 화면이 바꾼 주소는 다시 읽지 않는다.
   // ?site= 현장만 · ?view= 보기 · ?req= 그 하자를 펼쳐서 (검색·알림·작업지시 화면에서 · 점검 11차)
@@ -115,6 +116,12 @@ function Board() {
             <Button icon={<PhoneIncoming size={16} />} onClick={() => setPhone(true)} data-testid="defects-phone-register">
               전화 받은 하자 등록
             </Button>
+            {/* 장난·중복 접수 여러 건을 한 번에 — 요청함에서 옮겨 왔다 (D-76) */}
+            {discardableIntakes(db, siteId !== "all" ? siteId : undefined).length > 0 && (
+              <Button variant="ghost" icon={<Trash2 size={16} />} onClick={() => setDiscard(true)} data-testid="defects-discard">
+                장난·중복 접수 버리기
+              </Button>
+            )}
             <a href="#warranty" className="press inline-flex min-h-11 items-center gap-1.5 rounded-full bg-active-soft px-4 text-[0.9rem] font-bold text-theme-ink" data-testid="defects-to-qr">
               <QrCode size={16} aria-hidden /> 하자 접수 QR·보증
             </a>
@@ -122,6 +129,7 @@ function Board() {
         }
       />
       {phone && <PhoneDefectModal db={db} defaultSiteId={siteId !== "all" ? siteId : undefined} onClose={() => setPhone(false)} />}
+      {discard && <DiscardIntakeModal db={db} siteId={siteId !== "all" ? siteId : undefined} onClose={() => setDiscard(false)} />}
       {/* 휴대폰에서는 숫자 카드를 빼고 바로 목록 — 숫자는 아래 보기 단추에 같이 있다 (첫 화면에 목록이 안 보이던 문제 · 점검 11차) */}
       <div className="no-print hidden grid-cols-2 gap-3 @min-[640px]:grid @min-[900px]:grid-cols-4" data-testid="defect-kpis">
         <StatCard testId="defect-kpi-open" label="진행 중" value={`${st.open}건`} sub={`확인 대기 ${st.waiting} · 끝남 ${st.confirmed}`} icon={<Hourglass size={20} />} group="growth" />
@@ -342,6 +350,12 @@ function DefectDetail({ db, row, onReply, onCheck }: { db: DemoDB; row: DefectRo
           {row.next === "check" && (
             <Button size="sm" variant="soft" icon={<Wrench size={15} />} onClick={onCheck} data-testid="defect-detail-check">
               남은 보수 확인
+            </Button>
+          )}
+          {/* 현장이 끝냈다고 보냈는데 사진을 보니 덜 됐다 — 작업지시 화면으로 가지 않고 여기서 보완 요청 (D-76) */}
+          {row.next === "reply" && row.wo?.status === "done" && (
+            <Button size="sm" variant="ghost" icon={<Undo2 size={15} />} onClick={onCheck} data-testid="defect-detail-return">
+              보완 요청 (다시 보수)
             </Button>
           )}
           {row.wo && (

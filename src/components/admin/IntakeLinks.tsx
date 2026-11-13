@@ -408,6 +408,7 @@ export function IntakeContact({ db, req }: { db: DemoDB; req: PartnerRequest }) 
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [redo, setRedo] = useState(false);
+  const [pickReason, setPickReason] = useState(false);
   const [redoNote, setRedoNote] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
@@ -510,33 +511,28 @@ export function IntakeContact({ db, req }: { db: DemoDB; req: PartnerRequest }) 
                 다시 접수 (전화로 알려 옴)
               </Button>
             )}
+            {/* 고르는 칸은 ‘입력란’으로 읽혀 눌러 볼 생각을 안 한다 — 단추를 누르면 이유 셋이 단추로 나온다 (점검 11차 → D-76) */}
             {canDiscard && (
-              <span className="inline-flex items-center gap-1">
-                <label htmlFor={`discard-${req.id}`} className="sr-only">
-                  접수 번호 {c.no} 버리기
-                </label>
-                <select
-                  id={`discard-${req.id}`}
-                  value=""
-                  onChange={(e) => {
-                    const v = e.target.value as DiscardReason | "";
-                    e.target.value = "";
-                    if (v) void discard(v);
-                  }}
-                  className="h-9 rounded-full border border-line bg-surface px-2.5 text-[0.78rem] font-semibold text-ink-2"
-                  data-testid="request-intake-discard"
-                >
-                  <option value="">버리기…</option>
-                  {(Object.keys(DISCARD_REASONS) as DiscardReason[]).map((k) => (
-                    <option key={k} value={k}>
-                      {DISCARD_REASONS[k]}
-                    </option>
-                  ))}
-                </select>
-              </span>
+              <Button size="sm" variant="ghost" icon={<Trash2 size={14} />} onClick={() => setPickReason((v) => !v)} aria-expanded={pickReason} data-testid="request-intake-discard">
+                버리기
+              </Button>
             )}
             {err && <span className="font-semibold text-err">{err}</span>}
           </div>
+          {canDiscard && pickReason && (
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 py-2" role="group" aria-label={`접수 번호 ${c.no} 버리는 이유`} data-testid="request-intake-discard-reasons">
+              <span className="text-[0.78rem] font-bold text-ink-2">버리는 이유:</span>
+              {(Object.keys(DISCARD_REASONS) as DiscardReason[]).map((k) => (
+                <Button key={k} size="sm" variant="soft" onClick={() => void discard(k)} data-testid={`request-intake-discard-${k}`}>
+                  {DISCARD_REASONS[k]}
+                </Button>
+              ))}
+              <button type="button" onClick={() => setPickReason(false)} className="press min-h-9 px-1.5 text-[0.76rem] text-ink-3 underline underline-offset-2">
+                그만두기
+              </button>
+            </div>
+          )}
+
           {open && url && (
             <div className="mt-2 rounded-lg border border-line bg-surface px-2.5 py-2" data-testid="request-intake-box">
               <label htmlFor={`msg-${req.id}`} className="text-[0.78rem] font-bold text-ink-2">
@@ -692,9 +688,14 @@ export function PhoneDefectModal({ db, siteId, defaultSiteId, onClose }: { db: D
 }
 
 /** 장난·중복 접수 여러 건 버리기 — 아직 손대지 않은(작업지시 전) 링크·전화 접수만 */
-export function DiscardIntakeModal({ db, onClose }: { db: DemoDB; onClose: () => void }) {
+/** 버릴 수 있는 링크·전화 접수 — 작업지시를 보냈거나 접수자가 확인했거나 다시 접수가 이어진 건은 빼고 (현장을 고르면 그 현장만) */
+export function discardableIntakes(db: DemoDB, siteId?: string) {
+  return db.partnerRequests.filter((r) => r.intake && (!siteId || r.siteId === siteId) && !r.confirmedAt && !(r.linkedWorkOrderId && (db.workOrders ?? []).some((w) => w.id === r.linkedWorkOrderId)) && !db.partnerRequests.some((x) => x.reopenedFrom === r.id));
+}
+
+export function DiscardIntakeModal({ db, siteId, onClose }: { db: DemoDB; siteId?: string; onClose: () => void }) {
   const toast = useToast();
-  const list = db.partnerRequests.filter((r) => r.intake && !r.confirmedAt && !(r.linkedWorkOrderId && (db.workOrders ?? []).some((w) => w.id === r.linkedWorkOrderId)) && !db.partnerRequests.some((x) => x.reopenedFrom === r.id));
+  const list = discardableIntakes(db, siteId);
   const [picked, setPicked] = useState<string[]>([]);
   const [reason, setReason] = useState<DiscardReason>("spam");
   const [busy, setBusy] = useState(false);

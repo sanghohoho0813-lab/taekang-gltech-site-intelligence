@@ -40,16 +40,17 @@ test("하자보수: 발주처 사진 첨부 → 본사 작업지시 → 현장 �
   await expect(mine.getByTestId("partner-request-location")).toContainText("3층 302호 거실 창");
   await expect(mine.getByTestId("partner-request-photos").locator("img")).toHaveCount(1);
 
-  // 2) 본사: 요청함에서 작업지시로 보내기
+  // 2) 본사: 하자보수에서 작업지시 보내기 (요청함에는 하자가 없다 · D-76)
   await asRole(page, "ceo");
-  await page.goto("/insights#requests");
-  const req = page.getByTestId("partner-request").filter({ hasText: "3층 거실 창 누수" });
-  await expect(req.getByTestId("request-photos").locator("img")).toHaveCount(1);
-  await req.getByTestId("request-to-order").click();
+  await page.goto("/defects");
+  const req = page.getByTestId("defect-row").filter({ hasText: "3층 거실 창 누수" });
+  await expect(req.getByRole("button", { name: "보수 전 사진 크게 보기" })).toHaveCount(1);
+  await req.getByTestId("defect-order").click();
   await expect(page.getByTestId("defect-order-modal")).toBeVisible();
   await page.getByTestId("defect-order-send").click();
-  await expect(req.getByTestId("request-wo")).toHaveAttribute("data-wo-status", "sent");
-  await expect(req).toHaveAttribute("data-status", "reviewing");
+  await expect(page.getByTestId("defect-order-modal")).toHaveCount(0);
+  await page.getByTestId("defect-view-open").click();
+  await expect(req).toHaveAttribute("data-next", "repairing");
 
   // 3) 현장: 작업지시 카드에 ‘하자보수’와 발주처 사진 → 다 했어요 (사진)
   await asRole(page, "field");
@@ -70,15 +71,17 @@ test("하자보수: 발주처 사진 첨부 → 본사 작업지시 → 현장 �
   // 4) 본사: 보수 완료 사진과 함께 회신
   await asRole(page, "ceo");
   await page.setViewportSize({ width: 1280, height: 900 });
-  await page.goto("/insights#requests");
-  await req.getByTestId("request-wo").waitFor();
-  await expect(req.getByTestId("request-wo")).toHaveAttribute("data-wo-status", "done");
-  await req.getByTestId("request-reply").click();
+  await page.goto("/defects?view=todo");
+  await expect(req).toHaveAttribute("data-next", "reply");
+  await req.getByTestId("defect-reply").click();
   await expect(page.getByTestId("reply-share-photos").locator("img")).toHaveCount(1);
   await page.locator("#rp-text").fill("보수를 마쳤습니다. 물을 뿌려 새는 곳이 없는 것을 확인했습니다.");
   await page.getByTestId("reply-confirm").click();
-  await expect(req).toHaveAttribute("data-status", "answered");
-  await expect(req.getByTestId("request-reply-photos").locator("img")).toHaveCount(1);
+  await expect(page.getByTestId("reply-modal")).toHaveCount(0);
+  await page.getByTestId("defect-view-all").click();
+  await expect(req).toHaveAttribute("data-next", "client");
+  await req.getByTestId("defect-more").click();
+  await expect(req.getByTestId("defect-detail-reply-photos").locator("img")).toHaveCount(1);
 
   // 5) 발주처: 보수 완료 · 보수 사진 · ‘보수 확인했어요’ — 보수 사진은 ‘공정 사진’에는 넣지 않는다
   await asRole(page, "partner");
@@ -101,12 +104,12 @@ test("하자보수: 발주처 사진 첨부 → 본사 작업지시 → 현장 �
   await expect(page).toHaveURL(/month=\d{4}-\d{2}/);
   await expect(body.getByTestId("report-request").filter({ hasText: "3층 거실 창 누수" })).toHaveCount(0);
 
-  // 7) 본사 요청함: 발주처 확인 완료
+  // 7) 본사 하자보수: 발주처 확인 완료 (끝난 것은 ‘전체’에서)
   await asRole(page, "ceo");
-  await page.goto("/insights#requests");
-  // 요청함은 ‘처리할 것’만 먼저 보여 준다 (D-74) — 끝난 요청은 ‘전체’에서
-  await page.getByTestId("inbox-show-all").click();
-  await expect(req.getByTestId("request-confirmed")).toBeVisible();
+  await page.goto("/defects?view=all");
+  await expect(req).toHaveAttribute("data-next", "closed");
+  await req.getByTestId("defect-more").click();
+  await expect(req.getByTestId("defect-timeline")).toContainText("발주처 확인");
 });
 
 test("월간 보고서는 현장직원에게 보이지 않고, 본사는 미리보기로 본다", async ({ page }) => {

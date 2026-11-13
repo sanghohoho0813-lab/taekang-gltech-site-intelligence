@@ -580,9 +580,11 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     const rep = partner.getByTestId("report-body");
     await expect(rep.getByTestId("report-request").filter({ hasText: "3층 거실 창 누수" })).toContainText("확인 완료");
     expect((await rep.innerText()).replace(/\s+/g, " ")).not.toMatch(/\d+(\.\d+)?억|\d[\d,]*만 원|이익률|원가/);
-    // 본사 요청함: 발주처 확인 완료 표시
+    // 본사 하자보수: 발주처 확인 완료 (요청함에는 하자가 없다 · D-76)
     await hq.goto("/insights#requests");
-    await expect(hq.getByTestId("partner-request").filter({ hasText: "3층 거실 창 누수" }).getByTestId("request-confirmed")).toBeVisible();
+    await expect(hq.getByTestId("partner-inbox")).not.toContainText("3층 거실 창 누수");
+    await hq.goto("/defects?view=all");
+    await expect(hq.getByTestId("defect-row").filter({ hasText: "3층 거실 창 누수" })).toHaveAttribute("data-next", "closed");
     for (const p of [partner, hq, field]) await p.context().close();
   });
 
@@ -1059,16 +1061,16 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     // 회신 전에는 ‘확인’할 수 없다
     expect((await anon.request.post(`/api/intake/status/${key}/confirm`, { data: {} })).status()).toBe(409);
 
-    // 본사: 요청함에 접수자 이름·전화 → 작업지시 → 현장 완료(사진) → 보수 사진과 회신
-    await hq.goto("/insights#requests");
-    const item = hq.getByTestId("partner-request").filter({ hasText: "5층 501호 발코니 창" });
-    await expect(item.getByTestId("request-intake-who")).toHaveText("관리사무소 홍길동");
-    await expect(item.getByTestId("request-intake-phone")).toHaveAttribute("href", "tel:01012345678");
+    // 본사: 하자보수에 접수자 이름·전화 → 작업지시 → 현장 완료(사진) → 보수 사진과 회신 (요청함이 아니라 하자보수 · D-76)
     const fieldId = (await (await field.request.get("/api/auth/me")).json()).me.id;
     // 작업지시는 하자보수 화면에서 바로 (D-75) — 메뉴 배지에 본사 할 일, 줄의 ‘작업지시 보내기’ → 창 → 보내기
     await hq.goto("/defects?view=todo");
     await expect(hq.getByTestId("nav-defects")).toContainText(/\d/);
     const drow = hq.getByTestId("defect-row").filter({ hasText: "5층 501호 발코니 창" });
+    const item = drow;
+    await drow.getByTestId("defect-more").click();
+    await expect(drow.getByTestId("request-intake-who")).toHaveText("관리사무소 홍길동");
+    await expect(drow.getByTestId("request-intake-phone")).toHaveAttribute("href", "tel:01012345678");
     await expect(drow).toHaveAttribute("data-next", "assign");
     await drow.getByTestId("defect-order").click();
     const om = hq.getByTestId("defect-order-modal");
@@ -1078,9 +1080,9 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     await expect(om).toHaveCount(0);
     await expect.poll(async () => (await state(hq)).workOrders.some((w: { sourcePartnerRequestId?: string }) => w.sourcePartnerRequestId === req.id)).toBe(true);
     const woId = (await state(hq)).workOrders.find((w: { sourcePartnerRequestId?: string }) => w.sourcePartnerRequestId === req.id).id;
-    // 펼치면 처리 이력에 ‘작업지시’가 남는다
+    // 펼친 그대로 ‘진행 중’ 보기에서 처리 이력에 ‘작업지시’가 남는다
     await hq.getByTestId("defect-view-open").click();
-    await drow.getByTestId("defect-more").click();
+    await expect(drow.getByTestId("defect-more")).toHaveAttribute("aria-expanded", "true");
     await expect(drow.getByTestId("defect-timeline")).toContainText("작업지시");
     // 작업지시를 받은 현장 휴대폰: 접수 사진과, 본사가 ‘연락처 보여 주기’를 골랐으므로 방문 전 연락할 분 — 요청 자체·진행 확인 주소는 없다
     await field.goto("/my-actions");
@@ -1112,10 +1114,11 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     expect((await anon.request.post(`/api/intake/status/${key}/confirm`, { data: {} })).status()).toBe(409);
     expect((await anon.request.post(`/api/intake/status/${key}/reopen`, { data: { note: "다시 안 닫힙니다" } })).status()).toBe(409);
     expect(await anon.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
-    await hq.goto("/insights#requests");
-    await hq.getByTestId("inbox-show-all").click();
-    await expect(item.getByTestId("request-confirmed")).toContainText("접수자 확인 완료");
-    await expect(item.getByTestId("request-confirmed")).toContainText("감사합니다");
+    await hq.goto("/defects?view=all");
+    await expect(item).toHaveAttribute("data-next", "closed");
+    await item.getByTestId("defect-more").click();
+    await expect(item.getByTestId("defect-timeline")).toContainText("접수자 확인");
+    await expect(item.getByTestId("defect-timeline")).toContainText("감사합니다");
     // 본사가 작업지시를 확인하면 현장 휴대폰에 접수자 연락처를 더 보내지 않는다
     expect((await cmd(hq, "reviewWorkOrder", { workOrderId: woId, decision: "confirm" })).status).toBe(200);
     expect(JSON.stringify(await state(field))).not.toMatch(/홍길동|1234-5678/);

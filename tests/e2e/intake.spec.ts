@@ -168,32 +168,43 @@ test("하자 접수 링크: 본사가 만들고(전화번호·QR·안내문) →
   await page.getByTestId("intake-mine-forget").first().click();
   await expect(page.getByTestId("intake-mine-row")).toHaveCount(1);
 
-  // 5) 본사: 요청함 — ‘처리할 것’만(오래된 것부터) · 링크 접수 2건 · 접수자 이름·전화 · 장난 접수 버리기 · 작업지시로 보내기
+  // 5) 본사: 요청함에는 하자가 없고 하자보수로 가는 안내만 (D-76) → 하자보수 ‘본사 할 일’(오래된 것부터) · 펼치면 접수자 이름·전화 · 장난 접수 버리기 · 작업지시 보내기
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/insights#requests");
-  await expect(page.getByTestId("inbox-show-todo")).toHaveAttribute("aria-pressed", "true");
-  const req = page.getByTestId("partner-request").filter({ hasText: "3층 302호 거실 창" });
+  await expect(page.getByTestId("partner-inbox")).not.toContainText("3층 302호 거실 창");
+  await expect(page.getByTestId("inbox-defects-link")).toContainText("본사 할 일 2건");
+  await page.getByTestId("inbox-defects-link").click();
+  await expect(page).toHaveURL(/\/defects\?view=todo/);
+  // 다시 접수한 건도 같은 위치라 글로 고르면 두 줄이 된다 — 처음 접수의 번호로 고정
+  const reqId = await page.getByTestId("defect-row").filter({ hasText: "3층 302호 거실 창" }).getAttribute("data-id");
+  const req = page.locator(`[data-testid="defect-row"][data-id="${reqId}"]`);
   await expect(req).toContainText("비가 오면 창틀 아래로 물이 샙니다.");
+  await req.getByTestId("defect-more").click();
   await expect(req.getByTestId("request-intake")).toContainText(`접수 번호 ${no}`);
   await expect(req.getByTestId("request-intake")).toContainText("접수 경로: 관리사무소용");
   await expect(req.getByTestId("request-intake-who")).toHaveText("관리사무소 홍길동");
   await expect(req.getByTestId("request-intake-phone")).toHaveAttribute("href", "tel:01012345678");
-  await expect(req.getByTestId("request-photos").locator("img")).toHaveCount(1);
-  // 장난 접수는 회신하지 않고 버린다 (사진까지 지우고 건수에 남지 않는다)
-  const junk = page.getByTestId("partner-request").filter({ hasText: "ㅁㄴㅇㄹ" });
+  await expect(req.getByTestId("defect-detail-photos").locator("img")).toHaveCount(1);
+  // 장난 접수는 회신하지 않고 버린다 (사진까지 지우고 건수에 남지 않는다) — 단추를 누르면 이유가 단추로 나온다
+  const junk = page.getByTestId("defect-row").filter({ hasText: "ㅁㄴㅇㄹ" });
   await expect(junk).toHaveCount(1);
+  await junk.getByTestId("defect-more").click();
+  await junk.getByTestId("request-intake-discard").click();
   page.once("dialog", (d) => d.accept());
-  await junk.getByTestId("request-intake-discard").selectOption("spam");
+  await junk.getByTestId("request-intake-discard-spam").click();
   await expect(junk).toHaveCount(0);
   // 작업지시: 제목은 ‘위치 — 문제’ · 접수자 연락처를 보수 담당자에게 보여 주기(기본 켬) · 현장 전달 메모
-  await req.getByTestId("request-to-order").click();
+  await req.getByTestId("defect-order").click();
   const order = page.getByTestId("defect-order-modal");
   await expect(order.locator("#do-title")).toHaveValue("3층 302호 거실 창 — 비가 오면 창틀 아래로 물이 샙니다.");
   await expect(order.getByTestId("defect-order-contact")).toBeChecked();
   await order.getByTestId("defect-order-memo").fill("방문 전 관리사무소에 먼저 들를 것");
   await expect(order.getByTestId("defect-order-detail")).toContainText("본사 메모: 방문 전 관리사무소에 먼저 들를 것");
   await order.getByTestId("defect-order-send").click();
-  await expect(req.getByTestId("request-wo")).toHaveAttribute("data-wo-status", "sent");
+  await expect(order).toHaveCount(0);
+  await page.getByTestId("defect-view-open").click();
+  await expect(req).toHaveAttribute("data-next", "repairing");
+  await expect(req.getByTestId("defect-next")).toHaveText("현장 미확인");
   // 하자보수 현황: 사람 이름 대신 ‘링크 접수 · 접수 번호 · 소속’ · 여기서 접수 QR·전화 접수로 갈 수 있다
   await page.goto("/defects");
   await expect(page.getByText(`링크 접수 ${no} · 관리사무소`).first()).toBeVisible();
@@ -229,8 +240,8 @@ test("하자 접수 링크: 본사가 만들고(전화번호·QR·안내문) →
   // 7) 본사: 보수 사진과 함께 회신 → ‘접수자에게 알리기’(알림이 가지 않으므로 보낼 글·문자)
   await asRole(page, "ceo");
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto("/insights#requests");
-  await req.getByTestId("request-reply").click();
+  await page.goto("/defects?view=todo");
+  await req.getByTestId("defect-reply").click();
   await expect(page.getByTestId("reply-modal")).toContainText("접수자의 진행 확인 화면에 그대로 보입니다");
   await expect(page.getByTestId("reply-share-photos").locator("img")).toHaveCount(1);
   await expect(page.getByTestId("reply-share-photos")).toContainText("진행 확인 주소를 가진 사람이 볼 수 있습니다");
@@ -243,9 +254,10 @@ test("하자 접수 링크: 본사가 만들고(전화번호·QR·안내문) →
   await expect(notify.getByTestId("intake-notify-sms")).toHaveAttribute("href", /^sms:01012345678\?&body=/);
   await page.getByTestId("reply-done-close").click();
   await expect(page.getByTestId("reply-modal")).toHaveCount(0);
-  // 회신한 요청은 ‘처리할 것’에서 빠진다 → 전체에서 본다
-  await page.getByTestId("inbox-show-all").click();
-  await expect(req).toHaveAttribute("data-status", "answered");
+  // 회신한 줄은 ‘본사 할 일’에서 빠진다 → 전체에서 본다 · 나중에도 펼쳐서 다시 알릴 수 있다
+  await page.getByTestId("defect-view-all").click();
+  await expect(req).toHaveAttribute("data-next", "client");
+  await req.getByTestId("defect-more").click();
   await expect(req.getByTestId("request-intake")).toHaveAttribute("data-notify", "1");
   await req.getByTestId("request-intake-notify").click();
   const message = await req.getByTestId("request-intake-message").inputValue();
@@ -280,18 +292,21 @@ test("하자 접수 링크: 본사가 만들고(전화번호·QR·안내문) →
 
   // 9) 본사: ‘다시 접수’가 처리할 것으로 올라온다 → 작업지시 없이 답변으로 끝냄 → 접수자: ‘답변 확인했습니다’
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto("/insights#requests");
-  const redo = page.getByTestId("partner-request").filter({ hasText: "비가 오니 같은 자리에서 다시 샙니다." });
-  await expect(redo.getByTestId("request-reopened")).toContainText(`앞 접수 번호 ${no}`);
+  await page.goto("/defects?view=todo");
+  const redo = page.getByTestId("defect-row").filter({ hasText: "비가 오니 같은 자리에서 다시 샙니다." });
+  await expect(redo).toContainText("다시 접수");
+  await redo.getByTestId("defect-more").click();
   await expect(redo.getByTestId("request-intake")).toContainText(`접수 번호 ${no}-2`);
-  await redo.getByTestId("request-reply").click();
+  // 앞 접수의 기록이 흐리게 먼저 (‘몇 주 전에 말했는데’ 전화에 답할 수 있게)
+  await expect(redo.getByTestId("defect-event").first()).toHaveAttribute("data-past", "1");
+  await redo.getByTestId("defect-detail-reply").click();
   await page.getByTestId("reply-close-no-repair").check();
   await page.locator("#rp-text").fill("결로로 보입니다. 환기 방법을 전화로 안내드렸습니다.");
   await page.getByTestId("reply-confirm").click();
   await expect(page.getByTestId("intake-notify-message")).toHaveValue(/답변드렸습니다/);
   await page.getByTestId("reply-done-close").click();
-  await page.getByTestId("inbox-show-all").click();
-  await expect(req.getByTestId("request-superseded")).toBeVisible();
+  await page.getByTestId("defect-view-all").click();
+  await expect(req).toHaveAttribute("data-next", "reopened");
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(statusUrl);
   await expect(page.getByTestId("status-label")).toHaveText("답변 완료");
@@ -304,12 +319,13 @@ test("하자 접수 링크: 본사가 만들고(전화번호·QR·안내문) →
   await expect(page.getByTestId("status-confirmed")).toContainText("알겠습니다");
   await expect(status).toHaveAttribute("data-state", "confirmed");
   await expect(page.getByTestId("status-confirm")).toHaveCount(0);
-  // 본사 요청함: 접수자 확인 완료
+  // 본사 하자보수: 접수자 확인 완료 (이력에 확인 메모)
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto("/insights#requests");
-  await page.getByTestId("inbox-show-all").click();
-  await expect(redo.getByTestId("request-confirmed")).toContainText("접수자 확인 완료");
-  await expect(redo.getByTestId("request-confirmed")).toContainText("알겠습니다");
+  await page.goto("/defects?view=all");
+  await expect(redo).toHaveAttribute("data-next", "closed");
+  await redo.getByTestId("defect-more").click();
+  await expect(redo.getByTestId("defect-timeline")).toContainText("접수자 확인");
+  await expect(redo.getByTestId("defect-timeline")).toContainText("알겠습니다");
 
   // 10) 본사: 진행 확인 주소 바꾸기(주소가 다른 사람에게 알려졌을 때) → 앞의 주소는 닫히고 새 주소가 열린다
   await redo.getByTestId("request-intake-notify").click();
@@ -402,16 +418,16 @@ test("하자 접수 링크: 없는 주소·잘린 주소·끝에 글자가 붙�
   await modal.getByTestId("phone-defect-save").click();
   await expect(modal).toHaveCount(0);
   await expect(page.getByTestId("defect-row").filter({ hasText: "실리콘이 떨어졌다고 함" })).toContainText("전화 접수");
-  await page.goto("/insights#requests");
-  const phoned = page.getByTestId("partner-request").filter({ hasText: "실리콘이 떨어졌다고 함" });
+  const phoned = page.getByTestId("defect-row").filter({ hasText: "실리콘이 떨어졌다고 함" });
+  await phoned.getByTestId("defect-more").click();
   await expect(phoned.getByTestId("request-intake")).toContainText("전화 접수");
   await expect(phoned.getByTestId("request-intake-who")).toHaveText("박소장");
   await phoned.getByTestId("request-intake-notify").click();
   const sms = await phoned.getByTestId("request-intake-message").inputValue();
   const statusUrl = sms.match(/https?:\/\/\S+\/r\/s\/[A-Za-z0-9_-]{32}/)![0];
   await expect(phoned.getByTestId("request-intake-sms")).toHaveAttribute("href", /^sms:01022223333\?&body=/);
-  // 장난·중복 접수 여러 건 버리기 (링크 접수 2건만 골라서)
-  await page.getByTestId("inbox-discard").click();
+  // 장난·중복 접수 여러 건 버리기 (링크 접수 2건만 골라서) — 하자보수 화면 위 단추 (D-76)
+  await page.getByTestId("defects-discard").click();
   const discard = page.getByTestId("discard-modal");
   await expect(discard.getByTestId("discard-pick")).toHaveCount(3);
   await discard.locator("label").filter({ hasText: "1층 로비 출입문" }).getByTestId("discard-pick").check();
@@ -419,7 +435,7 @@ test("하자 접수 링크: 없는 주소·잘린 주소·끝에 글자가 붙�
   page.once("dialog", (d) => d.accept());
   await discard.getByTestId("discard-go").click();
   await expect(discard).toHaveCount(0);
-  await expect(page.getByText("1층 로비 출입문")).toHaveCount(0);
+  await expect(page.getByTestId("defect-row").filter({ hasText: "1층 로비 출입문" })).toHaveCount(0);
   await expect(phoned).toHaveCount(1);
   // 전화 접수의 진행 확인 주소가 열린다
   await page.goto(statusUrl);

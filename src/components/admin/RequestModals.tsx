@@ -20,7 +20,7 @@ import { run } from "@/lib/data/store";
 import type { DemoDB, PartnerRequest } from "@/lib/domain/types";
 import { IS_LIVE } from "@/lib/mode";
 import { IntakeNotifyBox } from "@/components/admin/IntakeLinks";
-import { woPartial } from "@/lib/domain/partnerFeed";
+import { repliedAfterDone, woPartial } from "@/lib/domain/partnerFeed";
 
 export const WO_STATE: Record<NonNullable<DemoDB["workOrders"]>[number]["status"], string> = { sent: "현장에 보냄", received: "현장이 확인함", in_progress: "보수 중", done: "완료 보고 · 본사 확인 전", confirmed: "완료 확인", returned: "보완 요청" };
 
@@ -354,8 +354,10 @@ export function ReplyModal({ db, req, onClose, confirmDefault }: { db: DemoDB; r
 }
 
 /**
- * 남은 보수 확인 (점검 11차) — 현장이 ‘일부만 끝냈어요’로 보내고 본사가 회신만 한 하자.
- * 남은 작업까지 끝났으면 ‘보수 완료 회신’(작업지시 완료 확인 함께), 아니면 ‘보완 요청’으로 현장에 다시 보낸다.
+ * 완료 보고 확인 (점검 11차 · D-76) — 현장이 끝냈다고 보낸 하자 작업지시를 본사가 본다.
+ * - ‘일부만 끝냈어요’에 회신만 한 하자: ‘남은 보수 확인’
+ * - 그 밖의 완료 보고: 사진을 보고 덜 됐으면 여기서 ‘보완 요청’ (작업지시 화면으로 가지 않게)
+ * 다 끝났으면 ‘보수 완료 회신’(작업지시 완료 확인 함께), 아니면 ‘보완 요청’으로 현장에 다시 보낸다.
  */
 export function CheckModal({ db, req, onClose, onDone }: { db: DemoDB; req: PartnerRequest; onClose: () => void; onDone: () => void }) {
   const toast = useToast();
@@ -364,6 +366,8 @@ export function CheckModal({ db, req, onClose, onDone }: { db: DemoDB; req: Part
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   if (!wo) return null;
+  const partial = woPartial(wo);
+  const replied = repliedAfterDone(wo, req);
   const back = async () => {
     if (note.trim().length < 2) {
       setErr("현장에 다시 할 일을 적어 주세요.");
@@ -382,15 +386,19 @@ export function CheckModal({ db, req, onClose, onDone }: { db: DemoDB; req: Part
     }
   };
   return (
-    <Modal open onClose={onClose} title="남은 보수 확인" description={req.title} size="md" testId="check-modal">
+    <Modal open onClose={onClose} title={partial && replied ? "남은 보수 확인" : "완료 보고 확인"} description={req.title} size="md" testId="check-modal">
       <div className="space-y-3">
-        <p className="rounded-lg bg-warn-bg px-3 py-2 text-[0.84rem] text-ink" data-testid="check-done-note">
+        <p className={cx("rounded-lg px-3 py-2 text-[0.84rem] text-ink", partial ? "bg-warn-bg" : "bg-surface-2")} data-testid="check-done-note">
           <b>현장 완료 보고:</b> {[wo.doneQty, wo.doneNote].filter(Boolean).join(" · ") || "—"}
-          <span className="mt-0.5 block text-[0.78rem] text-ink-2">남은 작업이 있다고 보고된 건입니다. 회신은 보냈고, 작업지시는 아직 ‘완료 보고 · 본사 확인 전’입니다.</span>
+          <span className="mt-0.5 block text-[0.78rem] text-ink-2">
+            {partial
+              ? `남은 작업이 있다고 보고된 건입니다. ${replied ? "회신은 보냈고, " : ""}작업지시는 아직 ‘완료 보고 · 본사 확인 전’입니다.`
+              : "현장이 끝냈다고 보냈습니다. 사진을 보고 덜 된 곳이 있으면 보완 요청을 보내세요."}
+          </span>
         </p>
         <PhotoStrip db={db} ids={wo.donePhotoIds} label="현장 완료 사진" testId="check-photos" />
         <div className="rounded-xl border border-line bg-surface-2 p-3">
-          <p className="text-[0.86rem] font-bold">남은 작업까지 끝났습니다</p>
+          <p className="text-[0.86rem] font-bold">{partial ? "남은 작업까지 끝났습니다" : "잘 끝났습니다"}</p>
           <p className="mt-0.5 text-[0.78rem] text-ink-3">작업지시 완료를 확인하고, {req.intake ? "접수자" : "발주처"}에게 보수 완료 회신을 보냅니다. 그 뒤에 ‘잘 고쳐졌습니다’ 확인을 받을 수 있습니다.</p>
           <Button className="mt-2" variant="cta" icon={<Send size={16} />} onClick={onDone} data-testid="check-finish">
             보수 완료 회신 쓰기
@@ -398,7 +406,7 @@ export function CheckModal({ db, req, onClose, onDone }: { db: DemoDB; req: Part
         </div>
         <div className="rounded-xl border border-line bg-surface-2 p-3">
           <label htmlFor="ck-note" className="text-[0.86rem] font-bold">
-            아직 남았습니다 — 현장에 보완 요청
+            {partial ? "아직 남았습니다" : "덜 됐습니다"} — 현장에 보완 요청
           </label>
           <textarea id="ck-note" rows={2} maxLength={200} value={note} onChange={(e) => setNote(e.target.value)} placeholder="예) 아래쪽 창틀 실리콘도 다시 시공해 주세요" className={cx(inputCls, "mt-1 h-auto resize-none py-1.5")} data-testid="check-note" />
           <Button className="mt-2" icon={<Send size={16} />} onClick={back} loading={busy} data-testid="check-return">

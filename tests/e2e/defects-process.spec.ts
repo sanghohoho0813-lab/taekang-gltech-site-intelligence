@@ -83,8 +83,9 @@ test("하자보수 화면에서 끝까지: 메뉴 배지 → 작업지시 보내
   // 2) 장난 접수는 펼쳐서 버린다 (사진까지 지움)
   const junk = page.getByTestId("defect-row").filter({ hasText: "1층 로비 출입문" });
   await junk.getByTestId("defect-more").click();
+  await junk.getByTestId("request-intake-discard").click();
   page.once("dialog", (d) => d.accept());
-  await junk.getByTestId("request-intake-discard").selectOption("spam");
+  await junk.getByTestId("request-intake-discard-spam").click();
   await expect(junk).toHaveCount(0);
   await expect(page.getByTestId("nav-defects")).not.toContainText("1");
 
@@ -267,4 +268,68 @@ test("점검 11차: 메뉴로 들어오면 본사 할 일부터 · 주소에 현
   await page.emulateMedia({ media: "screen" });
   expect(widths[0]).toBeLessThan(widths[2] / 3);
   expect(widths[2]).toBeGreaterThan(widths[4]);
+});
+
+test("D-76 하자 일원화: 요청함에는 하자가 없고 안내만 · 옛 요청함 링크는 하자보수의 그 줄로 · 현장 요청 탭에서 바로 · 끝냈다는 보고에 하자보수에서 보완 요청 · 여러 건 버리기는 고른 현장만", async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await freshStart(page);
+  await twoIntakes(page);
+  // 요청함: 하자 없음 · 하자보수로 가는 안내 한 줄 (본사 할 일 수) · 견적·주문 같은 고객 요청은 그대로
+  await page.goto("/insights#requests");
+  const inbox = page.getByTestId("partner-inbox");
+  await expect(inbox.getByTestId("partner-request").filter({ hasText: "3층 302호 거실 창" })).toHaveCount(0);
+  await expect(inbox.getByTestId("inbox-defects-link")).toContainText("본사 할 일 2건");
+  await expect(inbox.getByTestId("partner-request").first()).toBeVisible();
+  await expect(inbox.getByTestId("partner-request").filter({ hasText: "하자보수" })).toHaveCount(0);
+  // 옛 링크 (/insights?req=하자) → 하자보수의 그 줄을 펼쳐서
+  await page.goto("/defects?view=all");
+  const row = page.getByTestId("defect-row").filter({ hasText: "3층 302호 거실 창" });
+  const id = await row.getAttribute("data-id");
+  await page.goto(`/insights?req=${id}#requests`);
+  await expect(page).toHaveURL(new RegExp(`/defects\\?req=${id}`));
+  await expect(row.getByTestId("defect-detail")).toBeVisible();
+  // 현장 상세 요청 탭: 줄을 누르면 처리 화면으로
+  await page.goto("/sites/site-a?tab=requests");
+  await expect(page.getByTestId("site-request-open").filter({ hasText: "비가 오면 창틀 아래로 물이 샙니다." })).toHaveAttribute("href", `/defects?req=${id}`);
+
+  // 작업지시 → 현장이 ‘지시대로 끝냈어요’ → 본사가 사진을 보고 하자보수에서 바로 보완 요청
+  await page.goto("/defects?view=todo");
+  await row.getByTestId("defect-order").click();
+  await page.getByTestId("defect-order-send").click();
+  await expect(page.getByTestId("defect-order-modal")).toHaveCount(0);
+  await asRole(page, "field");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/my-actions");
+  const wo = page.getByTestId("wo-card").filter({ hasText: "3층 302호 거실 창" });
+  await wo.getByTestId("wo-receive").click();
+  await wo.getByTestId("wo-complete").click();
+  await page.getByTestId("wo-result-chip").first().click();
+  await page.getByTestId("wo-photo").setInputFiles({ name: "f.png", mimeType: "image/png", buffer: PNG });
+  await page.getByTestId("wo-finish-send").click();
+  await expect(page.getByTestId("wo-finish")).toBeHidden();
+  await asRole(page, "ceo");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/defects?view=todo");
+  await expect(row).toHaveAttribute("data-next", "reply");
+  await row.getByTestId("defect-more").click();
+  await row.getByTestId("defect-detail-return").click();
+  const ck = page.getByTestId("check-modal");
+  await expect(ck).toContainText("완료 보고 확인");
+  await ck.getByTestId("check-note").fill("창틀 아래쪽 실리콘이 덜 채워졌습니다");
+  await ck.getByTestId("check-return").click();
+  await expect(ck).toHaveCount(0);
+  await page.getByTestId("defect-view-open").click();
+  await expect(row.getByTestId("defect-next")).toHaveText("보완 요청 — 다시 보수");
+  await expect(row.getByTestId("defect-timeline")).toContainText("창틀 아래쪽 실리콘이 덜 채워졌습니다");
+
+  // 여러 건 버리기: 버릴 수 있는 접수가 있는 현장만 단추 · 작업지시를 보낸 건은 고를 수 없다
+  await page.getByTestId("defect-site").selectOption("site-b");
+  await expect(page.getByTestId("defects-discard")).toHaveCount(0);
+  await page.getByTestId("defect-site").selectOption("site-a");
+  await page.getByTestId("defects-discard").click();
+  const dm = page.getByTestId("discard-modal");
+  await expect(dm.getByTestId("discard-pick")).toHaveCount(1);
+  await expect(dm).toContainText("1층 로비 출입문");
+  await expect(dm).not.toContainText("3층 302호 거실 창");
 });
