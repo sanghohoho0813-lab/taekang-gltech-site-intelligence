@@ -365,9 +365,21 @@ export function CheckModal({ db, req, onClose, onDone }: { db: DemoDB; req: Part
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [confirming, setConfirming] = useState(false);
   if (!wo) return null;
+  // 다른 사람이 그사이 확인·보완 요청했으면 더 할 일이 없다 — 오래된 화면에서 버튼을 누르게 두지 않는다 (점검 12차)
+  if (wo.status !== "done")
+    return (
+      <Modal open onClose={onClose} title="완료 보고 확인" description={req.title} size="md" testId="check-modal" footer={<Button onClick={onClose}>닫기</Button>}>
+        <div data-testid="check-stale">
+          <Notice tone="info">이 작업지시는 이미 처리되었습니다 (지금: {WO_STATE[wo.status]}). 하자보수 목록에서 지금 할 일을 확인하세요.</Notice>
+        </div>
+      </Modal>
+    );
   const partial = woPartial(wo);
   const replied = repliedAfterDone(wo, req);
+  // 완료 보고 뒤에 이미 회신했고 ‘일부만’이 아니면, 남은 것은 작업지시 완료 확인뿐 (회신을 또 쓰지 않는다)
+  const confirmOnly = replied && !partial;
   const back = async () => {
     if (note.trim().length < 2) {
       setErr("현장에 다시 할 일을 적어 주세요.");
@@ -399,10 +411,36 @@ export function CheckModal({ db, req, onClose, onDone }: { db: DemoDB; req: Part
         <PhotoStrip db={db} ids={wo.donePhotoIds} label="현장 완료 사진" testId="check-photos" />
         <div className="rounded-xl border border-line bg-surface-2 p-3">
           <p className="text-[0.86rem] font-bold">{partial ? "남은 작업까지 끝났습니다" : "잘 끝났습니다"}</p>
-          <p className="mt-0.5 text-[0.78rem] text-ink-3">작업지시 완료를 확인하고, {req.intake ? "접수자" : "발주처"}에게 보수 완료 회신을 보냅니다. 그 뒤에 ‘잘 고쳐졌습니다’ 확인을 받을 수 있습니다.</p>
-          <Button className="mt-2" variant="cta" icon={<Send size={16} />} onClick={onDone} data-testid="check-finish">
-            보수 완료 회신 쓰기
-          </Button>
+          <p className="mt-0.5 text-[0.78rem] text-ink-3">
+            {confirmOnly ? `${req.intake ? "접수자" : "발주처"}에게는 이미 회신했습니다. 작업지시 완료만 확인합니다.` : `작업지시 완료를 확인하고, ${req.intake ? "접수자" : "발주처"}에게 보수 완료 회신을 보냅니다. 그 뒤에 ‘잘 고쳐졌습니다’ 확인을 받을 수 있습니다.`}
+          </p>
+          {confirmOnly ? (
+            <Button
+              className="mt-2"
+              variant="cta"
+              loading={confirming}
+              onClick={async () => {
+                setConfirming(true);
+                setErr("");
+                try {
+                  await run("reviewWorkOrder", { workOrderId: wo.id, decision: "confirm" });
+                  toast.push({ tone: "ok", title: "작업지시 완료를 확인했습니다" });
+                  onClose();
+                } catch (e) {
+                  setErr(errorMessage(e, "확인하지 못했습니다."));
+                } finally {
+                  setConfirming(false);
+                }
+              }}
+              data-testid="check-confirm"
+            >
+              작업지시 완료 확인
+            </Button>
+          ) : (
+            <Button className="mt-2" variant="cta" icon={<Send size={16} />} onClick={onDone} data-testid="check-finish">
+              보수 완료 회신 쓰기
+            </Button>
+          )}
         </div>
         <div className="rounded-xl border border-line bg-surface-2 p-3">
           <label htmlFor="ck-note" className="text-[0.86rem] font-bold">

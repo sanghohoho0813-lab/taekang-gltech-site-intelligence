@@ -22,6 +22,9 @@ import { Modal } from "@/components/ui/Modal";
 import { DiscardIntakeModal, IntakeContact, PhoneDefectModal, discardableIntakes } from "@/components/admin/IntakeLinks";
 import { CheckModal, DefectOrderModal, PhotoStrip, ReplyModal } from "@/components/admin/RequestModals";
 import { userLabel } from "@/lib/data/hooks";
+import { run } from "@/lib/data/store";
+import { errorMessage } from "@/lib/data/commands";
+import { useToast } from "@/components/ui/Toast";
 import type { DemoDB, PartnerRequest } from "@/lib/domain/types";
 import { intakeState, intakeVia } from "@/lib/domain/intake";
 
@@ -105,6 +108,8 @@ function Board() {
   const scoped = siteId === "all" ? rows : rows.filter((r) => r.req.siteId === siteId);
   const st = defectStats(scoped);
   const sites = db.sites.filter((s) => rows.some((r) => r.req.siteId === s.id) || s.status !== "completed" || s.id === siteId);
+  // 관리대장 보기는 ‘모든 현장’이 없어 첫 현장을 보여 준다 — 위 단추(버리기·전화 접수)도 화면에 보이는 그 현장으로 (점검 12차)
+  const shownSite = view === "ledger" && siteId === "all" ? sites[0]?.id : siteId !== "all" ? siteId : undefined;
   return (
     <PageBody>
       <PageHeader
@@ -117,7 +122,7 @@ function Board() {
               전화 받은 하자 등록
             </Button>
             {/* 장난·중복 접수 여러 건을 한 번에 — 요청함에서 옮겨 왔다 (D-76) */}
-            {discardableIntakes(db, siteId !== "all" ? siteId : undefined).length > 0 && (
+            {discardableIntakes(db, shownSite).length > 0 && (
               <Button variant="ghost" icon={<Trash2 size={16} />} onClick={() => setDiscard(true)} data-testid="defects-discard">
                 장난·중복 접수 버리기
               </Button>
@@ -128,8 +133,8 @@ function Board() {
           </span>
         }
       />
-      {phone && <PhoneDefectModal db={db} defaultSiteId={siteId !== "all" ? siteId : undefined} onClose={() => setPhone(false)} />}
-      {discard && <DiscardIntakeModal db={db} siteId={siteId !== "all" ? siteId : undefined} onClose={() => setDiscard(false)} />}
+      {phone && <PhoneDefectModal db={db} defaultSiteId={shownSite} onClose={() => setPhone(false)} />}
+      {discard && <DiscardIntakeModal db={db} siteId={shownSite} onClose={() => setDiscard(false)} />}
       {/* 휴대폰에서는 숫자 카드를 빼고 바로 목록 — 숫자는 아래 보기 단추에 같이 있다 (첫 화면에 목록이 안 보이던 문제 · 점검 11차) */}
       <div className="no-print hidden grid-cols-2 gap-3 @min-[640px]:grid @min-[900px]:grid-cols-4" data-testid="defect-kpis">
         <StatCard testId="defect-kpi-open" label="진행 중" value={`${st.open}건`} sub={`확인 대기 ${st.waiting} · 끝남 ${st.confirmed}`} icon={<Hourglass size={20} />} group="growth" />
@@ -314,6 +319,33 @@ function DefectList({ db, rows, today, empty, emptyHint, focus }: { db: DemoDB; 
 
 const TONE_DOT = { info: "bg-[var(--t-active)]", ok: "bg-ok", warn: "bg-warn", neutral: "bg-line-strong" } as const;
 
+/** 검토 시작 — 요청한 쪽 화면에 ‘검토 중’으로 보인다 (요청함에서 옮겨 옴 · 점검 12차) */
+function ReviewButton({ req }: { req: PartnerRequest }) {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  return (
+    <Button
+      size="sm"
+      variant="ghost"
+      loading={busy}
+      onClick={async () => {
+        setBusy(true);
+        try {
+          await run("updatePartnerRequest", { requestId: req.id, patch: { status: "reviewing" } });
+          toast.push({ tone: "ok", title: "검토를 시작했습니다", desc: req.intake ? "접수자의 진행 확인 화면에 ‘검토 중’으로 표시됩니다." : "발주처 포털에 ‘검토 중’으로 표시됩니다." });
+        } catch (e) {
+          toast.push({ tone: "err", title: errorMessage(e, "바꾸지 못했습니다.") });
+        } finally {
+          setBusy(false);
+        }
+      }}
+      data-testid="defect-detail-review"
+    >
+      검토 시작
+    </Button>
+  );
+}
+
 /** 한 건 펼침 — 적힌 내용 전부·접수자(링크·전화 접수)·사진·처리 이력 */
 function DefectDetail({ db, row, onReply, onCheck }: { db: DemoDB; row: DefectRow; onReply: () => void; onCheck: () => void }) {
   const r = row.req;
@@ -352,8 +384,15 @@ function DefectDetail({ db, row, onReply, onCheck }: { db: DemoDB; row: DefectRo
               남은 보수 확인
             </Button>
           )}
-          {/* 현장이 끝냈다고 보냈는데 사진을 보니 덜 됐다 — 작업지시 화면으로 가지 않고 여기서 보완 요청 (D-76) */}
-          {row.next === "reply" && row.wo?.status === "done" && (
+          {/* 현장 보수 중에도 일정 안내는 보낼 수 있다 — 요청함에서 하던 일 (점검 12차) */}
+          {row.next === "repairing" && r.status !== "answered" && (
+            <Button size="sm" variant="soft" icon={<Send size={15} />} onClick={onReply} data-testid="defect-detail-schedule">
+              일정 안내 회신
+            </Button>
+          )}
+          {r.status === "received" && row.next !== "reopened" && <ReviewButton req={r} />}
+          {/* 현장이 끝냈다고 보냈는데 사진을 보니 덜 됐다 — 작업지시 화면으로 가지 않고 여기서 보완 요청 (D-76) · 회신한 뒤라도 본사 확인 전이면 */}
+          {(row.next === "reply" || row.next === "client") && row.wo?.status === "done" && (
             <Button size="sm" variant="ghost" icon={<Undo2 size={15} />} onClick={onCheck} data-testid="defect-detail-return">
               보완 요청 (다시 보수)
             </Button>

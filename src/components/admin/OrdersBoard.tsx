@@ -228,7 +228,7 @@ function Orders({ db }: { db: DemoDB }) {
                   {w.sourcePartnerRequestId && (
                     // 하자는 하자보수 화면에서 처리한다 — 그 줄을 펼쳐 이력과 함께 (점검 11차)
                     <Link href={`/defects?req=${w.sourcePartnerRequestId}`} className="inline-flex min-h-11 items-center text-[0.82rem] font-bold text-theme-ink underline" data-testid="wo-to-request">
-                      하자보수에서 {w.status === "done" || w.status === "confirmed" ? "보수 완료 회신하기" : "회신·이력 보기"} →
+                      하자보수에서 {w.status === "done" || w.status === "confirmed" ? "보수 완료 회신하기" : "일정 안내·이력 보기"} →
                     </Link>
                   )}
                   {w.status === "returned" && w.returnNote && <p className="text-[0.82rem] font-semibold text-warn">보완 요청: {w.returnNote}</p>}

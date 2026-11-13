@@ -409,6 +409,8 @@ export function IntakeContact({ db, req }: { db: DemoDB; req: PartnerRequest }) 
   const [status, setStatus] = useState<string | null>(null);
   const [redo, setRedo] = useState(false);
   const [pickReason, setPickReason] = useState(false);
+  // 두 번 눌러 두 번 보내지 않게 (점검 12차)
+  const [discarding, setDiscarding] = useState(false);
   const [redoNote, setRedoNote] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
@@ -442,12 +444,16 @@ export function IntakeContact({ db, req }: { db: DemoDB; req: PartnerRequest }) 
     setStatus(ok ? "보낼 글을 복사했습니다. 문자·카카오톡에 붙여 넣으세요." : "복사하지 못했습니다. 글을 길게 눌러 직접 복사해 주세요.");
   };
   const discard = async (reason: DiscardReason) => {
+    if (discarding) return;
     if (!window.confirm(`접수 번호 ${c.no} 건을 버릴까요? (${DISCARD_REASONS[reason]})\n접수와 사진을 지웁니다. 하자 건수·관리대장·보고서에 남지 않고, 되돌릴 수 없습니다.`)) return;
+    setDiscarding(true);
     try {
       await run("discardIntakeRequests", { requestIds: [req.id], reason });
       toast.push({ tone: "ok", title: `접수 번호 ${c.no} 건을 버렸습니다` });
     } catch (e) {
       toast.push({ tone: "err", title: errorMessage(e, "버리지 못했습니다.") });
+    } finally {
+      setDiscarding(false);
     }
   };
   const sendRedo = async () => {
@@ -523,7 +529,7 @@ export function IntakeContact({ db, req }: { db: DemoDB; req: PartnerRequest }) 
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 py-2" role="group" aria-label={`접수 번호 ${c.no} 버리는 이유`} data-testid="request-intake-discard-reasons">
               <span className="text-[0.78rem] font-bold text-ink-2">버리는 이유:</span>
               {(Object.keys(DISCARD_REASONS) as DiscardReason[]).map((k) => (
-                <Button key={k} size="sm" variant="soft" onClick={() => void discard(k)} data-testid={`request-intake-discard-${k}`}>
+                <Button key={k} size="sm" variant="soft" disabled={discarding} onClick={() => void discard(k)} data-testid={`request-intake-discard-${k}`}>
                   {DISCARD_REASONS[k]}
                 </Button>
               ))}
@@ -688,15 +694,29 @@ export function PhoneDefectModal({ db, siteId, defaultSiteId, onClose }: { db: D
 }
 
 /** 장난·중복 접수 여러 건 버리기 — 아직 손대지 않은(작업지시 전) 링크·전화 접수만 */
-/** 버릴 수 있는 링크·전화 접수 — 작업지시를 보냈거나 접수자가 확인했거나 다시 접수가 이어진 건은 빼고 (현장을 고르면 그 현장만) */
+/**
+ * 여러 건 버리기에 고를 수 있는 링크·전화 접수 — 아직 회신하지 않은 것만 (현장을 고르면 그 현장만).
+ * 작업지시를 보냈거나 회신했거나 접수자가 확인했거나 다시 접수가 이어진 건은 빼서, ‘모두 고르기’로 진짜 기록을 지우지 않게 (점검 12차).
+ * 회신한 건이 장난이었으면 그 줄의 ‘버리기’로 하나씩.
+ */
 export function discardableIntakes(db: DemoDB, siteId?: string) {
-  return db.partnerRequests.filter((r) => r.intake && (!siteId || r.siteId === siteId) && !r.confirmedAt && !(r.linkedWorkOrderId && (db.workOrders ?? []).some((w) => w.id === r.linkedWorkOrderId)) && !db.partnerRequests.some((x) => x.reopenedFrom === r.id));
+  return db.partnerRequests.filter(
+    (r) =>
+      r.intake &&
+      (!siteId || r.siteId === siteId) &&
+      r.status !== "answered" &&
+      !r.confirmedAt &&
+      !(r.linkedWorkOrderId && (db.workOrders ?? []).some((w) => w.id === r.linkedWorkOrderId)) &&
+      !db.partnerRequests.some((x) => x.reopenedFrom === r.id),
+  );
 }
 
 export function DiscardIntakeModal({ db, siteId, onClose }: { db: DemoDB; siteId?: string; onClose: () => void }) {
   const toast = useToast();
   const list = discardableIntakes(db, siteId);
-  const [picked, setPicked] = useState<string[]>([]);
+  const [picked0, setPicked] = useState<string[]>([]);
+  // 다른 사람이 그사이 버리거나 작업지시를 보낸 접수는 고른 것에서 빠진다 — 숫자·보내는 목록이 지금 화면과 같게 (점검 12차)
+  const picked = picked0.filter((id) => list.some((r) => r.id === id));
   const [reason, setReason] = useState<DiscardReason>("spam");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -734,7 +754,7 @@ export function DiscardIntakeModal({ db, siteId, onClose }: { db: DemoDB; siteId
     >
       <div className="space-y-3">
         {list.length === 0 ? (
-          <p className="text-[0.88rem] text-ink-2">버릴 수 있는 접수가 없습니다. (작업지시를 보냈거나 접수자가 확인한 접수는 회신으로 끝냅니다)</p>
+          <p className="text-[0.88rem] text-ink-2">여러 건으로 버릴 수 있는 접수가 없습니다. 작업지시를 보냈거나 회신한 접수는 고르지 않습니다 — 회신한 장난 접수는 그 줄의 ‘버리기’로 하나씩 지웁니다.</p>
         ) : (
           <>
             <label className="flex min-h-10 items-center gap-2.5 text-[0.86rem] font-bold">
@@ -747,7 +767,7 @@ export function DiscardIntakeModal({ db, siteId, onClose }: { db: DemoDB; siteId
                   <label className="flex cursor-pointer items-start gap-2.5 px-3 py-2 text-[0.84rem]">
                     <input type="checkbox" checked={picked.includes(r.id)} onChange={(e) => setPicked((x) => (e.target.checked ? [...x, r.id] : x.filter((y) => y !== r.id)))} className="mt-1 size-4 accent-[var(--t-active)]" data-testid="discard-pick" />
                     <span className="min-w-0">
-                      <b className="num">{r.intake!.no}</b> <span className="text-ink-3">· {db.sites.find((s) => s.id === r.siteId)?.shortName} · {fmtRelative(r.createdAt)}</span>
+                      <b className="num">{r.intake!.no}</b> <span className="text-ink-3">· {db.sites.find((s) => s.id === r.siteId)?.shortName} · {fmtRelative(r.createdAt)} · {r.reopenedFrom ? "다시 접수" : r.status === "reviewing" ? "검토 중" : "회신 전"}</span>
                       <span className="block [overflow-wrap:anywhere]">
                         {r.location} — {r.description.slice(0, 60)}
                         {r.description.length > 60 ? "…" : ""}

@@ -690,6 +690,9 @@ function BillingTab({ db, site, f }: { db: DemoDB; site: Site; f: SiteFinancials
 }
 
 function RequestsTab({ db, site }: { db: DemoDB; site: Site }) {
+  const { role } = useMe();
+  // 처리 화면(하자보수·고객 요청함)은 본사만 연다 — 현장 직원에게는 글만 (점검 12차)
+  const hq = role === "ceo" || role === "manager";
   const reqs = db.partnerRequests.filter((r) => r.siteId === site.id);
   return (
     <div className="space-y-5">
@@ -697,7 +700,7 @@ function RequestsTab({ db, site }: { db: DemoDB; site: Site }) {
     <IntakeSection db={db} site={site} />
     <Card>
       {/* 하자는 하자보수, 견적·주문·일정은 고객 요청함에서 처리 — 줄을 누르면 그 화면의 그 건으로 (D-76) */}
-      <CardHeader title="이 현장 요청" sub="발주처 포털·하자 접수 링크·전화로 들어온 요청 · 줄을 누르면 처리 화면으로" right={<Link href={`/defects?site=${site.id}`}><Button size="sm" icon={<Handshake size={15} />}>하자보수</Button></Link>} />
+      <CardHeader title="이 현장 요청" sub="발주처 포털·하자 접수 링크·전화로 들어온 요청 · 줄을 누르면 처리 화면으로" right={hq ? <Link href={`/defects?site=${site.id}`}><Button size="sm" icon={<Handshake size={15} />}>하자보수</Button></Link> : undefined} />
       {reqs.length === 0 ? (
         <EmptyState title="요청이 없습니다." />
       ) : (
@@ -706,9 +709,13 @@ function RequestsTab({ db, site }: { db: DemoDB; site: Site }) {
             <li key={r.id} className="py-2.5 text-[0.86rem]" data-testid="site-request">
               <p className="flex flex-wrap items-center gap-1.5">
                 <Badge tone="neutral">{PARTNER_TYPE_LABEL[r.type]}</Badge>
-                <Link href={r.type === "defect" ? `/defects?req=${r.id}` : `/insights?req=${r.id}#requests`} className="font-bold underline-offset-2 hover:text-theme-ink hover:underline" data-testid="site-request-open">
-                  {r.title}
-                </Link>
+                {hq ? (
+                  <Link href={r.type === "defect" ? `/defects?req=${r.id}` : `/insights?req=${r.id}#requests`} className="font-bold underline-offset-2 hover:text-theme-ink hover:underline" data-testid="site-request-open">
+                    {r.title}
+                  </Link>
+                ) : (
+                  <b>{r.title}</b>
+                )}
                 <Badge tone={r.status === "answered" ? "ok" : r.status === "reviewing" ? "theme" : "warn"}>{PARTNER_STATUS_LABEL[r.status]}</Badge>
               </p>
               <p className="text-[0.78rem] text-ink-3">{fmtDateTime(r.createdAt)} · {r.intake ? `${intakeVia(r.intake)} · 접수 번호 ${r.intake.no}` : userLabel(db, r.partnerUserId)}</p>

@@ -293,11 +293,21 @@ test("D-76 하자 일원화: 요청함에는 하자가 없고 안내만 · 옛 �
   await page.goto("/sites/site-a?tab=requests");
   await expect(page.getByTestId("site-request-open").filter({ hasText: "비가 오면 창틀 아래로 물이 샙니다." })).toHaveAttribute("href", `/defects?req=${id}`);
 
-  // 작업지시 → 현장이 ‘지시대로 끝냈어요’ → 본사가 사진을 보고 하자보수에서 바로 보완 요청
+  // 작업지시 → (현장 보수 중에도) 일정 안내 회신 → 현장이 ‘지시대로 끝냈어요’ → 본사가 사진을 보고 하자보수에서 바로 보완 요청
   await page.goto("/defects?view=todo");
   await row.getByTestId("defect-order").click();
   await page.getByTestId("defect-order-send").click();
   await expect(page.getByTestId("defect-order-modal")).toHaveCount(0);
+  await page.getByTestId("defect-view-open").click();
+  await row.getByTestId("defect-more").click();
+  await row.getByTestId("defect-detail-schedule").click();
+  const rm = page.getByTestId("reply-modal");
+  await expect(rm).toContainText("현장 보수가 아직 끝나지 않았습니다");
+  await rm.locator("#rp-text").fill("11월 15일 오전에 보수하러 방문하겠습니다.");
+  await rm.getByTestId("reply-confirm").click();
+  await rm.getByTestId("reply-done-close").click();
+  await expect(row.getByTestId("defect-detail-schedule")).toHaveCount(0);
+  await expect(row.getByTestId("defect-timeline")).toContainText("11월 15일 오전에 보수하러 방문하겠습니다.");
   await asRole(page, "field");
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/my-actions");
@@ -331,5 +341,16 @@ test("D-76 하자 일원화: 요청함에는 하자가 없고 안내만 · 옛 �
   const dm = page.getByTestId("discard-modal");
   await expect(dm.getByTestId("discard-pick")).toHaveCount(1);
   await expect(dm).toContainText("1층 로비 출입문");
+  await expect(dm).toContainText("회신 전");
   await expect(dm).not.toContainText("3층 302호 거실 창");
+  await dm.getByRole("button", { name: "취소" }).click();
+  // 처리 대기(대시보드)의 하자 수 = 메뉴 배지
+  await page.goto("/dashboard");
+  const badge = (await page.getByTestId("nav-defects").innerText()).replace(/\D/g, "");
+  await expect(page.getByTestId("pending-defect")).toContainText(badge);
+  // 현장 직원: 현장 요청 탭은 글만 (처리 화면으로 가는 링크·단추 없음)
+  await asRole(page, "field");
+  await page.goto("/sites/site-a?tab=requests");
+  await expect(page.getByTestId("site-request").first()).toBeVisible();
+  await expect(page.getByTestId("site-request-open")).toHaveCount(0);
 });
