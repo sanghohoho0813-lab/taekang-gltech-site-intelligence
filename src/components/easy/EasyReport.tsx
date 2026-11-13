@@ -269,7 +269,9 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
     go(target);
   };
 
-  const order = flowOrder(mode, !fixedSiteId && sites.length > 1, d.costYes === true);
+  // 공정률은 그 현장 담당(현장소장)과 본사만 바꾼다 — 반장·작업자가 누른 +가 발주처 공정률로 바로 나가던 문제 (D-77 리허설)
+  const canProgress = !!site && (role !== "field" || site.fieldUserId === userId);
+  const order = flowOrder(mode, !fixedSiteId && sites.length > 1, d.costYes === true, canProgress);
   const sections = Array.from(new Set(order.map((s) => SECTION_OF[s])));
   const nextAfter = (s: StepId): StepId => order[Math.min(order.indexOf(s) + 1, order.length - 1)];
 
@@ -319,8 +321,8 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
         ...(mode === "photo" || mode === "cost" ? { kind: mode } : {}),
         ...(d.workOrderId && linkedOrder ? { workOrderId: d.workOrderId } : {}),
         geo: geo ?? { noLocation: consented ? "timeout" : "skipped" },
-        ...(d.progress !== null && d.progress !== site.progressPct ? { progressPct: d.progress } : {}),
-        ...(stageChanges.length ? { stageProgress: stageChanges.map((c) => ({ stageId: c.id, progressPct: c.to })) } : {}),
+        ...(canProgress && d.progress !== null && d.progress !== site.progressPct ? { progressPct: d.progress } : {}),
+        ...(canProgress && stageChanges.length ? { stageProgress: stageChanges.map((c) => ({ stageId: c.id, progressPct: c.to })) } : {}),
       };
     try {
       const result = await run("submitFieldReport", args);
@@ -1110,6 +1112,7 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
             )}
             {mode === "full" && row("오늘 한 작업", workDone || <span className="text-err">작업을 넣어 주세요</span>, "work", "confirm-work")}
             {mode === "full" &&
+              canProgress &&
               row(
                 "진행률",
                 stageChanges.length ? (
@@ -1255,9 +1258,9 @@ function firstStep(mode: EasyMode, needSite: boolean): StepId {
   return mode === "photo" ? "photo" : mode === "cost" ? "cost-cat" : "work";
 }
 
-function flowOrder(mode: EasyMode, needSite: boolean, withCost: boolean): StepId[] {
+function flowOrder(mode: EasyMode, needSite: boolean, withCost: boolean, withProgress = true): StepId[] {
   const head: StepId[] = needSite ? ["site"] : [];
   if (mode === "photo") return [...head, "photo", "confirm"];
   if (mode === "cost") return [...head, "cost-cat", "cost-amt", "cost-kind", "cost-list", "cost-reason", "confirm"];
-  return [...head, "work", "progress", "photo", "issue", "cost", ...(withCost ? (["cost-cat", "cost-amt", "cost-kind", "cost-list", "cost-reason"] as StepId[]) : []), "confirm"];
+  return [...head, "work", ...(withProgress ? (["progress"] as StepId[]) : []), "photo", "issue", "cost", ...(withCost ? (["cost-cat", "cost-amt", "cost-kind", "cost-list", "cost-reason"] as StepId[]) : []), "confirm"];
 }

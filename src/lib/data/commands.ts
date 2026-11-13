@@ -314,7 +314,10 @@ export function submitFieldReport(db0: DemoDB, input: FieldReportInput, ctx: Ctx
 
   const site = requireSite(db, input.siteId);
   const progressFrom = site.progressPct;
-  const stageChanges = (input.stageProgress ?? []).map((c) => ({ stageId: c.stageId, progressPct: Math.round(c.progressPct) })).filter((c) => site.stages.find((st) => st.id === c.stageId)?.progressPct !== c.progressPct);
+  // 공정률은 그 현장 담당(현장소장)과 본사만 — 다른 현장 직원의 보고에 담긴 공정률은 반영하지 않는다 (보고 자체는 받는다 · D-77 리허설)
+  const actor = db.users.find((u) => u.id === ctx.userId);
+  const mayProgress = !actor || actor.role !== "field" || site.fieldUserId === actor.id;
+  const stageChanges = (mayProgress ? (input.stageProgress ?? []) : []).map((c) => ({ stageId: c.stageId, progressPct: Math.round(c.progressPct) })).filter((c) => site.stages.find((st) => st.id === c.stageId)?.progressPct !== c.progressPct);
   if (stageChanges.length) {
     // 현장 공정률이 갑자기 튀지 않도록 단계 변화량만 기간 가중으로 더한다 (현장 공정률을 직접 고친 경우는 그 값 우선)
     const delta = siteProgressDelta(site, stageChanges);
@@ -333,7 +336,7 @@ export function submitFieldReport(db0: DemoDB, input: FieldReportInput, ctx: Ctx
     if (input.progressPct === undefined) site.progressPct = Math.max(0, Math.min(100, Math.round(site.progressPct + delta)));
     log(db, ctx, "progress", `${site.shortName} 공정 진척 — ${names.join(", ")} (현장보고)`, input.siteId, `/sites/${input.siteId}`);
   }
-  if (input.progressPct !== undefined && Math.round(input.progressPct) !== site.progressPct) {
+  if (mayProgress && input.progressPct !== undefined && Math.round(input.progressPct) !== site.progressPct) {
     log(db, ctx, "progress", `${site.shortName} 공정률 ${site.progressPct}% → ${Math.round(input.progressPct)}% (현장보고)`, input.siteId, `/sites/${input.siteId}`);
     site.progressPct = Math.round(input.progressPct);
   }

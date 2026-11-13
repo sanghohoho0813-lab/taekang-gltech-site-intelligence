@@ -66,7 +66,12 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     await page.goto("/setup");
     await page.locator("#s-name").fill("김대표");
     await page.locator("#s-email").fill(CEO.email);
+    // 회사 전화번호는 처음에 받는다 — 비우면 안내 (로그인 쪽지·하자 접수 화면의 ‘본사로 전화’가 빈칸이 되지 않게 · D-77)
     await page.locator("#s-pw").fill(CEO.password);
+    await page.locator("#s-pw2").fill(CEO.password);
+    await page.getByTestId("setup-submit").click();
+    await expect(page.getByTestId("setup-form")).toContainText("회사 전화번호를 넣어 주세요.");
+    await page.getByTestId("setup-phone").fill("031-123-4567");
     await page.locator("#s-pw2").fill(CEO.password);
     await page.getByTestId("setup-submit").click();
     await expect(page).toHaveURL(/\/dashboard/);

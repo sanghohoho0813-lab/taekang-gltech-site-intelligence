@@ -80,7 +80,8 @@ export function canAccess(role: RoleId, pathname: string): boolean {
 }
 
 export function navFor(role: RoleId): NavItem[] {
-  return NAV.filter((n) => visible(n) && n.roles.includes(role));
+  // 발주처·현장 직원의 ‘설정’은 글자 크기·알림·비밀번호뿐 — 본사 설명(위험 기준·데이터 가져오기)을 보이지 않게 (D-77 리허설)
+  return NAV.filter((n) => visible(n) && n.roles.includes(role)).map((n) => (n.href === "/settings" && IS_LIVE && (role === "partner" || role === "field") ? { ...n, desc: "글자 크기·알림·비밀번호" } : n));
 }
 
 export function homeFor(role: RoleId): string {

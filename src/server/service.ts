@@ -6,6 +6,7 @@ import { pairHash, pairKiosk } from "@/lib/data/attendanceCommands";
 import { hex, randomBytes } from "@/lib/domain/hmac";
 import type { ActivityLog, DemoDB, RoleId } from "@/lib/domain/types";
 import { DEFAULT_SETTINGS } from "@/lib/domain/types";
+import { normalizeOfficePhone } from "@/lib/domain/intake";
 import { AUDIT_LIMIT, auditRange, type AuditFilter } from "@/lib/domain/audit";
 import { COMMANDS, isCommandName, type CommandName } from "@/lib/data/registry";
 import { CommandError } from "@/lib/data/commands";
@@ -265,6 +266,8 @@ export interface SetupInput {
   password: string;
   /** 가상 현장 3곳·가상 직원 계정으로 시작 (교육·시험 운영용) */
   withDemoData?: boolean;
+  /** 회사 전화번호 — 로그인 쪽지·현장 화면·하자 접수 화면의 ‘모르면 본사로 전화’ (D-77) */
+  publicPhone?: string;
 }
 
 /** 데모 데이터로 시작할 때 만드는 가상 직원 계정 (비밀번호는 대표 계정과 같음) */
@@ -283,6 +286,9 @@ export async function setupCompany(input: SetupInput): Promise<{ token: string; 
   if (!email) errors.email = "이메일 형식을 확인해주세요.";
   const pw = passwordProblem(input.password);
   if (pw) errors.password = pw;
+  const phoneRaw = typeof input.publicPhone === "string" ? input.publicPhone.trim() : "";
+  const publicPhone = phoneRaw ? normalizeOfficePhone(phoneRaw) : null;
+  if (phoneRaw && !publicPhone) errors.publicPhone = "전화번호를 확인해 주세요. (예: 031-123-4567)";
   if (Object.keys(errors).length) throw new CommandError("입력값을 확인해주세요.", "VALIDATION", errors);
 
   const db = await getDb();
@@ -333,7 +339,7 @@ export async function setupCompany(input: SetupInput): Promise<{ token: string; 
           importBatches: [],
           // 위 목록에 없는 새 자료 묶음(앱 의견·자재 기록·휴대폰 점검 등)도 빈 채로 시작 — 시연 자료가 섞여 들어가던 문제 (D-65 점검 반영)
           ...(Object.fromEntries(Object.keys(COLLECTIONS).filter((n) => n !== "sites").map((n) => [n, []])) as Partial<DemoDB>),
-          settings: DEFAULT_SETTINGS,
+          settings: { ...DEFAULT_SETTINGS, ...(publicPhone ? { publicPhone } : {}) },
           rev: 1,
         };
     await tx.query(`insert into companies (id, name, info, rev) values ($1, $2, $3::jsonb, $4)`, [

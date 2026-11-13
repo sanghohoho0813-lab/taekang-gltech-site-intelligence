@@ -96,6 +96,8 @@ describe("임시 비밀번호", () => {
       expect(pw).toHaveLength(10);
       expect(passwordProblem(pw)).toBeNull();
       expect(pw).not.toMatch(/[lIoO01]/);
+      // 소문자 5자 + 숫자 5자 — 대문자 없음 (휴대폰에서 Shift·한/영을 오가지 않게 · D-77)
+      expect(pw).toMatch(/^[a-z]{5}[2-9]{5}$/);
       seen.add(pw);
     }
     expect(seen.size).toBe(500);

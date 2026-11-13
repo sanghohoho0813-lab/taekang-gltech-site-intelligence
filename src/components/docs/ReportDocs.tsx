@@ -196,7 +196,8 @@ export function MonthlyDocView({
 
       <Section title={`4. ${nextName} 예정 공정`}>
         {doc.next.length === 0 ? (
-          <p className="text-[0.85rem] text-ink-3">{nextName}에 계획된 미완료 공정이 없습니다.</p>
+          // 공정 단계가 없는 새 현장은 ‘계획된 공정이 없다’가 아니라 ‘아직 등록 전’ (D-77 리허설)
+          <p className="text-[0.85rem] text-ink-3">{doc.stages.length === 0 ? "공정 단계가 아직 등록되지 않았습니다." : `${nextName}에 계획된 미완료 공정이 없습니다.`}</p>
         ) : (
           <ul className="space-y-1.5 text-[0.86rem]" data-testid="report-next">
             {doc.next.map((n) => (

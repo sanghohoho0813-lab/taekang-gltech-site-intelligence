@@ -118,6 +118,31 @@ export function daysBetween(fromIso: string, to = new Date()): number {
   return Math.floor((to.getTime() - new Date(fromIso).getTime()) / 86_400_000);
 }
 
+/**
+ * ‘18억’, ‘1억 8천만’, ‘1.8억’, ‘18억5000만’, ‘3,500만’, ‘1,800,000,000’ → 원 단위 정수. 읽을 수 없으면 NaN.
+ * 금액 칸에 ‘18억’을 치면 숫자만 남아 18원으로 저장되고 손익 기준이 망가지던 문제 (D-77 리허설).
+ */
+export function parseKoreanWon(input: string): number {
+  const s = input.replace(/[,\s원₩]/g, "");
+  if (s === "") return NaN;
+  if (/^\d+$/.test(s)) return Number(s);
+  const UNIT: Record<string, number> = { 조: 1e12, 억: 1e8, 천만: 1e7, 백만: 1e6, 만: 1e4, 천: 1e3 };
+  const re = /(\d+(?:\.\d+)?)(조|억|천만|백만|만|천)?/gy;
+  let total = 0;
+  let pos = 0;
+  let m: RegExpExecArray | null;
+  while (pos < s.length && (m = re.exec(s))) {
+    if (m[0] === "") break;
+    const unit = m[2] ? UNIT[m[2]] : 1;
+    // 단위 없는 소수(‘18.5’)는 원 단위로 받지 않는다
+    if (!m[2] && m[1].includes(".")) return NaN;
+    total += Number(m[1]) * unit;
+    pos = re.lastIndex;
+  }
+  if (pos !== s.length) return NaN;
+  return Math.round(total);
+}
+
 /** 입력 문자열 → 원 단위 정수 (쉼표·공백 제거). 잘못된 값이면 NaN */
 export function parseWon(input: string): number {
   const cleaned = input.replace(/[,\s원]/g, "");

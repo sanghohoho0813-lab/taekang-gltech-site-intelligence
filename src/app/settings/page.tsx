@@ -37,13 +37,19 @@ export default function SettingsPage() {
   const [reset, setReset] = useState(false);
   if (!db) return <PageSkeleton />;
   const isManager = role === "ceo" || role === "manager";
+  // 실제 운영의 발주처·현장 직원: 글자 크기·알림·비밀번호만 (테마 영어 이름·AI·데이터 같은 본사용 내용이 발주처에게 보이던 문제 · D-77 리허설)
+  const simple = IS_LIVE && !isManager;
 
   return (
     <PageBody>
-      <PageHeader title="설정" desc="화면·권한 프리뷰·데모·데이터·AI 상태를 관리합니다. 모든 변경은 이 브라우저에만 저장됩니다." />
+      <PageHeader
+        title="설정"
+        desc={simple ? "글자 크기·알림·비밀번호를 바꿉니다." : IS_LIVE ? "화면·알림·데이터 가져오기·위험 판단 기준을 관리합니다. 화면 설정은 이 기기에만 저장됩니다." : "화면·권한 프리뷰·데모·데이터·AI 상태를 관리합니다. 모든 변경은 이 브라우저에만 저장됩니다."}
+      />
 
       <Card data-tour="theme-picker" data-testid="theme-picker">
-        <CardHeader title="화면 · 테마 (7가지)" sub="테마는 메뉴·강조색·차트 분위기만 바꾸고 본문·표·폼의 가독성은 고정합니다 · PC와 모바일 화면이 같은 테마를 공유" />
+        <CardHeader title={simple ? "글자 크기" : "화면 · 테마 (7가지)"} sub={simple ? "이 기기에서만 바뀝니다" : "테마는 메뉴·강조색·차트 분위기만 바꾸고 본문·표·폼의 가독성은 고정합니다 · PC와 모바일 화면이 같은 테마를 공유"} />
+        {!simple && (
         <div className="grid grid-cols-1 gap-3 px-5 pb-5 @min-[600px]:grid-cols-2 @min-[1080px]:grid-cols-4" role="radiogroup" aria-label="테마 선택">
           {THEMES.map((t) => {
             const on = prefs.theme === t.id;
@@ -74,7 +80,8 @@ export default function SettingsPage() {
             );
           })}
         </div>
-        <div className="flex flex-wrap items-center gap-x-8 gap-y-3 border-t border-line px-5 py-4">
+        )}
+        <div className={cx("flex flex-wrap items-center gap-x-8 gap-y-3 px-5 py-4", !simple && "border-t border-line")}>
           <div className="flex items-center gap-3">
             <span className="text-[0.86rem] font-semibold">글자 크기</span>
             <Segmented<FontScale>
@@ -187,6 +194,7 @@ export default function SettingsPage() {
 
       {isManager && <DataSection />}
 
+      {isManager && (
       <div className="grid gap-5 @min-[1000px]:grid-cols-2">
         <Card>
           <CardHeader title="AI 연결 상태" right={<AiReadyButton />} />
@@ -198,8 +206,9 @@ export default function SettingsPage() {
             <p className="text-[0.78rem] text-ink-3">AI를 연결할 자리만 만들어 두었습니다 — 지금은 AI를 부르는 코드가 없습니다.</p>
           </div>
         </Card>
-        {isManager && <ThresholdCard thresholds={db.thresholds} />}
+        <ThresholdCard thresholds={db.thresholds} />
       </div>
+      )}
 
       <ResetDialog
         open={reset}

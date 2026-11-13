@@ -204,7 +204,8 @@ function PartnerPortal({ db, partner, sites: mySites, preview }: { db: NonNullab
               <Donut value={site.progressPct} label="전체 공정률" size={124} />
               <div className="text-[0.85rem]">
                 <p className="text-ink-3">진행 중인 단계</p>
-                <p className="font-bold text-ink">{nextStage?.name ?? "준공"}</p>
+                {/* 단계가 없는 새 현장에서 ‘준공’으로 보이던 문제 — 모든 단계가 끝났을 때만 ‘준공’ (D-77 리허설) */}
+                <p className="font-bold text-ink">{nextStage?.name ?? (site.stages.length === 0 ? "공정 단계 등록 전" : "준공")}</p>
                 {nextStage && <p className="text-[0.76rem] text-ink-3 num">{fmtDate(nextStage.startDate)} ~ {fmtDate(nextStage.endDate)}</p>}
               </div>
             </div>

@@ -320,7 +320,7 @@ export function MobileDrawer({ open, onClose }: { open: boolean; onClose: () => 
             );
           })}
         </nav>
-        <p className="border-t border-shell-line px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] text-[0.72rem] text-shell-muted">{IS_LIVE ? "운영 DB · 규칙 기반 진단" : "DEMO · 가상 시연 데이터 · 규칙 기반 진단"}</p>
+        <p className="border-t border-shell-line px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] text-[0.72rem] text-shell-muted">{IS_LIVE ? (role === "ceo" || role === "manager" ? "운영 DB · 규칙 기반 진단" : (db?.company.name ?? "")) : "DEMO · 가상 시연 데이터 · 규칙 기반 진단"}</p>
       </div>
     </div>
   );

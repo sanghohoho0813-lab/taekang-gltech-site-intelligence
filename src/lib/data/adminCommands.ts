@@ -161,6 +161,7 @@ export function saveSite(db0: DemoDB, input: SaveSiteInput, ctx: Ctx) {
   // 계약 — 원 계약금액과 실행예산 합계(계획 이익률의 기준)
   const contract = db.contracts.find((c) => c.siteId === id);
   const prevAmount = contract?.contractAmount;
+  const prevBudgets = Object.fromEntries(COST_CATEGORIES.map((c) => [c, db.budgets.find((x) => x.siteId === id && x.category === c)?.amount])) as Record<string, number | undefined>;
   if (contract) {
     contract.contractAmount = input.contractAmount;
     contract.plannedCostTotal = budgetSum;
@@ -179,6 +180,21 @@ export function saveSite(db0: DemoDB, input: SaveSiteInput, ctx: Ctx) {
     for (const c of COST_CATEGORIES) db.forecasts.push({ siteId: id, category: c, remaining: input.budgets[c], basisDate: todayIso(ctx.now), basisAt: at, note: "현장 등록 시 실행예산 기준" });
     db.baseline[id] = snapshotOf(siteFinancials(db, id));
   }
+  // 현장에서 아직 아무것도 입력하지 않았는데 계약금액·실행예산을 고치면 = 등록 때 잘못 친 값을 바로잡는 것 —
+  // 손익 기준(‘현장 등록 시점’)과 잔여예상원가를 새 값으로 다시 잡는다. 그대로 두면 대시보드·대표 보고서에 ‘기준 대비 ▲17억’이 영원히 남았다 (D-77 리허설)
+  let rebased = false;
+  const budgetsChanged = !isNew && COST_CATEGORIES.some((c) => prevBudgets[c] !== input.budgets[c]);
+  if (!isNew && (prevAmount !== input.contractAmount || budgetsChanged)) {
+    const live = db.costEntries.some((e) => e.siteId === id && (e.source === "FIELD" || e.source === "PC")) || db.reports.some((r) => r.siteId === id && !r.importBatchId);
+    if (!live) {
+      if (budgetsChanged) {
+        db.forecasts = db.forecasts.filter((f) => f.siteId !== id);
+        for (const c of COST_CATEGORIES) db.forecasts.push({ siteId: id, category: c, remaining: input.budgets[c], basisDate: todayIso(ctx.now), basisAt: at, note: "실행예산 수정 반영 (현장 입력 전)" });
+      }
+      db.baseline[id] = snapshotOf(siteFinancials(db, id));
+      rebased = true;
+    }
+  }
 
   log(
     db,
@@ -186,7 +202,7 @@ export function saveSite(db0: DemoDB, input: SaveSiteInput, ctx: Ctx) {
     "site",
     isNew
       ? `${shortName} 현장 등록 — 계약 ${fmtEok(input.contractAmount)} · 실행예산 ${fmtEok(budgetSum)}`
-      : `${shortName} 현장 정보 수정${prevAmount !== undefined && prevAmount !== input.contractAmount ? ` — 원 계약 ${fmtEok(prevAmount)} → ${fmtEok(input.contractAmount)}` : ""}${warrantyStart ? ` · 하자보증 준공 ${warrantyStart.replace(/-/g, ".")}부터` : ""}`,
+      : `${shortName} 현장 정보 수정${prevAmount !== undefined && prevAmount !== input.contractAmount ? ` — 원 계약 ${fmtEok(prevAmount)} → ${fmtEok(input.contractAmount)}` : ""}${rebased ? " · 현장 입력 전이라 손익 기준을 새 값으로 다시 잡음" : ""}${warrantyStart ? ` · 하자보증 준공 ${warrantyStart.replace(/-/g, ".")}부터` : ""}`,
     id,
     `/sites/${id}`,
   );

@@ -165,7 +165,7 @@ export function NotificationBell() {
       </button>
       {open && (
         <div className="anim-pop absolute right-0 top-[calc(100%+6px)] z-40 w-[min(26rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-line bg-surface shadow-pop">
-          <p className="border-b border-line px-4 py-3 text-[0.9rem] font-bold">알림 <span className="text-ink-3 font-medium">· 규칙 기반 감지</span></p>
+          <p className="border-b border-line px-4 py-3 text-[0.9rem] font-bold">알림{(role === "ceo" || role === "manager") && <span className="text-ink-3 font-medium"> · 규칙 기반 감지</span>}</p>
           {items.length === 0 ? (
             <p className="px-4 py-6 text-center text-[0.85rem] text-ink-3">새 알림이 없습니다.</p>
           ) : (

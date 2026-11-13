@@ -146,6 +146,11 @@ function SiteFormModal({ db, site, onClose }: { db: DemoDB; site: Site | null; o
 
   const save = async () => {
     if (busy) return;
+    // 계약금액이 너무 작거나 실행예산보다 한참 작으면 잘못 친 값일 가능성이 크다 — 한 번 더 묻는다 (D-77 리허설: ‘18억’이 18원으로)
+    if (Number.isFinite(contractNum) && contractNum > 0 && (contractNum < 10_000_000 || (plannedMargin !== null && plannedMargin < -30))) {
+      const msg = `원 계약금액 ${contractNum.toLocaleString("ko-KR")}원 (${fmtMan(contractNum)})${plannedMargin !== null ? ` · 계획 이익률 ${fmtPct(plannedMargin)}` : ""}\n금액이 맞나요? 잘못 쳤으면 ‘취소’를 누르고 고치세요.`;
+      if (!window.confirm(msg)) return;
+    }
     setBusy(true);
     try {
       const r = await run("saveSite", {
