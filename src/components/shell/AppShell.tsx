@@ -426,7 +426,9 @@ function AccessGate({ children }: { children: ReactNode }) {
       <h1 className="text-[1.3rem] font-bold">{ROLE_LABEL[role]} 역할에서는 볼 수 없는 화면입니다</h1>
       <p className="mt-2 text-[0.9rem] text-ink-3">
         {IS_LIVE
-          ? "현장 손익·이익률·정산 정보는 대표자·본사관리자만 볼 수 있습니다. 필요한 권한은 관리자에게 요청하세요."
+          ? role === "partner"
+            ? "이 화면은 태강지엘텍 내부용입니다. 공사 현황은 ‘발주처 포털’에서 확인하세요."
+            : "이 화면은 대표자·본사관리자만 볼 수 있습니다. 필요한 권한은 관리자에게 요청하세요."
           : "권한 프리뷰(DEMO): 현장 손익·이익률·정산 정보는 대표자·본사관리자에게만 표시됩니다. 실제 운영(LIVE)에서는 서버에서 동일하게 차단됩니다."}
       </p>
       {prefs.mobilePersona !== "same" && prefs.deviceView === "dual" && (

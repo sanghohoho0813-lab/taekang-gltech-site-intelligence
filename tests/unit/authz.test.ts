@@ -130,6 +130,9 @@ describe("역할별로 내려보내는 데이터 — 금액 전수 검사", () =
     expect(moneyPaths(v).filter((p) => p !== ".thresholds.marginDropPp")).toEqual([]);
     expect(v.importBatches).toEqual([]);
     expect(v.users.every((u) => u.role !== "partner" || u.id === "u-partner")).toBe(true);
+    // 직원 명단·출근 위치 범위는 보내지 않는다 (D-77 리허설)
+    expect(v.users.map((u) => u.id)).toEqual(["u-partner"]);
+    expect(v.sites.every((s) => s.geo === undefined)).toBe(true);
   });
 
   it("현장 직원에게는 본인이 입력한 비용과 기본 일당만 (계약·예산·기성·변경공사·팀 단가·이익 없음)", () => {

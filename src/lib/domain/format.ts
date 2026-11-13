@@ -36,8 +36,10 @@ export function fmtMan(v: number, opts: { unit?: boolean } = {}): string {
   const abs = Math.abs(Math.round(v));
   if (abs === 0) return unit ? "0원" : "0";
   if (abs >= 100_000_000) {
-    const eok = Math.floor(abs / 100_000_000);
-    const rest = Math.round((abs % 100_000_000) / 10_000);
+    // 만 단위로 먼저 반올림한 뒤 억을 나눈다 — 17억 9,999만 9,982원이 ‘17억 10,000만’으로 찍히던 문제 (D-77 리허설)
+    const totalMan = Math.round(abs / 10_000);
+    const eok = Math.floor(totalMan / 10_000);
+    const rest = totalMan % 10_000;
     return `${sign}${nf.format(eok)}억${rest ? ` ${nf.format(rest)}만` : ""}${unit ? " 원" : ""}`;
   }
   const man = abs / 10_000;

@@ -8,7 +8,7 @@ import { DEFAULT_SETTINGS } from "@/lib/domain/types";
 import { siteFinancials, snapshotOf } from "@/lib/domain/calc";
 import { CATEGORY_LABEL, COST_CATEGORIES } from "@/lib/domain/labels";
 import { fmtEok, fmtMan, todayIso } from "@/lib/domain/format";
-import { syncStageDone } from "@/lib/domain/schedule";
+import { stagesWeightedPct, syncStageDone } from "@/lib/domain/schedule";
 import { uid } from "@/lib/domain/ids";
 import { CommandError, MAX_AMOUNT, MAX_CONTRACT, claimKey, clone, log, nowIso, pastCalendarDate, requireSite, touch, validateAmount, type Ctx } from "./commands";
 
@@ -131,7 +131,8 @@ export function saveSite(db0: DemoDB, input: SaveSiteInput, ctx: Ctx) {
       status: input.status,
       startDate: input.startDate,
       endDate: input.endDate,
-      progressPct: 0,
+      // 단계를 넣고 등록하면 전체 공정률도 단계에서 (기간 가중) — 0%로 남지 않게 (D-77 리허설)
+      progressPct: stagesWeightedPct(stageRows) ?? 0,
       managerUserId: input.managerUserId ?? "",
       fieldUserId: input.fieldUserId ?? "",
       stages: stageRows,
@@ -139,6 +140,12 @@ export function saveSite(db0: DemoDB, input: SaveSiteInput, ctx: Ctx) {
     };
     db.sites.push(site);
   } else {
+    // 전체 공정률이 지금 단계 계산과 같았으면(본사가 따로 고치지 않음) 새 단계로 다시 계산 — 따로 고친 값은 지킨다 (D-77)
+    const prevWeighted = stagesWeightedPct(site.stages);
+    if (input.stages && (site.progressPct === 0 || (prevWeighted !== null && prevWeighted === site.progressPct))) {
+      const next = stagesWeightedPct(stageRows);
+      if (next !== null) site.progressPct = next;
+    }
     Object.assign(site, {
       name,
       shortName,

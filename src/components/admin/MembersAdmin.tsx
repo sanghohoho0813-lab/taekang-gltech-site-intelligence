@@ -153,6 +153,8 @@ export function MembersAdmin({ db, me }: { db: DemoDB; me: { id: string; role: R
                   icon={<KeyRound size={14} />}
                   disabled={!m.active || (m.role === "ceo" && me.role !== "ceo")}
                   onClick={async () => {
+                    // 한 번 잘못 누르면 그 사람이 바로 로그인하지 못한다 — 이름을 넣어 한 번 더 묻는다 (D-77 리허설)
+                    if (!window.confirm(`${m.name}${m.title ? ` ${m.title}` : ""}의 비밀번호를 새로 만들까요?\n지금 쓰는 비밀번호로는 더 이상 로그인할 수 없고, 새 임시 비밀번호를 쪽지로 전해 주어야 합니다.`)) return;
                     const pw = tempPassword();
                     if (await patch(m, { password: pw }, "비밀번호를 초기화했습니다")) remember({ id: m.id, name: m.name, title: m.title, role: m.role, email: m.email, password: pw, siteIds: m.role === "partner" ? m.partnerSiteIds : m.siteIds });
                   }}

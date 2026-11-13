@@ -36,7 +36,7 @@ describe("등록 직후 계약금액을 바로잡으면 손익 기준도 새 값
   it("현장 입력 전: 18원 → 18억으로 고치면 기준 이익도 새 값 (‘기준 대비 ▲17억’이 남지 않음) · 이력에 남김", () => {
     const made = newSite(createSeed(NOW), 18);
     const id = made.result.siteId;
-    const fixed = saveSite(made.db, { ...(made.db.sites.find((s) => s.id === id) as never), id, contractAmount: 1_800_000_000, budgets: BUDGETS as never } as never, ctx("u-ceo")).db;
+    const fixed = saveSite(made.db, { ...(made.db.sites.find((s) => s.id === id) as object), id, contractAmount: 1_800_000_000, budgets: BUDGETS as never } as never, ctx("u-ceo")).db;
     const f = siteFinancials(fixed, id);
     expect(fixed.baseline[id]).toEqual(expect.objectContaining({ expectedProfit: f.expectedProfit }));
     expect(fixed.activityLogs.find((l) => l.siteId === id)!.summary).toContain("손익 기준을 새 값으로 다시 잡음");
@@ -47,7 +47,7 @@ describe("등록 직후 계약금액을 바로잡으면 손익 기준도 새 값
     let db = made.db;
     db = { ...db, costEntries: [...db.costEntries, { id: "ce-x", siteId: id, category: "material", amount: 1_000_000, source: "FIELD" } as never] };
     const before = db.baseline[id];
-    const after = saveSite(db, { ...(db.sites.find((s) => s.id === id) as never), id, contractAmount: 1_900_000_000, budgets: BUDGETS as never } as never, ctx("u-ceo")).db;
+    const after = saveSite(db, { ...(db.sites.find((s) => s.id === id) as object), id, contractAmount: 1_900_000_000, budgets: BUDGETS as never } as never, ctx("u-ceo")).db;
     expect(after.baseline[id]).toEqual(before);
   });
 });
@@ -66,5 +66,31 @@ describe("공정률은 그 현장 담당과 본사만", () => {
     // 담당(현장소장)이면 바뀐다
     const own = submitFieldReport(db, { idempotencyKey: "idem-0123456789abcdef-r2", siteId: site.id, workDone: "유리 시공", issues: "", costs: [], source: "FIELD", reportDate: "2026-11-13", stageProgress: [{ stageId: st.id, progressPct: st.progressPct + 10 }] } as never, ctx(site.fieldUserId));
     expect(own.db.sites.find((s) => s.id === site.id)!.stages.find((x) => x.id === st.id)!.progressPct).toBe(st.progressPct + 10);
+  });
+});
+
+describe("단계 진행률 → 전체 공정률", () => {
+  it("단계를 넣어 등록하면 전체 공정률도 단계 기간 가중 (0%로 남지 않음)", () => {
+    const made = saveSite(createSeed(NOW), {
+      name: "이천 물류센터 커튼월", shortName: "이천", workType: "커튼월", region: "경기 이천", clientName: "가상 발주처", status: "active", startDate: "2026-09-01", endDate: "2027-04-30", contractAmount: 1_800_000_000, budgets: BUDGETS as never, idempotencyKey: "idem-0123456789abcdef-s2",
+      stages: [
+        { name: "자재 발주", startDate: "2026-09-01", endDate: "2026-09-30", progressPct: 100 },
+        { name: "하지 작업", startDate: "2026-10-01", endDate: "2026-10-31", progressPct: 60 },
+        { name: "유리 시공", startDate: "2026-11-01", endDate: "2027-02-28", progressPct: 0 },
+        { name: "실리콘·마감", startDate: "2027-03-01", endDate: "2027-04-30", progressPct: 0 },
+      ],
+    } as never, ctx("u-ceo"));
+    const site = made.db.sites.find((s) => s.id === made.result.siteId)!;
+    expect(site.progressPct).toBeGreaterThan(15);
+    expect(site.progressPct).toBeLessThan(25);
+  });
+});
+
+describe("금액 표기", () => {
+  it("억 경계에서 만 단위가 10,000으로 넘치지 않는다", async () => {
+    const { fmtMan } = await import("@/lib/domain/format");
+    expect(fmtMan(1_799_999_982)).toBe("18억 원");
+    expect(fmtMan(1_800_050_000)).toBe("18억 5만 원");
+    expect(fmtMan(250_000_000)).toBe("2억 5,000만 원");
   });
 });

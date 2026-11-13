@@ -7,6 +7,7 @@ import type { CostCategory, DemoDB, Site, SiteStatus } from "@/lib/domain/types"
 import { COST_CATEGORIES, CATEGORY_LABEL } from "@/lib/domain/labels";
 import { siteFinancials } from "@/lib/domain/calc";
 import { fmtDate, fmtEok, fmtMan, fmtPct, fmtPp, todayIso } from "@/lib/domain/format";
+import { stagesWeightedPct } from "@/lib/domain/schedule";
 import { monthsText, warrantyEnd } from "@/lib/domain/warranty";
 import { uid } from "@/lib/domain/ids";
 import { run } from "@/lib/data/store";
@@ -305,6 +306,11 @@ function SiteFormModal({ db, site, onClose }: { db: DemoDB; site: Site | null; o
             </Button>
           </div>
           {stages.length === 0 && <p className="mt-1 text-[0.8rem] text-ink-3">예) 앵커·브라켓 설치 / 커튼월 유닛 제작 / 유닛 설치 / 실링·마감</p>}
+          {stages.length > 0 && (
+            <p className="mt-1 text-[0.78rem] text-ink-3" data-testid="stage-columns">
+              단계 이름 · 시작일 · 종료일 · 지금 공정률(%) 순서입니다.{!site && stagesWeightedPct(stages) !== null ? ` 등록하면 전체 공정률은 단계 기간 가중으로 ${stagesWeightedPct(stages)}%가 됩니다.` : ""}
+            </p>
+          )}
           <div className="mt-2 space-y-2">
             {stages.map((s, i) => (
               <div key={s.key} className="grid grid-cols-[1fr_auto] gap-2 rounded-xl border border-line p-2.5 sm:grid-cols-[1.4fr_1fr_1fr_auto_auto]">
@@ -454,6 +460,21 @@ function ProgressModal({ site, onClose }: { site: Site; onClose: () => void }) {
           전체 공정률 (%)
           <PctInput id="pg-all" label="전체 공정률" value={pct} onChange={setPct} />
         </label>
+        {/* 단계 진행률을 기간으로 가중한 값 — 단계만 고치고 전체가 0%로 남던 문제 (D-77 리허설) */}
+        {(() => {
+          const w = stagesWeightedPct(site.stages.map((st) => ({ ...st, progressPct: stages.find((x) => x.id === st.id)?.progressPct ?? st.progressPct })));
+          if (w === null || w === pct) return null;
+          return (
+            <p className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-surface-2 px-3 py-2 text-[0.82rem] text-ink-2" data-testid="progress-suggest">
+              <span>
+                아래 단계로 계산하면 <b className="text-ink">{w}%</b> (단계 기간 가중)
+              </span>
+              <Button size="sm" variant="soft" onClick={() => setPct(w)} data-testid="progress-suggest-apply">
+                이 값으로
+              </Button>
+            </p>
+          );
+        })()}
         {stages.map((s, i) => (
           <label key={s.id} className="flex items-center justify-between gap-3 border-t border-line pt-3 text-[0.86rem]">
             {s.name}

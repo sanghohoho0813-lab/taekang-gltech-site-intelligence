@@ -100,7 +100,7 @@ export function laborEstimate(db: DemoDB, site: Site, from: string, to: string):
   if (estimate > 0 && actual === 0) flags.push({ kind: "no_actual", text: `출력 기준 추정 ${fmt(estimate)}인데 같은 기간 노무비 입력이 없습니다` });
   else if (actual > estimate * GAP_RATIO && actual - estimate >= GAP_WON && crew.length > 0) flags.push({ kind: "actual_over", text: `실제 ${fmt(actual)} > 추정 ${fmt(estimate)} — 출력 인원 누락 또는 단가 차이 확인` });
   else if (estimate > actual * GAP_RATIO && estimate - actual >= GAP_WON && actual > 0) flags.push({ kind: "estimate_over", text: `추정 ${fmt(estimate)} > 실제 ${fmt(actual)} — 노무비 입력 누락 가능` });
-  if (crew.length === 0 && actual > 0) flags.push({ kind: "no_crew", text: `노무비 ${fmt(actual)}가 있는데 같은 기간 작업 인원(출력) 기록이 없습니다` });
+  if (crew.length === 0 && actual > 0) flags.push({ kind: "no_crew", text: `노무비 ${fmt(actual)}이 들어왔는데 같은 기간 작업 인원(출력) 기록이 없습니다` });
   for (const t of teams.filter((x) => !x.rateSet)) flags.push({ kind: "rate_missing", text: `${t.team} — 팀 단가가 없어 기본 일당 ${fmt(t.dayRate)}으로 계산` });
   if (noCheckout > 0) flags.push({ kind: "hours_uncertain", text: `직원 퇴근 누락 ${noCheckout}건 — 근무시간 합계가 실제보다 적을 수 있습니다` });
 

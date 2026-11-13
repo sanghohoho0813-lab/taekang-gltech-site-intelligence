@@ -332,10 +332,12 @@ export function viewFor(m: Member, db: DemoDB, now = new Date()): DemoDB {
     ...base,
     ...empty,
     scope: "partner",
-    users: users.filter((u) => u.role !== "partner" || u.id === m.id).map((u) => (u.id === m.id ? { ...u, partnerSiteIds: m.partnerSiteIds } : u)),
+    // 본인 계정만 — 본사·현장 직원 명단은 발주처 화면에 쓰지 않는다 (D-77 리허설: 직원 전체 명단이 내려가고 있었다)
+    users: users.filter((u) => u.id === m.id).map((u) => ({ ...u, partnerSiteIds: m.partnerSiteIds })),
     // 자재 품목·설계 수량(내부 운영 정보)은 빼고 보낸다 (D-62)
     // 하자보증은 기간·준공일만 — 본사 메모·입력한 사람은 빼고 (D-70)
-    sites: db.sites.filter((s) => sites.has(s.id)).map(({ materials: _m, warranty, ...s }) => (void _m, warranty ? { ...s, warranty: { months: warranty.months, ...(warranty.completedDate ? { completedDate: warranty.completedDate } : {}), setAt: "", setBy: "" } } : s)),
+    // 출근 위치 범위(좌표·반경)는 내부 운영 정보 — 발주처에게 보내지 않는다 (D-77 리허설)
+    sites: db.sites.filter((s) => sites.has(s.id)).map(({ materials: _m, geo: _g, warranty, ...s }) => (void _m, void _g, warranty ? { ...s, warranty: { months: warranty.months, ...(warranty.completedDate ? { completedDate: warranty.completedDate } : {}), setAt: "", setBy: "" } } : s)),
     contracts: [...sites].map(zeroContract),
     // 작업지시 번호(내부)는 빼고, 보수 진행은 partnerRepairs로 단계·기한만 (D-68)
     partnerRequests: myRequests.map(({ linkedWorkOrderId: _w, ...r }) => (void _w, r)),

@@ -129,6 +129,17 @@ export const STAGE_STATUS_LABEL: Record<StageStatus, string> = {
   upcoming: "시작 전",
 };
 
+/**
+ * 단계 진행률을 기간으로 가중한 전체 공정률 (반올림) — 단계가 없으면 null.
+ * 단계를 100%·60%로 넣어도 전체 공정률은 0%로 남아 발주처 포털까지 0%가 나가던 문제 (D-77 리허설).
+ */
+export function stagesWeightedPct(stages: Pick<SiteStage, "startDate" | "endDate" | "progressPct">[]): number | null {
+  if (!stages.length) return null;
+  const weights = stages.map((st) => Math.max(1, days(st.startDate, st.endDate)));
+  const wsum = weights.reduce((a, b) => a + b, 0) || 1;
+  return Math.round(stages.reduce((a, st, i) => a + (Math.max(0, Math.min(100, st.progressPct ?? 0)) * weights[i]) / wsum, 0));
+}
+
 /** 현장 보고에서 단계 진척을 바꿨을 때 현장 공정률에 더할 값 (단계 기간 가중) — 현장 공정률이 갑자기 튀지 않게 변화량만 반영 */
 export function siteProgressDelta(site: Site, changes: { stageId: string; progressPct: number }[]): number {
   const weights = site.stages.map((st) => Math.max(1, days(st.startDate, st.endDate)));

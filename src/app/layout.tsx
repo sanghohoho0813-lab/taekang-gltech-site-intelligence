@@ -7,8 +7,8 @@ import { themeCss, DEFAULT_THEME } from "@/lib/theme/themes";
 import { IS_LIVE } from "@/lib/mode";
 
 export const metadata: Metadata = {
-  title: IS_LIVE ? "TAEKANG SITE INTELLIGENCE · 현장 수익·공정관리" : "TAEKANG SITE INTELLIGENCE · 태강지엘텍 현장 수익·공정관리 AX (DEMO)",
-  description: IS_LIVE ? "창호·유리 공사 현장 수익·공정관리 — (주)태강지엘텍 내부 업무 시스템" : "창호·유리 공사 현장 수익·공정관리 시연판 (규칙 기반 진단, AI 아님). 모든 수치는 가상 시연 데이터입니다.",
+  title: IS_LIVE ? "TAEKANG SITE INTELLIGENCE · 현장 업무" : "TAEKANG SITE INTELLIGENCE · 태강지엘텍 현장 수익·공정관리 AX (DEMO)",
+  description: IS_LIVE ? "창호·유리 공사 현장 업무 — (주)태강지엘텍 업무 시스템" : "창호·유리 공사 현장 수익·공정관리 시연판 (규칙 기반 진단, AI 아님). 모든 수치는 가상 시연 데이터입니다.",
   robots: { index: false, follow: false },
   icons: { icon: "/icon.svg", apple: "/apple-touch-icon.png" },
   appleWebApp: { capable: true, title: IS_LIVE ? "태강 현장" : "태강 DEMO", statusBarStyle: "default" },

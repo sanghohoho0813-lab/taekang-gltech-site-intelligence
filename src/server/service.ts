@@ -283,7 +283,7 @@ export async function setupCompany(input: SetupInput): Promise<{ token: string; 
   const email = normalizeEmail(input.email);
   if (!input.companyName?.trim()) errors.companyName = "회사명을 입력해주세요.";
   if (!input.name?.trim()) errors.name = "이름을 입력해주세요.";
-  if (!email) errors.email = "이메일 형식을 확인해주세요.";
+  if (!email) errors.email = typeof input.email === "string" && input.email.trim() ? "이메일 형식을 확인해주세요." : "이메일(로그인 아이디)을 입력해주세요.";
   const pw = passwordProblem(input.password);
   if (pw) errors.password = pw;
   const phoneRaw = typeof input.publicPhone === "string" ? input.publicPhone.trim() : "";
@@ -455,7 +455,7 @@ export interface MemberInput {
 
 function validateMemberInput(input: MemberInput, creating: boolean): Record<string, string> {
   const errors: Record<string, string> = {};
-  if (creating || input.email !== undefined) if (!normalizeEmail(input.email)) errors.email = "이메일 형식을 확인해주세요.";
+  if (creating || input.email !== undefined) if (!normalizeEmail(input.email)) errors.email = typeof input.email === "string" && input.email.trim() ? "이메일 형식을 확인해주세요." : "로그인 아이디로 쓸 이메일을 입력해주세요. (개인 이메일이 없으면 이름@회사도메인처럼 정해 주세요)";
   if (creating || input.name !== undefined) if (typeof input.name !== "string" || !input.name.trim() || input.name.length > 40) errors.name = "이름 (40자 이내)";
   if (input.title !== undefined && (typeof input.title !== "string" || input.title.length > 40)) errors.title = "40자 이내";
   // ‘비활성화’ 판단이 문자열 "false"로 우회되지 않게

@@ -19,7 +19,7 @@ export function AuthFrame({ title, desc, children, wide = false }: { title: stri
               <p className="text-[0.66rem] font-bold tracking-[0.2em] text-white">SITE INTELLIGENCE</p>
             </div>
           </div>
-          <p className="mt-6 text-[1.45rem] font-extrabold leading-snug [text-wrap:balance]">현장 출퇴근·보고가 본사 손익까지 바로 이어집니다</p>
+          <p className="mt-6 text-[1.45rem] font-extrabold leading-snug [text-wrap:balance]">현장 출퇴근·보고·공정을 한곳에서</p>
         </div>
       </div>
       <div className={`mx-auto -mt-12 w-full px-4 pb-10 ${width}`}>

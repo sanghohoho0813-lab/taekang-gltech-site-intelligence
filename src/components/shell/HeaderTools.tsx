@@ -1,6 +1,7 @@
 "use client";
 
 import { intakeVia } from "@/lib/domain/intake";
+import { defectProgress, partnerRepairView } from "@/lib/domain/partnerFeed";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -145,7 +146,8 @@ export function NotificationBell() {
     }
     if (role === "partner") {
       for (const r of db.partnerRequests.filter((x) => x.partnerUserId === currentUserId() && x.status !== "received"))
-        out.push({ href: "/partner", title: `요청 처리: ${r.title}`, sub: r.status === "answered" ? "회신 완료" : "검토 중", at: r.updatedAt, icon: <Handshake size={16} /> });
+        // 하자는 포털 카드와 같은 단계 말(보수 배정·보수 중…)을 쓴다 — 종은 ‘검토 중’, 카드는 ‘보수 배정’으로 엇갈리던 문제 (D-77 리허설)
+        out.push({ href: "/partner", title: `${r.type === "defect" ? "하자보수" : "요청 처리"}: ${r.title}`, sub: r.type === "defect" ? defectProgress(r, partnerRepairView(db, r)).label : r.status === "answered" ? "회신 완료" : "검토 중", at: r.updatedAt, icon: <Handshake size={16} /> });
     }
     return out;
   }, [db, role]);
