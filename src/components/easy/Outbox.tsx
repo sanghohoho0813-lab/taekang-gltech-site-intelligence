@@ -32,11 +32,18 @@ export function OutboxRunner({ userId }: { userId: string | undefined }) {
     const go = () => void flushOutbox(userId, runner);
     go();
     const vis = () => document.visibilityState === "visible" && go();
-    window.addEventListener("online", go);
+    // 신호가 막 잡힌 순간에는 데이터가 아직 안 통하는 일이 많다 — 바로 한 번, 3초·10초 뒤에 한 번씩 더 (30초 기다리지 않게 · D-76)
+    const timers: number[] = [];
+    const online = () => {
+      go();
+      for (const ms of [3_000, 10_000]) timers.push(window.setTimeout(go, ms));
+    };
+    window.addEventListener("online", online);
     document.addEventListener("visibilitychange", vis);
     return () => {
-      window.removeEventListener("online", go);
+      window.removeEventListener("online", online);
       document.removeEventListener("visibilitychange", vis);
+      timers.forEach((t) => window.clearTimeout(t));
     };
   }, [userId]);
   useEffect(() => {
