@@ -6,7 +6,7 @@
 import { photoLooksReal } from "@/lib/domain/photoSniff";
 import { judgeGeo, validSample, type GeoSample } from "@/lib/domain/geo";
 import { hasConsent, stampTerms } from "@/lib/domain/privacy";
-import { siteProgressDelta, syncStageDone } from "@/lib/domain/schedule";
+import { siteProgressDelta, stagesWeightedPct, syncStageDone } from "@/lib/domain/schedule";
 import type {
   ActionItem,
   ActionKpiSnapshot,
@@ -321,6 +321,9 @@ export function submitFieldReport(db0: DemoDB, input: FieldReportInput, ctx: Ctx
   if (stageChanges.length) {
     // 현장 공정률이 갑자기 튀지 않도록 단계 변화량만 기간 가중으로 더한다 (현장 공정률을 직접 고친 경우는 그 값 우선)
     const delta = siteProgressDelta(site, stageChanges);
+    // 본사가 전체 공정률을 따로 정하지 않았으면 바꾼 뒤의 단계 가중값으로 맞춘다 —
+    // 보고마다 변화량을 반올림해 더해 한 달에 7%p쯤 부풀던 문제 (D-78 첫 달 리허설). 이미 부푼 현장도 다음 보고에서 바로잡힌다
+    const tracksStages = site.stages.length > 0 && !site.progressManual;
     const names = stageChanges.map((c) => {
       const st = site.stages.find((x) => x.id === c.stageId)!;
       return `${st.name} ${st.progressPct}% → ${c.progressPct}%`;
@@ -333,7 +336,7 @@ export function submitFieldReport(db0: DemoDB, input: FieldReportInput, ctx: Ctx
       const c = stageChanges.find((x) => x.stageId === st.id);
       return c ? { ...st, progressPct: c.progressPct } : st;
     });
-    if (input.progressPct === undefined) site.progressPct = Math.max(0, Math.min(100, Math.round(site.progressPct + delta)));
+    if (input.progressPct === undefined) site.progressPct = tracksStages ? (stagesWeightedPct(site.stages) ?? site.progressPct) : Math.max(0, Math.min(100, Math.round(site.progressPct + delta)));
     log(db, ctx, "progress", `${site.shortName} 공정 진척 — ${names.join(", ")} (현장보고)`, input.siteId, `/sites/${input.siteId}`);
   }
   if (mayProgress && input.progressPct !== undefined && Math.round(input.progressPct) !== site.progressPct) {
@@ -890,18 +893,34 @@ export function confirmPartnerRequest(db0: DemoDB, input: { requestId: string; n
 
 // ───────────────────────── 정산: 변경공사·기성·입금 ─────────────────────────
 
-export function setChangeOrderStatus(db0: DemoDB, coId: string, status: ChangeOrderStatus, approvedAmount: number | undefined, ctx: Ctx) {
+export function setChangeOrderStatus(db0: DemoDB, coId: string, status: ChangeOrderStatus, approvedAmount: number | undefined, ctx: Ctx, addedCost?: { category: CostCategory; amount: number }) {
   const db = clone(db0);
   const co = db.changeOrders.find((x) => x.id === coId);
   if (!co) throw new CommandError("변경공사를 찾을 수 없습니다.", "NOT_FOUND");
   if (co.status === "approved" || co.status === "rejected") throw new CommandError("이미 결정된 변경공사입니다.", "STATE");
   if (status === "review") throw new CommandError("검토 단계로 되돌릴 수 없습니다.", "STATE");
+  // 승인할 때 이 공사에 들어갈 예상 원가(선택) — 잔여예상원가에 더한다. 없으면 승인액 전부가 이익으로 잡히던 문제 (D-78 첫 달 리허설)
+  if (addedCost !== undefined && addedCost !== null) {
+    if (status !== "approved") throw new CommandError("예상 원가는 승인할 때만 넣습니다.", "VALIDATION", { addedCost: "승인 때만" });
+    if (typeof addedCost !== "object" || !COST_CATEGORIES.includes(addedCost.category)) throw new CommandError("원가 항목을 골라 주세요.", "VALIDATION", { addedCostCategory: "항목" });
+    validateAmount(addedCost.amount, "addedCostAmount");
+  }
   const before = siteFinancials(db0, co.siteId);
   co.status = status;
   // 감액 변경공사(가져온 이력의 − 금액, D-77): 승인 금액도 감액으로 — 크기만 검사한다
   if (status === "approved") co.approvedAmount = co.amount < 0 ? -validateAmount(Math.abs(approvedAmount ?? co.amount), "approvedAmount") : validateAmount(approvedAmount ?? co.amount, "approvedAmount");
   if (status === "approved" || status === "rejected") co.decidedAt = nowIso(ctx);
   if (status === "submitted") co.submittedAt = nowIso(ctx);
+  if (status === "approved") {
+    // 승인 전 문구가 승인 뒤에도 남던 문제 — 결정 기록으로 바꾼다
+    co.note = co.note.replace(/\s*—?\s*(원청\(발주처\) )?승인 전(까지)? 계약·이익 미반영/, "").trim();
+    if (addedCost) {
+      const fc = db.forecasts.find((f) => f.siteId === co.siteId && f.category === addedCost.category);
+      if (fc) fc.remaining += addedCost.amount;
+      else db.forecasts.push({ siteId: co.siteId, category: addedCost.category, remaining: addedCost.amount, basisDate: todayIso(ctx.now), basisAt: nowIso(ctx), note: `변경공사 ‘${co.title}’ 예상 원가` });
+      co.addedCost = { category: addedCost.category, amount: addedCost.amount };
+    }
+  }
   co.statusChangedAt = nowIso(ctx);
   const after = siteFinancials(db, co.siteId);
   const site = requireSite(db, co.siteId);
@@ -910,7 +929,7 @@ export function setChangeOrderStatus(db0: DemoDB, coId: string, status: ChangeOr
     ctx,
     "change_order",
     status === "approved"
-      ? `${site.shortName} 변경공사 ${co.amount < 0 ? "감액 " : ""}승인 ${fmtMan(co.approvedAmount ?? 0)} → 변경 반영 계약 ${fmtEok(before.adjustedContract)} → ${fmtEok(after.adjustedContract)}, 이익률 ${fmtPct(before.marginPct)} → ${fmtPct(after.marginPct)}`
+      ? `${site.shortName} 변경공사 ${co.amount < 0 ? "감액 " : ""}승인 ${fmtMan(co.approvedAmount ?? 0)}${co.addedCost ? ` (예상 원가 ${CATEGORY_LABEL[co.addedCost.category]} ${fmtMan(co.addedCost.amount)})` : ""} → 변경 반영 계약 ${fmtEok(before.adjustedContract)} → ${fmtEok(after.adjustedContract)}, 이익률 ${fmtPct(before.marginPct)} → ${fmtPct(after.marginPct)}`
       : `${site.shortName} 변경공사 ${status === "submitted" ? "발주처 청구" : "반려"}: ${co.title}`,
     co.siteId,
     "/finance",

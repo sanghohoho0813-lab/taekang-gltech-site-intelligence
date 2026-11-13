@@ -2,7 +2,7 @@
 
 /** 공사사진대장 — 현장 사진을 날짜순으로 모아 일자·공종·내용·촬영자를 붙이고, 고른 사진만 인쇄 (A4 한 장에 6장) */
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Eye, EyeOff, Printer } from "lucide-react";
 import { dispatch, run } from "@/lib/data/store";
 import { samplePhotos } from "@/lib/domain/samplePhotos";
@@ -12,6 +12,7 @@ import { useMe } from "@/lib/data/hooks";
 import { PHOTO_KIND_LABEL, photoLedger, type LedgerEntry } from "@/lib/domain/photoLedger";
 import { repairPhotoIds } from "@/lib/domain/partnerFeed";
 import { shiftDate } from "@/lib/domain/attendance";
+import { monthBounds, previousMonth } from "@/lib/domain/monthClose";
 import { fmtDate, todayIso } from "@/lib/domain/format";
 import { IS_LIVE } from "@/lib/mode";
 import { PageBody, PageHeader } from "@/components/shell/AppShell";
@@ -26,14 +27,27 @@ export function PhotoLedgerBoard() {
   const [sharing, setSharing] = useState<string | null>(null);
   const sites = db?.sites ?? [];
   const [siteId, setSiteId] = useState("");
-  const [range, setRange] = useState<"30" | "month" | "all">("30");
+  // 지난달·특정 달 (월 마감에서 ?site=&month= 로 연다) — 10월 사진대장을 만들려고 착공부터 고른 뒤 11월 사진을 하나씩 빼던 문제 (D-78 첫 달 리허설)
+  const [range, setRange] = useState<string>("30");
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const m = q.get("month");
+    if (q.get("site")) setSiteId(q.get("site")!);
+    if (m && /^\d{4}-\d{2}$/.test(m)) setRange(m === todayIso().slice(0, 7) ? "month" : m === previousMonth(todayIso()) ? "last" : `m:${m}`);
+  }, []);
   const [stage, setStage] = useState("");
   const [crew, setCrew] = useState(false);
   const [off, setOff] = useState<Set<string>>(new Set());
   const site = sites.find((s) => s.id === siteId) ?? sites.find((s) => s.status === "active") ?? sites[0];
   const to = todayIso();
-  const from = range === "30" ? shiftDate(to, -29) : range === "month" ? `${to.slice(0, 8)}01` : (site?.startDate ?? "2000-01-01");
-  const entries = useMemo(() => (db && site ? photoLedger(db, site.id, from, to, { includeCrew: crew, stage: stage || undefined }) : []), [db, site, from, to, crew, stage]);
+  const pickedMonth = range === "last" ? previousMonth(to) : range.startsWith("m:") ? range.slice(2) : null;
+  const from = pickedMonth ? monthBounds(pickedMonth).from : range === "30" ? shiftDate(to, -29) : range === "month" ? `${to.slice(0, 8)}01` : (site?.startDate ?? "2000-01-01");
+  const until = pickedMonth && monthBounds(pickedMonth).to < to ? monthBounds(pickedMonth).to : to;
+  // 인쇄 머리의 기간은 공사 기간 안으로 — 준공 현장이 준공일 뒤 오늘까지로 찍히던 문제
+  const endCap = site?.warranty?.completedDate ?? (site?.status === "completed" ? site.endDate : undefined);
+  const printFrom = site && site.startDate > from ? site.startDate : from;
+  const printTo = endCap && endCap < until ? endCap : until;
+  const entries = useMemo(() => (db && site ? photoLedger(db, site.id, from, until, { includeCrew: crew, stage: stage || undefined }) : []), [db, site, from, until, crew, stage]);
   if (!db) return <PageSkeleton />;
   if (!site)
     return (
@@ -88,6 +102,8 @@ export function PhotoLedgerBoard() {
           options={[
             { value: "30", label: "최근 30일", testId: "ledger-30" },
             { value: "month", label: "이번 달", testId: "ledger-month" },
+            { value: "last", label: "지난달", testId: "ledger-last" },
+            ...(range.startsWith("m:") ? [{ value: range, label: `${Number(range.slice(7))}월` }] : []),
             { value: "all", label: "착공부터", testId: "ledger-all" },
           ]}
         />
@@ -199,7 +215,7 @@ export function PhotoLedgerBoard() {
           <header className="mb-3 flex items-end justify-between gap-2 border-b-2 border-ink pb-1.5">
             <h2 className="shrink-0 whitespace-nowrap text-[1.2rem] font-extrabold tracking-[0.12em]">공사사진대장</h2>
             <p className="min-w-0 text-right text-[0.78rem] text-ink-2">
-              {site.name} · <span className="num">{fmtDate(from)} ~ {fmtDate(to)}</span> · {i + 1}/{pages.length}
+              {site.name} · <span className="num">{fmtDate(printFrom)} ~ {fmtDate(printTo)}</span> · {i + 1}/{pages.length}
             </p>
           </header>
           <div className="grid grid-cols-1 gap-3 @min-[560px]:grid-cols-2 print:grid-cols-2 print:gap-2">

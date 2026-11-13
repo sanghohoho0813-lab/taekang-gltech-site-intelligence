@@ -24,7 +24,8 @@ export function pendingItems(db: DemoDB, today: string, live: boolean): PendingI
     // 엑셀로 옮긴 지난 기록은 이미 확인된 것 (D-71)
     { key: "report", label: "확인 안 한 현장 보고", n: db.reports.filter((r) => r.status !== "voided" && !r.review && !r.importBatchId).length, href: "/orders?tab=reports" },
     // 하자보수 작업지시는 ‘하자보수 — 본사 할 일’에서 센다 (두 번 세던 문제 · D-69 점검 반영)
-    { key: "wo-done", label: "완료 확인할 작업지시", n: wos.filter((w) => w.status === "done" && !w.sourcePartnerRequestId).length, href: "/orders" },
+    // 발주처가 이미 ‘확인 완료’한 하자의 작업지시는 하자보수 할 일에서 빠지므로 여기서 센다 — 어디에도 안 잡히던 문제 (D-78 첫 달 리허설)
+    { key: "wo-done", label: "완료 확인할 작업지시", n: wos.filter((w) => w.status === "done" && (!w.sourcePartnerRequestId || !!db.partnerRequests.find((r) => r.id === w.sourcePartnerRequestId)?.confirmedAt)).length, href: "/orders" },
     { key: "wo-late", label: "기한 지난·미접수 작업지시", n: wos.filter((w) => !["done", "confirmed"].includes(w.status) && ((w.dueDate && w.dueDate < today) || w.status === "sent")).length, href: "/orders" },
     { key: "partner", label: "회신 안 한 고객 요청 (견적·주문 등)", n: db.partnerRequests.filter((r) => r.status !== "answered" && r.type !== "defect").length, href: "/insights#requests" },
     // 하자보수: 작업지시·회신·남은 보수 확인 — 메뉴 배지와 같은 수 (D-69 · 점검 12차: ‘남은 보수 확인’이 빠져 배지와 달랐다)

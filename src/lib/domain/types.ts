@@ -65,6 +65,8 @@ export interface Site {
   fieldUserId: string;
   /** 손익 기준선을 잡은 시각(현장 등록·입력 전 금액 수정) — 위험 감지 시각의 출발점. 없으면 회사 시작 시각 (D-77 리허설) */
   baselineAt?: string;
+  /** 본사가 전체 공정률을 단계 가중값과 다르게 직접 정함 — 없으면 전체 공정률은 단계 기간 가중값을 따른다 (D-78) */
+  progressManual?: true;
   stages: SiteStage[];
   illustration: "logistics" | "office" | "civic";
   /** 출퇴근 확인용 현장 위치 (본사가 등록) */
@@ -514,6 +516,8 @@ export interface ChangeOrder {
   note: string;
   /** 자료 가져오기 묶음 (가져오기 취소용) */
   importBatchId?: string;
+  /** 승인할 때 넣은 이 공사의 예상 원가 — 잔여예상원가에 더해 이익이 100%로 잡히지 않게 (D-78 첫 달 리허설) */
+  addedCost?: { category: CostCategory; amount: number };
 }
 
 export interface ProgressBilling {

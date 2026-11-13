@@ -13,6 +13,7 @@ import { IS_LIVE } from "@/lib/mode";
 import { acceptanceItems, STAGE_TITLE, type AcceptanceItem, type StageNo } from "@/lib/domain/acceptance";
 import type { ErrorEntry } from "@/lib/domain/feedback";
 import { fmtDate, todayIso } from "@/lib/domain/format";
+import { monthBounds, previousMonth } from "@/lib/domain/monthClose";
 import { shiftDate } from "@/lib/domain/attendance";
 import { PageBody, PageHeader } from "@/components/shell/AppShell";
 import { Button, Card, Field, Notice, PageSkeleton, Segmented, cx, inputCls } from "@/components/ui/primitives";
@@ -80,6 +81,19 @@ export function AcceptanceBoard() {
               <Field label="확인 기간 끝" htmlFor="acc-to">
                 <input id="acc-to" type="date" className={cx(inputCls, "w-44")} value={to} min={from} max={today} onChange={(e) => e.target.value && setTo(e.target.value)} data-testid="acc-to" />
               </Field>
+              {/* 지난달 한 번에 — 기본 14일로 그대로 보내면 한 달 근거가 적게 나가던 문제 (D-78 첫 달 리허설) */}
+              <Button
+                size="sm"
+                className="self-end"
+                onClick={() => {
+                  const b = monthBounds(previousMonth(today));
+                  setFrom(b.from);
+                  setTo(b.to);
+                }}
+                data-testid="acc-last-month"
+              >
+                지난달 ({Number(previousMonth(today).slice(5))}월)
+              </Button>
             </>
           )}
         </div>

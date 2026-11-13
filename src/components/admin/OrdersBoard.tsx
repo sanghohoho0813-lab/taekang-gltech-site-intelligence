@@ -228,7 +228,7 @@ function Orders({ db }: { db: DemoDB }) {
               return (
                 <li key={w.id} id={`wo-${w.id}`} className={cx("scroll-mt-24 space-y-1.5 px-5 py-3", focusWo === w.id && "bg-active-soft ring-2 ring-active ring-inset")} data-testid="wo-row" data-status={w.status} data-wo={w.id}>
                   <p className="flex flex-wrap items-center gap-1.5 text-[0.8rem] text-ink-3">
-                    <b className="text-ink-2">{siteOf(db, w.siteId)}</b> → {nameOf(db, w.assigneeUserId)} · {fmtDate(w.createdAt.slice(0, 10))}
+                    <b className="text-ink-2">{siteOf(db, w.siteId)}</b> → {nameOf(db, w.assigneeUserId)} · {fmtDate(w.createdAt)}
                     {w.dueDate && <span className={late ? "font-bold text-err" : ""}>· 기한 {fmtDate(w.dueDate)}{late ? " (지남)" : ""}</span>}
                     {w.urgent && <Badge tone="err">긴급</Badge>}
                     {w.sourcePartnerRequestId && <Badge tone="warn">{defectSourceLabel(db, w.sourcePartnerRequestId)}</Badge>}
@@ -268,7 +268,8 @@ function Orders({ db }: { db: DemoDB }) {
                     <ol className="mt-1 space-y-0.5">
                       {w.history.map((h, i) => (
                         <li key={i}>
-                          {fmtDate(h.at.slice(0, 10))} {hhmm(h.at)} · {nameOf(db, h.by)} · {WO_LABEL[h.to]}
+                          {/* 한국 날짜로 — 아침 7시 50분 접수가 전날로 찍히던 문제 (D-78 첫 달 리허설) */}
+                          {fmtDate(h.at)} {hhmm(h.at)} · {nameOf(db, h.by)} · {WO_LABEL[h.to]}
                           {h.note ? ` · ${h.note}` : ""}
                         </li>
                       ))}

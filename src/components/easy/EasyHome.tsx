@@ -2,6 +2,7 @@
 
 /** 현장 직원 첫 화면 — 큰 버튼 몇 개로 끝나도록 */
 import Link from "next/link";
+import { helpPhoneOf } from "@/lib/domain/companyPhone";
 import { useMemo, useState } from "react";
 import { Camera, CircleCheck, ClipboardPen, ListChecks, Phone, Receipt, Undo2, AlertCircle, Clock3, Users, Boxes } from "lucide-react";
 import { useMe } from "@/lib/data/hooks";
@@ -21,7 +22,8 @@ import { errorMessage } from "@/lib/data/commands";
 
 export function EasyHome() {
   const { db, role, userId, user } = useMe();
-  const sites = useMemo(() => (!db ? [] : role === "field" && !IS_LIVE ? db.sites.filter((s) => s.fieldUserId === userId) : db.sites), [db, role, userId]);
+  // 준공한 현장은 ‘오늘 보고’에서 뺀다 — 판교처럼 끝난 현장이 ‘아직 안 보냄’으로 남던 문제 (D-78 첫 달 리허설)
+  const sites = useMemo(() => (!db ? [] : (role === "field" && !IS_LIVE ? db.sites.filter((s) => s.fieldUserId === userId) : db.sites).filter((s) => s.status !== "completed")), [db, role, userId]);
   if (!db) return <PageSkeleton />;
   const today = todayIso();
   const mine = (r: FieldReport) => r.createdBy === userId && r.status !== "voided";
@@ -33,7 +35,7 @@ export function EasyHome() {
     ...db.actions.filter((a) => a.assigneeUserId === userId && !["done", "dismissed"].includes(a.status)),
   ];
   const returned = db.reports.filter((r) => r.createdBy === userId && r.status !== "voided" && r.review?.status === "returned");
-  const phone = db.settings?.helpPhone;
+  const phone = helpPhoneOf(db.settings);
 
   const sentCount = sites.filter((s) => db.reports.some((r) => r.siteId === s.id && r.reportDate === today && daily(r))).length;
 

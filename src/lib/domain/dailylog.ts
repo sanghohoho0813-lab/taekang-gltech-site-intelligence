@@ -38,6 +38,9 @@ export interface DailyLog {
   importedOnly: boolean;
   /** 보고가 없거나 비어 있는 경우 안내 */
   gaps: string[];
+  /** 그날 기준 전체 공정률 — 오늘이면 지금 값, 지난 날이면 그날까지 마지막 기록 (지난 일보에 오늘 공정률이 찍히던 문제 · D-78) */
+  pctAt: number | null;
+  current: boolean;
 }
 
 const WEEKDAY = ["일", "월", "화", "수", "목", "금", "토"];
@@ -97,7 +100,11 @@ export function dailyLog(db: DemoDB, site: Site, date: string): DailyLog {
   if (!reports.length) gaps.push("이 날 현장 보고가 없습니다 — 작업 내용·사진이 비어 있습니다");
   if (!importedOnly && !crew.length) gaps.push("작업 인원(출력) 보고가 없습니다");
   if (reports.some((r) => !r.importBatchId) && !photos.length) gaps.push("사진이 없습니다");
+  const current = date >= todayIso();
+  const pctAt = current ? site.progressPct : (db.reports.filter((r) => r.siteId === site.id && r.status !== "voided" && r.reportDate <= date && r.progress).sort((a, b) => a.reportDate.localeCompare(b.reportDate) || a.createdAt.localeCompare(b.createdAt)).at(-1)?.progress?.to ?? null);
   return {
+    pctAt,
+    current,
     site,
     date,
     weekday: weekdayOf(date),

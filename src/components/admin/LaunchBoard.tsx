@@ -5,6 +5,7 @@
  * 빨간 것(시작 전 꼭)부터 고치고, 직원 로그인 쪽지를 인쇄해 나눠 준다(D-54).
  */
 import Link from "next/link";
+import { helpPhoneOf } from "@/lib/domain/companyPhone";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { AlertCircle, CircleCheck, Images, Printer, TriangleAlert } from "lucide-react";
 import { useMe } from "@/lib/data/hooks";
@@ -251,7 +252,7 @@ export function LaunchBoard() {
         </p>
       </Card>
 
-      {slips && <SlipPrintDialog slips={slips} phone={db.settings?.helpPhone} onClose={() => setSlips(null)} />}
+      {slips && <SlipPrintDialog slips={slips} phone={helpPhoneOf(db.settings)} onClose={() => setSlips(null)} />}
     </PageBody>
   );
 }

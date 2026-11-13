@@ -39,7 +39,12 @@ export function siteCrew(db: DemoDB, site: Site, date: string): string[] {
   const ids = new Set<string>();
   if (site.fieldUserId && db.users.some((u) => u.id === site.fieldUserId && !u.inactive)) ids.add(site.fieldUserId);
   // 이 현장 하나만 배정된 현장 직원도 매일 나올 사람으로 본다 — 담당 미지정 현장의 미출근이 안 잡히던 문제 (D-77 리허설). 여러 현장을 도는 사람은 출근한 날만
-  for (const u of db.users) if (u.role === "field" && !u.inactive && (u.siteIds ?? []).length === 1 && u.siteIds![0] === site.id) ids.add(u.id);
+  for (const u of db.users) {
+    if (u.role !== "field" || u.inactive) continue;
+    // 진행 중인 배정 현장이 이곳 하나뿐이면 (준공한 현장 배정은 세지 않는다 · D-78)
+    const live = (u.siteIds ?? []).filter((id) => db.sites.some((x) => x.id === id && x.status === "active"));
+    if (live.length === 1 && live[0] === site.id) ids.add(u.id);
+  }
   for (const r of att(db)) if (r.siteId === site.id && r.workDate === date) ids.add(r.userId);
   return [...ids];
 }
@@ -78,6 +83,10 @@ export function dayFlags(db: DemoDB, date: string, now = new Date()): Attendance
     if (users.size < 2) continue;
     const list = [...users];
     for (const u of list) flags.push({ kind: "shared_device", userId: u, workDate: date, text: `${list.map(name).join(", ")} — 같은 휴대폰으로 출퇴근했습니다` });
+  }
+  // 지난 날짜를 열었을 때: 그날 퇴근 기록이 없으면 표시 — 지난달 퇴근 누락이 날짜를 골라도 안 보이던 문제 (D-78 첫 달 리허설)
+  if (date < todayIso(now)) {
+    for (const r of records.filter((x) => !x.outAt)) flags.push({ kind: "no_checkout", userId: r.userId, siteId: r.siteId, recordId: r.id, workDate: r.workDate, text: `${name(r.userId)} — ${r.workDate.replace(/-/g, ".")} 퇴근 기록이 없습니다 (근무 시간 확인 필요)` });
   }
   // 미출근 (오늘만, 현장 담당인데 출근 기록 없음)
   if (date === todayIso(now)) {

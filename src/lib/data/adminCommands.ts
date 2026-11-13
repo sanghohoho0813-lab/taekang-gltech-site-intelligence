@@ -142,7 +142,7 @@ export function saveSite(db0: DemoDB, input: SaveSiteInput, ctx: Ctx) {
   } else {
     // 전체 공정률이 지금 단계 계산과 같았으면(본사가 따로 고치지 않음) 새 단계로 다시 계산 — 따로 고친 값은 지킨다 (D-77)
     const prevWeighted = stagesWeightedPct(site.stages);
-    if (input.stages && (site.progressPct === 0 || (prevWeighted !== null && prevWeighted === site.progressPct))) {
+    if (input.stages && (!site.progressManual || site.progressPct === 0 || (prevWeighted !== null && prevWeighted === site.progressPct))) {
       const next = stagesWeightedPct(stageRows);
       if (next !== null) site.progressPct = next;
     }
@@ -275,7 +275,11 @@ export function updateProgress(db0: DemoDB, input: UpdateProgressInput, ctx: Ctx
   }
   // 본사가 공정률을 고쳐 100%가 된 단계도 완료일을 남긴다 (준공 보고서 · D-72 점검 반영)
   syncStageDone(site, todayIso(ctx.now));
-  log(db, ctx, "progress", `${site.shortName} 공정률 ${prev}% → ${site.progressPct}%`, site.id, `/sites/${site.id}`);
+  // 전체를 단계 계산과 다르게 정했으면 표시 — 그 뒤 현장 보고가 단계 값으로 덮지 않게 (D-78)
+  const weighted = stagesWeightedPct(site.stages);
+  if (weighted !== null && weighted !== site.progressPct) site.progressManual = true;
+  else delete site.progressManual;
+  log(db, ctx, "progress", `${site.shortName} 공정률 ${prev}% → ${site.progressPct}%${site.progressManual ? " (본사 직접 지정 — 단계 계산과 다름)" : ""}`, site.id, `/sites/${site.id}`);
   touch(db, ctx);
   return { db, result: { progressPct: site.progressPct } };
 }

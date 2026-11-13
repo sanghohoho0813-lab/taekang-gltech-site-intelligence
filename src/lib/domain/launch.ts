@@ -4,6 +4,7 @@
  * 법률 검토 여부는 판단하지 않는다(보관 기간을 ‘정했는지’만 본다).
  */
 import { worksOnSite, type DemoDB, type DemoUser, type Site } from "./types";
+import { helpPhoneOf } from "./companyPhone";
 import { deviceVerdict } from "./device";
 import { consentState, locationPolicy, retentionText, viewersText } from "./privacy";
 
@@ -62,7 +63,7 @@ export function launchReport(db: DemoDB, members: MemberInfo[] | null): LaunchRe
   const memberById = new Map((members ?? []).map((m) => [m.id, m]));
   const policy = locationPolicy(db);
   const hq = db.users.filter((u) => active(u) && (u.role === "ceo" || u.role === "manager")).length;
-  const phone = db.settings?.helpPhone?.trim();
+  const phone = helpPhoneOf(db.settings);
 
   const company: LaunchItem[] = [
     phone

@@ -2,6 +2,7 @@
 
 /** 내 정보 — 글자 크기 · 본사 전화 · 내 위치 기록 · 내가 보낸 보고 · 비밀번호 · 로그아웃 */
 import Link from "next/link";
+import { helpPhoneOf } from "@/lib/domain/companyPhone";
 import { useState } from "react";
 import { KeyRound, LogOut, Phone, Smartphone, Type, BookOpen } from "lucide-react";
 import { VERDICT_LABEL, deviceVerdict } from "@/lib/domain/device";
@@ -23,7 +24,7 @@ export function EasyMy() {
   const prefs = usePrefs();
   const [askOut, setAskOut] = useState(false);
   if (!db) return <PageSkeleton />;
-  const phone = db.settings?.helpPhone;
+  const phone = helpPhoneOf(db.settings);
   const lastCheck = (db.deviceChecks ?? []).find((c) => c.userId === userId);
   return (
     <div className="mx-auto w-full max-w-xl space-y-6 px-4 pb-8 pt-5" data-testid="easy-my">

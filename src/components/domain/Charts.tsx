@@ -61,7 +61,7 @@ export function BillingBars({ rows }: { rows: { label: string; billed: number; r
               { v: r.outstanding, c: "bg-chart-1", t: "미수" },
             ].map((b) => (
               <div key={b.t} className="flex h-full min-w-0 max-w-8 flex-1 flex-col items-center justify-end" title={`${r.label} ${b.t} ${fmtEok(b.v)}`}>
-                <span className="mb-1 text-[0.6rem] font-semibold leading-none text-ink-3 num whitespace-nowrap">{fmtEok(b.v, { unit: false, digits: 1 }).replace("억", "")}</span>
+                <span className="mb-1 text-[0.6rem] font-semibold leading-none text-ink-3 num whitespace-nowrap">{fmtEok(b.v, { unit: false, digits: 2 }).replace("억", "")}</span>
                 <div className={cx("w-full rounded-t-md origin-bottom [animation:tk-fade-up_600ms_ease-out_both]", b.c)} style={{ height: `${Math.max(2, (b.v / max) * 80)}%` }} />
               </div>
             ))}

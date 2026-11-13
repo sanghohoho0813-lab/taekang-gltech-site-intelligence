@@ -2,6 +2,7 @@
 
 /** 운영 관리 · 사용자 — 추가(임시 비밀번호), 역할·담당 현장, 비밀번호 초기화, 비활성화, 로그인된 기기·모든 기기 로그아웃 */
 import { useCallback, useEffect, useState } from "react";
+import { helpPhoneOf } from "@/lib/domain/companyPhone";
 import { KeyRound, LogOut, Pencil, Plus, Printer, UserRound, UserX, UserCheck } from "lucide-react";
 import { fmtRelative } from "@/lib/domain/format";
 import type { DemoDB, RoleId } from "@/lib/domain/types";
@@ -196,7 +197,7 @@ export function MembersAdmin({ db, me }: { db: DemoDB; me: { id: string; role: R
           ))}
         </ul>
       )}
-      {slipOpen && <SlipPrintDialog slips={issuedAll.map((x) => toSlip(db, x))} phone={db.settings?.helpPhone} onClose={() => setSlipOpen(false)} />}
+      {slipOpen && <SlipPrintDialog slips={issuedAll.map((x) => toSlip(db, x))} phone={helpPhoneOf(db.settings)} onClose={() => setSlipOpen(false)} />}
       {editing && (
         <MemberModal
           db={db}

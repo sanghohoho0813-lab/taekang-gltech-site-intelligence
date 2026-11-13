@@ -17,7 +17,8 @@ const WO_STATUS: Record<string, string> = { sent: "미접수", received: "접수
 
 export function DailyLogBoard() {
   const { db } = useMe();
-  const sites = db?.sites.filter((s) => s.status !== "completed") ?? [];
+  // 준공 현장도 고를 수 있게 (진행 중 현장을 앞에) — 판교처럼 이번 달 준공한 현장의 일보·주간 보고가 없던 문제 (D-78 첫 달 리허설)
+  const sites = [...(db?.sites.filter((s) => s.status !== "completed") ?? []), ...(db?.sites.filter((s) => s.status === "completed") ?? [])];
   const [siteId, setSiteId] = useState<string>("");
   const [date, setDate] = useState(todayIso());
   const [mode, setMode] = useState<"day" | "week">("day");
@@ -63,6 +64,7 @@ export function DailyLogBoard() {
             {sites.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.shortName} · {s.name}
+                {s.status === "completed" ? " (준공)" : ""}
               </option>
             ))}
           </select>
@@ -174,7 +176,17 @@ function DayDoc({ d }: { d: DailyLog }) {
               <td className={td}>{d.site.clientName}</td>
               <th className={th}>공정률</th>
               <td className={cx(td, "num")}>
-                {d.site.progressPct}% <span className="text-[0.74rem] text-ink-3">(현재)</span>
+                {d.current ? (
+                  <>
+                    {d.site.progressPct}% <span className="text-[0.74rem] text-ink-3">(현재)</span>
+                  </>
+                ) : d.pctAt !== null ? (
+                  <>
+                    {d.pctAt}% <span className="text-[0.74rem] text-ink-3">(그날 기준)</span>
+                  </>
+                ) : (
+                  "—"
+                )}
               </td>
             </tr>
             <tr>

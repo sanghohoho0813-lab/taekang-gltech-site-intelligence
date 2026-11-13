@@ -2,7 +2,7 @@
 
 /** 본사 — 투입·인건비 (계약 모듈 04 · 검수 S4): 출력 인원 × 팀 단가 = 추정 vs 실제 노무비, 누락·불일치 표시 */
 import { MetricTile } from "@/components/domain/Widgets";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AlertTriangle, Download, Save } from "lucide-react";
 import { useMe } from "@/lib/data/hooks";
 import { downloadCsv } from "@/lib/browser/download";
@@ -10,6 +10,7 @@ import { run } from "@/lib/data/store";
 import { CommandError } from "@/lib/data/commands";
 import { LABOR_FLAG_LABEL, laborEstimate, type LaborSite } from "@/lib/domain/labor";
 import { shiftDate } from "@/lib/domain/attendance";
+import { closeSites, monthBounds, previousMonth } from "@/lib/domain/monthClose";
 import { fmtDate, fmtMan, todayIso } from "@/lib/domain/format";
 import { PageBody, PageHeader } from "@/components/shell/AppShell";
 import { Badge, Button, Card, CardHeader, EmptyState, Notice, PageSkeleton, Segmented, cx, inputCls } from "@/components/ui/primitives";
@@ -18,11 +19,19 @@ import { toCsv } from "@/lib/domain/csv";
 
 export function LaborBoard() {
   const { db } = useMe();
-  const [period, setPeriod] = useState<"month" | "30d">("30d");
+  // 지난달(월 마감) — 지난달을 볼 방법이 없어 10월 노무를 엑셀로 맞추던 문제 (D-78 첫 달 리허설). ?month=YYYY-MM 로 바로 연다
+  const [period, setPeriod] = useState<string>("30d");
+  useEffect(() => {
+    const m = new URLSearchParams(window.location.search).get("month");
+    if (m && /^\d{4}-\d{2}$/.test(m)) setPeriod(m === todayIso().slice(0, 7) ? "month" : m === previousMonth(todayIso()) ? "last" : `m:${m}`);
+  }, []);
   if (!db) return <PageSkeleton />;
-  const to = todayIso();
-  const from = period === "month" ? `${to.slice(0, 8)}01` : shiftDate(to, -29);
-  const rows = db.sites.filter((s) => s.status === "active").map((s) => laborEstimate(db, s, from, to));
+  const today = todayIso();
+  const picked = period === "last" ? previousMonth(today) : period.startsWith("m:") ? period.slice(2) : null;
+  const from = picked ? monthBounds(picked).from : period === "month" ? `${today.slice(0, 8)}01` : shiftDate(today, -29);
+  const to = picked ? monthBounds(picked).to : today;
+  // 그 기간에 일한 현장 — 이미 준공한 현장도 (지난달에 끝난 현장의 노무가 빠지던 문제)
+  const rows = closeSites(db, from, to).map((s) => laborEstimate(db, s, from, to)).filter((r) => r.site.status === "active" || r.teams.length > 0 || r.actual > 0);
   const csv = () => {
     const head = ["현장", "기간", "팀", "구분", "출력 일수", "인원일", "1인 1일 단가", "추정 인건비", "단가 설정"];
     const lines = rows.flatMap((r) => r.teams.map((t) => [r.site.shortName, `${r.compareFrom}~${r.to}`, t.team, t.kind === "direct" ? "직영" : "외주", t.days, t.personDays, t.dayRate, t.estimate, t.rateSet ? "팀 단가" : "기본 일당"]));
@@ -43,6 +52,8 @@ export function LaborBoard() {
               options={[
                 { value: "30d", label: "최근 30일", testId: "labor-30d" },
                 { value: "month", label: "이번 달", testId: "labor-month" },
+                { value: "last", label: "지난달", testId: "labor-last" },
+                ...(period.startsWith("m:") ? [{ value: period, label: `${Number(period.slice(7))}월` }] : []),
               ]}
             />
             <Button size="sm" icon={<Download size={15} />} onClick={csv} data-testid="labor-csv">

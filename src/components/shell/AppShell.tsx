@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { helpPhoneOf } from "@/lib/domain/companyPhone";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Lock, Menu, MoreHorizontal, Phone, X } from "lucide-react";
@@ -118,7 +119,7 @@ function FieldOutbox() {
 function FieldMobileHeader() {
   const prefs = usePrefs();
   const db = useDb();
-  const phone = db?.settings?.helpPhone;
+  const phone = helpPhoneOf(db?.settings);
   const order: FontScale[] = ["md", "lg", "xl"];
   const cur: FontScale = prefs.fontScale === "sm" ? "md" : prefs.fontScale;
   const next = order[(order.indexOf(cur) + 1) % order.length];

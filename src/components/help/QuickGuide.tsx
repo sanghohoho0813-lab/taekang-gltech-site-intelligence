@@ -5,6 +5,7 @@
  * 그림은 시연 화면(가상 데이터)이다. 본사 전화번호는 운영 설정의 ‘본사 전화’가 있으면 넣고, 없으면 빈칸(직접 기입).
  */
 import Link from "next/link";
+import { helpPhoneOf } from "@/lib/domain/companyPhone";
 import { ChevronLeft, Printer } from "lucide-react";
 import { useMe } from "@/lib/data/hooks";
 import { QUICK_STEPS, QUICK_TIPS } from "@/lib/help/quick";
@@ -26,7 +27,7 @@ const strong = (text: string) =>
 export function QuickGuide() {
   const { db, role } = useMe();
   if (!db) return <PageSkeleton />;
-  const phone = db.settings?.helpPhone;
+  const phone = helpPhoneOf(db.settings);
   return (
     <PageBody>
       <PageHeader

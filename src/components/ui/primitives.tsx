@@ -61,7 +61,8 @@ export function CardHeader({ title, sub, right, className }: { title: ReactNode;
         <h2 className="text-[1.05rem] font-bold text-ink leading-snug">{title}</h2>
         {sub && <p className="mt-0.5 text-[0.82rem] text-ink-3">{sub}</p>}
       </div>
-      {right && <div className="shrink-0 flex items-center gap-2">{right}</div>}
+      {/* max-w-full: 오른쪽 단추가 여러 개면 줄을 바꾼다 — 휴대폰에서 카드가 화면 밖으로 넓어지던 문제 (D-78 첫 달 리허설) */}
+      {right && <div className="flex max-w-full shrink-0 items-center gap-2">{right}</div>}
     </div>
   );
 }

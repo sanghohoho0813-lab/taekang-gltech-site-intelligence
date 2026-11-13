@@ -2,7 +2,7 @@
  * 명령 목록 — DEMO(브라우저)와 LIVE(서버)가 같은 순수 함수를 같은 이름으로 실행한다.
  * 화면은 run(이름, 인자)만 호출하고, 어디서 실행·저장되는지는 저장소 모드가 결정한다.
  */
-import type { ActionStatus, ChangeOrderStatus, DemoDB, PartnerRequest, RiskThresholds } from "@/lib/domain/types";
+import type { ActionStatus, ChangeOrderStatus, CostCategory, DemoDB, PartnerRequest, RiskThresholds } from "@/lib/domain/types";
 import type { RiskSignal } from "@/lib/domain/types";
 import * as C from "./commands";
 import * as A from "./adminCommands";
@@ -34,7 +34,7 @@ export const COMMANDS = {
   createPartnerRequest: (db: DemoDB, a: Parameters<typeof C.createPartnerRequest>[1], ctx: Ctx) => C.createPartnerRequest(db, a, ctx),
   updatePartnerRequest: (db: DemoDB, a: { requestId: string; patch: Parameters<typeof C.updatePartnerRequest>[2] }, ctx: Ctx) => C.updatePartnerRequest(db, a.requestId, a.patch, ctx),
   confirmPartnerRequest: (db: DemoDB, a: { requestId: string; note?: string }, ctx: Ctx) => C.confirmPartnerRequest(db, a, ctx),
-  setChangeOrderStatus: (db: DemoDB, a: { coId: string; status: ChangeOrderStatus; approvedAmount?: number }, ctx: Ctx) => C.setChangeOrderStatus(db, a.coId, a.status, a.approvedAmount, ctx),
+  setChangeOrderStatus: (db: DemoDB, a: { coId: string; status: ChangeOrderStatus; approvedAmount?: number; addedCost?: { category: CostCategory; amount: number } }, ctx: Ctx) => C.setChangeOrderStatus(db, a.coId, a.status, a.approvedAmount, ctx, a.addedCost),
   addBilling: (db: DemoDB, a: Parameters<typeof C.addBilling>[1], ctx: Ctx) => C.addBilling(db, a, ctx),
   addPayment: (db: DemoDB, a: Parameters<typeof C.addPayment>[1], ctx: Ctx) => C.addPayment(db, a, ctx),
   setThresholds: (db: DemoDB, a: RiskThresholds, ctx: Ctx) => C.setThresholds(db, a, ctx),

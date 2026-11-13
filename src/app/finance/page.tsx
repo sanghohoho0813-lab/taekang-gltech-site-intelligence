@@ -12,10 +12,10 @@ import { CommandError } from "@/lib/data/commands";
 import { run } from "@/lib/data/store";
 import { siteFinancials } from "@/lib/domain/calc";
 import { receivableAging } from "@/lib/domain/risk";
-import { CO_STATUS_LABEL } from "@/lib/domain/labels";
+import { CATEGORY_LABEL, COST_CATEGORIES, CO_STATUS_LABEL } from "@/lib/domain/labels";
 import { fmtDate, fmtEok, fmtMan, fmtPct, todayIso } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
-import type { ChangeOrder, DemoDB } from "@/lib/domain/types";
+import type { ChangeOrder, CostCategory, DemoDB } from "@/lib/domain/types";
 import { IS_LIVE } from "@/lib/mode";
 
 export default function FinancePage() {
@@ -144,7 +144,17 @@ export default function FinancePage() {
                       {c.amount < 0 && <Badge tone="neutral">감액</Badge>}
                     </p>
                     <p className="text-[0.76rem] text-ink-3 num">
-                      {fmtMan(c.amount)} · 요청 {fmtDate(c.requestedAt)} {c.decidedAt && `· 결정 ${fmtDate(c.decidedAt)}`} · {c.note}
+                      {/* 승인된 건은 승인 금액으로 — 요청 금액(1,450만)이 ‘승인(계약 반영)’으로 보이던 문제 (D-78 첫 달 리허설) */}
+                      {c.status === "approved" && c.approvedAmount !== undefined && c.approvedAmount !== c.amount ? (
+                        <>
+                          승인 {fmtMan(c.approvedAmount)} <span className="text-ink-3">(요청 {fmtMan(c.amount)})</span>
+                        </>
+                      ) : (
+                        fmtMan(c.amount)
+                      )}{" "}
+                      · 요청 {fmtDate(c.requestedAt)} {c.decidedAt && `· 결정 ${fmtDate(c.decidedAt)}`}
+                      {c.addedCost && ` · 예상 원가 ${CATEGORY_LABEL[c.addedCost.category]} ${fmtMan(c.addedCost.amount)}`}
+                      {c.note && ` · ${c.note}`}
                     </p>
                   </div>
                   {!decided && (
@@ -213,9 +223,14 @@ function ChangeOrderModal({ db, c, to, onClose }: { db: DemoDB; c: ChangeOrder; 
   // 감액 건은 칸에 크기만 적고 계산은 −로 (D-77)
   const minus = c.amount < 0;
   const amount = (minus ? -1 : 1) * Number(amountText.replace(/[^\d]/g, ""));
+  // 이 공사에 들어갈 예상 원가(선택) — 넣지 않으면 승인액 전부가 이익으로 잡힌다 (D-78 첫 달 리허설)
+  const [costText, setCostText] = useState("");
+  const [costCat, setCostCat] = useState<CostCategory>("material");
+  const addedCost = minus ? 0 : Number(costText.replace(/[^\d]/g, "")) || 0;
   const f = siteFinancials(db, c.siteId);
   const afterAdj = f.adjustedContract + (to === "approved" ? amount : 0);
-  const afterMargin = afterAdj ? ((afterAdj - f.eac) / afterAdj) * 100 : 0;
+  const afterEac = f.eac + (to === "approved" ? addedCost : 0);
+  const afterMargin = afterAdj ? ((afterAdj - afterEac) / afterAdj) * 100 : 0;
   const title = { submitted: "발주처에 청구로 전환", approved: "변경공사 승인 반영", rejected: "변경공사 반려" }[to];
   return (
     <Modal
@@ -231,7 +246,7 @@ function ChangeOrderModal({ db, c, to, onClose }: { db: DemoDB; c: ChangeOrder; 
             variant={to === "rejected" ? "danger" : "cta"}
             onClick={async () => {
               try {
-                const r = await run("setChangeOrderStatus", { coId: c.id, status: to, approvedAmount: to === "approved" ? amount : undefined });
+                const r = await run("setChangeOrderStatus", { coId: c.id, status: to, approvedAmount: to === "approved" ? amount : undefined, ...(to === "approved" && addedCost > 0 ? { addedCost: { category: costCat, amount: addedCost } } : {}) });
                 toast.push({ tone: "ok", title: `${title} 완료`, desc: to === "approved" ? `이익률 ${fmtPct(r.before.marginPct)} → ${fmtPct(r.after.marginPct)}` : undefined });
                 onClose();
               } catch (e) {
@@ -251,8 +266,25 @@ function ChangeOrderModal({ db, c, to, onClose }: { db: DemoDB; c: ChangeOrder; 
             <Field label={minus ? "승인 감액 (원)" : "승인 금액 (원)"} htmlFor="co-amt" hint={amount ? `= ${minus ? "감액 " : ""}${fmtMan(Math.abs(amount))}` : undefined}>
               <input id="co-amt" inputMode="numeric" className={cx(inputCls, "num text-right")} value={amountText} onChange={(e) => setAmountText(e.target.value.replace(/[^\d]/g, "") ? Number(e.target.value.replace(/[^\d]/g, "")).toLocaleString("ko-KR") : "")} />
             </Field>
+            {!minus && (
+              <div className="grid grid-cols-[auto_1fr] items-end gap-2">
+                <Field label="원가 항목" htmlFor="co-cost-cat">
+                  <select id="co-cost-cat" className={cx(inputCls, "w-auto")} value={costCat} onChange={(e) => setCostCat(e.target.value as CostCategory)} data-testid="co-cost-cat">
+                    {COST_CATEGORIES.map((k) => (
+                      <option key={k} value={k}>
+                        {CATEGORY_LABEL[k]}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="이 공사에 들어갈 예상 원가 (원 · 선택)" htmlFor="co-cost" hint={addedCost ? `= ${fmtMan(addedCost)} — 잔여예상원가에 더합니다` : "넣지 않으면 승인 금액 전부가 이익으로 잡힙니다"}>
+                  <input id="co-cost" inputMode="numeric" className={cx(inputCls, "num text-right")} value={costText} onChange={(e) => setCostText(e.target.value.replace(/[^\d]/g, "") ? Number(e.target.value.replace(/[^\d]/g, "")).toLocaleString("ko-KR") : "")} data-testid="co-cost" />
+                </Field>
+              </div>
+            )}
             <Notice tone="info" title="반영 결과 (확정)">
-              변경 반영 계약 {fmtEok(f.adjustedContract)} → {fmtEok(afterAdj)} · 예상이익률 {fmtPct(f.marginPct)} → {fmtPct(afterMargin)}
+              변경 반영 계약 {fmtEok(f.adjustedContract)} → {fmtEok(afterAdj)}
+              {addedCost > 0 && <> · 예상 총원가 {fmtEok(f.eac)} → {fmtEok(afterEac)}</>} · 예상이익률 {fmtPct(f.marginPct)} → {fmtPct(afterMargin)}
             </Notice>
             <p className="text-[0.76rem] text-ink-3">원청·발주처의 실제 승인(공문·변경계약서)을 확인한 경우에만 승인 반영하세요.{IS_LIVE ? "" : " DEMO 환경입니다."}</p>
           </>

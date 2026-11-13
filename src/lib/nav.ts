@@ -52,6 +52,7 @@ export const NAV: NavItem[] = [
   { href: "/defects", label: "하자보수", icon: "Wrench", group: "growth", roles: INTERNAL, desc: "발주처·접수 QR·전화로 들어온 하자 — 작업지시·회신·처리 이력·관리대장 (인쇄)" },
   { href: "/finance", label: "기성·수금", icon: "Wallet", group: "growth", roles: INTERNAL, desc: "계약·변경공사·기성·입금·미수" },
   { href: "/report", label: "대표 보고서", icon: "FileBarChart", group: "growth", roles: INTERNAL, desc: "실시간 손익 변화 보고" },
+  { href: "/close", label: "월 마감", icon: "CalendarCheck", group: "growth", roles: INTERNAL, desc: "지난달 기성·입금·원가·노무·출퇴근을 한 장에 · 닫기 전에 볼 것" },
   { href: "/insights", label: "위험 분석·조치", icon: "ShieldAlert", group: "ax", roles: INTERNAL, alsoAccess: ["field"], desc: "규칙 기반 진단 → 조치 → 결과" },
   { href: "/usage", label: "사용 현황", icon: "Activity", group: "ax", roles: INTERNAL, desc: "현장 직원 정착도·본사 응답 시간 (실사용 검증)" },
   { href: "/evidence", label: "실증 기록", icon: "BadgeCheck", group: "ax", roles: INTERNAL, desc: "조치 성과 기록·성과 지표·12주 계획" },

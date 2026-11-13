@@ -25,6 +25,7 @@ import type {
 } from "@/lib/domain/types";
 import { siteFinancials, snapshotOf } from "@/lib/domain/calc";
 import { CONSENT_VERSION } from "@/lib/domain/privacy";
+import { stagesWeightedPct } from "@/lib/domain/schedule";
 
 const M = 1_000_000; // 백만 원
 
@@ -494,6 +495,8 @@ export function createSeed(now = new Date()): DemoDB {
   base.activityLogs = logs;
 
   for (const s of sites) base.baseline[s.id] = snapshotOf(siteFinancials(base, s.id));
+  // 시연 현장의 전체 공정률은 본사가 정한 값(단계 계산과 다름) — 현장 보고가 단계 값으로 덮지 않게 (D-78)
+  for (const s of sites) if (stagesWeightedPct(s.stages) !== s.progressPct) s.progressManual = true;
   seedAttendance(base, now);
   return base;
 }

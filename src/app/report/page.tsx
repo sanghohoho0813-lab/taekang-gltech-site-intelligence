@@ -58,7 +58,7 @@ export default function ReportPage() {
     const s = db.sites.find((x) => x.id === a.siteId);
     bullets.push({ tone: "warn", text: `${s?.shortName} ‘${a.title}’ ${ACTION_STATUS_LABEL[a.status]} — 담당 ${userLabel(db, a.assigneeUserId)}` });
   }
-  if (unhandled.length) bullets.push({ tone: "info", text: `조치가 없는 위험 신호 ${unhandled.length}건 — ${unhandled.slice(0, 2).map((s) => s.title).join(" / ")}` });
+  if (unhandled.length) bullets.push({ tone: "info", text: `조치가 없는 위험 신호 ${unhandled.length}건 — ${unhandled.slice(0, 2).map((s) => s.title).join(" / ")}${unhandled.length > 2 ? ` 외 ${unhandled.length - 2}건` : ""}` });
   if (!bullets.length) bullets.push({ tone: "info", text: IS_LIVE ? "현장 등록 시점 이후 손익 변화가 없습니다. 현장 보고로 원가가 입력되면 이 보고서가 자동으로 바뀝니다." : "기준(데모 초기) 이후 손익 변화가 없습니다. 모바일 현장보고로 원가를 입력하면 이 보고서가 자동으로 갱신됩니다." });
 
   return (
@@ -199,11 +199,22 @@ export default function ReportPage() {
                 const report = db.reports.find((r) => r.id === e.reportId);
                 const impact = entryEacImpact(db, e);
                 return (
-                  <li key={e.id} className={cx("py-2.5 text-[0.84rem]", e.status === "voided" && "opacity-55")}>
+                  <li key={e.id} className={cx("py-2.5 text-[0.84rem]", (e.status === "voided" || e.status === "rejected") && "opacity-55")}>
                     <p className="flex flex-wrap items-center gap-1.5">
                       <b>{s?.shortName}</b> {CATEGORY_LABEL[e.category]} <b className="num">{fmtMan(e.amount)}</b>
                       <Badge tone={e.forecastImpact === "additional" ? "err" : "neutral"}>{IMPACT_LABEL[e.forecastImpact]}</Badge>
-                      {e.status === "voided" ? <Badge>무효</Badge> : <span className="text-[0.74rem] font-bold text-err num">예상 총원가 {impact ? `+${fmtMan(impact)}` : "변동 없음"}</span>}
+                      {/* 반려·확인 대기도 상태를 붙인다 — 일반 집행처럼 보이던 문제 (D-78 첫 달 리허설) · ‘변동 없음’은 빨간색이 아니게 */}
+                      {e.status === "voided" ? (
+                        <Badge>무효</Badge>
+                      ) : e.status === "rejected" ? (
+                        <Badge>공무 반려 · 손익 미반영</Badge>
+                      ) : e.status === "pending" ? (
+                        <Badge tone="warn">공무 확인 대기 · 손익 미반영</Badge>
+                      ) : impact ? (
+                        <span className="text-[0.74rem] font-bold text-err num">예상 총원가 +{fmtMan(impact)}</span>
+                      ) : (
+                        <span className="text-[0.74rem] text-ink-3">예상 총원가 변동 없음</span>
+                      )}
                     </p>
                     <p className="text-[0.75rem] text-ink-3">
                       {/* 엑셀로 옮긴 지난 원가는 가져온 시각이 아니라 발생일로 (D-77 리허설) */}
@@ -346,7 +357,7 @@ export default function ReportPage() {
                   </p>
                   {cos.map((c) => (
                     <p key={c.id} className="text-[0.76rem] text-ink-3">
-                      변경공사 「{c.title}」 {fmtMan(c.amount)} · {CO_STATUS_LABEL[c.status]} · {fmtDate(c.requestedAt)}
+                      변경공사 「{c.title}」 {c.status === "approved" ? fmtMan(c.approvedAmount ?? c.amount) : fmtMan(c.amount)} · {CO_STATUS_LABEL[c.status]} · {fmtDate(c.status === "approved" || c.status === "rejected" ? (c.decidedAt ?? c.requestedAt) : c.requestedAt)}
                     </p>
                   ))}
                 </li>

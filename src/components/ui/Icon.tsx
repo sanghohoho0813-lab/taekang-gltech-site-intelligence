@@ -15,6 +15,7 @@ import {
   UserRound,
   MapPinCheck,
   CalendarClock,
+  CalendarCheck,
   ClipboardCheck,
   HardHat,
   FileUp,
@@ -32,6 +33,7 @@ import {
 } from "lucide-react";
 
 const MAP: Record<string, LucideIcon> = {
+  CalendarCheck,
   MessageSquareWarning,
   FileCheck2,
   Rocket,

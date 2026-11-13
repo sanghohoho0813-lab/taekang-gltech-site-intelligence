@@ -3,7 +3,7 @@
 /** 본사 — 출퇴근 현황 (GPS) · 의심 표시 · 보고 위치 · 월 합계(CSV) */
 import { downloadCsv } from "@/lib/browser/download";
 import { toCsv } from "@/lib/domain/csv";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AlertTriangle, Clock, Download, LocateFixed, MapPin, MapPinCheck, Pencil, QrCode, TabletSmartphone } from "lucide-react";
 import { useMe } from "@/lib/data/hooks";
 import { run } from "@/lib/data/store";
@@ -13,6 +13,7 @@ import { QR_LABEL } from "@/lib/domain/qr";
 import { CREW_FLAG_LABEL, crewFlags, crewSummary, mandayGap, mandayOver } from "@/lib/domain/crew";
 import { qrPath } from "@/lib/geo/qrClient";
 import { GEO_LABEL, geoText, mapLink, splitLatLng } from "@/lib/domain/geo";
+import { monthBounds } from "@/lib/domain/monthClose";
 import { FLAG_LABEL, FLAG_ORDER, backdatedDays, dayFlags, hhmm, minutesOf, periodSummary, recentFlags, shiftDate, siteCrew, type AttendanceFlag } from "@/lib/domain/attendance";
 import { todayIso } from "@/lib/domain/format";
 import { locateOnce } from "@/lib/geo/client";
@@ -59,6 +60,14 @@ export function AttendanceBoard() {
   const today = todayIso();
   const [mode, setMode] = useState<"today" | "yesterday" | "pick">("today");
   const [picked, setPicked] = useState(today);
+  // 월 마감 화면의 ‘퇴근 누락 10/16’ 같은 링크로 그 날짜를 바로 연다 (D-78)
+  useEffect(() => {
+    const d = new URLSearchParams(window.location.search).get("date");
+    if (d && /^\d{4}-\d{2}-\d{2}$/.test(d) && d <= today) {
+      setMode("pick");
+      setPicked(d);
+    }
+  }, [today]);
   const [geoSite, setGeoSite] = useState<Site | null>(null);
   const [fix, setFix] = useState<AttendanceRecord | null>(null);
   const [pairing, setPairing] = useState<{ site: Site; code: string; expiresAt: string } | null>(null);
@@ -98,22 +107,25 @@ export function AttendanceBoard() {
   const records = (db.attendance ?? []).filter((r) => r.workDate === date);
   const sites = db.sites.filter((s) => s.status === "active" || records.some((r) => r.siteId === s.id));
   const name = (id: string) => db.users.find((u) => u.id === id)?.name ?? "알 수 없음";
-  const reports = db.reports.filter((r) => r.reportDate === date || r.createdAt.slice(0, 10) === date).filter((r) => r.status !== "voided" && !r.importBatchId);
+  const reports = db.reports.filter((r) => r.reportDate === date || todayIso(new Date(r.createdAt)) === date).filter((r) => r.status !== "voided" && !r.importBatchId);
+  // 월 합계는 그 달 전체 (이번 달이면 오늘까지) — 날짜를 10/27로 고르면 10/27까지만 세던 문제 (D-78 첫 달 리허설 · 급여 근거 CSV)
   const monthFrom = `${date.slice(0, 8)}01`;
-  const month = periodSummary(db, monthFrom, date);
+  const monthEnd = monthBounds(date.slice(0, 7)).to;
+  const monthTo = monthEnd < today ? monthEnd : today;
+  const month = periodSummary(db, monthFrom, monthTo);
   const elsewhere = (u: string) => records.find((r) => r.userId === u);
   const userFlags = (u: string, siteId?: string) => flags.filter((f) => f.userId === u && (!f.siteId || !siteId || f.siteId === siteId));
 
   const csv = () => {
     const head = ["이름", "기간", "출근일수", "총 근무(시간)", "퇴근 누락", "현장 밖", "위치 없음", "본사 정정"];
-    const lines = month.map((m) => [name(m.userId), `${monthFrom}~${date}`, m.days, (m.minutes / 60).toFixed(1), m.noCheckout, m.outside, m.noLocation, m.corrected]);
+    const lines = month.map((m) => [name(m.userId), `${monthFrom}~${monthTo}`, m.days, (m.minutes / 60).toFixed(1), m.noCheckout, m.outside, m.noLocation, m.corrected]);
     const detail = (db.attendance ?? [])
-      .filter((r) => r.workDate >= monthFrom && r.workDate <= date)
+      .filter((r) => r.workDate >= monthFrom && r.workDate <= monthTo)
       .sort((a, b) => a.workDate.localeCompare(b.workDate))
       .map((r) => [r.workDate, name(r.userId), db.sites.find((s) => s.id === r.siteId)?.shortName ?? "", hhmm(r.inAt), GEO_LABEL[r.inGeo.status], r.outAt ? hhmm(r.outAt) : "", r.outGeo ? GEO_LABEL[r.outGeo.status] : "", minutesOf(r) ?? "", (r.corrections ?? []).map((c) => c.note).join(" / ")]);
     // 정정 사유에 쉼표가 있어도 칸이 밀리지 않게 (D-64)
     const body = toCsv([["# 월 합계"], head, ...lines, [], ["# 일별 기록"], ["날짜", "이름", "현장", "출근", "출근 위치", "퇴근", "퇴근 위치", "근무(분)", "정정 사유"], ...detail]);
-    downloadCsv(`출퇴근_${monthFrom}_${date}.csv`, body);
+    downloadCsv(`출퇴근_${monthFrom}_${monthTo}.csv`, body);
   };
 
   const grouped = FLAG_ORDER.map((k) => ({ k, items: flags.filter((f) => f.kind === k) })).filter((g) => g.items.length);
@@ -309,7 +321,7 @@ export function AttendanceBoard() {
 
       <Card className="@container" data-testid="att-month">
         <CardHeader
-          title={`${date.slice(0, 7).replace("-", "년 ")}월 합계`}
+          title={`${date.slice(0, 7).replace("-", "년 ")}월 합계${monthTo < monthEnd ? ` (${Number(monthTo.slice(8))}일까지 · 진행 중)` : ""}`}
           sub="급여·공수 정산 근거 — 퇴근 누락·현장 밖·위치 없음은 사람에게 확인 후 정산하세요"
           right={
             <Button size="sm" icon={<Download size={15} />} onClick={csv} disabled={month.length === 0} data-testid="att-csv">
@@ -660,7 +672,8 @@ function CrewCard({ db, date, name }: { db: DemoDB; date: string; name: (id: str
                 <b>{s.shortName}</b>
                 <span className="text-ink-2">최근 30일 노무 공수 보고 {g.reported} · 출력 인원 {g.crewDays}명·일</span>
                 {/* 공수 보고가 0이면 비교할 수 없다 — ‘맞음’(초록)으로 보이던 문제 (D-66) */}
-                {over ? <Badge tone="err">공수가 더 많음 — 확인 필요</Badge> : g.reported === 0 ? <Badge>공수 보고 없음 — 비교 불가</Badge> : <Badge tone="ok">맞음</Badge>}
+                {/* 공수가 출력보다 크게 적어도 ‘맞음’이던 문제 — 노무비 입력이 빠졌을 수 있다 (D-78 첫 달 리허설) */}
+                {over ? <Badge tone="err">공수가 더 많음 — 확인 필요</Badge> : g.reported === 0 ? <Badge>공수 보고 없음 — 비교 불가</Badge> : g.reported < g.crewDays * 0.8 ? <Badge tone="warn">공수가 적음 — 노무비 입력 누락 확인</Badge> : <Badge tone="ok">맞음</Badge>}
               </li>
             );
           })}

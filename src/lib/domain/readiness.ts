@@ -3,6 +3,7 @@
  * 계약 3단계 ‘실제 자료 연결’과 2단계 실사용 준비(위치·담당자)를 한 화면에서 확인하기 위한 목록.
  */
 import { worksOnSite, type DemoDB, type Site } from "./types";
+import { helpPhoneOf } from "./companyPhone";
 import { COST_CATEGORIES } from "./labels";
 import { daysBetween } from "./format";
 import { shiftDate } from "./attendance";
@@ -102,7 +103,7 @@ export function companyReadiness(db: DemoDB): ReadyItem[] {
   const s = db.settings;
   const items: ReadyItem[] = [];
   // 시범 운영 준비(/launch)와 같은 판정 — 없으면 ‘빠짐’ (앞에서는 ‘주의’, 뒤에서는 ‘빠짐’이라 헷갈리던 문제 · D-68)
-  const phone = s?.helpPhone?.trim();
+  const phone = helpPhoneOf(s);
   items.push({ key: "help-phone", label: "본사 전화번호", status: phone ? "ok" : "missing", text: phone ? `${phone} — 현장 첫 화면 ‘본사에 전화하기’·로그인 쪽지·그림 안내에 나옵니다` : "없음 — 현장 직원이 모를 때 누를 곳이 없습니다. ‘현장 문의 전화번호’를 넣으세요", fix: "settings" });
   const qr = s?.attendanceMode === "qr";
   const sitesNoKiosk = qr ? db.sites.filter((x) => x.status === "active" && !(db.kiosks ?? []).some((k) => k.siteId === x.id && !k.revokedAt && k.pairedAt)) : [];
