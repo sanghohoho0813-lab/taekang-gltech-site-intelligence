@@ -23,7 +23,7 @@ import { WarrantyCard } from "@/components/admin/WarrantyCard";
 import { SharesCard } from "@/components/admin/ShareLinks";
 import { IntakeCard } from "@/components/admin/IntakeLinks";
 import { intakeVia } from "@/lib/domain/intake";
-import { defectRows, defectStats } from "@/lib/domain/defects";
+import { DEFECT_NEXT_LABEL, defectRows, defectStats, repairingLabel } from "@/lib/domain/defects";
 import { warrantyLine } from "@/lib/domain/warranty";
 import { ProgressHistory } from "@/components/admin/ProgressHistory";
 import { simulateApprovedClaims, type SiteFinancials } from "@/lib/domain/calc";
@@ -694,6 +694,8 @@ function RequestsTab({ db, site }: { db: DemoDB; site: Site }) {
   // 처리 화면(하자보수·고객 요청함)은 본사만 연다 — 현장 직원에게는 글만 (점검 12차)
   const hq = role === "ceo" || role === "manager";
   const reqs = db.partnerRequests.filter((r) => r.siteId === site.id);
+  // 하자는 하자보수 화면의 단계(남은 보수 확인 등)로 — ‘회신 완료’만 보고 끝난 줄로 알지 않게 (점검 12차)
+  const defectStep = new Map(defectRows(db, todayIso()).filter((r) => r.req.siteId === site.id).map((r) => [r.req.id, r] as const));
   return (
     <div className="space-y-5">
     {/* 하자 접수 링크 (D-74) — 본사만. 이 탭에서 가장 자주 찾는 것이라 맨 위에 둔다 (점검 10차) */}
@@ -710,13 +712,19 @@ function RequestsTab({ db, site }: { db: DemoDB; site: Site }) {
               <p className="flex flex-wrap items-center gap-1.5">
                 <Badge tone="neutral">{PARTNER_TYPE_LABEL[r.type]}</Badge>
                 {hq ? (
-                  <Link href={r.type === "defect" ? `/defects?req=${r.id}` : `/insights?req=${r.id}#requests`} className="font-bold underline-offset-2 hover:text-theme-ink hover:underline" data-testid="site-request-open">
-                    {r.title}
+                  <Link href={r.type === "defect" ? `/defects?req=${r.id}` : `/insights?req=${r.id}#requests`} className="font-bold text-theme-ink underline underline-offset-2" data-testid="site-request-open">
+                    {r.title} →
                   </Link>
                 ) : (
                   <b>{r.title}</b>
                 )}
-                <Badge tone={r.status === "answered" ? "ok" : r.status === "reviewing" ? "theme" : "warn"}>{PARTNER_STATUS_LABEL[r.status]}</Badge>
+                {r.type === "defect" && defectStep.get(r.id) ? (
+                  <Badge tone={["assign", "reply", "check"].includes(defectStep.get(r.id)!.next) ? "warn" : defectStep.get(r.id)!.next === "closed" ? "ok" : "neutral"} data-testid="site-request-step">
+                    {defectStep.get(r.id)!.next === "repairing" ? repairingLabel(defectStep.get(r.id)!.wo) : r.intake ? DEFECT_NEXT_LABEL[defectStep.get(r.id)!.next].replace("발주처", "접수자") : DEFECT_NEXT_LABEL[defectStep.get(r.id)!.next]}
+                  </Badge>
+                ) : (
+                  <Badge tone={r.status === "answered" ? "ok" : r.status === "reviewing" ? "theme" : "warn"}>{PARTNER_STATUS_LABEL[r.status]}</Badge>
+                )}
               </p>
               <p className="text-[0.78rem] text-ink-3">{fmtDateTime(r.createdAt)} · {r.intake ? `${intakeVia(r.intake)} · 접수 번호 ${r.intake.no}` : userLabel(db, r.partnerUserId)}</p>
               {r.reply && <p className="mt-1 rounded-lg bg-surface-2 px-2.5 py-1.5 text-[0.8rem]">회신: {r.reply}</p>}

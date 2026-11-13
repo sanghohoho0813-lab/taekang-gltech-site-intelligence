@@ -333,6 +333,36 @@ test("D-76 하자 일원화: 요청함에는 하자가 없고 안내만 · 옛 �
   await expect(row.getByTestId("defect-next")).toHaveText("보완 요청 — 다시 보수");
   await expect(row.getByTestId("defect-timeline")).toContainText("창틀 아래쪽 실리콘이 덜 채워졌습니다");
 
+  // 다시 ‘일부만 끝냈어요’ → 회신 → ‘남은 보수 확인’ → ‘보수 완료 회신 쓰기’: 회신 창이 열린 채로 남아야 한다 (창이 바로 닫히던 문제 · 점검 12차)
+  await asRole(page, "field");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/my-actions");
+  await wo.getByTestId("wo-complete").click();
+  await page.getByTestId("wo-result-chip").nth(1).click();
+  await page.getByTestId("wo-finish-send").click();
+  await expect(page.getByTestId("wo-finish")).toBeHidden();
+  await asRole(page, "ceo");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/defects?view=todo");
+  await row.getByTestId("defect-reply").click();
+  await page.locator("#rp-text").fill("아래쪽은 오늘 마무리했고 나머지는 내일 합니다.");
+  await page.getByTestId("reply-confirm").click();
+  await page.getByTestId("reply-done-close").click();
+  await expect(row).toHaveAttribute("data-next", "check");
+  await row.getByTestId("defect-check").click();
+  await page.getByTestId("check-finish").click();
+  const fin = page.getByTestId("reply-modal");
+  await expect(fin).toBeVisible();
+  await page.waitForTimeout(700);
+  await expect(fin).toBeVisible();
+  await expect(fin.getByTestId("reply-confirm-wo")).toBeChecked();
+  await fin.locator("#rp-text").fill("남은 곳까지 모두 마쳤습니다.");
+  await fin.getByTestId("reply-confirm").click();
+  await fin.getByTestId("reply-done-close").click();
+  await expect(fin).toHaveCount(0);
+  await page.getByTestId("defect-view-all").click();
+  await expect(row).toHaveAttribute("data-next", "client");
+
   // 여러 건 버리기: 버릴 수 있는 접수가 있는 현장만 단추 · 작업지시를 보낸 건은 고를 수 없다
   await page.getByTestId("defect-site").selectOption("site-b");
   await expect(page.getByTestId("defects-discard")).toHaveCount(0);

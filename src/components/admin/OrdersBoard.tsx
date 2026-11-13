@@ -13,6 +13,7 @@ import { FIX_KIND_LABEL } from "@/lib/data/opsCommands";
 import type { AttendanceRecord, DemoDB, FieldReport, WorkOrder } from "@/lib/domain/types";
 import { worksOnSite } from "@/lib/domain/types";
 import { repliedAfterDone } from "@/lib/domain/partnerFeed";
+import { defectRows, type DefectNext } from "@/lib/domain/defects";
 import { intakeVia } from "@/lib/domain/intake";
 import { fmtDate, fmtMan, todayIso } from "@/lib/domain/format";
 import { backdatedDays, hhmm } from "@/lib/domain/attendance";
@@ -54,6 +55,16 @@ function Inner() {
     </PageBody>
   );
 }
+
+const DEFECT_LINK_TEXT: Record<DefectNext, string> = {
+  assign: "작업지시·이력 보기",
+  repairing: "일정 안내·이력 보기",
+  reply: "보수 완료 회신하기",
+  check: "남은 보수 확인",
+  client: "회신·이력 보기",
+  closed: "이력 보기",
+  reopened: "이력 보기",
+};
 
 /** 작업지시 카드의 하자 출처 — 링크·전화 접수는 ‘발주처’가 아니다 (점검 11차) */
 function defectSourceLabel(db: DemoDB, requestId: string): string {
@@ -145,6 +156,8 @@ function Orders({ db }: { db: DemoDB }) {
   const people = db.users.filter((u) => !u.inactive && u.role !== "partner" && u.role !== "ceo" && (!site || worksOnSite(u, site)));
   const today = todayIso();
   const orders = [...(db.workOrders ?? [])].sort((a, b) => order(a) - order(b) || b.createdAt.localeCompare(a.createdAt));
+  // 하자 작업지시의 ‘하자보수에서 …’ 문구는 하자보수 화면의 다음 할 일과 같게 (점검 12차)
+  const defectNext = new Map(db.workOrders?.some((w) => w.sourcePartnerRequestId) ? defectRows(db, today).map((r) => [r.req.id, r.next] as const) : []);
   const create = async () => {
     try {
       await run("createWorkOrder", { siteId: f.siteId, title: f.title, detail: f.detail, assigneeUserId: f.assignee || undefined, dueDate: f.dueDate || undefined, urgent: f.urgent, idempotencyKey: key });
@@ -228,7 +241,7 @@ function Orders({ db }: { db: DemoDB }) {
                   {w.sourcePartnerRequestId && (
                     // 하자는 하자보수 화면에서 처리한다 — 그 줄을 펼쳐 이력과 함께 (점검 11차)
                     <Link href={`/defects?req=${w.sourcePartnerRequestId}`} className="inline-flex min-h-11 items-center text-[0.82rem] font-bold text-theme-ink underline" data-testid="wo-to-request">
-                      하자보수에서 {w.status === "done" || w.status === "confirmed" ? "보수 완료 회신하기" : "일정 안내·이력 보기"} →
+                      하자보수에서 {DEFECT_LINK_TEXT[defectNext.get(w.sourcePartnerRequestId) ?? "repairing"]} →
                     </Link>
                   )}
                   {w.status === "returned" && w.returnNote && <p className="text-[0.82rem] font-semibold text-warn">보완 요청: {w.returnNote}</p>}

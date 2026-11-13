@@ -137,7 +137,7 @@ export function NotificationBell() {
       for (const s of computeSignals(db).slice(0, 6))
         out.push({ href: `/sites/${s.siteId}`, title: s.title, sub: s.summary, at: s.detectedAt, icon: <ShieldAlert size={16} />, sev: s.severity });
       for (const r of db.partnerRequests.filter((x) => x.status === "received"))
-        out.push({ href: r.type === "defect" ? `/defects?req=${r.id}` : `/insights?req=${r.id}#requests`, title: r.intake ? `${intakeVia(r.intake)} ${r.intake.no}: ${r.title}` : `발주처 요청: ${r.title}`, sub: "신규 접수 — 검토 필요", at: r.createdAt, icon: <Handshake size={16} /> });
+        out.push({ href: r.type === "defect" ? `/defects?req=${r.id}` : `/insights?req=${r.id}#requests`, title: r.intake ? `${intakeVia(r.intake)} ${r.intake.no}: ${r.title}` : `${r.type === "defect" ? "발주처 하자보수" : "발주처 요청"}: ${r.title}`, sub: "신규 접수 — 검토 필요", at: r.createdAt, icon: <Handshake size={16} /> });
     }
     if (role === "field") {
       for (const a of db.actions.filter((x) => x.assigneeUserId === currentUserId() && ["assigned", "in_progress"].includes(x.status)))

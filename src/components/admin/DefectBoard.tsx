@@ -123,7 +123,8 @@ function Board() {
             </Button>
             {/* 장난·중복 접수 여러 건을 한 번에 — 요청함에서 옮겨 왔다 (D-76) */}
             {discardableIntakes(db, shownSite).length > 0 && (
-              <Button variant="ghost" icon={<Trash2 size={16} />} onClick={() => setDiscard(true)} data-testid="defects-discard">
+              // 휴대폰에서는 위 단추를 줄여 목록이 첫 화면에 — 한 건씩은 줄의 ‘버리기’로 (점검 12차)
+              <Button variant="ghost" icon={<Trash2 size={16} />} onClick={() => setDiscard(true)} className="hidden @min-[640px]:inline-flex" data-testid="defects-discard">
                 장난·중복 접수 버리기
               </Button>
             )}

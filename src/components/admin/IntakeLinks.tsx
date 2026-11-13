@@ -529,7 +529,7 @@ export function IntakeContact({ db, req }: { db: DemoDB; req: PartnerRequest }) 
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 py-2" role="group" aria-label={`접수 번호 ${c.no} 버리는 이유`} data-testid="request-intake-discard-reasons">
               <span className="text-[0.78rem] font-bold text-ink-2">버리는 이유:</span>
               {(Object.keys(DISCARD_REASONS) as DiscardReason[]).map((k) => (
-                <Button key={k} size="sm" variant="soft" disabled={discarding} onClick={() => void discard(k)} data-testid={`request-intake-discard-${k}`}>
+                <Button key={k} size="sm" variant="danger" disabled={discarding} onClick={() => void discard(k)} data-testid={`request-intake-discard-${k}`}>
                   {DISCARD_REASONS[k]}
                 </Button>
               ))}
@@ -722,7 +722,9 @@ export function DiscardIntakeModal({ db, siteId, onClose }: { db: DemoDB; siteId
   const [err, setErr] = useState<string | null>(null);
   const all = picked.length === list.length && list.length > 0;
   const go = async () => {
-    if (!window.confirm(`고른 ${picked.length}건을 버릴까요? (${DISCARD_REASONS[reason]})\n접수와 사진을 지웁니다. 되돌릴 수 없습니다.`)) return;
+    // 무엇을 지우는지 번호로 보여 준다 (점검 12차)
+    const nos = list.filter((r) => picked.includes(r.id)).map((r) => r.intake!.no);
+    if (!window.confirm(`접수 번호 ${nos.slice(0, 10).join(", ")}${nos.length > 10 ? ` 외 ${nos.length - 10}건` : ""} — ${picked.length}건을 버릴까요? (${DISCARD_REASONS[reason]})\n접수와 사진을 지웁니다. 되돌릴 수 없습니다.`)) return;
     setBusy(true);
     setErr(null);
     try {
@@ -739,14 +741,14 @@ export function DiscardIntakeModal({ db, siteId, onClose }: { db: DemoDB; siteId
     <Modal
       open
       onClose={onClose}
-      title="장난·중복 접수 버리기"
+      title={siteId ? `장난·중복 접수 버리기 — ${db.sites.find((x) => x.id === siteId)?.shortName ?? ""}만` : "장난·중복 접수 버리기"}
       description="버린 접수는 사진까지 지워지고 하자 건수·관리대장·보고서에 남지 않습니다"
       size="md"
       testId="discard-modal"
       footer={
         <>
           <Button onClick={onClose}>취소</Button>
-          <Button variant="cta" icon={<Trash2 size={16} />} disabled={!picked.length || busy} onClick={go} data-testid="discard-go">
+          <Button variant="danger" icon={<Trash2 size={16} />} disabled={!picked.length || busy} onClick={go} data-testid="discard-go">
             {picked.length ? `${picked.length}건 버리기` : "버릴 접수를 고르세요"}
           </Button>
         </>
@@ -765,7 +767,7 @@ export function DiscardIntakeModal({ db, siteId, onClose }: { db: DemoDB; siteId
               {list.map((r) => (
                 <li key={r.id}>
                   <label className="flex cursor-pointer items-start gap-2.5 px-3 py-2 text-[0.84rem]">
-                    <input type="checkbox" checked={picked.includes(r.id)} onChange={(e) => setPicked((x) => (e.target.checked ? [...x, r.id] : x.filter((y) => y !== r.id)))} className="mt-1 size-4 accent-[var(--t-active)]" data-testid="discard-pick" />
+                    <input type="checkbox" checked={picked.includes(r.id)} onChange={(e) => setPicked((x) => (e.target.checked ? [...x, r.id] : x.filter((y) => y !== r.id)))} className="mt-1 size-4 shrink-0 accent-[var(--t-active)]" data-testid="discard-pick" />
                     <span className="min-w-0">
                       <b className="num">{r.intake!.no}</b> <span className="text-ink-3">· {db.sites.find((s) => s.id === r.siteId)?.shortName} · {fmtRelative(r.createdAt)} · {r.reopenedFrom ? "다시 접수" : r.status === "reviewing" ? "검토 중" : "회신 전"}</span>
                       <span className="block [overflow-wrap:anywhere]">

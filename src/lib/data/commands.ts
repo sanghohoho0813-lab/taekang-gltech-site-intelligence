@@ -771,7 +771,7 @@ export function createPartnerRequest(
   }
   db.partnerRequests.unshift(req);
   const site = requireSite(db, input.siteId);
-  log(db, ctx, "partner", `발주처 ${PARTNER_TYPE_LABEL[type]} 접수: ${site.shortName} · ${req.title}`, input.siteId, "/insights");
+  log(db, ctx, "partner", `발주처 ${PARTNER_TYPE_LABEL[type]} 접수: ${site.shortName} · ${req.title}`, input.siteId, type === "defect" ? "/defects" : "/insights#requests");
   touch(db, ctx);
   return { db, result: { requestId: req.id } };
 }

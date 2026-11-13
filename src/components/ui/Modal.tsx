@@ -15,6 +15,28 @@ function unlock() {
 }
 
 /**
+ * 창을 닫으며 되돌린 기록(history.back)이 아직 끝나지 않았음 — 그 사이에 열린 다음 창이 그 ‘뒤로’를 사용자의 뒤로로 알고
+ * 바로 닫히던 문제 (예: ‘남은 보수 확인’ → ‘보수 완료 회신 쓰기’ · 점검 12차). 다음 창은 이것이 끝난 뒤에 기록을 쌓는다.
+ */
+let pendingBack: Promise<void> | null = null;
+function backAndWait() {
+  const done = new Promise<void>((resolve) => {
+    const finish = () => {
+      window.removeEventListener("popstate", finish);
+      window.clearTimeout(t);
+      resolve();
+    };
+    const t = window.setTimeout(finish, 500);
+    window.addEventListener("popstate", finish);
+  });
+  const mine = done.then(() => {
+    if (pendingBack === mine) pendingBack = null;
+  });
+  pendingBack = mine;
+  window.history.back();
+}
+
+/**
  * Native <dialog> 기반 Modal / Mobile Bottom Sheet.
  * - ESC·배경 클릭·닫기 버튼으로 종료
  * - 열릴 때 스크롤 잠금, 닫힐 때 스크롤·포커스 복구 (Overlay 잔존 P0 방지)
@@ -59,7 +81,8 @@ export function Modal({
       // 버튼·Esc로 닫으면 쌓은 기록을 되돌린다(그 사이 다른 화면으로 이동했으면 건드리지 않음).
       const id = `m${Math.random().toString(36).slice(2, 9)}`;
       let popped = false;
-      window.history.pushState({ __modal: id }, "", window.location.href);
+      let started = false;
+      let gone = false;
       const onPop = () => {
         if (popped) return;
         // 위에 열렸던 창(사진 크게 보기 등)이 닫히며 내 기록으로 돌아온 것 — 나는 닫지 않는다 (함께 닫혀 입력이 사라지던 문제 · D-68 점검 반영)
@@ -71,10 +94,19 @@ export function Modal({
           window.history.pushState({ __modal: id }, "", window.location.href);
         }
       };
-      window.addEventListener("popstate", onPop);
+      const start = () => {
+        if (gone) return;
+        started = true;
+        window.history.pushState({ __modal: id }, "", window.location.href);
+        window.addEventListener("popstate", onPop);
+      };
+      // 앞 창이 닫히며 되돌리는 중이면 그것이 끝난 뒤에 (바로 쌓으면 그 ‘뒤로’에 이 창이 닫힌다)
+      if (pendingBack) void pendingBack.then(start);
+      else start();
       return () => {
+        gone = true;
         window.removeEventListener("popstate", onPop);
-        if (!popped && (window.history.state as { __modal?: string } | null)?.__modal === id) window.history.back();
+        if (started && !popped && (window.history.state as { __modal?: string } | null)?.__modal === id) backAndWait();
         if (d.open) d.close();
         unlock();
         const el = returnFocus.current;

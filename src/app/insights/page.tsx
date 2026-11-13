@@ -61,7 +61,7 @@ function Insights() {
         <StatCard label="열린 위험 신호" value={`${signals.length}건`} sub={`경고 ${signals.filter((s) => s.severity === "high").length} · 주의 ${signals.filter((s) => s.severity === "medium").length} · 확인 ${signals.filter((s) => s.severity === "low").length}`} icon={<ShieldAlert size={21} />} group="ax" />
         <StatCard label="진행 중 조치" value={`${open.length}건`} sub={open.length ? `${ACTION_STATUS_LABEL[open[0].status]} · ${open[0].title}` : "없음"} icon={<ListChecks size={21} />} group="ops" />
         <StatCard label="완료 · 성과 기록" value={`${done.length} · ${db.proofEvents.length}건`} sub={`결과 확인 ${db.proofEvents.filter((p) => p.status === "confirmed").length}건`} icon={<BadgeCheck size={21} />} group="ax" href="/evidence" />
-        <StatCard label="고객 요청 (미회신)" value={`${newReq.length}건`} sub={defectTodo ? `견적·주문·일정 · 하자보수 본사 할 일 ${defectTodo}건은 따로` : "견적·주문·일정 등 · 발주처 포털에서 접수"} icon={<Inbox size={21} />} group="growth" href={defectTodo ? "/defects?view=todo" : undefined} />
+        <StatCard label="고객 요청 (미회신)" value={`${newReq.length}건`} sub={defectTodo ? `견적·주문·일정 · 하자보수 본사 할 일 ${defectTodo}건은 따로` : "견적·주문·일정 등 · 발주처 포털에서 접수"} icon={<Inbox size={21} />} group="growth" href="#requests" />
       </div>
 
       <div className="grid gap-5 @min-[1080px]:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
@@ -208,8 +208,8 @@ function PartnerInbox({ db }: { db: DemoDB }) {
           data-testid="inbox-defects-link"
         >
           <Wrench size={16} aria-hidden className="text-theme-ink" />
-          <b className="text-ink">하자보수 요청 {defects.length}건은 ‘하자보수’ 화면에서 처리합니다</b>
-          <span className="text-ink-2">{defectTodo ? `본사 할 일 ${defectTodo}건` : "지금 본사 할 일 없음"} · 접수 링크·전화 접수 포함</span>
+          <b className="text-ink">하자보수는 ‘하자보수’ 화면에서 처리합니다 · {defectTodo ? `본사 할 일 ${defectTodo}건` : "지금 본사 할 일 없음"}</b>
+          <span className="text-ink-2">발주처 포털·접수 링크·전화 접수 모두 {defects.length}건</span>
           <span className="ml-auto font-bold text-theme-ink">하자보수로 →</span>
         </Link>
       )}
