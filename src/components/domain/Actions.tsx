@@ -52,7 +52,9 @@ export function AssignModal({ db, signal, open, onClose }: { db: DemoDB; signal:
   const assignees = db.users.filter((u) => !u.inactive && (u.role === "manager" || u.role === "ceo" || (u.role === "field" && worksOnSite(u, site))));
   const [title, setTitle] = useState(signal.recommendation.actionTitle);
   const [desc, setDesc] = useState(signal.recommendation.description);
-  const [assignee, setAssignee] = useState(signal.rule === "UNBILLED_CHANGE" || signal.rule === "COST_OVERRUN" ? site.fieldUserId : site.managerUserId);
+  // 추천 담당(현장·본사 담당)이 없거나 목록에 없으면 목록 첫 사람 — 칸에는 ‘김대표’가 보이는데 담당 없이 저장되던 문제 (D-77 리허설)
+  const preferred = signal.rule === "UNBILLED_CHANGE" || signal.rule === "COST_OVERRUN" ? site.fieldUserId : site.managerUserId;
+  const [assignee, setAssignee] = useState(assignees.some((u) => u.id === preferred) ? preferred : (assignees[0]?.id ?? ""));
   const [due, setDue] = useState(plusDays(3));
   const [key] = useState(() => uid("idem"));
   const [err, setErr] = useState("");
@@ -437,7 +439,10 @@ function NoteModal({ action, onClose }: { action: ActionItem; onClose: () => voi
 
 function ReassignModal({ db, action, onClose }: { db: DemoDB; action: ActionItem; onClose: () => void }) {
   const toast = useToast();
-  const [u, setU] = useState(action.assigneeUserId ?? "u-field");
+  const site = db.sites.find((st) => st.id === action.siteId);
+  const people = db.users.filter((x) => !x.inactive && (x.role === "manager" || x.role === "ceo" || (x.role === "field" && !!site && worksOnSite(x, site))));
+  // 지금 담당이 목록에 없으면(퇴사·현장 변경) 목록 첫 사람 — 시연용 아이디가 기본값이던 문제 (D-77 리허설)
+  const [u, setU] = useState(people.some((x) => x.id === action.assigneeUserId) ? action.assigneeUserId! : (people[0]?.id ?? ""));
   const [due, setDue] = useState(action.dueDate ?? plusDays(3));
   return (
     <Modal
@@ -468,11 +473,7 @@ function ReassignModal({ db, action, onClose }: { db: DemoDB; action: ActionItem
       <div className="grid grid-cols-2 gap-3">
         <Field label="담당자" htmlFor="r-u">
           <select id="r-u" className={inputCls} value={u} onChange={(e) => setU(e.target.value)}>
-            {db.users
-              .filter((x) => {
-                const site = db.sites.find((st) => st.id === action.siteId);
-                return !x.inactive && (x.role === "manager" || x.role === "ceo" || (x.role === "field" && !!site && worksOnSite(x, site)));
-              })
+            {people
               .map((x) => (
                 <option key={x.id} value={x.id}>
                   {x.name} {x.title}

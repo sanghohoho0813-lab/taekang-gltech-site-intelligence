@@ -135,6 +135,18 @@ describe("역할별로 내려보내는 데이터 — 금액 전수 검사", () =
     expect(v.sites.every((s) => s.geo === undefined)).toBe(true);
   });
 
+  it("발주처 설정에는 공개 대표 번호만 (일당·팀 단가·위치 규칙 없음 · D-77)", () => {
+    const db = createSeed(NOW);
+    db.settings = { ...db.settings!, sampleData: false, publicPhone: "031-123-4567", teamRates: [{ team: "유리 설치팀", dayRate: 320_000 }] };
+    const v = viewFor(PARTNER, db);
+    expect(v.settings?.publicPhone).toBe("031-123-4567");
+    expect(v.settings?.laborDayRate).toBe(0);
+    expect(v.settings?.teamRates).toBeUndefined();
+    expect(v.settings?.location).toBeUndefined();
+    db.settings = { ...db.settings!, publicPhone: undefined };
+    expect(viewFor(PARTNER, db).settings).toBeUndefined();
+  });
+
   it("현장 직원에게는 본인이 입력한 비용과 기본 일당만 (계약·예산·기성·변경공사·팀 단가·이익 없음)", () => {
     const db = createSeed(NOW);
     db.settings = { ...db.settings!, teamRates: [{ team: "유리 설치팀", dayRate: 320_000 }] };

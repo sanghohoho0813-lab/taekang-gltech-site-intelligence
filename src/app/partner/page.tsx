@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Send, CircleCheck, Clock3, Inbox, ChevronRight, Lock, Settings, LayoutDashboard, Sparkles, X, Camera, Wrench, FileText, RotateCcw, ShieldCheck } from "lucide-react";
 import { warrantyClientLine, warrantyStatus } from "@/lib/domain/warranty";
-import { setPrefs, run } from "@/lib/data/store";
+import { setPrefs, run, logout } from "@/lib/data/store";
 import { useMe } from "@/lib/data/hooks";
 import { CommandError } from "@/lib/data/commands";
 import { PARTNER_STATUS_LABEL, PARTNER_TYPE_LABEL } from "@/lib/domain/labels";
@@ -63,7 +63,21 @@ export default function PartnerPage() {
               <Link href={IS_LIVE ? "/admin" : "/settings"}>
                 <Button variant="cta">{IS_LIVE ? "운영 관리로" : "설정으로"}</Button>
               </Link>
-            ) : undefined
+            ) : (
+              // 현장이 없는 발주처 계정은 아무 단추도 없어 갇히던 문제 — 전화·로그아웃 (D-77 리허설)
+              <div className="flex flex-col items-center gap-2" data-testid="partner-nosite-actions">
+                {db.settings?.publicPhone && (
+                  <a href={`tel:${db.settings.publicPhone.replace(/[^\d+]/g, "")}`} className="press inline-flex min-h-12 items-center rounded-full bg-cta px-5 text-[1rem] font-bold text-cta-text">
+                    태강지엘텍에 전화 {db.settings.publicPhone}
+                  </a>
+                )}
+                {IS_LIVE && (
+                  <Button onClick={() => void logout()} data-testid="partner-nosite-logout">
+                    로그아웃
+                  </Button>
+                )}
+              </div>
+            )
           }
         />
       </div>

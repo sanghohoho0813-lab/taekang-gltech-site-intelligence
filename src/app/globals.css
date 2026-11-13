@@ -502,6 +502,13 @@ html[data-wizard="1"] {
 html[data-wizard="1"] .field-bottom-nav {
   display: none;
 }
+/* ‘아주 크게’ 글자: 첫 단계도 메뉴 숨김 — 아래 ‘닫기’로 홈에 간다 (D-77 리허설) */
+html[data-font="xl"][data-wizard="0"] {
+  --fieldnav-h: env(safe-area-inset-bottom);
+}
+html[data-font="xl"][data-wizard="0"] .field-bottom-nav {
+  display: none;
+}
 
 /* ‘아주 크게’ 글자: 홈 타일은 한 줄에 하나 — 설명이 잘리지 않게 (D-67) */
 html[data-font="xl"] .tile-grid {

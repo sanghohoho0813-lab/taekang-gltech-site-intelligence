@@ -280,8 +280,8 @@ export function EasyPageHead({ title, sub, icon, children, testId }: { title?: R
 export function useWizardActive(active: boolean) {
   useEffect(() => {
     const el = document.documentElement;
-    if (active) el.dataset.wizard = "1";
-    else delete el.dataset.wizard;
+    // 첫 단계는 "0" — ‘아주 크게’ 글자에서는 첫 단계도 메뉴를 숨긴다(닫기 단추가 있으므로). 고정 버튼과 메뉴가 화면의 40% 넘게 가리던 문제 (D-77 리허설)
+    el.dataset.wizard = active ? "1" : "0";
     return () => {
       delete el.dataset.wizard;
     };

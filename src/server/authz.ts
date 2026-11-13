@@ -357,8 +357,11 @@ export function viewFor(m: Member, db: DemoDB, now = new Date()): DemoDB {
     ],
     // 공정 변화 — 보고 원문 없이 공정·진척만 서버가 만들어 보낸다 (포털은 최근 14일, 월간 보고서는 지난달까지 · D-68)
     partnerFeed: Object.fromEntries([...sites].map((id) => [id, partnerProgressFeed(db, id, kstDate(now.toISOString()), PARTNER_FEED_KEEP_DAYS)])),
-    // 내부 운영 설정(일당 등)은 숨기고, 가상 데이터 회사라는 표시만 전달
-    settings: db.settings?.sampleData ? { costApproval: "immediate", laborDayRate: 0, sampleData: true } : undefined,
+    // 내부 운영 설정(일당 등)은 숨기고, 가상 데이터 회사라는 표시와 회사 대표 번호(이미 공개 접수 화면에 나오는 번호)만 전달 (D-77 리허설)
+    settings:
+      db.settings?.sampleData || db.settings?.publicPhone
+        ? { costApproval: "immediate", laborDayRate: 0, ...(db.settings?.sampleData ? { sampleData: true } : {}), ...(db.settings?.publicPhone ? { publicPhone: db.settings.publicPhone } : {}) }
+        : undefined,
     thresholds: hideMarginTargets(db.thresholds),
   };
 }
