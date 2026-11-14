@@ -3,13 +3,15 @@
  * commands.ts와 같은 순수 함수 규칙: (db, input, ctx) → { db, result }
  */
 import { normalizeOfficePhone } from "@/lib/domain/intake";
-import type { CompanySettings, CostCategory, CostForecast, DemoDB, Site, SiteStatus } from "@/lib/domain/types";
+import type { CompanySettings, CostCategory, CostEntry, CostForecast, DemoDB, ForecastChange, Site, SiteStatus } from "@/lib/domain/types";
 import { DEFAULT_SETTINGS } from "@/lib/domain/types";
 import { siteFinancials, snapshotOf } from "@/lib/domain/calc";
 import { CATEGORY_LABEL, COST_CATEGORIES } from "@/lib/domain/labels";
 import { fmtEok, fmtMan, todayIso } from "@/lib/domain/format";
 import { stagesWeightedPct, syncStageDone } from "@/lib/domain/schedule";
 import { uid } from "@/lib/domain/ids";
+import { laborEstimate } from "@/lib/domain/labor";
+import { monthBounds } from "@/lib/domain/monthClose";
 import { CommandError, MAX_AMOUNT, MAX_CONTRACT, claimKey, clone, log, nowIso, pastCalendarDate, requireSite, touch, validateAmount, type Ctx } from "./commands";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -226,8 +228,13 @@ export interface UpdateForecastInput {
   /** 지금부터 준공까지 더 들어갈 원가 (항목별) */
   remaining: Record<CostCategory, number>;
   note?: string;
+  /** 준공 현장 원가 마감 (D-79) — 월 마감 화면에서 ‘남은 예상원가를 정리’할 때 */
+  closeout?: boolean;
   idempotencyKey?: string;
 }
+
+/** 잔여예상 재추정 이력 보관 개수 */
+export const FORECAST_CHANGES_KEEP = 1000;
 
 export function updateForecast(db0: DemoDB, input: UpdateForecastInput, ctx: Ctx) {
   requireSite(db0, input.siteId);
@@ -240,17 +247,88 @@ export function updateForecast(db0: DemoDB, input: UpdateForecastInput, ctx: Ctx
   claimKey(db, input.idempotencyKey);
   const at = nowIso(ctx);
   const before = siteFinancials(db0, input.siteId);
+  const closeout = input.closeout === true;
+  const note = input.note?.trim() || (closeout ? "준공 원가 마감" : "잔여예상 재추정");
   for (const c of COST_CATEGORIES) {
-    const row: CostForecast = { siteId: input.siteId, category: c, remaining: input.remaining[c], basisDate: todayIso(ctx.now), basisAt: at, note: input.note?.trim() || "잔여예상 재추정" };
+    const row: CostForecast = { siteId: input.siteId, category: c, remaining: input.remaining[c], basisDate: todayIso(ctx.now), basisAt: at, note };
     const i = db.forecasts.findIndex((f) => f.siteId === input.siteId && f.category === c);
     if (i >= 0) db.forecasts[i] = row;
     else db.forecasts.push(row);
   }
   const after = siteFinancials(db, input.siteId);
   const site = requireSite(db, input.siteId);
-  log(db, ctx, "forecast", `${site.shortName} 잔여예상원가 재추정 ${fmtEok(before.remaining)} → ${fmtEok(after.remaining)} · 예상 총원가 ${fmtEok(before.eac)} → ${fmtEok(after.eac)}`, input.siteId, `/sites/${input.siteId}`);
+  // 이익을 바꾼 재추정은 이력으로 남긴다 — 월 마감 ‘이달 예상이익을 바꾼 일’이 더해서 맞도록 (D-79)
+  if (before.eac !== after.eac || closeout) {
+    const change: ForecastChange = { id: uid("fc"), siteId: input.siteId, at, by: ctx.userId, note, eacBefore: before.eac, eacAfter: after.eac, ...(closeout ? { closeout: true as const } : {}) };
+    db.forecastChanges = [change, ...(db.forecastChanges ?? [])].slice(0, FORECAST_CHANGES_KEEP);
+  }
+  log(db, ctx, "forecast", `${site.shortName} ${closeout ? "준공 원가 마감 — 잔여예상원가" : "잔여예상원가 재추정"} ${fmtEok(before.remaining)} → ${fmtEok(after.remaining)} · 예상 총원가 ${fmtEok(before.eac)} → ${fmtEok(after.eac)}`, input.siteId, `/sites/${input.siteId}`);
   touch(db, ctx);
   return { db, result: { before, after } };
+}
+
+// ───────────────────────── 월 마감 노무 정산 (D-79) ─────────────────────────
+
+export interface SettleLaborInput {
+  siteId: string;
+  /** YYYY-MM */
+  month: string;
+  /** 넣을 노무비 (원) — 기본값은 화면이 ‘출력 기준 추정 − 입력된 노무비’로 채운다. 실제 지급액을 알면 그 금액으로 */
+  amount: number;
+  note?: string;
+  idempotencyKey?: string;
+}
+
+/**
+ * 한 달 노무비를 출력(작업 인원) 기준으로 맞춘다 — 본사 입력이라 바로 반영(공무 확인 끝난 것으로 기록).
+ * 같은 현장·같은 달에 정산은 한 번만 (두 번 넣으면 노무비가 두 번 들어가므로). 고치려면 원가 목록에서 그 건을 고치거나 되돌린다.
+ */
+export function settleLabor(db0: DemoDB, input: SettleLaborInput, ctx: Ctx) {
+  const site0 = requireSite(db0, input.siteId);
+  const errors: Record<string, string> = {};
+  const today = todayIso(ctx.now);
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(input.month ?? "")) errors.month = "달을 확인해 주세요.";
+  else if (`${input.month}-01` > today) errors.month = "아직 오지 않은 달은 정산할 수 없습니다.";
+  if (!Number.isInteger(input.amount) || input.amount <= 0) errors.amount = "0보다 큰 금액(원)을 넣어 주세요.";
+  else if (input.amount > MAX_AMOUNT) errors.amount = `${fmtEok(MAX_AMOUNT)} 이하로 넣어 주세요.`;
+  if ((input.note ?? "").length > 200) errors.note = "200자 이내";
+  if (Object.keys(errors).length) throw new CommandError("입력값을 확인해주세요.", "VALIDATION", errors);
+  const b = monthBounds(input.month);
+  const to = b.to < today ? b.to : today;
+  if (site0.startDate > to) throw new CommandError("그 달에는 아직 착공 전인 현장입니다.", "STATE");
+  const dup = db0.costEntries.find((e) => e.siteId === input.siteId && e.settle?.month === input.month && (e.status === "active" || e.status === "pending"));
+  if (dup) throw new CommandError(`${site0.shortName} ${Number(input.month.slice(5))}월 노무 정산은 이미 넣었습니다 (${fmtMan(dup.amount)}). 고치려면 원가 목록에서 그 건을 고치거나 되돌리세요.`, "STATE");
+  const est = laborEstimate(db0, site0, b.from, to);
+  if (est.estimate <= 0) throw new CommandError("그 달 작업 인원(출력) 기록이 없어 정산할 기준이 없습니다. 노무비는 현장 보고·원가 입력으로 넣어 주세요.", "STATE");
+
+  const db = clone(db0);
+  claimKey(db, input.idempotencyKey);
+  const at = nowIso(ctx);
+  const before = siteFinancials(db0, input.siteId);
+  const m = Number(input.month.slice(5));
+  const basis = `${m}월 출력 기준 노무 정산 (추정 ${fmtMan(est.estimate)} − 입력 ${fmtMan(est.actual)})`;
+  const entry: CostEntry = {
+    id: uid("ce"),
+    siteId: input.siteId,
+    category: "labor",
+    amount: input.amount,
+    date: to,
+    forecastImpact: "within_forecast",
+    reason: "planned",
+    note: [basis, input.note?.trim()].filter(Boolean).join(" · "),
+    source: "PC",
+    createdBy: ctx.userId,
+    createdAt: at,
+    status: "active",
+    reviewedAt: at,
+    reviewedBy: ctx.userId,
+    settle: { month: input.month, estimate: est.estimate, actualBefore: est.actual },
+  };
+  db.costEntries.push(entry);
+  const after = siteFinancials(db, input.siteId);
+  log(db, ctx, "cost", `${site0.shortName} ${m}월 노무 정산 ${fmtMan(input.amount)} 입력 (출력 기준 추정 ${fmtMan(est.estimate)} · 그동안 입력 ${fmtMan(est.actual)})`, input.siteId, `/sites/${input.siteId}?tab=cost`);
+  touch(db, ctx);
+  return { db, result: { entryId: entry.id, before, after } };
 }
 
 // ───────────────────────── 공정률 ─────────────────────────

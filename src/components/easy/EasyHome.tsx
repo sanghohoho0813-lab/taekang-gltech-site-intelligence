@@ -8,7 +8,7 @@ import { Camera, CircleCheck, ClipboardPen, ListChecks, Phone, Receipt, Undo2, A
 import { useMe } from "@/lib/data/hooks";
 import { run } from "@/lib/data/store";
 import { IS_LIVE } from "@/lib/mode";
-import type { DemoDB, FieldReport } from "@/lib/domain/types";
+import type { CostCategory, CostEntry, DemoDB, FieldReport } from "@/lib/domain/types";
 import { todayIso } from "@/lib/domain/format";
 import { activeItems } from "@/lib/domain/material";
 import { PageSkeleton, cx } from "@/components/ui/primitives";
@@ -176,14 +176,40 @@ export function MyRecords({ db, userId, limit }: { db: DemoDB; userId: string; l
               {r.review?.status === "returned" && !voided && <Supplement reportId={r.id} note={r.review.note} />}
               {entries.length > 0 && (
                 <ul className="mt-2 space-y-1.5">
-                  {entries.map((e) => (
-                    <li key={e.id} className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[1.02rem]">
-                      <span className="font-bold">
-                        {EASY_CATEGORY[e.category].label} <span className="num">{easyWon(e.amount)}</span>
-                      </span>
-                      <EntryState status={e.status} note={e.reviewNote} />
-                    </li>
-                  ))}
+                  {entries.map((e) => {
+                    const fix = hqAdjust(e);
+                    return (
+                      <li key={e.id} className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[1.02rem]">
+                        <span className="font-bold">
+                          {EASY_CATEGORY[e.category].label} <span className="num">{easyWon(e.amount)}</span>
+                        </span>
+                        <EntryState status={e.status} note={e.reviewNote} />
+                        {/* 본사가 금액·항목을 고쳐 반영했으면 처음 보낸 값과 이유를 함께 (D-79 — ‘330만 원 보냈는데 300만 원?’) */}
+                        {fix && e.status === "active" && (
+                          <span className="basis-full rounded-xl bg-surface-2 px-3 py-2 text-[0.98rem] leading-snug text-ink-2" data-testid="entry-adjusted">
+                            본사가 고쳐 반영했어요:{" "}
+                            {fix.amount !== undefined && (
+                              <b className="num text-ink">
+                                {easyWon(fix.amount)} → {easyWon(e.amount)}
+                              </b>
+                            )}
+                            {fix.amount !== undefined && fix.category && " · "}
+                            {fix.category && (
+                              <b className="text-ink">
+                                {EASY_CATEGORY[fix.category].label} → {EASY_CATEGORY[e.category].label}
+                              </b>
+                            )}
+                            {e.reviewNote && <span className="block">이유: {e.reviewNote}</span>}
+                          </span>
+                        )}
+                        {!fix && e.status === "active" && e.reviewNote && (
+                          <span className="basis-full text-[0.95rem] text-ink-2" data-testid="entry-note">
+                            본사 메모: {e.reviewNote}
+                          </span>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
               {!voided && r.reportDate >= addDays(today, -7) && !entries.some((e) => e.reviewedAt) && (
@@ -210,6 +236,17 @@ export function MyRecords({ db, userId, limit }: { db: DemoDB; userId: string; l
       </ul>
     </div>
   );
+}
+
+/** 본사(입력한 사람이 아닌 사람)가 고친 금액·항목 — 처음 보낸 값 */
+function hqAdjust(e: CostEntry): { amount?: number; category?: CostCategory } | null {
+  const hq = (e.editHistory ?? []).filter((h) => h.by !== e.createdBy);
+  if (!hq.length) return null;
+  const first = hq[0].before;
+  const out: { amount?: number; category?: CostCategory } = {};
+  if (first.amount !== e.amount) out.amount = first.amount;
+  if (first.category !== e.category) out.category = first.category;
+  return out.amount !== undefined || out.category ? out : null;
 }
 
 function EntryState({ status, note }: { status: string; note?: string }) {

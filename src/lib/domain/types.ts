@@ -354,6 +354,21 @@ export interface CostEntry {
   editHistory?: { at: string; by: string; before: { amount: number; category: CostCategory; note: string } }[];
   /** 자료 가져오기 묶음 (가져오기 취소용) */
   importBatchId?: string;
+  /** 월 마감 노무 정산 (D-79) — 출력 인원 × 팀 단가 추정과 입력된 노무비의 차액을 본사가 한 번에 넣은 것 */
+  settle?: { month: string; estimate: number; actualBefore: number };
+}
+
+/** 잔여예상원가를 다시 잡은 이력 (D-79) — 월 마감 ‘이달 예상이익을 바꾼 일’에 쓴다. 금액이 들어 있어 본사에만 보낸다 */
+export interface ForecastChange {
+  id: string;
+  siteId: string;
+  at: string;
+  by: string;
+  note: string;
+  eacBefore: number;
+  eacAfter: number;
+  /** 준공 현장 원가 마감으로 잡은 것 */
+  closeout?: true;
 }
 
 export interface FieldReport {
@@ -819,6 +834,8 @@ export interface DemoDB {
   contracts: SiteContract[];
   budgets: CostBudget[];
   forecasts: CostForecast[];
+  /** 잔여예상 재추정 이력 (D-79 · 최근 1,000건) */
+  forecastChanges?: ForecastChange[];
   costEntries: CostEntry[];
   reports: FieldReport[];
   photos: SitePhoto[];

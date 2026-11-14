@@ -43,6 +43,7 @@ export function CostEntryList({ db, entries, showSite = false, emptyText = "입�
                   {e.status === "pending" && <Badge tone="warn">공무 확인 대기 · 손익 미반영</Badge>}
                   {e.status === "rejected" && <Badge tone="err">공무 반려</Badge>}
                   {e.editedAt && <Badge tone="info">수정됨</Badge>}
+                  {e.settle && <Badge tone="info">{Number(e.settle.month.slice(5))}월 노무 정산</Badge>}
                 </p>
                 <p className="mt-0.5 text-[0.76rem] text-ink-3">
                   {fmtDate(e.date)} · {REASON_LABEL[e.reason]} · {e.source === "FIELD" ? "모바일 현장보고" : e.source === "CSV" ? "CSV 가져오기" : e.source === "PC" ? "PC 입력" : "기준 시드"} · {userLabel(db, e.createdBy)} · {fmtRelative(e.createdAt)}
@@ -50,6 +51,20 @@ export function CostEntryList({ db, entries, showSite = false, emptyText = "입�
                 {e.note && <p className="mt-0.5 text-[0.78rem] text-ink-2">{e.note}</p>}
                 {e.status === "voided" && e.voidReason && <p className="mt-0.5 text-[0.74rem] text-ink-3">무효 사유: {e.voidReason}</p>}
                 {e.status === "rejected" && e.reviewNote && <p className="mt-0.5 text-[0.74rem] text-err">반려 사유: {e.reviewNote}</p>}
+                {/* 고친 이력 — 처음 금액·항목과 누가 고쳤는지 (D-79: 공무가 세금계산서 기준으로 고친 금액이 원가 목록에서 안 보이던 문제) */}
+                {(e.editHistory ?? []).length > 0 && (
+                  <p className="mt-0.5 text-[0.74rem] text-ink-2" data-testid="cost-entry-history">
+                    고친 이력:{" "}
+                    {(e.editHistory ?? [])
+                      .map((h, i, all) => {
+                        const next = all[i + 1]?.before ?? { amount: e.amount, category: e.category };
+                        const what = [h.before.amount !== next.amount ? `${fmtMan(h.before.amount)} → ${fmtMan(next.amount)}` : "", h.before.category !== next.category ? `${CATEGORY_LABEL[h.before.category]} → ${CATEGORY_LABEL[next.category]}` : ""].filter(Boolean).join(" · ") || "메모";
+                        return `${what} (${userLabel(db, h.by)} · ${fmtDate(h.at)})`;
+                      })
+                      .join(" / ")}
+                  </p>
+                )}
+                {e.status === "active" && e.reviewNote && <p className="mt-0.5 text-[0.74rem] text-ink-2">공무 메모: {e.reviewNote}</p>}
               </div>
               <div className="flex items-center gap-2">
                 {e.status === "active" && canSeeMoney && (

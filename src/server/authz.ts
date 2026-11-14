@@ -220,6 +220,7 @@ export function viewFor(m: Member, db: DemoDB, now = new Date()): DemoDB {
     contracts: [],
     budgets: [],
     forecasts: [],
+    forecastChanges: [],
     costEntries: [],
     reports: [],
     photos: [],

@@ -9,7 +9,7 @@ import { worksOnSite } from "@/lib/domain/types";
 import type { AttendanceRecord, AttendanceRequest, DemoDB, WorkOrder } from "@/lib/domain/types";
 import { todayIso } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
-import { shiftDate } from "@/lib/domain/attendance";
+import { overlapMessage, overlappingRecord, shiftDate } from "@/lib/domain/attendance";
 import { CommandError, claimKey, clone, log, nowIso, requireSite, touch, userName, validPhoto, type Ctx } from "./commands";
 
 const HM = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -95,6 +95,12 @@ export function requestAttendanceFix(db0: DemoDB, input: FixRequestInput, ctx: C
 }
 
 /** 본사 승인·반려 — 승인하면 출퇴근 기록을 고치거나(이력) 새로 만든다(위치 없음 + 요청 근거 표시) */
+/** 승인하면 같은 날 다른 현장 기록과 시간이 겹치게 되는 요청은 막는다 (D-79) — 반려하거나 앞 기록을 먼저 고친다 */
+function noOverlap(db: DemoDB, rec: { id?: string; userId: string; workDate: string; inAt: string; outAt?: string }) {
+  const clash = overlappingRecord(db, rec);
+  if (clash) throw new CommandError(`승인하면 ${overlapMessage(db, clash)}`, "STATE");
+}
+
 export function reviewAttendanceFix(db0: DemoDB, input: { requestId: string; decision: "approve" | "reject"; note?: string }, ctx: Ctx) {
   const db = clone(db0);
   db.attendanceRequests = [...(db.attendanceRequests ?? [])];
@@ -117,6 +123,7 @@ export function reviewAttendanceFix(db0: DemoDB, input: { requestId: string; dec
       const inAt = kst(q.workDate, q.inTime!);
       const outAt = q.outTime && !r.outAt ? outIso(q.workDate, q.outTime, inAt) : r.outAt;
       if (outAt && outAt <= inAt) throw new CommandError("요청한 출근 시각이 이미 기록된 퇴근 시각보다 늦습니다. 출퇴근 현황에서 직접 정정해 주세요.", "STATE");
+      noOverlap(db, { id: r.id, userId: r.userId, workDate: r.workDate, inAt, ...(outAt ? { outAt } : {}) });
       db.attendance[existing] = { ...r, inAt, ...(outAt ? { outAt } : {}), exceptionNote: stamp, corrections: [...(r.corrections ?? []), { at, by: ctx.userId, note: `${stamp} (그 뒤 누른 출근 기록의 시각을 고침)`, before: { inAt: r.inAt, ...(r.outAt ? { outAt: r.outAt } : {}) } }] };
       attendanceId = r.id;
     } else if (q.kind === "missed_in") {
@@ -132,6 +139,7 @@ export function reviewAttendanceFix(db0: DemoDB, input: { requestId: string; dec
         exceptionNote: stamp,
         corrections: [{ at, by: ctx.userId, note: stamp, before: { inAt: kst(q.workDate, q.inTime!) } }],
       };
+      noOverlap(db, rec);
       db.attendance.push(rec);
       attendanceId = rec.id;
     } else {
@@ -141,6 +149,7 @@ export function reviewAttendanceFix(db0: DemoDB, input: { requestId: string; dec
       const inAt = q.inTime ? kst(q.workDate, q.inTime) : r.inAt;
       const outAt = q.outTime ? outIso(q.workDate, q.outTime, inAt) : r.outAt;
       if (outAt && outAt <= inAt) throw new CommandError("퇴근 시각이 출근 시각보다 늦어야 합니다.", "VALIDATION");
+      noOverlap(db, { id: r.id, userId: r.userId, workDate: r.workDate, inAt, ...(outAt ? { outAt } : {}) });
       db.attendance[k] = {
         ...r,
         inAt,

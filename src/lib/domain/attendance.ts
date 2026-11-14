@@ -192,3 +192,30 @@ export function shiftDate(iso: string, days: number): string {
 export function hhmm(iso: string): string {
   return new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(iso));
 }
+
+/**
+ * 같은 사람·같은 날 다른 현장(다른 기록)과 시간이 겹치는지 (D-79) — 정정·근태 수정 승인으로 겹침을 새로 만들지 않게.
+ * 겹치면 근무시간이 두 번 셈해진다 (월 마감 ‘시간 겹침’). 겹치는 다른 기록을 돌려준다.
+ * - 둘 다 퇴근이 있으면: 구간이 겹치는지
+ * - 고칠 기록에 퇴근이 없으면: 출근 시각이 다른 기록 구간 안인지
+ * - 다른 기록에 퇴근이 없으면: 그 출근 시각이 고칠 기록 구간 안인지
+ */
+export function overlappingRecord(db: DemoDB, rec: { id?: string; userId: string; workDate: string; inAt: string; outAt?: string }): AttendanceRecord | undefined {
+  const a0 = new Date(rec.inAt).getTime();
+  const a1 = rec.outAt ? new Date(rec.outAt).getTime() : null;
+  return (db.attendance ?? []).find((o) => {
+    if (o.id === rec.id || o.userId !== rec.userId || o.workDate !== rec.workDate) return false;
+    const b0 = new Date(o.inAt).getTime();
+    const b1 = o.outAt ? new Date(o.outAt).getTime() : null;
+    if (a1 !== null && b1 !== null) return a0 < b1 && b0 < a1;
+    if (a1 === null && b1 !== null) return a0 >= b0 && a0 < b1;
+    if (a1 !== null && b1 === null) return b0 >= a0 && b0 < a1;
+    return false;
+  });
+}
+
+/** 겹칠 때 보여 줄 말 */
+export function overlapMessage(db: DemoDB, o: AttendanceRecord): string {
+  const site = db.sites.find((s) => s.id === o.siteId)?.shortName ?? "다른 현장";
+  return `같은 날 ${site} 기록(${hhmm(o.inAt)}~${o.outAt ? hhmm(o.outAt) : "퇴근 없음"})과 시간이 겹칩니다 — 근무시간이 두 번 셈해집니다. 그 기록을 먼저 고치거나 시각을 다시 확인해 주세요.`;
+}

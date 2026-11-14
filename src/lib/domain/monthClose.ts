@@ -3,8 +3,8 @@
  * 금액·원가·노무·출퇴근은 다른 화면과 같은 계산(siteFinancials·laborEstimate·periodSummary)을 그대로 쓴다 — 숫자가 화면마다 달라지지 않게.
  * 날짜는 모두 한국 날짜(YYYY-MM-DD). ‘이번 달’이면 오늘까지만 센다.
  */
-import type { CostCategory, DemoDB, Site } from "./types";
-import { COST_CATEGORIES } from "./labels";
+import type { CostCategory, CostEntry, DemoDB, Site } from "./types";
+import { CATEGORY_LABEL, COST_CATEGORIES, IMPACT_LABEL, REASON_LABEL } from "./labels";
 import { siteFinancials } from "./calc";
 import { laborEstimate, type LaborSite } from "./labor";
 import { isOpenShift, minutesOf, periodSummary, type MonthRow } from "./attendance";
@@ -45,12 +45,33 @@ export interface CloseSiteProfit {
   sinceBaseline: number;
 }
 
-export type CloseItemKind = "cost" | "report" | "noreport" | "checkout" | "fix" | "order" | "request" | "change" | "settle" | "completion" | "overlap";
+export type CloseItemKind = "cost" | "report" | "noreport" | "checkout" | "fix" | "order" | "request" | "change" | "settle" | "completion" | "overlap" | "labor";
 export interface CloseItem {
   kind: CloseItemKind;
   date?: string;
   text: string;
   href: string;
+  /** 이 화면에서 바로 처리할 수 있는 일 (D-79) — 노무 정산·준공 원가 마감 */
+  action?: { kind: "settleLabor" | "closeout"; siteId: string };
+}
+
+/** 노무 한 줄 + 월 마감 정산 상태 (D-79) */
+export interface CloseLabor extends LaborSite {
+  /** 이 달 노무 정산 (있으면) */
+  settled?: CostEntry;
+  /** 정산 뒤에 같은 달로 더 들어온 노무비 */
+  afterSettle: { n: number; amount: number };
+  /** 출력 기준 추정 − 입력된 노무비 (+ 면 입력이 모자람) */
+  shortfall: number;
+  /** 정산 버튼을 보여 줄지 — 추정보다 적게 들어왔고 아직 정산 안 함 */
+  canSettle: boolean;
+}
+
+/** 추정과 입력의 차이를 ‘모자람’으로 볼 기준 — 투입·인건비 화면(labor.ts)과 같은 값 */
+const LABOR_GAP_WON = 500_000;
+const LABOR_GAP_RATIO = 1.2;
+export function laborShort(l: Pick<LaborSite, "estimate" | "actual">): boolean {
+  return l.estimate > 0 && (l.actual === 0 || (l.estimate > l.actual * LABOR_GAP_RATIO && l.estimate - l.actual >= LABOR_GAP_WON));
 }
 
 export interface ClosePerson {
@@ -74,7 +95,7 @@ export interface MonthCloseReport {
   money: CloseSiteMoney[];
   totals: { billed: number; received: number; outstandingAtEnd: number; costTotal: number; pending: number; changeApproved: number };
   profit: CloseSiteProfit[];
-  labor: LaborSite[];
+  labor: CloseLabor[];
   people: ClosePerson[];
   items: CloseItem[];
   /** 이 달에 준공한 현장 (준공 보고서) */
@@ -95,6 +116,7 @@ export function previousMonth(today: string): string {
 const kst = (iso: string) => todayIso(new Date(iso));
 const inRange = (d: string | undefined, from: string, to: string) => !!d && d >= from && d <= to;
 const short = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
+const man = (n: number) => `${Math.round(n / 10_000).toLocaleString("ko-KR")}만 원`;
 const WORKDAY = (d: string) => new Date(`${d}T12:00:00Z`).getUTCDay() !== 0;
 
 /** 이 달에 일한(또는 진행 중이던) 현장 — 준공 현장도 이 달 안에 끝났으면 넣는다 */
@@ -142,6 +164,9 @@ export function monthClose(db: DemoDB, month: string, today = todayIso()): Month
       events.push({ date: kst(c.decidedAt!), amount: amt, text: `변경공사 승인 — ${c.title}${amt < 0 ? " (감액)" : ""}` });
       if (c.addedCost) events.push({ date: kst(c.decidedAt!), amount: -c.addedCost.amount, text: `변경공사 원가 — ${c.title}` });
     }
+    // 잔여예상을 다시 잡아 예상 총원가가 바뀐 일 (준공 원가 마감 포함 · D-79)
+    for (const c of (db.forecastChanges ?? []).filter((x) => x.siteId === site.id && inRange(kst(x.at), from, to) && x.eacBefore !== x.eacAfter))
+      events.push({ date: kst(c.at), amount: c.eacBefore - c.eacAfter, text: `${c.closeout ? "준공 원가 마감" : "잔여예상 재추정"} — ${c.note}` });
     events.sort((a, x) => a.date.localeCompare(x.date));
     const f = siteFinancials(db, site.id);
     const base = db.baseline[site.id]?.expectedProfit;
@@ -149,7 +174,16 @@ export function monthClose(db: DemoDB, month: string, today = todayIso()): Month
   });
 
   // ── 노무 (준공 현장도 이 달에 일했으면) ──
-  const labor = sites.map((s) => laborEstimate(db, s, from, to)).filter((r) => r.teams.length > 0 || r.actual > 0);
+  const labor: CloseLabor[] = sites
+    .map((s) => laborEstimate(db, s, from, to))
+    .filter((r) => r.teams.length > 0 || r.actual > 0)
+    .map((l) => {
+      const settled = db.costEntries.find((e) => e.siteId === l.site.id && e.settle?.month === month && (e.status === "active" || e.status === "pending"));
+      const later = settled
+        ? db.costEntries.filter((e) => e.siteId === l.site.id && e.category === "labor" && e.id !== settled.id && !e.settle && (e.status === "active" || e.status === "pending") && inRange(e.date, from, to) && e.createdAt > settled.createdAt)
+        : [];
+      return { ...l, settled, afterSettle: { n: later.length, amount: later.reduce((a, e) => a + e.amount, 0) }, shortfall: l.estimate - l.actual, canSettle: !settled && laborShort(l) };
+    });
 
   // ── 출퇴근 (사람별 · 문제 있는 날짜까지) ──
   const att = (db.attendance ?? []).filter((r) => inRange(r.workDate, from, to));
@@ -199,11 +233,58 @@ export function monthClose(db: DemoDB, month: string, today = todayIso()): Month
   if (openRequests.length) items.push({ kind: "request", text: `회신 안 한 고객 요청 ${openRequests.length}건`, href: "/insights#requests" });
   const waitingCo = db.changeOrders.filter((c) => (c.status === "review" || c.status === "submitted") && kst(c.requestedAt) <= to);
   if (waitingCo.length) items.push({ kind: "change", text: `결정 전 변경공사 ${waitingCo.length}건 (${waitingCo.map((c) => c.title).join(" · ")}) — 승인되기 전에는 계약·이익에 들어가지 않습니다`, href: "/finance" });
-  const completedSites = sites.filter((s) => s.status === "completed" && (!s.warranty?.completedDate || inRange(s.warranty.completedDate, from, to)));
-  for (const s of completedSites) {
-    const remaining = siteFinancials(db, s.id).remaining;
-    if (remaining > 0) items.push({ kind: "settle", text: `${s.shortName} 준공 — 잔여 예상원가 ${Math.round(remaining / 10_000).toLocaleString("ko-KR")}만 원이 남아 있어 이익이 계획값 그대로입니다. 남은 비용을 넣거나 잔여예상을 0으로 마감하세요`, href: `/sites/${s.id}?tab=cost` });
-    if (!s.warranty?.completedDate) items.push({ kind: "completion", text: `${s.shortName} — 상태는 준공인데 준공일이 없습니다`, href: `/sites/${s.id}?tab=requests` });
+  // 노무 — 달이 끝났는데 출력 기준 추정보다 노무비가 모자라면 (정산하면 빠진다) · 정산 뒤 같은 달 노무비가 더 들어오면 겹침 확인 (D-79)
+  for (const l of labor) {
+    if (ended && l.canSettle)
+      items.push({ kind: "labor", text: `${l.site.shortName} — 출력 기준 노무 추정 ${man(l.estimate)}보다 입력된 노무비가 ${man(l.shortfall)} 적습니다. 빠진 노무비를 넣거나 차액을 정산하세요`, href: `/close?month=${month}#close-labor`, action: { kind: "settleLabor", siteId: l.site.id } });
+    if (l.settled && l.afterSettle.n > 0)
+      items.push({ kind: "labor", text: `${l.site.shortName} — 노무 정산(${short(kst(l.settled.createdAt))}) 뒤에 같은 달 노무비 ${l.afterSettle.n}건(${man(l.afterSettle.amount)})이 더 들어왔습니다. 정산과 겹치지 않는지 확인하세요`, href: `/sites/${l.site.id}?tab=cost` });
   }
+  const completedSites = sites.filter((s) => s.status === "completed" && (!s.warranty?.completedDate || inRange(s.warranty.completedDate, from, to)));
+  // 준공 원가 — 준공한 달이 지나도 마감할 때까지 매달 띄운다 (D-79 · 준공한 달에 못 닫으면 다음 달 화면에서 사라지던 문제)
+  for (const s of db.sites.filter((x) => x.status === "completed" && (!x.warranty?.completedDate || x.warranty.completedDate <= to) && x.startDate <= to)) {
+    const remaining = siteFinancials(db, s.id).remaining;
+    const closed = (db.forecastChanges ?? []).some((c) => c.siteId === s.id && c.closeout);
+    const when = s.warranty?.completedDate && s.warranty.completedDate < from ? ` (${Number(s.warranty.completedDate.slice(5, 7))}월 준공)` : "";
+    if (remaining > 0 && !closed) items.push({ kind: "settle", text: `${s.shortName} 준공${when} — 잔여 예상원가 ${man(remaining)}이 남아 있어 이익이 계획값 그대로입니다. 남은 비용을 넣거나 원가를 마감하세요`, href: `/sites/${s.id}?tab=cost`, action: { kind: "closeout", siteId: s.id } });
+  }
+  for (const s of completedSites) if (!s.warranty?.completedDate) items.push({ kind: "completion", text: `${s.shortName} — 상태는 준공인데 준공일이 없습니다`, href: `/sites/${s.id}?tab=requests` });
   return { month, from, to, ended, money, totals, profit, labor, people, items, completedSites };
+}
+
+
+const STATUS_LABEL: Record<CostEntry["status"], string> = { active: "확정", pending: "공무 확인 대기", rejected: "반려", voided: "취소" };
+const SOURCE_LABEL: Record<CostEntry["source"], string> = { FIELD: "현장 보고", PC: "본사 입력", CSV: "가져오기", SEED: "기준 자료" };
+
+/**
+ * 이달 원가 CSV (D-79) — 발생일이 이 달인 원가 전부(취소·반려 포함 · 상태 칸으로 구분).
+ * 공무가 금액을 고친 건은 ‘처음 금액’과 공무 메모를 함께 적는다 (세금계산서 기준 조정 등).
+ */
+export function monthCostRows(db: DemoDB, month: string, today = todayIso()): (string | number)[][] {
+  const b = monthBounds(month);
+  const to = b.to < today ? b.to : today;
+  const site = (id: string) => db.sites.find((x) => x.id === id)?.shortName ?? "";
+  const name = (id?: string) => (id ? (db.users.find((u) => u.id === id)?.name ?? "") : "");
+  const rows = db.costEntries
+    .filter((e) => e.date >= b.from && e.date <= to)
+    .sort((a, x) => a.date.localeCompare(x.date) || site(a.siteId).localeCompare(site(x.siteId)) || a.createdAt.localeCompare(x.createdAt))
+    .map((e) => {
+      const first = e.editHistory?.[0]?.before;
+      return [
+        e.date,
+        site(e.siteId),
+        CATEGORY_LABEL[e.category],
+        e.amount,
+        IMPACT_LABEL[e.forecastImpact],
+        REASON_LABEL[e.reason],
+        e.note,
+        e.settle ? "본사 입력 (노무 정산)" : SOURCE_LABEL[e.source],
+        name(e.createdBy),
+        STATUS_LABEL[e.status],
+        e.reviewedAt ? `${kst(e.reviewedAt)} ${name(e.reviewedBy)}`.trim() : "",
+        first && first.amount !== e.amount ? first.amount : "",
+        [e.reviewNote, e.status === "voided" ? e.voidReason : ""].filter(Boolean).join(" · "),
+      ];
+    });
+  return [["발생일", "현장", "항목", "금액(원)", "성격", "사유", "메모", "입력 경로", "입력한 사람", "상태", "공무 확인", "처음 금액(고치기 전)", "공무 메모·취소 사유"], ...rows];
 }

@@ -44,6 +44,8 @@ export const COMMANDS = {
   // 운영 관리 (현장·실행예산·설정·공무 확인)
   saveSite: (db: DemoDB, a: A.SaveSiteInput, ctx: Ctx) => A.saveSite(db, a, ctx),
   updateForecast: (db: DemoDB, a: A.UpdateForecastInput, ctx: Ctx) => A.updateForecast(db, a, ctx),
+  // 월 마감 노무 정산 (D-79) — 본사만 (현장·발주처는 목록 밖이라 거절)
+  settleLabor: (db: DemoDB, a: A.SettleLaborInput, ctx: Ctx) => A.settleLabor(db, a, ctx),
   updateProgress: (db: DemoDB, a: A.UpdateProgressInput, ctx: Ctx) => A.updateProgress(db, a, ctx),
   setCompanySettings: (db: DemoDB, a: A.CompanySettingsInput, ctx: Ctx) => A.setCompanySettings(db, a, ctx),
   reviewCostEntry: (db: DemoDB, a: A.ReviewCostEntryInput, ctx: Ctx) => A.reviewCostEntry(db, a, ctx),

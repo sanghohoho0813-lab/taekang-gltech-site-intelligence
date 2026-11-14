@@ -331,10 +331,16 @@ function SiteFormModal({ db, site, onClose }: { db: DemoDB; site: Site | null; o
   );
 }
 
-function ForecastModal({ db, site, onClose }: { db: DemoDB; site: Site; onClose: () => void }) {
+/**
+ * 잔여예상원가 재추정. closeout이면 ‘준공 원가 마감’ (D-79 월 마감) — 새 잔여예상을 0으로 채워 열고,
+ * 실행예산이 있는데 원가가 하나도 안 들어온 항목·공무 확인 대기 원가를 먼저 보여 준다 (0으로 닫으면 그 비용이 없던 것이 되므로)
+ */
+export function ForecastModal({ db, site, onClose, closeout = false }: { db: DemoDB; site: Site; onClose: () => void; closeout?: boolean }) {
   const toast = useToast();
   const f = siteFinancials(db, site.id);
-  const [vals, setVals] = useState<Record<CostCategory, string>>(() => Object.fromEntries(f.categories.map((c) => [c.category, wonText(c.remaining)])) as Record<CostCategory, string>);
+  const [vals, setVals] = useState<Record<CostCategory, string>>(() => Object.fromEntries(f.categories.map((c) => [c.category, closeout ? "0" : wonText(c.remaining)])) as Record<CostCategory, string>);
+  const empty = f.categories.filter((c) => c.budget > 0 && c.incurred === 0);
+  const pendingCosts = db.costEntries.filter((e) => e.siteId === site.id && e.status === "pending");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -349,8 +355,8 @@ function ForecastModal({ db, site, onClose }: { db: DemoDB; site: Site; onClose:
     if (busy) return;
     setBusy(true);
     try {
-      await run("updateForecast", { siteId: site.id, remaining: nums, note });
-      toast.push({ tone: "ok", title: "잔여예상원가를 다시 잡았습니다", desc: `예상 총원가 ${fmtEok(f.eac)} → ${fmtEok(preview.newEac)}` });
+      await run("updateForecast", { siteId: site.id, remaining: nums, note, ...(closeout ? { closeout: true } : {}) });
+      toast.push({ tone: "ok", title: closeout ? `${site.shortName} 원가를 마감했습니다` : "잔여예상원가를 다시 잡았습니다", desc: `예상 총원가 ${fmtEok(f.eac)} → ${fmtEok(preview.newEac)} · 예상이익 ${fmtMan(f.expectedProfit)} → ${fmtMan(preview.newProfit)}` });
       onClose();
     } catch (e) {
       if (e instanceof CommandError) setErrors(e.fieldErrors);
@@ -364,20 +370,36 @@ function ForecastModal({ db, site, onClose }: { db: DemoDB; site: Site; onClose:
     <Modal
       open
       onClose={onClose}
-      title={`잔여예상원가 재추정 · ${site.shortName}`}
-      description="‘지금부터 준공까지 더 들어갈 돈’을 항목별로 다시 잡습니다. 이미 발생한 원가는 그대로 두고, 이후 ‘실행예산 내 집행’만 여기서 차감됩니다."
+      title={closeout ? `준공 원가 마감 · ${site.shortName}` : `잔여예상원가 재추정 · ${site.shortName}`}
+      description={
+        closeout
+          ? "준공한 현장의 ‘앞으로 더 들어갈 돈’을 정리합니다. 아직 받을 청구서(노무비·장비 등)가 남았으면 그 금액만 남기고, 없으면 0으로 두세요. 0으로 마감하면 지금까지 들어온 원가가 최종 원가가 됩니다."
+          : "‘지금부터 준공까지 더 들어갈 돈’을 항목별로 다시 잡습니다. 이미 발생한 원가는 그대로 두고, 이후 ‘실행예산 내 집행’만 여기서 차감됩니다."
+      }
       size="lg"
       testId="forecast-form"
       footer={
         <>
           <Button onClick={onClose}>취소</Button>
           <Button variant="cta" onClick={save} loading={busy} data-testid="forecast-save">
-            저장
+            {closeout ? "원가 마감" : "저장"}
           </Button>
         </>
       }
     >
       <div className="space-y-4">
+        {closeout && (empty.length > 0 || pendingCosts.length > 0) && (
+          <div data-testid="closeout-warn"><Notice tone="warn" title="마감하기 전에 확인하세요">
+            <ul className="mt-1 list-disc space-y-0.5 pl-5">
+              {empty.map((c) => (
+                <li key={c.category}>
+                  {CATEGORY_LABEL[c.category]} — 실행예산 {fmtMan(c.budget)}인데 들어온 원가가 없습니다. 아직 안 받은 청구서가 있으면 그 금액을 남기세요.
+                </li>
+              ))}
+              {pendingCosts.length > 0 && <li>공무 확인 대기 원가 {pendingCosts.length}건({fmtMan(pendingCosts.reduce((a, e) => a + e.amount, 0))}) — 확인하면 마감 뒤에도 원가에 더해집니다.</li>}
+            </ul>
+          </Notice></div>
+        )}
         <div className="overflow-x-auto">
           <table className="w-full min-w-[34rem] text-[0.84rem]">
             <thead>
@@ -414,9 +436,12 @@ function ForecastModal({ db, site, onClose }: { db: DemoDB; site: Site; onClose:
             </tbody>
           </table>
         </div>
-        <Notice tone={preview.newMargin < f.marginPct ? "warn" : "info"} title={`저장하면: 예상 총원가 ${fmtEok(f.eac)} → ${fmtEok(preview.newEac)} · 이익률 ${fmtPct(f.marginPct)} → ${fmtPct(preview.newMargin)} (${fmtPp(preview.newMargin - f.marginPct)})`} />
-        <Field label="재추정 사유 (이력에 남음)" htmlFor="fc-note" error={errors.note}>
-          <input id="fc-note" className={inputCls} value={note} maxLength={200} onChange={(e) => setNote(e.target.value)} placeholder="예) 11월 공정회의 — 잔여 유리 물량·단가 재확인" />
+        <Notice
+          tone={preview.newMargin < f.marginPct ? "warn" : "info"}
+          title={`${closeout ? "마감하면" : "저장하면"}: 예상 총원가 ${fmtEok(f.eac)} → ${fmtEok(preview.newEac)} · 예상이익 ${fmtMan(f.expectedProfit)} → ${fmtMan(preview.newProfit)} · 이익률 ${fmtPct(f.marginPct)} → ${fmtPct(preview.newMargin)} (${fmtPp(preview.newMargin - f.marginPct)})`}
+        />
+        <Field label={closeout ? "마감 메모 (이력·월 마감에 남음)" : "재추정 사유 (이력에 남음)"} htmlFor="fc-note" error={errors.note}>
+          <input id="fc-note" className={inputCls} value={note} maxLength={200} onChange={(e) => setNote(e.target.value)} placeholder={closeout ? "예) 준공 정산 — 남은 청구서 없음 (공무 확인)" : "예) 11월 공정회의 — 잔여 유리 물량·단가 재확인"} />
         </Field>
       </div>
     </Modal>

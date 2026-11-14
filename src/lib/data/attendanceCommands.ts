@@ -14,6 +14,7 @@ import { judgeGeo, geoText, validSample, type GeoSample } from "@/lib/domain/geo
 import { consentRecord, currentTerms, hasConsent, retentionText, sameTerms, stampTerms, viewersText, type ConsentTerms } from "@/lib/domain/privacy";
 import { todayIso } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
+import { overlapMessage, overlappingRecord } from "@/lib/domain/attendance";
 import { CommandError, claimKey, clone, log, nowIso, requireSite, touch, userName, validPhoto, type Ctx } from "./commands";
 
 /** 동의 문구 판·동의 확인은 개인위치정보 규칙(privacy.ts)에서 — 보관 기간·볼 수 있는 사람 조건 포함 (D-43) */
@@ -274,6 +275,9 @@ export function correctAttendance(db0: DemoDB, input: CorrectAttendanceInput, ct
   else if (outAt && new Date(outAt).getTime() - new Date(inAt).getTime() > 24 * 3_600_000) errors.time = "근무 시간이 24시간을 넘습니다.";
   else if (outAt && outAt > nowIso(ctx)) errors.time = "미래 시각으로 정정할 수 없습니다.";
   if (Object.keys(errors).length) throw new CommandError("입력값을 확인해주세요.", "VALIDATION", errors);
+  // 같은 날 다른 현장 기록과 시간이 겹치게 고치지 않는다 (D-79 — 겹치면 근무시간이 두 번 셈)
+  const clash = overlappingRecord(db, { id: r.id, userId: r.userId, workDate: r.workDate, inAt: new Date(inAt).toISOString(), ...(outAt ? { outAt: new Date(outAt).toISOString() } : {}) });
+  if (clash) throw new CommandError(overlapMessage(db, clash), "VALIDATION", { time: "다른 기록과 겹침" });
   db.attendance[idx] = {
     ...r,
     inAt: new Date(inAt).toISOString(),
