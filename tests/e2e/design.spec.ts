@@ -24,8 +24,8 @@ test("상세설계서: 8개 장 · 권한표·데이터 표 · 금액 없음 · 
   await expect(page.getByTestId("design-client")).toContainText("태강지엘텍");
   await expect(page.getByTestId("design-role")).toHaveCount(4);
   await expect(page.getByTestId("design-flow")).toHaveCount(4);
-  await expect(page.getByTestId("design-perm")).toHaveCount(65); // 명령 61 + 계정·백업 4
-  await expect(page.getByTestId("design-collection")).toHaveCount(26);
+  await expect(page.getByTestId("design-perm")).toHaveCount(66); // 명령 62 + 계정·백업 4 (D-79 노무 정산 추가)
+  await expect(page.getByTestId("design-collection")).toHaveCount(27); // D-79 잔여예상 재추정 이력
   await expect(page.getByTestId("design-module")).toHaveCount(7);
   // 현장 직원은 기성 청구 불가, 출근은 본인만
   const billing = page.getByTestId("design-perm").filter({ hasText: "기성 청구 등록" });
