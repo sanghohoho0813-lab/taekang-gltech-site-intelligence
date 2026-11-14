@@ -12,6 +12,7 @@ import { entryEacImpact, simulateApprovedClaims } from "@/lib/domain/calc";
 import { ACTION_STATUS_LABEL, CATEGORY_LABEL, CO_STATUS_LABEL, IMPACT_LABEL, REASON_LABEL, RULE_LABEL } from "@/lib/domain/labels";
 import { fmtDate, fmtDateTime, fmtEok, fmtMan, fmtPct, fmtPp } from "@/lib/domain/format";
 import { receivableAging } from "@/lib/domain/risk";
+import { profitEvents } from "@/lib/domain/monthClose";
 import { IS_LIVE, BASE_LABEL } from "@/lib/mode";
 
 export default function ReportPage() {
@@ -42,11 +43,17 @@ export default function ReportPage() {
     const f = fin[s.id];
     const b = db.baseline[s.id];
     if (b && Math.abs(f.marginPct - b.marginPct) >= 0.05) {
-      const add = sessionEntries.filter((e) => e.siteId === s.id && e.status === "active" && e.forecastImpact === "additional");
-      const reasons = [...new Set(add.map((e) => REASON_LABEL[e.reason]))].join("·");
+      // 이유는 월 마감과 같은 ‘이익을 바꾼 일’로 — 추가 원가만 적어 변경공사·재추정·원가 마감이 빠지던 문제 (D-79 대표 점검)
+      const since = s.baselineAt ? s.baselineAt.slice(0, 10) : "0000-01-01";
+      const groups = new Map<string, number>();
+      for (const e of profitEvents(db, s.id, since, "9999-12-31")) {
+        const k = e.text.split(" — ")[0];
+        groups.set(k, (groups.get(k) ?? 0) + e.amount);
+      }
+      const why = [...groups].filter(([, v]) => v !== 0).map(([k, v]) => `${k} ${v > 0 ? "+" : "−"}${fmtMan(Math.abs(v))}`).join(" · ");
       bullets.push({
         tone: f.marginPct < b.marginPct ? "err" : "ok",
-        text: `${s.shortName} 예상이익률 ${fmtPct(b.marginPct)} → ${fmtPct(f.marginPct)} (${fmtPp(f.marginPct - b.marginPct)}), 예상이익 ${fmtEok(b.expectedProfit)} → ${fmtEok(f.expectedProfit)}${add.length ? ` — ${reasons} 추가원가 ${fmtMan(add.reduce((x, e) => x + e.amount, 0))}` : ""}`,
+        text: `${s.shortName} 예상이익률 ${fmtPct(b.marginPct)} → ${fmtPct(f.marginPct)} (${fmtPp(f.marginPct - b.marginPct)}), 예상이익 ${fmtEok(b.expectedProfit)} → ${fmtEok(f.expectedProfit)}${why ? ` — ${why}` : ""}`,
       });
     }
   }

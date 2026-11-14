@@ -67,6 +67,13 @@ export function requestAttendanceFix(db0: DemoDB, input: FixRequestInput, ctx: C
   } else if (input.outTime && kst(input.workDate, input.outTime) > at) throw new CommandError("입력값을 확인해주세요.", "VALIDATION", { outTime: "아직 지나지 않은 시각이에요." });
   if (input.kind === "missed_in" && rec) throw new CommandError("그날 출근 기록이 이미 있어요. ‘시각이 잘못 찍혔어요’로 요청해 주세요.", "STATE");
   if (input.kind !== "missed_in" && !rec) throw new CommandError("그날 출근 기록이 없어요. ‘출근을 못 눌렀어요’로 요청해 주세요.", "STATE");
+  // 고쳐 달라는 시각이 그날(앞뒤 하루) 다른 현장 기록과 겹치면 요청 때 바로 알린다 — 승인 때 막히던 것 (D-79 버그 배시)
+  {
+    const wantIn = input.inTime ? kst(input.workDate, input.inTime) : rec?.inAt;
+    const wantOut = input.outTime && wantIn ? outIso(input.workDate, input.outTime, wantIn) : rec?.outAt;
+    const clash = wantIn ? overlappingRecord(db0, { id: rec?.id, userId: ctx.userId, workDate: input.workDate, inAt: wantIn, ...(wantOut ? { outAt: wantOut } : {}) }) : undefined;
+    if (clash) throw new CommandError(`${overlapMessage(db0, clash)} 본사에 전화해 주세요.`, "VALIDATION", { time: "다른 기록과 겹침" });
+  }
   const waiting = (db0.attendanceRequests ?? []).find((q) => q.userId === ctx.userId && q.siteId === site.id && q.workDate === input.workDate && q.status === "pending");
   if (waiting)
     throw new CommandError(

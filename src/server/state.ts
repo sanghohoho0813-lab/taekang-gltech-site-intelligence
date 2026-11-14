@@ -22,6 +22,8 @@ export const COLLECTIONS = {
   contracts: (x: Item) => String(x.siteId),
   budgets: bySiteCat,
   forecasts: bySiteCat,
+  // 잔여예상 재추정 이력 (D-79) — 빠뜨리면 30초 메모리에만 있다가 사라진다 (대표 점검 B-1)
+  forecastChanges: byId,
   costEntries: byId,
   reports: byId,
   photos: byId,
@@ -49,7 +51,7 @@ export type CollectionName = keyof typeof COLLECTIONS;
 const NAMES = Object.keys(COLLECTIONS) as CollectionName[];
 
 /** 최신 항목이 배열 앞에 오는 컬렉션 (명령이 unshift) */
-const NEWEST_FIRST = new Set<CollectionName>(["reports", "proofEvents", "activityLogs", "actions", "partnerRequests", "importBatches", "shares", "intakes"]);
+const NEWEST_FIRST = new Set<CollectionName>(["reports", "proofEvents", "activityLogs", "actions", "partnerRequests", "importBatches", "shares", "intakes", "forecastChanges"]);
 /** 지우지 않는 컬렉션 */
 const APPEND_ONLY = new Set<CollectionName>(["activityLogs"]);
 const LOG_LIMIT = 300;

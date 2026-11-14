@@ -5,7 +5,7 @@
  */
 import type { CostCategory, CostEntry, DemoDB, Site } from "./types";
 import { CATEGORY_LABEL, COST_CATEGORIES, IMPACT_LABEL, REASON_LABEL } from "./labels";
-import { siteFinancials } from "./calc";
+import { activeAt, entryEacImpact, siteFinancials } from "./calc";
 import { laborEstimate, type LaborSite } from "./labor";
 import { isOpenShift, minutesOf, periodSummary, type MonthRow } from "./attendance";
 import { todayIso } from "./format";
@@ -63,8 +63,14 @@ export interface CloseLabor extends LaborSite {
   afterSettle: { n: number; amount: number };
   /** 출력 기준 추정 − 입력된 노무비 (+ 면 입력이 모자람) */
   shortfall: number;
-  /** 정산 버튼을 보여 줄지 — 추정보다 적게 들어왔고 아직 정산 안 함 */
+  /** 정산 버튼을 보여 줄지 — 달이 끝났고, 추정보다 적게 들어왔고, 아직 정산 안 함 */
   canSettle: boolean;
+  /** 외주 팀 추정 중 이 기간 외주비로 이미 들어온 금액 — 정산 기본값에서 뺀다 (노무비·외주비 이중 계상 방지) */
+  subcontractCovered: number;
+  /** 정산 기본값 = 모자람 − 외주비로 들어온 외주 팀 몫 */
+  suggested: number;
+  /** 정산한 뒤에 다시 생긴 모자람 (출력 추가·정산 때 셈한 확인 대기 노무비 반려 등) */
+  reShort: number;
 }
 
 /** 추정과 입력의 차이를 ‘모자람’으로 볼 기준 — 투입·인건비 화면(labor.ts)과 같은 값 */
@@ -94,6 +100,8 @@ export interface MonthCloseReport {
   ended: boolean;
   money: CloseSiteMoney[];
   totals: { billed: number; received: number; outstandingAtEnd: number; costTotal: number; pending: number; changeApproved: number };
+  /** 달이 끝난 뒤에 손익에 들어온 이 달 날짜 원가 (D-79 — 인쇄해 둔 마감본과 숫자가 달라지는 이유) */
+  late: { n: number; amount: number };
   profit: CloseSiteProfit[];
   labor: CloseLabor[];
   people: ClosePerson[];
@@ -121,7 +129,46 @@ const WORKDAY = (d: string) => new Date(`${d}T12:00:00Z`).getUTCDay() !== 0;
 
 /** 이 달에 일한(또는 진행 중이던) 현장 — 준공 현장도 이 달 안에 끝났으면 넣는다 */
 export function closeSites(db: DemoDB, from: string, to: string): Site[] {
-  return db.sites.filter((s) => s.startDate <= to && (s.status === "active" || (s.endDate >= from && s.startDate <= to) || (db.attendance ?? []).some((a) => a.siteId === s.id && inRange(a.workDate, from, to))));
+  // 준공한 다음 달에 들어온 입금·기성·원가·재추정·변경공사도 그 달 마감에 나오도록 (D-79 대표 점검 — 11월 판교 입금 3,500만이 11월 마감에서 빠짐)
+  const touched = (id: string) =>
+    (db.attendance ?? []).some((a) => a.siteId === id && inRange(a.workDate, from, to)) ||
+    db.billings.some((x) => x.siteId === id && x.status === "confirmed" && inRange(x.billedDate, from, to)) ||
+    db.payments.some((x) => x.siteId === id && inRange(x.receivedDate, from, to)) ||
+    db.costEntries.some((e) => e.siteId === id && e.status !== "voided" && (inRange(e.date, from, to) || inRange(kst(activeAt(e)), from, to))) ||
+    (db.forecastChanges ?? []).some((c) => c.siteId === id && inRange(kst(c.at), from, to)) ||
+    db.changeOrders.some((c) => c.siteId === id && !!c.decidedAt && inRange(kst(c.decidedAt), from, to));
+  return db.sites.filter((s) => s.startDate <= to && (s.status === "active" || (s.endDate >= from && s.startDate <= to) || touched(s.id)));
+}
+
+/**
+ * 예상이익을 바꾼 일 — 기간 안에 ‘손익에 들어온’ 날 기준 (D-79 대표 점검: 계획 안 집행이 잔여예상을 넘어 이익을 바꿔도 빠지던 문제).
+ * - 원가: 추가 원가는 전액, 계획 안 집행은 잔여예상을 넘은 만큼 (공무 확인 방식이면 확인한 날)
+ * - 변경공사 승인 (+) · 그 예상 원가 (−)
+ * - 잔여예상 재추정·준공 원가 마감 (예상 총원가 변화)
+ */
+export function profitEvents(db: DemoDB, siteId: string, from: string, to: string): CloseProfitEvent[] {
+  const events: CloseProfitEvent[] = [];
+  for (const e of db.costEntries.filter((x) => x.siteId === siteId && x.status === "active")) {
+    const when = kst(activeAt(e));
+    if (!inRange(when, from, to)) continue;
+    const impact = entryEacImpact(db, e);
+    if (impact <= 0) continue;
+    const occurred = e.date !== when ? ` (발생 ${short(e.date)})` : "";
+    events.push(
+      e.forecastImpact === "additional"
+        ? { date: when, amount: -impact, text: `추가 원가 — ${e.note || "사유 미기재"}${occurred}` }
+        : { date: when, amount: -impact, text: `잔여예상을 넘은 집행 — ${CATEGORY_LABEL[e.category]} ${e.note || ""}${occurred}`.replace(/\s+/g, " ").trim() },
+    );
+  }
+  for (const c of db.changeOrders.filter((x) => x.siteId === siteId && x.status === "approved" && x.decidedAt && inRange(kst(x.decidedAt), from, to))) {
+    const amt = c.approvedAmount ?? c.amount;
+    events.push({ date: kst(c.decidedAt!), amount: amt, text: `변경공사 승인 — ${c.title}${amt < 0 ? " (감액)" : ""}` });
+    if (c.addedCost) events.push({ date: kst(c.decidedAt!), amount: -c.addedCost.amount, text: `변경공사 원가 — ${c.title}` });
+  }
+  // 잔여예상을 다시 잡아 예상 총원가가 바뀐 일 (준공 원가 마감 포함 · D-79)
+  for (const c of (db.forecastChanges ?? []).filter((x) => x.siteId === siteId && inRange(kst(x.at), from, to) && x.eacBefore !== x.eacAfter))
+    events.push({ date: kst(c.at), amount: c.eacBefore - c.eacAfter, text: `${c.closeout ? "준공 원가 마감" : "잔여예상 재추정"} — ${c.note}` });
+  return events.sort((a, x) => a.date.localeCompare(x.date));
 }
 
 export function monthClose(db: DemoDB, month: string, today = todayIso()): MonthCloseReport {
@@ -152,22 +199,13 @@ export function monthClose(db: DemoDB, month: string, today = todayIso()): Month
     };
   });
   const sum = (f: (m: CloseSiteMoney) => number) => money.reduce((a, m) => a + f(m), 0);
+  const lateEntries = ended ? db.costEntries.filter((e) => e.status === "active" && inRange(e.date, from, to) && kst(activeAt(e)) > b.to) : [];
+  const late = { n: lateEntries.length, amount: lateEntries.reduce((a, e) => a + e.amount, 0) };
   const totals = { billed: sum((m) => m.billed), received: sum((m) => m.received), outstandingAtEnd: sum((m) => m.outstandingAtEnd), costTotal: sum((m) => m.costTotal), pending: sum((m) => m.pending.amount), changeApproved: sum((m) => m.changeApproved) };
 
   // ── 이익 변화 이유 (이 달에 생긴 일만 · 더하면 맞도록) ──
   const profit: CloseSiteProfit[] = sites.map((site) => {
-    const events: CloseProfitEvent[] = [];
-    for (const e of db.costEntries.filter((x) => x.siteId === site.id && x.status === "active" && x.forecastImpact === "additional" && inRange(x.date, from, to)))
-      events.push({ date: e.date, amount: -e.amount, text: `추가 원가 — ${e.note || "사유 미기재"}` });
-    for (const c of db.changeOrders.filter((x) => x.siteId === site.id && x.status === "approved" && x.decidedAt && inRange(kst(x.decidedAt), from, to))) {
-      const amt = c.approvedAmount ?? c.amount;
-      events.push({ date: kst(c.decidedAt!), amount: amt, text: `변경공사 승인 — ${c.title}${amt < 0 ? " (감액)" : ""}` });
-      if (c.addedCost) events.push({ date: kst(c.decidedAt!), amount: -c.addedCost.amount, text: `변경공사 원가 — ${c.title}` });
-    }
-    // 잔여예상을 다시 잡아 예상 총원가가 바뀐 일 (준공 원가 마감 포함 · D-79)
-    for (const c of (db.forecastChanges ?? []).filter((x) => x.siteId === site.id && inRange(kst(x.at), from, to) && x.eacBefore !== x.eacAfter))
-      events.push({ date: kst(c.at), amount: c.eacBefore - c.eacAfter, text: `${c.closeout ? "준공 원가 마감" : "잔여예상 재추정"} — ${c.note}` });
-    events.sort((a, x) => a.date.localeCompare(x.date));
+    const events = profitEvents(db, site.id, from, to);
     const f = siteFinancials(db, site.id);
     const base = db.baseline[site.id]?.expectedProfit;
     return { site, events, net: events.reduce((a, e) => a + e.amount, 0), expectedProfit: f.expectedProfit, sinceBaseline: base === undefined ? 0 : f.expectedProfit - base };
@@ -182,7 +220,23 @@ export function monthClose(db: DemoDB, month: string, today = todayIso()): Month
       const later = settled
         ? db.costEntries.filter((e) => e.siteId === l.site.id && e.category === "labor" && e.id !== settled.id && !e.settle && (e.status === "active" || e.status === "pending") && inRange(e.date, from, to) && e.createdAt > settled.createdAt)
         : [];
-      return { ...l, settled, afterSettle: { n: later.length, amount: later.reduce((a, e) => a + e.amount, 0) }, shortfall: l.estimate - l.actual, canSettle: !settled && laborShort(l) };
+      const subEstimate = l.teams.filter((t) => t.kind === "subcontract").reduce((a, t) => a + t.estimate, 0);
+      const subCost = db.costEntries.filter((e) => e.siteId === l.site.id && e.category === "subcontract" && (e.status === "active" || e.status === "pending") && e.date >= l.compareFrom && e.date <= l.to).reduce((a, e) => a + e.amount, 0);
+      const subcontractCovered = Math.min(subEstimate, subCost);
+      const shortfall = l.estimate - l.actual;
+      // 정산 때 남겨 둔 모자람(일부러 일부만 넣은 경우)보다 더 모자라졌을 때만 다시 알린다
+      const leftAtSettle = settled?.settle ? Math.max(0, settled.settle.estimate - settled.settle.actualBefore - settled.amount) : 0;
+      const reShort = settled ? Math.max(0, shortfall - leftAtSettle) : 0;
+      return {
+        ...l,
+        settled,
+        afterSettle: { n: later.length, amount: later.reduce((a, e) => a + e.amount, 0) },
+        shortfall,
+        canSettle: ended && !settled && laborShort(l),
+        subcontractCovered,
+        suggested: Math.max(0, shortfall - subcontractCovered),
+        reShort: reShort >= LABOR_GAP_WON ? reShort : 0,
+      };
     });
 
   // ── 출퇴근 (사람별 · 문제 있는 날짜까지) ──
@@ -190,12 +244,13 @@ export function monthClose(db: DemoDB, month: string, today = todayIso()): Month
   const rows = periodSummary(db, from, to, today);
   const people: ClosePerson[] = rows.map((row) => {
     const mine = att.filter((r) => r.userId === row.userId);
+    // 시간이 겹치는 기록 — 같은 날뿐 아니라 자정을 넘긴 야간 기록과 다음 날 기록도 (D-79 버그 배시 m-1)
     const overlap = new Set<string>();
-    const byDay = new Map<string, typeof mine>();
-    for (const r of mine) byDay.set(r.workDate, [...(byDay.get(r.workDate) ?? []), r]);
-    for (const [d, list] of byDay) {
-      const iv = list.filter((r) => r.outAt).map((r) => [new Date(r.inAt).getTime(), new Date(r.outAt!).getTime()] as const).sort((a, x) => a[0] - x[0]);
-      for (let i = 1; i < iv.length; i++) if (iv[i][0] < iv[i - 1][1]) overlap.add(d);
+    const iv = mine.filter((r) => r.outAt).map((r) => ({ d: r.workDate, a: new Date(r.inAt).getTime(), b: new Date(r.outAt!).getTime() })).sort((x, y) => x.a - y.a);
+    let maxEnd = -Infinity;
+    for (const x of iv) {
+      if (x.a < maxEnd) overlap.add(x.d);
+      maxEnd = Math.max(maxEnd, x.b);
     }
     return {
       row,
@@ -213,7 +268,11 @@ export function monthClose(db: DemoDB, month: string, today = todayIso()): Month
   const pendingCosts = db.costEntries.filter((e) => e.status === "pending" && e.date <= to);
   if (pendingCosts.length) items.push({ kind: "cost", text: `공무 확인 대기 원가 ${pendingCosts.length}건 — 확인해야 이 달 원가에 들어갑니다`, href: "/admin?tab=review" });
   const unconfirmed = db.reports.filter((r) => r.status !== "voided" && !r.importBatchId && !r.review && inRange(r.reportDate, from, to));
-  if (unconfirmed.length) items.push({ kind: "report", text: `확인 안 한 현장 보고 ${unconfirmed.length}건 (${[...new Set(unconfirmed.map((r) => short(r.reportDate)))].slice(0, 5).join(" · ")}${unconfirmed.length > 5 ? " …" : ""})`, href: "/orders?tab=reports" });
+  if (unconfirmed.length) {
+    const sn = (id: string) => db.sites.find((x) => x.id === id)?.shortName ?? "";
+    const labels = [...new Set(unconfirmed.map((r) => `${sn(r.siteId)} ${short(r.reportDate)}`.trim()))];
+    items.push({ kind: "report", text: `확인 안 한 현장 보고 ${unconfirmed.length}건 (${labels.slice(0, 5).join(" · ")}${labels.length > 5 ? " …" : ""})`, href: "/orders?tab=reports" });
+  }
   for (const site of sites) {
     // 출근 기록은 있는데 그날 작업 보고가 없는 날 (사진·비용만 보낸 날은 보고 없음으로 본다)
     const worked = [...new Set(att.filter((a) => a.siteId === site.id).map((a) => a.workDate))].filter(WORKDAY);
@@ -237,6 +296,8 @@ export function monthClose(db: DemoDB, month: string, today = todayIso()): Month
   for (const l of labor) {
     if (ended && l.canSettle)
       items.push({ kind: "labor", text: `${l.site.shortName} — 출력 기준 노무 추정 ${man(l.estimate)}보다 입력된 노무비가 ${man(l.shortfall)} 적습니다. 빠진 노무비를 넣거나 차액을 정산하세요`, href: `/close?month=${month}#close-labor`, action: { kind: "settleLabor", siteId: l.site.id } });
+    if (ended && l.reShort > 0)
+      items.push({ kind: "labor", text: `${l.site.shortName} — 노무 정산 뒤에 다시 ${man(l.reShort)} 모자랍니다 (출력이 더 들어왔거나 정산 때 셈한 노무비가 반려됨). 정산 건을 고치거나 빠진 노무비를 넣으세요`, href: `/sites/${l.site.id}?tab=cost` });
     if (l.settled && l.afterSettle.n > 0)
       items.push({ kind: "labor", text: `${l.site.shortName} — 노무 정산(${short(kst(l.settled.createdAt))}) 뒤에 같은 달 노무비 ${l.afterSettle.n}건(${man(l.afterSettle.amount)})이 더 들어왔습니다. 정산과 겹치지 않는지 확인하세요`, href: `/sites/${l.site.id}?tab=cost` });
   }
@@ -244,12 +305,15 @@ export function monthClose(db: DemoDB, month: string, today = todayIso()): Month
   // 준공 원가 — 준공한 달이 지나도 마감할 때까지 매달 띄운다 (D-79 · 준공한 달에 못 닫으면 다음 달 화면에서 사라지던 문제)
   for (const s of db.sites.filter((x) => x.status === "completed" && (!x.warranty?.completedDate || x.warranty.completedDate <= to) && x.startDate <= to)) {
     const remaining = siteFinancials(db, s.id).remaining;
-    const closed = (db.forecastChanges ?? []).some((c) => c.siteId === s.id && c.closeout);
+    // 준공일 이후에 한 원가 마감만 인정 (진행 중에 잘못 남긴 표시로 알림이 꺼지지 않게)
+    const closed = (db.forecastChanges ?? []).some((c) => c.siteId === s.id && c.closeout && (!s.warranty?.completedDate || kst(c.at) >= s.warranty.completedDate));
     const when = s.warranty?.completedDate && s.warranty.completedDate < from ? ` (${Number(s.warranty.completedDate.slice(5, 7))}월 준공)` : "";
     if (remaining > 0 && !closed) items.push({ kind: "settle", text: `${s.shortName} 준공${when} — 잔여 예상원가 ${man(remaining)}이 남아 있어 이익이 계획값 그대로입니다. 남은 비용을 넣거나 원가를 마감하세요`, href: `/sites/${s.id}?tab=cost`, action: { kind: "closeout", siteId: s.id } });
+    // 마감 때 청구서 대기로 남긴 금액 — 청구서가 오면 원가로 넣고, 안 오면 0으로 정리할 때까지 매달 (D-79 공무 점검 M3)
+    else if (remaining > 0 && closed) items.push({ kind: "settle", text: `${s.shortName} 준공${when} — 원가 마감 때 청구서 대기로 남긴 ${man(remaining)}이 있습니다. 청구서가 오면 원가로 넣고, 안 오면 0으로 정리하세요`, href: `/sites/${s.id}?tab=cost`, action: { kind: "closeout", siteId: s.id } });
   }
   for (const s of completedSites) if (!s.warranty?.completedDate) items.push({ kind: "completion", text: `${s.shortName} — 상태는 준공인데 준공일이 없습니다`, href: `/sites/${s.id}?tab=requests` });
-  return { month, from, to, ended, money, totals, profit, labor, people, items, completedSites };
+  return { month, from, to, ended, money, totals, late, profit, labor, people, items, completedSites };
 }
 
 
@@ -272,6 +336,7 @@ export function monthCostRows(db: DemoDB, month: string, today = todayIso()): (s
       const first = e.editHistory?.[0]?.before;
       return [
         e.date,
+        kst(e.createdAt),
         site(e.siteId),
         CATEGORY_LABEL[e.category],
         e.amount,
@@ -286,5 +351,17 @@ export function monthCostRows(db: DemoDB, month: string, today = todayIso()): (s
         [e.reviewNote, e.status === "voided" ? e.voidReason : ""].filter(Boolean).join(" · "),
       ];
     });
-  return [["발생일", "현장", "항목", "금액(원)", "성격", "사유", "메모", "입력 경로", "입력한 사람", "상태", "공무 확인", "처음 금액(고치기 전)", "공무 메모·취소 사유"], ...rows];
+  return [["발생일", "입력일", "현장", "항목", "금액(원)", "성격", "사유", "메모", "입력 경로", "입력한 사람", "상태", "공무 확인", "처음 금액(고치기 전)", "공무 메모·취소 사유"], ...rows];
+}
+
+/**
+ * 노무비를 확인할 때 — 이 현장의 같은 달 또는 지난달 노무를 이미 정산했으면 그 정산 건 (D-79 공무 점검 M5).
+ * 현장이 지난달 몫 노무비를 오늘 날짜로 보내면 같은 달로 안 잡혀 정산과 두 번 들어가던 것을 공무가 승인 전에 알아보게.
+ */
+export function settledLaborFor(db: DemoDB, e: Pick<CostEntry, "id" | "siteId" | "category" | "date">): CostEntry | undefined {
+  if (e.category !== "labor") return undefined;
+  const month = e.date.slice(0, 7);
+  const prev = previousMonth(e.date);
+  const early = Number(e.date.slice(8, 10)) <= 20;
+  return db.costEntries.find((x) => x.id !== e.id && x.siteId === e.siteId && !!x.settle && (x.status === "active" || x.status === "pending") && (x.settle.month === month || (early && x.settle.month === prev)));
 }

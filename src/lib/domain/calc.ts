@@ -39,9 +39,18 @@ export function activeEntries(entries: CostEntry[], siteId: string): CostEntry[]
   return entries.filter((e) => e.siteId === siteId && e.status === "active");
 }
 
-/** 잔여예상 재추정 이후에 등록된 원가인지 (재추정 전 집행분은 이미 새 잔여예상에 반영됨) */
+/**
+ * 원가가 손익에 들어온 시각 — 공무 확인 방식이면 확인한 시각, 아니면 입력 시각.
+ * 재추정 전에 입력됐지만 재추정 뒤에 확인된 원가는 재추정 화면의 ‘발생’에 없었으므로 새 잔여예상에서 빠져야 한다 (D-79 대표 점검 —
+ * 확인 대기 1,000만 원을 재추정 뒤 승인하면 잔여예상에서 안 빠져 이익이 1,000만 원 더 줄던 문제)
+ */
+export function activeAt(e: CostEntry): string {
+  return e.reviewedAt && e.reviewedAt > e.createdAt ? e.reviewedAt : e.createdAt;
+}
+
+/** 잔여예상 재추정 이후에 손익에 들어온 원가인지 (재추정 전 집행분은 이미 새 잔여예상에 반영됨) */
 function afterBasis(e: CostEntry, basisAt: string | undefined): boolean {
-  return !basisAt || e.createdAt >= basisAt;
+  return !basisAt || activeAt(e) >= basisAt;
 }
 
 export function categoryBreakdown(db: DemoDB, siteId: string): CategoryBreakdown[] {
@@ -176,7 +185,7 @@ export function entryEacImpact(db: DemoDB, entry: CostEntry): number {
     const forecast = fc?.remaining ?? 0;
     const within = activeEntries(db.costEntries, entry.siteId)
       .filter((e) => e.category === entry.category && e.forecastImpact === "within_forecast" && afterBasis(e, fc?.basisAt))
-      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+      .sort((a, b) => activeAt(a).localeCompare(activeAt(b)));
     let left = forecast;
     for (const e of within) {
       const used = Math.min(left, e.amount);

@@ -338,8 +338,15 @@ function SiteFormModal({ db, site, onClose }: { db: DemoDB; site: Site | null; o
 export function ForecastModal({ db, site, onClose, closeout = false }: { db: DemoDB; site: Site; onClose: () => void; closeout?: boolean }) {
   const toast = useToast();
   const f = siteFinancials(db, site.id);
-  const [vals, setVals] = useState<Record<CostCategory, string>>(() => Object.fromEntries(f.categories.map((c) => [c.category, closeout ? "0" : wonText(c.remaining)])) as Record<CostCategory, string>);
+  // 마감: 원가가 들어온 항목은 0으로, 실행예산은 있는데 원가가 하나도 없는 항목은 지금 잔여예상 그대로 연다 —
+  // 기본값 0으로 닫으면 안 받은 노무비·외주비가 ‘없던 돈’이 되어 이익이 부풀었다 (D-79 대표 점검: 판교 700만 → 2,680만 · 76.6%)
   const empty = f.categories.filter((c) => c.budget > 0 && c.incurred === 0);
+  // 이미 한 번 마감했으면(청구서 대기 금액을 남긴 경우) 지금 값 그대로 연다 — 다시 누르면 남겨 둔 금액이 0으로 지워지던 문제 (D-79 공무 점검)
+  const closedBefore = (db.forecastChanges ?? []).some((c) => c.siteId === site.id && c.closeout);
+  const [vals, setVals] = useState<Record<CostCategory, string>>(() => Object.fromEntries(f.categories.map((c) => [c.category, closeout && !closedBefore && !(c.budget > 0 && c.incurred === 0) ? "0" : wonText(c.remaining)])) as Record<CostCategory, string>);
+  // 직원 출퇴근은 있는데 노무비가 0원 (출력 기록이 없어 노무 표에도 안 뜨는 현장 · D-79 공무 점검: 판교 김도윤 오후 11일)
+  const staffDays = new Set((db.attendance ?? []).filter((a) => a.siteId === site.id).map((a) => `${a.userId}|${a.workDate}`)).size;
+  const laborIncurred = f.categories.find((c) => c.category === "labor")?.incurred ?? 0;
   const pendingCosts = db.costEntries.filter((e) => e.siteId === site.id && e.status === "pending");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
@@ -381,21 +388,22 @@ export function ForecastModal({ db, site, onClose, closeout = false }: { db: Dem
       footer={
         <>
           <Button onClick={onClose}>취소</Button>
-          <Button variant="cta" onClick={save} loading={busy} data-testid="forecast-save">
+          <Button variant="cta" onClick={save} loading={busy} disabled={closeout && note.trim().length < 2} data-testid="forecast-save">
             {closeout ? "원가 마감" : "저장"}
           </Button>
         </>
       }
     >
       <div className="space-y-4">
-        {closeout && (empty.length > 0 || pendingCosts.length > 0) && (
+        {closeout && (empty.length > 0 || pendingCosts.length > 0 || (staffDays > 0 && laborIncurred === 0)) && (
           <div data-testid="closeout-warn"><Notice tone="warn" title="마감하기 전에 확인하세요">
             <ul className="mt-1 list-disc space-y-0.5 pl-5">
               {empty.map((c) => (
                 <li key={c.category}>
-                  {CATEGORY_LABEL[c.category]} — 실행예산 {fmtMan(c.budget)}인데 들어온 원가가 없습니다. 아직 안 받은 청구서가 있으면 그 금액을 남기세요.
+                  {CATEGORY_LABEL[c.category]} — 실행예산 {fmtMan(c.budget)}인데 들어온 원가가 없어 잔여예상을 그대로 두었습니다. 정말 들어갈 돈이 없을 때만 0으로 바꾸고 메모에 이유를 적으세요.
                 </li>
               ))}
+              {staffDays > 0 && laborIncurred === 0 && <li>이 현장에 직원 출퇴근 {staffDays}일이 있는데 노무비가 0원입니다 — 출력·노무비가 다른 현장으로 들어갔는지 확인하세요.</li>}
               {pendingCosts.length > 0 && <li>공무 확인 대기 원가 {pendingCosts.length}건({fmtMan(pendingCosts.reduce((a, e) => a + e.amount, 0))}) — 확인하면 마감 뒤에도 원가에 더해집니다.</li>}
             </ul>
           </Notice></div>
@@ -405,20 +413,20 @@ export function ForecastModal({ db, site, onClose, closeout = false }: { db: Dem
             <thead>
               <tr className="border-b border-line text-left text-[0.75rem] text-ink-3">
                 <th className="py-2">항목</th>
-                <th className="py-2 text-right">실행예산</th>
-                <th className="py-2 text-right">발생</th>
-                <th className="py-2 text-right">현재 잔여예상</th>
-                <th className="py-2 pl-3">새 잔여예상 (원)</th>
+                <th className="py-2 pl-4 text-right">실행예산</th>
+                <th className="py-2 pl-4 text-right">발생</th>
+                <th className="py-2 pl-4 text-right">현재 잔여예상</th>
+                <th className="py-2 pl-4">새 잔여예상 (원)</th>
               </tr>
             </thead>
             <tbody>
               {f.categories.map((c) => (
                 <tr key={c.category} className="border-b border-line">
                   <td className="py-2 font-semibold">{CATEGORY_LABEL[c.category]}</td>
-                  <td className="py-2 text-right num">{fmtMan(c.budget)}</td>
-                  <td className="py-2 text-right num">{fmtMan(c.incurred)}</td>
-                  <td className="py-2 text-right num">{fmtMan(c.remaining)}</td>
-                  <td className="py-2 pl-3">
+                  <td className="py-2 pl-4 text-right num">{fmtMan(c.budget)}</td>
+                  <td className="py-2 pl-4 text-right num">{fmtMan(c.incurred)}</td>
+                  <td className="py-2 pl-4 text-right num">{fmtMan(c.remaining)}</td>
+                  <td className="py-2 pl-4">
                     <input
                       aria-label={`${CATEGORY_LABEL[c.category]} 새 잔여예상`}
                       inputMode="numeric"
@@ -437,10 +445,10 @@ export function ForecastModal({ db, site, onClose, closeout = false }: { db: Dem
           </table>
         </div>
         <Notice
-          tone={preview.newMargin < f.marginPct ? "warn" : "info"}
+          tone={closeout || preview.newMargin < f.marginPct ? "warn" : "info"}
           title={`${closeout ? "마감하면" : "저장하면"}: 예상 총원가 ${fmtEok(f.eac)} → ${fmtEok(preview.newEac)} · 예상이익 ${fmtMan(f.expectedProfit)} → ${fmtMan(preview.newProfit)} · 이익률 ${fmtPct(f.marginPct)} → ${fmtPct(preview.newMargin)} (${fmtPp(preview.newMargin - f.marginPct)})`}
         />
-        <Field label={closeout ? "마감 메모 (이력·월 마감에 남음)" : "재추정 사유 (이력에 남음)"} htmlFor="fc-note" error={errors.note}>
+        <Field label={closeout ? "마감 메모 (이력·월 마감에 남음)" : "재추정 사유 (이력에 남음)"} htmlFor="fc-note" error={errors.note} required={closeout}>
           <input id="fc-note" className={inputCls} value={note} maxLength={200} onChange={(e) => setNote(e.target.value)} placeholder={closeout ? "예) 준공 정산 — 남은 청구서 없음 (공무 확인)" : "예) 11월 공정회의 — 잔여 유리 물량·단가 재확인"} />
         </Field>
       </div>

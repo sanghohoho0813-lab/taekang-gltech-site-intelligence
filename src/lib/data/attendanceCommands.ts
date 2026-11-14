@@ -274,6 +274,8 @@ export function correctAttendance(db0: DemoDB, input: CorrectAttendanceInput, ct
   else if (outAt && outAt <= inAt) errors.time = "퇴근 시각이 출근 시각보다 늦어야 합니다.";
   else if (outAt && new Date(outAt).getTime() - new Date(inAt).getTime() > 24 * 3_600_000) errors.time = "근무 시간이 24시간을 넘습니다.";
   else if (outAt && outAt > nowIso(ctx)) errors.time = "미래 시각으로 정정할 수 없습니다.";
+  // 출근 시각은 그 근무일 안 (한국 날짜) — 다른 날짜로 옮기면 그날 다른 기록과 근무시간이 두 번 셈해졌다 (D-79 버그 배시 m-1)
+  else if (input.inAt && todayIso(new Date(input.inAt)) !== r.workDate) errors.time = `출근 시각은 그 근무일(${r.workDate}) 안이어야 합니다.`;
   if (Object.keys(errors).length) throw new CommandError("입력값을 확인해주세요.", "VALIDATION", errors);
   // 같은 날 다른 현장 기록과 시간이 겹치게 고치지 않는다 (D-79 — 겹치면 근무시간이 두 번 셈)
   const clash = overlappingRecord(db, { id: r.id, userId: r.userId, workDate: r.workDate, inAt: new Date(inAt).toISOString(), ...(outAt ? { outAt: new Date(outAt).toISOString() } : {}) });

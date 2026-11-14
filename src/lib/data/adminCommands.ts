@@ -241,7 +241,11 @@ export function updateForecast(db0: DemoDB, input: UpdateForecastInput, ctx: Ctx
   const errors: Record<string, string> = {};
   for (const c of COST_CATEGORIES) if (!nonNegInt(input.remaining?.[c])) errors[`remaining.${c}`] = `${CATEGORY_LABEL[c]}: 0 이상 원 단위 정수`;
   if ((input.note ?? "").length > 200) errors.note = "200자 이내";
+  // 준공 원가 마감은 이익을 크게 바꾸므로 왜 그렇게 닫는지 남긴다 (D-79 대표 점검 — 노무 0원인 채 메모 없이 0으로 닫혀 이익률 76%)
+  else if (input.closeout === true && (input.note ?? "").trim().length < 2) errors.note = "마감 메모를 적어 주세요 (예: 남은 청구서 없음 — 협력업체 확인)";
   if (Object.keys(errors).length) throw new CommandError("입력값을 확인해주세요.", "VALIDATION", errors);
+  // 원가 마감은 준공한 현장만 — 진행 중 현장에 마감 표시가 남으면 나중에 준공해도 마감 알림이 안 떴다 (D-79 버그 배시 m-3)
+  if (input.closeout === true && db0.sites.find((s) => s.id === input.siteId)?.status !== "completed") throw new CommandError("준공한 현장만 원가 마감할 수 있습니다. 진행 중이면 ‘잔여예상원가 재추정’을 쓰세요.", "STATE");
 
   const db = clone(db0);
   claimKey(db, input.idempotencyKey);
@@ -285,16 +289,22 @@ export interface SettleLaborInput {
  */
 export function settleLabor(db0: DemoDB, input: SettleLaborInput, ctx: Ctx) {
   const site0 = requireSite(db0, input.siteId);
+  // 같은 요청을 다시 보낸 것이면 ‘이미 넣었습니다’보다 먼저 중복으로 알린다 (D-79 버그 배시)
+  if (input.idempotencyKey && db0.idempotencyKeys.includes(input.idempotencyKey)) throw new CommandError("이미 저장된 요청입니다. (중복 저장 방지)", "DUPLICATE");
   const errors: Record<string, string> = {};
   const today = todayIso(ctx.now);
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(input.month ?? "")) errors.month = "달을 확인해 주세요.";
-  else if (`${input.month}-01` > today) errors.month = "아직 오지 않은 달은 정산할 수 없습니다.";
+  // 달이 끝난 뒤에만 — 진행 중인 달에 정산하면 그 뒤 출력·반려로 생긴 모자람이 가려지고 다시 정산도 막혔다 (D-79 버그 배시 M-1)
+  else if (monthBounds(input.month).to >= today) errors.month = "달이 끝난 뒤에 정산할 수 있습니다 — 그 달 출력·노무비가 아직 들어오는 중입니다.";
   if (!Number.isInteger(input.amount) || input.amount <= 0) errors.amount = "0보다 큰 금액(원)을 넣어 주세요.";
+  else if (input.amount < 10_000) errors.amount = "1만 원 이상으로 넣어 주세요 (단위 확인).";
   else if (input.amount > MAX_AMOUNT) errors.amount = `${fmtEok(MAX_AMOUNT)} 이하로 넣어 주세요.`;
+  // 추정으로 넣는 원가라 근거를 남긴다 (D-79 공무 점검 — 외주·직영이 섞인 추정을 그대로 넣기 쉬움)
   if ((input.note ?? "").length > 200) errors.note = "200자 이내";
+  else if ((input.note ?? "").trim().length < 2) errors.note = "근거를 적어 주세요 (예: 10월 노무비 명세 기준 · 추정 계상, 명세 오면 고침)";
   if (Object.keys(errors).length) throw new CommandError("입력값을 확인해주세요.", "VALIDATION", errors);
   const b = monthBounds(input.month);
-  const to = b.to < today ? b.to : today;
+  const to = b.to;
   if (site0.startDate > to) throw new CommandError("그 달에는 아직 착공 전인 현장입니다.", "STATE");
   const dup = db0.costEntries.find((e) => e.siteId === input.siteId && e.settle?.month === input.month && (e.status === "active" || e.status === "pending"));
   if (dup) throw new CommandError(`${site0.shortName} ${Number(input.month.slice(5))}월 노무 정산은 이미 넣었습니다 (${fmtMan(dup.amount)}). 고치려면 원가 목록에서 그 건을 고치거나 되돌리세요.`, "STATE");
@@ -306,7 +316,8 @@ export function settleLabor(db0: DemoDB, input: SettleLaborInput, ctx: Ctx) {
   const at = nowIso(ctx);
   const before = siteFinancials(db0, input.siteId);
   const m = Number(input.month.slice(5));
-  const basis = `${m}월 출력 기준 노무 정산 (추정 ${fmtMan(est.estimate)} − 입력 ${fmtMan(est.actual)})`;
+  const short = est.estimate - est.actual;
+  const basis = `${m}월 출력 기준 노무 정산 (추정 ${fmtMan(est.estimate)} − 입력 ${fmtMan(est.actual)}${short > 0 && short !== input.amount ? ` = 모자람 ${fmtMan(short)} 중 ${fmtMan(input.amount)}` : ""})`;
   const entry: CostEntry = {
     id: uid("ce"),
     siteId: input.siteId,

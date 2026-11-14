@@ -203,8 +203,10 @@ export function hhmm(iso: string): string {
 export function overlappingRecord(db: DemoDB, rec: { id?: string; userId: string; workDate: string; inAt: string; outAt?: string }): AttendanceRecord | undefined {
   const a0 = new Date(rec.inAt).getTime();
   const a1 = rec.outAt ? new Date(rec.outAt).getTime() : null;
+  // 같은 날 + 앞뒤 하루 — 자정을 넘긴 야간 기록과 다음 날 기록도 본다 (D-79 버그 배시 m-1)
+  const near = new Set([shiftDate(rec.workDate, -1), rec.workDate, shiftDate(rec.workDate, 1)]);
   return (db.attendance ?? []).find((o) => {
-    if (o.id === rec.id || o.userId !== rec.userId || o.workDate !== rec.workDate) return false;
+    if (o.id === rec.id || o.userId !== rec.userId || !near.has(o.workDate)) return false;
     const b0 = new Date(o.inAt).getTime();
     const b1 = o.outAt ? new Date(o.outAt).getTime() : null;
     if (a1 !== null && b1 !== null) return a0 < b1 && b0 < a1;
@@ -217,5 +219,5 @@ export function overlappingRecord(db: DemoDB, rec: { id?: string; userId: string
 /** 겹칠 때 보여 줄 말 */
 export function overlapMessage(db: DemoDB, o: AttendanceRecord): string {
   const site = db.sites.find((s) => s.id === o.siteId)?.shortName ?? "다른 현장";
-  return `같은 날 ${site} 기록(${hhmm(o.inAt)}~${o.outAt ? hhmm(o.outAt) : "퇴근 없음"})과 시간이 겹칩니다 — 근무시간이 두 번 셈해집니다. 그 기록을 먼저 고치거나 시각을 다시 확인해 주세요.`;
+  return `${Number(o.workDate.slice(5, 7))}/${Number(o.workDate.slice(8, 10))} ${site} 기록(${hhmm(o.inAt)}~${o.outAt ? hhmm(o.outAt) : "퇴근 없음"})과 시간이 겹칩니다 — 근무시간이 두 번 셈해집니다. 그 기록을 먼저 고치거나 시각을 다시 확인해 주세요.`;
 }

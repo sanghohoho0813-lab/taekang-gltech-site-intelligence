@@ -123,6 +123,7 @@ export const COLLECTION_SPEC: Record<CollectionName, CollectionSpec> = {
   contracts: { label: "계약", holds: "원 계약 금액·계약일·실행예산 합계", field: "금액 0으로 바꿔 보냄", partner: "금액 0으로 바꿔 보냄", keep: "보관" },
   budgets: { label: "실행예산", holds: "공종(자재·노무·외주·장비·경비)별 실행예산", field: DATA_NONE, partner: DATA_NONE, keep: "보관" },
   forecasts: { label: "잔여 예상 원가", holds: "공종별 앞으로 더 들 비용 (본사 추정)", field: DATA_NONE, partner: DATA_NONE, keep: "보관" },
+  forecastChanges: { label: "잔여 예상 원가 재추정 이력", holds: "언제·누가·왜 다시 잡았는지·예상 총원가 전후·준공 원가 마감 여부 (월 마감 ‘이익을 바꾼 일’)", field: DATA_NONE, partner: DATA_NONE, keep: "최근 1,000건" },
   costEntries: { label: "원가·추가 비용", holds: "현장·공종·금액·내용·확인 상태·수정 이력", field: "본인이 올린 것 (최근 60일·확인 대기)", partner: DATA_NONE, keep: "보관 (무효 처리는 이력으로 남음)" },
   reports: { label: "현장 보고", holds: "작업 내용·사진·문제·공정 진척·본사 확인·보완", field: "담당 현장 최근 60일 (동료의 위치 좌표는 빼고)", partner: DATA_NONE, keep: "보관" },
   photos: { label: "사진", holds: "현장 보고·작업 인원·자재 반입·설치·작업지시·조치 사진·발주처 하자 사진 (원본은 별도 저장)", field: "담당 현장 관련 사진", partner: "본사가 공개한 공정 사진 · 본인이 보낸 하자 사진 · 본인 요청의 보수 완료 사진", keep: "보관" },

@@ -443,6 +443,19 @@ describe("현장 등록·사용자 관리", () => {
     const f = siteFinancials((await svc.getView(ceo)).db, "site-c");
     expect(f.remaining).toBe(150_000_000);
   });
+  it("재추정 이력·준공 원가 마감은 DB에 저장된다 — 메모리 캐시가 아니라 다시 읽어도 남는다 (D-79 대표 점검 B-1)", async () => {
+    const out = await svc.executeCommand(manager, "saveSite", { name: "준공 유리 보수", shortName: "E현장", workType: "유리", region: "서울", clientName: "가상 E", status: "completed", startDate: "2026-10-01", endDate: "2026-10-30", contractAmount: 30_000_000, budgets: { material: 10_000_000, labor: 8_000_000, subcontract: 0, equipment: 0, overhead: 1_000_000 } });
+    const siteId = (out.result as { siteId: string }).siteId;
+    const remaining = { material: 9_000_000, labor: 8_000_000, subcontract: 0, equipment: 0, overhead: 1_000_000 };
+    await svc.executeCommand(manager, "updateForecast", { siteId, remaining, note: "11월 공정회의" });
+    await svc.executeCommand(manager, "updateForecast", { siteId, remaining: { ...remaining, material: 0, overhead: 0 }, closeout: true, note: "준공 정산 — 남은 청구서 없음" });
+    const db = await getDb();
+    const reloaded = await db.transaction((tx) => loadState(tx, ceo.companyId));
+    const mine = (reloaded.forecastChanges ?? []).filter((c) => c.siteId === siteId);
+    expect(mine.map((c) => c.note).slice(0, 2)).toEqual(["준공 정산 — 남은 청구서 없음", "11월 공정회의"]);
+    expect(mine[0]).toMatchObject({ closeout: true, eacBefore: expect.any(Number), eacAfter: expect.any(Number) });
+    expect((await svc.getView(field)).db.forecastChanges).toEqual([]);
+  });
   it("관리자는 대표 권한을 줄 수 없고, 본인 비활성화 불가, 비활성화하면 세션 종료", async () => {
     await expect(svc.createMember(manager, { email: "x@taekang.test", name: "x", role: "ceo", password: PW })).rejects.toBeInstanceOf(ForbiddenError);
     await expect(svc.updateMember(manager, manager.id, { active: false })).rejects.toBeInstanceOf(ForbiddenError);

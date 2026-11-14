@@ -461,6 +461,8 @@ export function editCostEntry(
   if (e.source === "SEED") throw new CommandError("시스템 시작 전 발생원가는 수정할 수 없습니다.", "STATE");
   validateAmount(patch.amount);
   if (!COST_CATEGORIES.includes(patch.category)) throw new CommandError("비용 항목을 선택해주세요.");
+  // 노무 정산 건은 노무비로만 — 항목을 바꾸면 ‘정산함’으로 남아 그 달 노무가 잠겼다 (D-79 버그 배시 m-2)
+  if (e.settle && patch.category !== "labor") throw new CommandError("노무 정산 건은 항목을 바꿀 수 없습니다. 되돌린 뒤 다시 넣어 주세요.", "VALIDATION", { category: "노무 정산" });
   const before = siteFinancials(db0, e.siteId);
   e.editHistory = [...(e.editHistory ?? []), { at: nowIso(ctx), by: ctx.userId, before: { amount: e.amount, category: e.category, note: e.note } }];
   e.amount = patch.amount;

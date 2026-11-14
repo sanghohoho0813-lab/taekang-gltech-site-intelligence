@@ -455,8 +455,18 @@ function DefectSummary({ db, site }: { db: DemoDB; site: Site }) {
 function CostTab({ db, site, f, canSeeMoney }: { db: DemoDB; site: Site; f: SiteFinancials; canSeeMoney: boolean }) {
   const entries = db.costEntries.filter((e) => e.siteId === site.id && e.source !== "SEED").sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const seedCount = db.costEntries.filter((e) => e.siteId === site.id && e.source === "SEED").length;
+  const closed = (db.forecastChanges ?? []).find((c) => c.siteId === site.id && c.closeout);
   return (
     <div className="space-y-5">
+      {canSeeMoney && closed && (
+        <div data-testid="closeout-note">
+          <Notice tone="info" title={`준공 원가 마감 — ${fmtDate(closed.at)} · ${userLabel(db, closed.by)}`}>
+            남은 예상원가를 정리해 예상 총원가 {fmtEok(closed.eacBefore)} → {fmtEok(closed.eacAfter)} (예상이익 {closed.eacBefore - closed.eacAfter >= 0 ? "+" : "−"}
+            {fmtMan(Math.abs(closed.eacBefore - closed.eacAfter))}) · 메모: {closed.note}
+            {f.categories.some((c) => c.budget > 0 && c.incurred === 0) && <> · 실행예산이 있는데 원가가 하나도 없는 항목: {f.categories.filter((c) => c.budget > 0 && c.incurred === 0).map((c) => CATEGORY_LABEL[c.category]).join("·")}</>}
+          </Notice>
+        </div>
+      )}
       {canSeeMoney && (
         <Card>
           <CardHeader title="원가항목별 예산 vs 예상 총원가" sub={`예상 총원가 = 발생 + 잔여예상 · 예산 초과 ${db.thresholds.overrunPct}% 이상은 위험 신호 · 표 단위 만 원`} />

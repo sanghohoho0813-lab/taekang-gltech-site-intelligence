@@ -2,14 +2,15 @@
 import { describe, expect, it } from "vitest";
 import { createSeed } from "@/lib/data/seed";
 import { reviewCostEntry, saveSite, settleLabor, updateForecast } from "@/lib/data/adminCommands";
-import { CommandError, submitFieldReport, voidCostEntry } from "@/lib/data/commands";
+import { CommandError, editCostEntry, submitFieldReport, voidCostEntry } from "@/lib/data/commands";
 import { correctAttendance } from "@/lib/data/attendanceCommands";
 import { requestAttendanceFix, reviewAttendanceFix } from "@/lib/data/opsCommands";
-import { monthBounds, monthClose, monthCostRows, previousMonth } from "@/lib/domain/monthClose";
+import { monthBounds, monthClose, monthCostRows, previousMonth, settledLaborFor } from "@/lib/domain/monthClose";
 import { overlappingRecord } from "@/lib/domain/attendance";
 import { siteFinancials } from "@/lib/domain/calc";
 import { toCsv } from "@/lib/domain/csv";
 import { authorize, ForbiddenError, viewFor } from "@/server/authz";
+import { COLLECTIONS } from "@/server/state";
 import type { Member } from "@/server/auth";
 import type { AttendanceRecord, CostCategory, DemoDB } from "@/lib/domain/types";
 
@@ -65,28 +66,66 @@ describe("D-79 노무 차액 정산", () => {
 
   it("같은 현장·같은 달은 한 번만 — 되돌리면 다시 넣을 수 있다", () => {
     const { db, id } = octSite();
-    const once = settleLabor(db, { siteId: id, month: "2026-10", amount: 7_000_000 }, ctx("u-manager"));
-    const e = err(() => settleLabor(once.db, { siteId: id, month: "2026-10", amount: 1_000_000 }, ctx("u-manager")));
+    const once = settleLabor(db, { siteId: id, month: "2026-10", amount: 7_000_000, note: "명세 기준" }, ctx("u-manager"));
+    const e = err(() => settleLabor(once.db, { siteId: id, month: "2026-10", amount: 1_000_000, note: "명세 기준" }, ctx("u-manager")));
     expect(e.code).toBe("STATE");
     expect(e.message).toContain("이미 넣었습니다");
     const voided = voidCostEntry(once.db, once.result.entryId, "금액 잘못", ctx("u-manager")).db;
-    expect(() => settleLabor(voided, { siteId: id, month: "2026-10", amount: 6_500_000 }, ctx("u-manager"))).not.toThrow();
+    expect(() => settleLabor(voided, { siteId: id, month: "2026-10", amount: 6_500_000, note: "명세 기준" }, ctx("u-manager"))).not.toThrow();
   });
 
   it("같은 요청을 두 번 보내도 한 번만 들어간다 (중복 저장 방지)", () => {
     const { db, id } = octSite();
-    const once = settleLabor(db, { siteId: id, month: "2026-10", amount: 7_000_000, idempotencyKey: "idem-d79-dup-000001" }, ctx("u-manager"));
-    expect(err(() => settleLabor(once.db, { siteId: id, month: "2026-10", amount: 7_000_000, idempotencyKey: "idem-d79-dup-000001" }, ctx("u-manager"))).code).toMatch(/DUPLICATE|STATE/);
+    const once = settleLabor(db, { siteId: id, month: "2026-10", amount: 7_000_000, note: "명세 기준", idempotencyKey: "idem-d79-dup-000001" }, ctx("u-manager"));
+    expect(err(() => settleLabor(once.db, { siteId: id, month: "2026-10", amount: 7_000_000, note: "명세 기준", idempotencyKey: "idem-d79-dup-000001" }, ctx("u-manager"))).code).toBe("DUPLICATE");
   });
 
-  it("받지 않는 입력 — 0원·아직 오지 않은 달·출력 기록 없는 달·착공 전 달", () => {
+  it("받지 않는 입력 — 0원·1만 원 미만·근거 메모 없음·진행 중인 달·아직 오지 않은 달·출력 기록 없는 달·착공 전 달", () => {
     const { db, id } = octSite();
-    expect(err(() => settleLabor(db, { siteId: id, month: "2026-10", amount: 0 }, ctx("u-manager"))).code).toBe("VALIDATION");
-    expect(err(() => settleLabor(db, { siteId: id, month: "2026-12", amount: 1_000 }, ctx("u-manager"))).code).toBe("VALIDATION");
-    expect(err(() => settleLabor(db, { siteId: id, month: "2026-13", amount: 1_000 }, ctx("u-manager"))).code).toBe("VALIDATION");
-    expect(err(() => settleLabor(db, { siteId: id, month: "2026-09", amount: 1_000 }, ctx("u-manager"))).code).toBe("STATE");
+    const note = "명세 기준";
+    expect(err(() => settleLabor(db, { siteId: id, month: "2026-10", amount: 0, note }, ctx("u-manager"))).code).toBe("VALIDATION");
+    expect(err(() => settleLabor(db, { siteId: id, month: "2026-10", amount: 5_000, note }, ctx("u-manager"))).code).toBe("VALIDATION");
+    expect(err(() => settleLabor(db, { siteId: id, month: "2026-10", amount: 7_000_000 }, ctx("u-manager"))).fieldErrors.note).toBeTruthy();
+    // 진행 중인 달(11월)은 달이 끝난 뒤에 — 그 뒤 출력·반려로 생긴 모자람이 가려지지 않게 (버그 배시 M-1)
+    expect(err(() => settleLabor(db, { siteId: id, month: "2026-11", amount: 1_000_000, note }, ctx("u-manager"))).fieldErrors.month).toContain("달이 끝난 뒤");
+    expect(err(() => settleLabor(db, { siteId: id, month: "2026-12", amount: 1_000_000, note }, ctx("u-manager"))).code).toBe("VALIDATION");
+    expect(err(() => settleLabor(db, { siteId: id, month: "2026-13", amount: 1_000_000, note }, ctx("u-manager"))).code).toBe("VALIDATION");
+    expect(err(() => settleLabor(db, { siteId: id, month: "2026-09", amount: 1_000_000, note }, ctx("u-manager"))).code).toBe("STATE");
     const noCrew = { ...db, crewChecks: [] } as DemoDB;
-    expect(err(() => settleLabor(noCrew, { siteId: id, month: "2026-10", amount: 1_000 }, ctx("u-manager"))).message).toContain("출력");
+    expect(err(() => settleLabor(noCrew, { siteId: id, month: "2026-10", amount: 1_000_000, note }, ctx("u-manager"))).message).toContain("출력");
+  });
+
+  it("정산 뒤 다시 모자라면 다시 알린다 — 일부러 일부만 넣은 만큼은 알리지 않는다", () => {
+    const { db, id } = octSite();
+    // 모자람 700만 중 500만만 넣음 (직영 급여분 제외) — 남긴 200만은 알리지 않는다
+    const part = settleLabor(db, { siteId: id, month: "2026-10", amount: 5_000_000, note: "직영 급여분 제외" }, ctx("u-manager")).db;
+    expect(part.costEntries.find((e) => e.settle)!.note).toContain("모자람 700만 원 중 500만 원");
+    expect(monthClose(part, "2026-10", "2026-11-14").labor.find((l) => l.site.id === id)!.reShort).toBe(0);
+    // 그 뒤 출력이 3일 × 4명 더 들어오면 (300만) 다시 알린다
+    part.crewChecks = [...part.crewChecks!, ...[27, 28, 29].map((d) => ({ id: `cc-late-${d}`, siteId: id, workDate: `2026-10-${d}`, team: "창호팀", kind: "direct" as const, headcount: 4, at: "2026-11-15T00:00:00Z", by: "u-field" }))];
+    const r = monthClose(part, "2026-10", "2026-11-15");
+    expect(r.labor.find((l) => l.site.id === id)!.reShort).toBe(3_000_000);
+    expect(r.items.some((i) => i.kind === "labor" && i.text.includes("정산 뒤에 다시 300만 원"))).toBe(true);
+  });
+
+  it("외주 팀 몫이 외주비로 이미 들어왔으면 정산 기본값에서 뺀다 (노무비·외주비 두 번 계상 방지)", () => {
+    const { db, id } = octSite();
+    db.crewChecks = [...db.crewChecks!, { id: "cc-sub", siteId: id, workDate: "2026-10-20", team: "실링 외주", kind: "subcontract", headcount: 10, at: "2026-10-20T00:00:00Z", by: "u-field" }];
+    db.costEntries.push({ id: "ce-sub", siteId: id, category: "subcontract", amount: 1_500_000, date: "2026-10-21", forecastImpact: "within_forecast", reason: "planned", note: "실링 외주 기성", source: "PC", createdBy: "u-manager", createdAt: "2026-10-21T00:00:00Z", status: "active" });
+    const row = monthClose(db, "2026-10", "2026-11-14").labor.find((l) => l.site.id === id)!;
+    expect(row.subcontractCovered).toBe(1_500_000);
+    expect(row.suggested).toBe(row.shortfall - 1_500_000);
+  });
+
+  it("정산 건은 노무비로만 — 항목을 바꾸면 막는다 · 그 현장 지난달 정산 뒤 들어온 노무비는 공무 확인 때 알려 준다", () => {
+    const { db, id } = octSite();
+    const r = settleLabor(db, { siteId: id, month: "2026-10", amount: 7_000_000, note: "명세 기준" }, ctx("u-manager"));
+    const e = err(() => editCostEntry(r.db, r.result.entryId, { amount: 7_000_000, category: "material", note: "" }, ctx("u-manager")));
+    expect(e.code).toBe("VALIDATION");
+    expect(() => editCostEntry(r.db, r.result.entryId, { amount: 6_800_000, category: "labor", note: "명세 받음" }, ctx("u-manager"))).not.toThrow();
+    expect(settledLaborFor(r.db, { id: "x", siteId: id, category: "labor", date: "2026-11-14" })?.id).toBe(r.result.entryId);
+    expect(settledLaborFor(r.db, { id: "x", siteId: id, category: "labor", date: "2026-11-25" })).toBeUndefined();
+    expect(settledLaborFor(r.db, { id: "x", siteId: id, category: "material", date: "2026-11-14" })).toBeUndefined();
   });
 
   it("본사만 — 현장 직원·발주처는 거절", () => {
@@ -104,7 +143,7 @@ describe("D-79 노무 차액 정산", () => {
     expect(item?.text).toContain("700만 원");
     // 10월 31일(아직 안 끝남)에는 항목이 없다 — 버튼은 노무 표에만
     expect(monthClose(db, "2026-10", "2026-10-31").items.some((i) => i.kind === "labor" && i.action?.siteId === id)).toBe(false);
-    const settled = settleLabor(db, { siteId: id, month: "2026-10", amount: 7_000_000 }, ctx("u-manager")).db;
+    const settled = settleLabor(db, { siteId: id, month: "2026-10", amount: 7_000_000, note: "명세 기준" }, ctx("u-manager")).db;
     const late = submitFieldReport(settled, { idempotencyKey: "idem-d79-late-000001", siteId: id, reportDate: "2026-10-30", workDone: "", kind: "cost", reason: "planned", costs: [{ category: "labor", amount: 2_000_000, forecastImpact: "within_forecast" }] } as never, ctx("u-field", new Date("2026-11-15T01:00:00Z"))).db;
     const r = monthClose(late, "2026-10", "2026-11-15");
     const row = r.labor.find((l) => l.site.id === id)!;
@@ -126,23 +165,44 @@ describe("D-79 준공 현장 원가 마감", () => {
     expect(monthClose(db, "2026-11", "2026-11-14").items.some((i) => i.kind === "settle" && i.action?.siteId === id && i.action.kind === "closeout")).toBe(true);
     const f0 = siteFinancials(db, id);
     const zero = { material: 0, labor: 0, subcontract: 0, equipment: 0, overhead: 0 } as Record<CostCategory, number>;
-    const r = updateForecast(db, { siteId: id, remaining: zero, closeout: true }, ctx("u-manager"));
+    // 메모 없이는 마감하지 않는다 · 진행 중 현장은 마감 대상이 아니다 (버그 배시 m-3)
+    expect(err(() => updateForecast(db, { siteId: id, remaining: zero, closeout: true }, ctx("u-manager"))).fieldErrors.note).toBeTruthy();
+    expect(err(() => updateForecast(db, { siteId: "site-a", remaining: zero, closeout: true, note: "마감" }, ctx("u-manager"))).code).toBe("STATE");
+    const r = updateForecast(db, { siteId: id, remaining: zero, closeout: true, note: "준공 정산 — 남은 청구서 없음" }, ctx("u-manager"));
     const f1 = siteFinancials(r.db, id);
     expect(f1.remaining).toBe(0);
     expect(f1.expectedProfit - f0.expectedProfit).toBe(f0.remaining);
     const ch = r.db.forecastChanges![0];
-    expect(ch).toMatchObject({ siteId: id, closeout: true, note: "준공 원가 마감", eacBefore: f0.eac, eacAfter: f1.eac });
+    expect(ch).toMatchObject({ siteId: id, closeout: true, note: "준공 정산 — 남은 청구서 없음", eacBefore: f0.eac, eacAfter: f1.eac });
     const nov = monthClose(r.db, "2026-11", "2026-11-14");
     const p = nov.profit.find((x) => x.site.id === id)!;
     expect(p.events.some((e) => e.amount === f0.remaining && e.text.startsWith("준공 원가 마감"))).toBe(true);
     expect(p.net).toBe(f0.remaining);
   });
-  it("받을 청구서만큼 남기고 마감해도 다시 띄우지 않는다", () => {
+  it("받을 청구서만큼 남기고 마감하면 ‘청구서 대기’로 바꿔 계속 알린다 (공무 점검 M3)", () => {
     const { db, id } = completed();
     const keep = { material: 0, labor: 2_000_000, subcontract: 0, equipment: 0, overhead: 0 } as Record<CostCategory, number>;
     const r = updateForecast(db, { siteId: id, remaining: keep, closeout: true, note: "11월 노무 청구 1건 남음" }, ctx("u-manager"));
     expect(siteFinancials(r.db, id).remaining).toBe(2_000_000);
-    expect(monthClose(r.db, "2026-11", "2026-11-14").items.some((i) => i.kind === "settle" && i.action?.siteId === id)).toBe(false);
+    const items = monthClose(r.db, "2026-11", "2026-11-14").items.filter((i) => i.kind === "settle" && i.action?.siteId === id);
+    expect(items).toHaveLength(1);
+    expect(items[0].text).toContain("청구서 대기로 남긴 200만 원");
+  });
+  it("준공한 다음 달에 들어온 입금도 그 달 마감에 나온다 (버그 배시 M-2)", () => {
+    const { db, id } = completed();
+    db.payments.push({ id: "pay-d79", siteId: id, amount: 35_000_000, receivedDate: "2026-11-10" } as never);
+    const nov = monthClose(db, "2026-11", "2026-11-14");
+    expect(nov.money.find((m) => m.site.id === id)?.received).toBe(35_000_000);
+  });
+  it("마감한 현장에 계획 안 원가가 더 들어오면 ‘잔여예상을 넘은 집행’으로 이익 변화에 나온다 (대표 점검 M-4)", () => {
+    const { db, id } = completed();
+    const zero = { material: 0, labor: 0, subcontract: 0, equipment: 0, overhead: 0 } as Record<CostCategory, number>;
+    const closed = updateForecast(db, { siteId: id, remaining: zero, closeout: true, note: "마감" }, ctx("u-manager")).db;
+    const p0 = siteFinancials(closed, id).expectedProfit;
+    closed.costEntries.push({ id: "ce-after", siteId: id, category: "labor", amount: 900_000, date: "2026-11-14", forecastImpact: "within_forecast", reason: "planned", note: "판교 노무", source: "PC", createdBy: "u-manager", createdAt: "2026-11-14T05:00:00Z", status: "active" });
+    expect(siteFinancials(closed, id).expectedProfit).toBe(p0 - 900_000);
+    const ev = monthClose(closed, "2026-11", "2026-11-14").profit.find((x) => x.site.id === id)!.events;
+    expect(ev.find((e) => e.text.startsWith("잔여예상을 넘은 집행"))?.amount).toBe(-900_000);
   });
   it("보통 재추정도 이익이 바뀌면 이력으로 남아 ‘이달 예상이익을 바꾼 일’이 더해서 맞는다 · 바뀌지 않으면 남기지 않는다", () => {
     const db = createSeed(NOW);
@@ -166,6 +226,20 @@ describe("D-79 준공 현장 원가 마감", () => {
   });
 });
 
+describe("D-79 명령이 만드는 기록은 모두 저장 목록에 있다", () => {
+  it("배열로 된 회사 데이터는 서버 저장 목록(COLLECTIONS)에 모두 있다 — 빠지면 30초 메모리에만 있다가 사라진다 (대표 점검 B-1)", () => {
+    const { db, id } = octSite();
+    const zero = { material: 0, labor: 0, subcontract: 0, equipment: 0, overhead: 0 } as Record<CostCategory, number>;
+    db.sites.find((x) => x.id === id)!.status = "completed";
+    const a = settleLabor(db, { siteId: id, month: "2026-10", amount: 7_000_000, note: "명세 기준" }, ctx("u-manager")).db;
+    const b = updateForecast(a, { siteId: id, remaining: zero, closeout: true, note: "마감" }, ctx("u-manager")).db;
+    const NOT_RECORDS = new Set(["users", "idempotencyKeys"]);
+    const arrays = Object.keys(b).filter((k) => Array.isArray((b as unknown as Record<string, unknown>)[k]) && !NOT_RECORDS.has(k));
+    expect(arrays).toContain("forecastChanges");
+    for (const k of arrays) expect(Object.keys(COLLECTIONS), k).toContain(k);
+  });
+});
+
 describe("D-79 이달 원가 CSV", () => {
   it("그 달 원가 전부 — 상태·처음 금액(공무가 고친 것)·공무 메모를 함께", () => {
     const { db, id } = octSite();
@@ -174,13 +248,14 @@ describe("D-79 이달 원가 CSV", () => {
     const entryId = sent.db.costEntries.find((e) => e.amount === 3_300_000)!.id;
     const fixed = reviewCostEntry(sent.db, { entryId, decision: "approve", amount: 3_000_000, note: "세금계산서 기준" }, ctx("u-manager", new Date("2026-10-29T00:00:00Z"))).db;
     const rows = monthCostRows(fixed, "2026-10", "2026-11-14");
-    expect(rows[0]).toEqual(["발생일", "현장", "항목", "금액(원)", "성격", "사유", "메모", "입력 경로", "입력한 사람", "상태", "공무 확인", "처음 금액(고치기 전)", "공무 메모·취소 사유"]);
-    const crane = rows.find((r) => r[6] === "크레인 대기")!;
-    expect(crane[3]).toBe(3_000_000);
-    expect(crane[9]).toBe("확정");
-    expect(crane[11]).toBe(3_300_000);
-    expect(crane[12]).toBe("세금계산서 기준");
-    expect(String(crane[10])).toMatch(/^2026-10-29 /);
+    expect(rows[0]).toEqual(["발생일", "입력일", "현장", "항목", "금액(원)", "성격", "사유", "메모", "입력 경로", "입력한 사람", "상태", "공무 확인", "처음 금액(고치기 전)", "공무 메모·취소 사유"]);
+    const crane = rows.find((r) => r[7] === "크레인 대기")!;
+    expect(crane[1]).toBe("2026-10-28");
+    expect(crane[4]).toBe(3_000_000);
+    expect(crane[10]).toBe("확정");
+    expect(crane[12]).toBe(3_300_000);
+    expect(crane[13]).toBe("세금계산서 기준");
+    expect(String(crane[11])).toMatch(/^2026-10-29 /);
     // 다른 달 원가는 넣지 않는다
     expect(rows.slice(1).every((r) => String(r[0]).startsWith("2026-10"))).toBe(true);
     // 엑셀 수식 주입 방지 — 메모가 =로 시작해도 글자로
@@ -218,13 +293,49 @@ describe("D-79 출퇴근 정정 — 같은 날 다른 현장 기록과 겹치지
   it("근태 수정 요청도 승인하면 겹치게 되는 것은 막는다 (반려하거나 앞 기록을 먼저 고친다)", () => {
     const db = createSeed(NOW);
     db.attendance = [rec("att-a", "site-a", "2026-11-12T00:00:00Z", "2026-11-12T03:30:00Z"), rec("att-b", "site-b", "2026-11-12T04:00:00Z", "2026-11-12T09:00:00Z")];
-    // 판교 출근을 ‘11:00’으로 고쳐 달라는 요청 → 동탄(09~12:30)과 겹침
-    const asked = requestAttendanceFix(db, { siteId: "site-b", workDate: "2026-11-12", kind: "wrong_time", inTime: "11:00", reason: "출근 시각 잘못 찍힘" }, ctx("u-field")).db;
+    // 판교 출근을 ‘11:00’으로 고쳐 달라는 요청 → 동탄(09~12:30)과 겹침 — 요청 때 바로 알린다
+    expect(err(() => requestAttendanceFix(db, { siteId: "site-b", workDate: "2026-11-12", kind: "wrong_time", inTime: "11:00", reason: "출근 시각 잘못 찍힘" }, ctx("u-field"))).message).toContain("겹칩니다");
+    // 요청한 뒤에 다른 기록이 생겨 겹치게 된 경우는 승인 때 막는다
+    const asked = requestAttendanceFix({ ...db, attendance: [db.attendance![1]] } as DemoDB, { siteId: "site-b", workDate: "2026-11-12", kind: "wrong_time", inTime: "11:00", reason: "출근 시각 잘못 찍힘" }, ctx("u-field")).db;
+    asked.attendance = db.attendance;
     const q = asked.attendanceRequests!.at(-1)!;
     const e = err(() => reviewAttendanceFix(asked, { requestId: q.id, decision: "approve" }, ctx("u-manager")));
     expect(e.code).toBe("STATE");
     expect(e.message).toContain("승인하면");
     expect(() => reviewAttendanceFix(asked, { requestId: q.id, decision: "reject", note: "동탄 기록과 겹침 — 확인 필요" }, ctx("u-manager"))).not.toThrow();
+  });
+});
+
+describe("D-79 출퇴근 겹침 — 자정을 넘긴 기록·다른 날짜로 옮긴 시각", () => {
+  const rec = (id: string, siteId: string, workDate: string, inAt: string, outAt?: string): AttendanceRecord => ({ id, siteId, userId: "u-field", workDate, inAt, inGeo: { status: "none", reason: "skipped" }, ...(outAt ? { outAt } : {}) });
+  it("전날 야간 기록이 다음 날 아침 기록과 겹치면 막고, 월 마감도 겹침으로 잡는다", () => {
+    const db = createSeed(NOW);
+    // 11/11 20:00 ~ 11/12 06:00(야간) · 11/12 07:48 ~ 17:00
+    db.attendance = [rec("att-n", "site-a", "2026-11-11", "2026-11-11T11:00:00Z", "2026-11-11T21:00:00Z"), rec("att-m", "site-b", "2026-11-12", "2026-11-11T22:48:00Z", "2026-11-12T08:00:00Z")];
+    expect(err(() => correctAttendance(db, { attendanceId: "att-n", outAt: "2026-11-12T00:00:00Z", note: "야간 연장" }, ctx("u-manager"))).message).toContain("겹칩니다");
+    const overlapped = { ...db, attendance: [db.attendance[0], { ...db.attendance[1], inAt: "2026-11-11T20:30:00Z" }] } as DemoDB;
+    const p = monthClose(overlapped, "2026-11", "2026-11-14").people.find((x) => x.row.userId === "u-field")!;
+    expect(p.overlap).toEqual(["2026-11-12"]);
+  });
+  it("출근 시각은 그 근무일 안으로만 고친다", () => {
+    const db = createSeed(NOW);
+    db.attendance = [rec("att-x", "site-a", "2026-11-07", "2026-11-06T23:00:00Z", "2026-11-07T08:00:00Z")];
+    expect(err(() => correctAttendance(db, { attendanceId: "att-x", inAt: "2026-11-11T23:00:00Z", outAt: "2026-11-12T08:00:00Z", note: "시각 정정" }, ctx("u-manager"))).fieldErrors.time).toContain("근무일");
+  });
+});
+
+describe("D-79 재추정 뒤에 확인한 원가 — 재추정 화면에 없던 돈은 새 잔여예상에서 뺀다 (대표 점검 M-4a)", () => {
+  it("확인 대기 1,000만 원을 재추정 뒤 승인해도 예상이익이 1,000만 원 더 줄지 않는다", () => {
+    const db0 = createSeed(NOW);
+    db0.settings = { ...db0.settings!, costApproval: "review" };
+    const sent = submitFieldReport(db0, { idempotencyKey: "idem-d79-basis-0001", siteId: "site-a", reportDate: "2026-11-10", workDone: "", kind: "cost", reason: "planned", costs: [{ category: "material", amount: 10_000_000, forecastImpact: "within_forecast" }] } as never, ctx("u-field", new Date("2026-11-10T03:00:00Z"))).db;
+    const f0 = siteFinancials(sent, "site-a");
+    const remaining = Object.fromEntries(f0.categories.map((c) => [c.category, c.remaining])) as Record<CostCategory, number>;
+    const re = updateForecast(sent, { siteId: "site-a", remaining, note: "재추정" }, ctx("u-manager", new Date("2026-11-14T01:00:00Z"))).db;
+    const p1 = siteFinancials(re, "site-a").expectedProfit;
+    const id = re.costEntries.find((e) => e.status === "pending" && e.amount === 10_000_000)!.id;
+    const ok = reviewCostEntry(re, { entryId: id, decision: "approve" }, ctx("u-manager", new Date("2026-11-14T02:00:00Z"))).db;
+    expect(siteFinancials(ok, "site-a").expectedProfit).toBe(p1);
   });
 });
 

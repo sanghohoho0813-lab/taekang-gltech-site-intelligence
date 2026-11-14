@@ -15,10 +15,12 @@ import { PageBody, PageHeader } from "@/components/shell/AppShell";
 import { Badge, Button, Card, CardHeader, EmptyState, Field, Notice, PageSkeleton, cx, inputCls } from "@/components/ui/primitives";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
-import { monthClose, monthCostRows, previousMonth, type CloseItemKind, type CloseLabor } from "@/lib/domain/monthClose";
+import { laborShort, monthClose, monthCostRows, previousMonth, type CloseItemKind, type CloseLabor } from "@/lib/domain/monthClose";
 import { fmtDate, fmtMan, todayIso } from "@/lib/domain/format";
 import { CATEGORY_LABEL, COST_CATEGORIES } from "@/lib/domain/labels";
 import { toCsv } from "@/lib/domain/csv";
+import { siteFinancials } from "@/lib/domain/calc";
+import type { DemoDB } from "@/lib/domain/types";
 import { uid } from "@/lib/domain/ids";
 import { downloadCsv } from "@/lib/browser/download";
 import { ForecastModal } from "./SitesAdmin";
@@ -174,6 +176,11 @@ export function CloseBoard() {
             </tbody>
           </table>
         </div>
+        {r.late.n > 0 && (
+          <p className="mx-5 mt-2 rounded-lg bg-surface-2 px-3 py-2 text-[0.8rem] text-ink-2" data-testid="close-late">
+            달이 끝난 뒤에 넣거나 확인한 {Number(chosen.slice(5))}월 날짜 원가 {r.late.n}건({fmtMan(r.late.amount)})이 포함돼 있습니다 — 그 전에 인쇄해 둔 마감본과 숫자가 다를 수 있습니다.
+          </p>
+        )}
         <p className="px-5 pt-2 pb-4 text-[0.76rem] text-ink-3">
           원가 항목별: {r.money.map((m) => `${m.site.shortName} ${COST_CATEGORIES.filter((c) => m.cost[c]).map((c) => `${CATEGORY_LABEL[c]} ${fmtMan(m.cost[c])}`).join(" · ") || "없음"}`).join(" / ")}
         </p>
@@ -181,7 +188,7 @@ export function CloseBoard() {
 
       {/* 3. 이익 변화 이유 */}
       <Card data-testid="close-profit">
-        <CardHeader title="이달 예상이익을 바꾼 일" sub="계획 안의 집행은 이익을 바꾸지 않습니다 — 추가 원가·변경공사 승인만 모았습니다. 더하면 이달 변화가 됩니다." />
+        <CardHeader title="이달 예상이익을 바꾼 일" sub="이 달에 손익에 들어온 날 기준 — 추가 원가, 잔여예상을 넘은 집행, 변경공사 승인·그 원가, 잔여예상 재추정·준공 원가 마감. 계획 안에서 잔여예상 안으로 쓴 돈은 이익을 바꾸지 않습니다. 더하면 이달 변화가 됩니다." />
         <ul className="divide-y divide-line border-t border-line">
           {r.profit.map((p) => (
             <li key={p.site.id} className="px-5 py-3" data-testid="close-profit-site">
@@ -189,7 +196,7 @@ export function CloseBoard() {
                 <b>{p.site.shortName}</b>
                 <span className={cx("num font-bold", p.net < 0 ? "text-err" : p.net > 0 ? "text-ok" : "text-ink-3")}>이달 {signed(p.net)}</span>
                 <span className="text-[0.78rem] text-ink-3 num">
-                  · 지금 예상이익 {fmtMan(p.expectedProfit)} (현장 등록 대비 {signed(p.sinceBaseline)})
+                  · 오늘 기준 예상이익 {fmtMan(p.expectedProfit)} (현장 등록 대비 {signed(p.sinceBaseline)})
                 </span>
               </p>
               {p.events.length ? (
@@ -203,7 +210,7 @@ export function CloseBoard() {
                   ))}
                 </ul>
               ) : (
-                <p className="mt-0.5 text-[0.82rem] text-ink-3">이달에 이익을 바꾼 일이 없습니다 (계획 안에서 집행).</p>
+                <p className="mt-0.5 text-[0.82rem] text-ink-3">이달에 예상이익을 바꾼 일이 없습니다.</p>
               )}
             </li>
           ))}
@@ -250,15 +257,18 @@ export function CloseBoard() {
                       <td className="no-print px-3 py-2 font-sans">
                         {l.settled ? (
                           <span className="inline-flex flex-wrap items-center gap-1 text-[0.78rem] text-ink-2" data-testid="close-settled">
-                            <Badge tone="ok">정산함</Badge> {fmtMan(l.settled.amount)} · {fmtDate(l.settled.date)}
+                            <Badge tone="ok">정산함</Badge> {fmtMan(l.settled.amount)} · {short(l.settled.date)}자{todayIso(new Date(l.settled.createdAt)) !== l.settled.date ? ` · ${short(todayIso(new Date(l.settled.createdAt)))} 입력` : ""}
                           </span>
                         ) : l.canSettle ? (
                           <Button size="sm" variant="soft" onClick={() => setSettling(l.site.id)} data-testid="close-settle-row">
                             차액 정산
                           </Button>
+                        ) : !r.ended && laborShort(l) ? (
+                          <span className="text-[0.78rem] text-ink-3">달이 끝나면 정산</span>
                         ) : (
                           <span className="text-[0.78rem] text-ink-3">—</span>
                         )}
+                        {l.reShort > 0 && <span className="mt-1 block text-[0.74rem] font-semibold text-warn">정산 뒤 다시 {fmtMan(l.reShort)} 모자람</span>}
                       </td>
                     </tr>
                   );
@@ -348,7 +358,7 @@ export function CloseBoard() {
         </ul>
       </Card>
       <p className="text-[0.75rem] text-ink-3">* 기준: {fmtDate(r.from)} ~ {fmtDate(r.to)} · 금액은 원 단위로 저장된 값을 만 원으로 줄여 보여 줍니다.</p>
-      {settleRow && <LaborSettleModal row={settleRow} month={chosen} ended={r.ended} onClose={() => setSettling(null)} />}
+      {settleRow && <LaborSettleModal db={db} row={settleRow} month={chosen} onClose={() => setSettling(null)} />}
       {closeSite && <ForecastModal db={db} site={closeSite} closeout onClose={() => setClosing(null)} />}
     </PageBody>
   );
@@ -358,15 +368,18 @@ export function CloseBoard() {
  * 노무 차액 정산 (D-79) — 출력 인원 × 팀 단가 추정과 그 달 입력된 노무비의 차이를 한 건으로 넣는다.
  * 본사 입력이라 바로 원가에 반영된다. 실제 지급액을 알면 그 금액으로 고쳐 넣는다.
  */
-function LaborSettleModal({ row, month, ended, onClose }: { row: CloseLabor; month: string; ended: boolean; onClose: () => void }) {
+function LaborSettleModal({ db, row, month, onClose }: { db: DemoDB; row: CloseLabor; month: string; onClose: () => void }) {
   const toast = useToast();
-  const [amount, setAmount] = useState(() => wonText(Math.max(0, row.shortfall)));
+  const [amount, setAmount] = useState(() => wonText(row.suggested));
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [key] = useState(() => uid("idem"));
   const n = toWon(amount);
   const m = Number(month.slice(5));
+  // 예상이익에 주는 영향 — 노무 잔여예상 안이면 이익은 그대로, 넘으면 넘은 만큼 줄어든다
+  const laborLeft = siteFinancials(db, row.site.id).categories.find((c) => c.category === "labor")?.remaining ?? 0;
+  const put = Number.isFinite(n) && n > 0 ? n : 0;
   const save = async () => {
     if (busy) return;
     setBusy(true);
@@ -393,14 +406,13 @@ function LaborSettleModal({ row, month, ended, onClose }: { row: CloseLabor; mon
       footer={
         <>
           <Button onClick={onClose}>취소</Button>
-          <Button variant="cta" onClick={save} loading={busy} disabled={!Number.isFinite(n) || n <= 0} data-testid="settle-save">
+          <Button variant="cta" onClick={save} loading={busy} disabled={!Number.isFinite(n) || n <= 0 || note.trim().length < 2} data-testid="settle-save">
             정산 넣기
           </Button>
         </>
       }
     >
       <div className="space-y-4">
-        {!ended && <Notice tone="warn" title="이번 달은 아직 끝나지 않았습니다 — 오늘까지의 출력 기준입니다. 달이 끝난 뒤에 정산하는 것이 좋습니다." />}
         <div className="overflow-x-auto rounded-xl border border-line">
           <table className="w-full min-w-[26rem] text-[0.84rem]">
             <thead>
@@ -416,7 +428,7 @@ function LaborSettleModal({ row, month, ended, onClose }: { row: CloseLabor; mon
               {row.teams.map((t) => (
                 <tr key={t.team} className="border-t border-line">
                   <td className="px-3 py-2 font-sans">
-                    {t.team}
+                    {t.team} {!t.team.includes(t.kind === "subcontract" ? "외주" : "직영") && <span className="text-[0.72rem] text-ink-3">{t.kind === "subcontract" ? "외주" : "직영"}</span>}
                     {!t.rateSet && <span className="ml-1 text-[0.72rem] text-warn">(기본 일당)</span>}
                   </td>
                   <td className="px-3 py-2 text-right">{t.personDays}</td>
@@ -436,14 +448,27 @@ function LaborSettleModal({ row, month, ended, onClose }: { row: CloseLabor; mon
                 <td className="px-3 py-2 font-sans">모자란 금액</td>
                 <td colSpan={3} className="px-3 py-2 text-right">{fmtMan(row.shortfall)}</td>
               </tr>
+              {row.subcontractCovered > 0 && (
+                <tr className="border-t border-line">
+                  <td className="px-3 py-2 font-sans">외주 팀 몫 중 이 달 외주비로 이미 들어온 금액 (뺌)</td>
+                  <td colSpan={3} className="px-3 py-2 text-right">−{fmtMan(row.subcontractCovered)}</td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
         <p className="text-[0.78rem] text-ink-3">
-          기간 {fmtDate(row.compareFrom)} ~ {fmtDate(row.to)} · 출력 기록을 쓰기 시작한 날부터 셉니다. 넣는 날짜는 {fmtDate(row.to)}입니다.
+          기간 {fmtDate(row.compareFrom)} ~ {fmtDate(row.to)} · 출력 기록을 쓰기 시작한 날부터 셉니다. 넣는 날짜는 {fmtDate(row.to)}입니다. 입력된 노무비는 팀 구분 없는 합계입니다 — 급여로 따로 나가는 직영 인원이 있으면 그만큼 빼고 넣으세요.
         </p>
+        {put > 0 && (
+          <p className={cx("rounded-lg px-3 py-2 text-[0.82rem]", put > laborLeft ? "bg-warn-bg text-ink" : "bg-surface-2 text-ink-2")} data-testid="settle-effect">
+            {put > laborLeft
+              ? `노무 잔여예상 ${fmtMan(laborLeft)}을 넘어 예상이익이 ${fmtMan(put - laborLeft)} 줄어듭니다.`
+              : `예상이익 변화 없음 — 계획 안 집행이라 노무 잔여예상만 ${fmtMan(laborLeft)} → ${fmtMan(laborLeft - put)}로 줄어듭니다.`}
+          </p>
+        )}
         <MoneyField id="settle-amount" label="넣을 노무비" value={amount} onChange={setAmount} error={errors.amount} required hint="추정입니다 — 실제 지급액(노무비 명세·세금계산서)을 알면 그 금액으로 고쳐 넣으세요" />
-        <Field label="메모 (원가 목록·CSV에 남음)" htmlFor="settle-note" error={errors.note}>
+        <Field label="근거 메모 (원가 목록·CSV에 남음)" htmlFor="settle-note" error={errors.note} required>
           <input id="settle-note" className={inputCls} value={note} maxLength={200} onChange={(e) => setNote(e.target.value)} placeholder="예) 10월 노무비 명세 기준 · 협력업체 확인" />
         </Field>
       </div>

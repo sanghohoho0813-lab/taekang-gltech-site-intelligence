@@ -12,6 +12,8 @@ import { Badge, Button, Card, CardHeader, EmptyState, Field, Notice, inputCls } 
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { MoneyField, toWon, wonText } from "./inputs";
+import { settledLaborFor } from "@/lib/domain/monthClose";
+import { fmtDate } from "@/lib/domain/format";
 
 export function ReviewAdmin({ db }: { db: DemoDB }) {
   const pending = db.costEntries.filter((e) => e.status === "pending").sort((a, b) => a.createdAt.localeCompare(b.createdAt));
@@ -44,6 +46,7 @@ export function ReviewAdmin({ db }: { db: DemoDB }) {
                   <p className="text-[0.74rem] text-ink-3">
                     {userLabel(db, e.createdBy)} · {fmtDateTime(e.createdAt)}
                   </p>
+                  <SettledHint db={db} e={e} />
                 </div>
                 <div className="flex gap-1.5">
                   <Button size="sm" variant="cta" icon={<CircleCheck size={15} />} onClick={() => setTarget({ e, decision: "approve" })} data-testid="review-approve">
@@ -79,6 +82,18 @@ export function ReviewAdmin({ db }: { db: DemoDB }) {
       )}
       {target && <ReviewModal db={db} entry={target.e} decision={target.decision} onClose={() => setTarget(null)} />}
     </div>
+  );
+}
+
+/** 이 현장 그 달(또는 지난달) 노무를 이미 정산했으면 — 지난달 몫이면 중복 (D-79) */
+function SettledHint({ db, e }: { db: DemoDB; e: CostEntry }) {
+  const s = settledLaborFor(db, e);
+  if (!s?.settle) return null;
+  const m = Number(s.settle.month.slice(5));
+  return (
+    <p className="mt-1 rounded-md bg-warn-bg px-2 py-1 text-[0.76rem] font-semibold text-ink" data-testid="review-settled-hint">
+      이 현장 {m}월 노무는 이미 정산했습니다 ({fmtMan(s.amount)} · {fmtDate(s.createdAt)} 입력). {m}월 몫 노무비라면 정산과 두 번 들어갑니다 — 반려하거나 정산 건을 고치세요.
+    </p>
   );
 }
 
@@ -121,6 +136,7 @@ function ReviewModal({ db, entry, decision, onClose }: { db: DemoDB; entry: Cost
       }
     >
       <div className="space-y-3">
+        {decision === "approve" && <SettledHint db={db} e={entry} />}
         {decision === "approve" && <MoneyField id="rv-amt" label="확정 금액 (견적·세금계산서 기준, 원)" value={amount} onChange={setAmount} hint="현장 입력 금액과 다르면 고쳐서 승인 — 수정 이력이 남습니다" />}
         <Field label={decision === "approve" ? "메모 (선택)" : "반려 사유"} htmlFor="rv-note" required={decision === "reject"} error={error ?? undefined}>
           <input id="rv-note" className={inputCls} value={note} maxLength={200} onChange={(e) => setNote(e.target.value)} placeholder={decision === "reject" ? "예) 원청 부담분 — 우리 원가 아님" : "예) ○○유리 견적서 기준"} />
