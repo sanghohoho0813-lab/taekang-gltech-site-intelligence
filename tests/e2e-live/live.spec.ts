@@ -254,13 +254,13 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     await expect(page.getByTestId("crew-card").getByTestId("crew-row")).toContainText("철근팀");
     await expect(page.getByTestId("crew-card").getByTestId("crew-row")).toContainText("현장 안");
     await expect(page.getByTestId("crew-card").getByTestId("crew-flags")).toContainText("단체 사진 없음");
-    // 투입·인건비(S4): 출력 3명 × 기본 일당 = 90만 원 추정 vs 공무 확정 노무비 350만 원(12공수) → ‘실제 > 추정’
+    // 투입·인건비(S4): 출력 3명 × 기본 일당 = 90만 원 추정 vs 공무 확정 노무비 350만 원(12공수) → ‘입력 > 추정’
     await page.goto("/labor");
     const lab = page.locator(`[data-testid="labor-site"][data-site="${siteId}"]`);
     await expect(lab.getByTestId("labor-team")).toContainText("철근팀");
     await expect(lab.getByTestId("labor-estimate")).toContainText("90만 원");
     await expect(lab.getByTestId("labor-actual")).toContainText("350만 원");
-    await expect(lab.getByTestId("labor-flags")).toContainText("실제 노무비가 추정보다 많음");
+    await expect(lab.getByTestId("labor-flags")).toContainText("입력이 추정보다 많음");
     await lab.getByTestId("labor-rate").first().fill("35");
     await lab.getByTestId("labor-rate-save").click();
     await expect(lab.getByTestId("labor-team")).not.toContainText("기본 일당");
