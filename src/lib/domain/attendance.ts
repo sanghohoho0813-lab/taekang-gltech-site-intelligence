@@ -80,7 +80,8 @@ export function dayFlags(db: DemoDB, date: string, now = new Date()): Attendance
   // 같은 사람이 같은 시간에 두 현장 — 근무시간이 두 번 셈해진다 (D-80 · 월 마감에만 보이고 출퇴근 현황엔 ‘의심 없음’이던 문제)
   for (const o of overlapPairs(db, date, date)) {
     const sn = (id: string) => db.sites.find((x) => x.id === id)?.shortName ?? "";
-    flags.push({ kind: "overlap", userId: o.userId, recordId: o.earlier.id, workDate: date, text: `${name(o.userId)} — ${sn(o.earlier.siteId)} ${span(o.earlier)}와 ${sn(o.later.siteId)} ${span(o.later)}이 ${o.minutes}분 겹칩니다` });
+    const same = o.earlier.siteId === o.later.siteId;
+    flags.push({ kind: "overlap", userId: o.userId, recordId: o.earlier.id, workDate: date, text: `${name(o.userId)} — ${same ? `같은 현장(${sn(o.earlier.siteId)}) 기록 두 개` : `${sn(o.earlier.siteId)} ${span(o.earlier)} · ${sn(o.later.siteId)} ${span(o.later)}`}: ${o.minutes < 1 ? "1분 미만" : `${o.minutes}분`} 겹침` });
   }
   // 같은 휴대폰으로 같은 날 여러 명 출근 → 대리 출근 의심
   const byDevice = new Map<string, Set<string>>();
@@ -247,6 +248,8 @@ export interface OverlapPair {
   tailLostMin: number;
   /** 뒤 기록에 퇴근이 없거나 두 기록이 같은 시각에 시작해 정리안을 낼 수 없음 — 직접 확인 */
   manual: boolean;
+  /** 앞 현장 퇴근이 현장 안에서 찍혔다 — 다음 현장이 끝난 뒤 앞 현장으로 돌아가 일한 근거 (D-80 공무·현장 점검) */
+  returned: boolean;
 }
 
 /**
@@ -262,7 +265,8 @@ export function overlapPairs(db: DemoDB, from: string, to: string, userId?: stri
     byUser.set(r.userId, [...(byUser.get(r.userId) ?? []), r]);
   }
   for (const [u, list] of byUser) {
-    const recs = list.slice().sort((a, b) => a.inAt.localeCompare(b.inAt));
+    // 같은 시각에 시작하면 퇴근이 있는 기록을 먼저 — 배열 순서에 따라 겹침이 잡히기도 안 잡히기도 하던 문제 (D-80 버그 배시)
+    const recs = list.slice().sort((a, b) => a.inAt.localeCompare(b.inAt) || (a.outAt ? 0 : 1) - (b.outAt ? 0 : 1));
     for (let i = 0; i < recs.length; i++) {
       const a = recs[i];
       if (!a.outAt) continue;
@@ -277,9 +281,34 @@ export function overlapPairs(db: DemoDB, from: string, to: string, userId?: stri
         const end = b1 === null ? a1 : Math.min(a1, b1);
         const minutes = Math.round((end - b0) / 60_000);
         const manual = b1 === null || b0 <= a0;
-        out.push({ userId: u, workDate: b.workDate, earlier: a, later: b, minutes, proposeOutAt: b.inAt, tailLostMin: b1 !== null && b1 < a1 ? Math.round((a1 - b1) / 60_000) : 0, manual });
+        const tailLostMin = b1 !== null && b1 < a1 ? Math.round((a1 - b1) / 60_000) : 0;
+        out.push({ userId: u, workDate: b.workDate, earlier: a, later: b, minutes, proposeOutAt: b.inAt, tailLostMin, manual, returned: tailLostMin > 0 && a.outGeo?.status === "inside" });
       }
     }
   }
   return out.sort((x, y) => x.workDate.localeCompare(y.workDate) || x.userId.localeCompare(y.userId));
 }
+
+/**
+ * 본사·요청 승인으로 바뀐 시각과 처음 값 (D-80) — 정정 이력의 전·후(after)로 판단해, 본인이 나중에 누른 퇴근을 정정으로 보이지 않게 한다.
+ * after가 없는 예전 이력은 첫 정정 전 값과 지금 값을 비교한다.
+ */
+export function correctedTimes(r: Pick<AttendanceRecord, "inAt" | "outAt" | "corrections">): { in?: { from: string }; out?: { from: string | null } } {
+  const cs = r.corrections ?? [];
+  if (!cs.length) return {};
+  const out: { in?: { from: string }; out?: { from: string | null } } = {};
+  if (cs.some((c) => c.after)) {
+    const inC = cs.find((c) => c.after && c.after.inAt !== c.before.inAt);
+    const outC = cs.find((c) => c.after && (c.after.outAt ?? null) !== (c.before.outAt ?? null));
+    if (inC) out.in = { from: inC.before.inAt };
+    if (outC) out.out = { from: outC.before.outAt ?? null };
+    return out;
+  }
+  const first = cs[0].before;
+  if (first.inAt !== r.inAt) out.in = { from: first.inAt };
+  if ((first.outAt ?? null) !== (r.outAt ?? null) && r.outAt) out.out = { from: first.outAt ?? null };
+  return out;
+}
+
+/** 본사가 직접 고친 정정만 (현장 직원의 근태 수정 요청을 승인한 것은 빼고) */
+export const hqCorrections = (r: Pick<AttendanceRecord, "corrections">) => (r.corrections ?? []).filter((c) => !c.note.startsWith("현장 요청 승인"));

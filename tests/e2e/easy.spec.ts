@@ -223,8 +223,10 @@ test.describe("GPS 출퇴근", () => {
     const row = page.locator('[data-testid="att-site"][data-site="site-c"]').getByTestId("att-row");
     await expect(row).toContainText("퇴근 기록 없음");
     await row.getByTestId("att-fix").click();
-    await page.getByTestId("att-fix-save").click();
-    await expect(page.getByTestId("att-fix-modal")).toBeVisible(); // 사유 없으면 저장 안 됨
+    // 퇴근이 없는 기록은 퇴근 칸이 비어 있다 — 17:00이 저절로 들어가지 않는다 (D-80). 확인한 시각을 넣는다
+    await expect(page.getByTestId("att-fix-out")).toHaveValue("");
+    await page.getByTestId("att-fix-out").fill("17:30");
+    await expect(page.getByTestId("att-fix-save")).toBeDisabled(); // 사유 없으면 저장 안 됨
     await page.getByTestId("att-fix-note").fill("퇴근 버튼 누락 — 반장 확인");
     await page.getByTestId("att-fix-save").click();
     await expect(row).toContainText("본사 정정: 퇴근 버튼 누락");

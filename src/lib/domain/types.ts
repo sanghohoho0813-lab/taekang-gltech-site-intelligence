@@ -182,7 +182,8 @@ export interface AttendanceRecord {
   /** 본사가 승인한 예외 사유 (GPS 실패 등) — 위치 의심 표시 대신 이 사유를 보여준다 */
   exceptionNote?: string;
   /** 본사 정정 이력 (사유 필수) */
-  corrections?: { at: string; by: string; note: string; before: { inAt: string; outAt?: string } }[];
+  /** 정정 이력 — before: 고치기 전, after: 고친 뒤 (D-80 · 본인이 나중에 누른 퇴근을 본사 정정으로 보이지 않게) */
+  corrections?: { at: string; by: string; note: string; before: { inAt: string; outAt?: string }; after?: { inAt: string; outAt?: string } }[];
   /**
    * 통신이 안 돼 휴대폰에 저장했다가 나중에 보낸 출근·퇴근 (D-55).
    * 기록 시각(inAt·outAt)은 서버가 받은 시각이고, pressedAt은 휴대폰 시계로 누른 시각(믿지 않음 → 본사 승인 요청).

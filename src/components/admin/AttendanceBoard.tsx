@@ -14,9 +14,9 @@ import { CREW_FLAG_LABEL, crewFlags, crewSummary, mandayGap, mandayOver } from "
 import { qrPath } from "@/lib/geo/qrClient";
 import { GEO_LABEL, geoText, mapLink, splitLatLng } from "@/lib/domain/geo";
 import { monthBounds } from "@/lib/domain/monthClose";
-import { FLAG_LABEL, FLAG_ORDER, backdatedDays, dayFlags, hhmm, minutesOf, overlapPairs, periodSummary, recentFlags, shiftDate, siteCrew, type AttendanceFlag } from "@/lib/domain/attendance";
+import { FLAG_LABEL, FLAG_ORDER, backdatedDays, correctedTimes, dayFlags, hhmm, minutesOf, overlapPairs, periodSummary, recentFlags, shiftDate, siteCrew, type AttendanceFlag } from "@/lib/domain/attendance";
 import { OverlapFixModal } from "./OverlapFix";
-import { todayIso } from "@/lib/domain/format";
+import { fmtDateTime, todayIso } from "@/lib/domain/format";
 import { locateOnce } from "@/lib/geo/client";
 import { PageBody, PageHeader } from "@/components/shell/AppShell";
 import { Badge, Button, Card, CardHeader, EmptyState, Field, Notice, PageSkeleton, Segmented, cx, inputCls } from "@/components/ui/primitives";
@@ -126,9 +126,14 @@ export function AttendanceBoard() {
     const detail = (db.attendance ?? [])
       .filter((r) => r.workDate >= monthFrom && r.workDate <= monthTo)
       .sort((a, b) => a.workDate.localeCompare(b.workDate))
-      .map((r) => [r.workDate, name(r.userId), db.sites.find((s) => s.id === r.siteId)?.shortName ?? "", hhmm(r.inAt), GEO_LABEL[r.inGeo.status], r.outAt ? hhmm(r.outAt) : "", r.outGeo ? GEO_LABEL[r.outGeo.status] : "", minutesOf(r) ?? "", (r.corrections ?? []).map((c) => c.note).join(" / ")]);
+      .map((r) => {
+        // 처음 누른 시각·정정한 사람·정정 시각을 함께 — 급여 근거 (D-80 현장·급여 점검: 13:00 옆 ‘현장 안’이 17:35 위치였음)
+        const ct = correctedTimes(r);
+        const last = r.corrections?.at(-1);
+        return [r.workDate, name(r.userId), db.sites.find((s) => s.id === r.siteId)?.shortName ?? "", hhmm(r.inAt), GEO_LABEL[r.inGeo.status], r.outAt ? hhmm(r.outAt) : "", r.outGeo ? GEO_LABEL[r.outGeo.status] : "", minutesOf(r) ?? "", ct.in ? hhmm(ct.in.from) : "", ct.out ? (ct.out.from ? hhmm(ct.out.from) : "누르지 않음") : "", last ? name(last.by) : "", last ? fmtDateTime(last.at) : "", (r.corrections ?? []).map((c) => c.note).join(" / ")];
+      });
     // 정정 사유에 쉼표가 있어도 칸이 밀리지 않게 (D-64)
-    const body = toCsv([["# 월 합계"], head, ...lines, [], ["# 일별 기록"], ["날짜", "이름", "현장", "출근", "출근 위치", "퇴근", "퇴근 위치", "근무(분)", "정정 사유"], ...detail]);
+    const body = toCsv([["# 월 합계"], head, ...lines, [], ["# 일별 기록"], ["날짜", "이름", "현장", "출근", "출근 위치(처음 누를 때)", "퇴근", "퇴근 위치(처음 누를 때)", "근무(분)", "처음 출근", "처음 퇴근", "정정한 사람", "정정 시각", "정정 사유"], ...detail]);
     downloadCsv(`출퇴근_${monthFrom}_${monthTo}.csv`, body);
   };
 
@@ -383,7 +388,7 @@ export function AttendanceBoard() {
       </Notice>
 
       {geoSite && <GeoModal site={geoSite} onClose={() => setGeoSite(null)} />}
-      {fix && <FixModal db={db} record={fix} onClose={() => setFix(null)} />}
+      {fix && <FixModal db={db} record={fix} onClose={() => setFix(null)} onOverlap={() => (setOverlapRange({ from: fix.workDate, to: fix.workDate }), setFix(null))} />}
       {overlapRange && <OverlapFixModal db={db} from={overlapRange.from} to={overlapRange.to} onClose={() => setOverlapRange(null)} />}
       {pairing && <PairModal {...pairing} onClose={() => setPairing(null)} />}
     </PageBody>
@@ -480,41 +485,69 @@ function GeoModal({ site, onClose }: { site: Site; onClose: () => void }) {
 /**
  * 본사가 고친 시각이면 ‘정정’ 표시와 처음 누른 시각 — 위치 표시는 처음 누른 때의 위치라서 (D-79 공무 점검: 12:30으로 고친 퇴근에 17:35의 ‘현장 안 50m’가 붙어 보임)
  */
+/**
+ * 본사가 고친 시각이면 ‘정정’ 표시와 처음 누른 시각 — 위치 표시는 처음 누른 때의 위치라서 (D-79 공무 점검: 12:30으로 고친 퇴근에 17:35의 ‘현장 안 50m’가 붙어 보임)
+ * 정정 이력의 전·후로 판단한다 — 본인이 나중에 누른 퇴근은 정정이 아니다 (D-80 버그 배시 m3)
+ */
 function Pressed({ r, which }: { r: AttendanceRecord; which: "in" | "out" }) {
-  const first = r.corrections?.[0]?.before;
-  if (!first) return null;
-  const orig = which === "in" ? first.inAt : first.outAt;
-  const now = which === "in" ? r.inAt : r.outAt;
-  if (!now || orig === now) return null;
+  const { db } = useMe();
+  const userName = (id: string) => db?.users.find((u) => u.id === id)?.name ?? "";
+  const c = correctedTimes(r)[which];
+  if (!c) return null;
+  const hist = (r.corrections ?? []).map((x) => `${fmtDateTime(x.at)} ${userName(x.by)} — ${x.note}`).join("\n");
   return (
-    <span className="inline-flex items-center rounded-md bg-surface-3 px-1.5 py-0.5 text-[0.72rem] font-bold text-ink-2" title="본사가 고친 시각 — 옆의 위치는 처음 누른 때의 위치입니다" data-testid="att-corrected">
-      정정 · 처음 {orig ? hhmm(orig) : "누르지 않음"}
+    <span className="inline-flex items-center rounded-md bg-surface-3 px-1.5 py-0.5 text-[0.72rem] font-bold text-ink-2" title={`본사가 고친 시각 — 옆의 위치는 처음 누른 때의 위치입니다\n${hist}`} data-testid="att-corrected">
+      정정 · 처음 {c.from ? hhmm(c.from) : "누르지 않음"}
     </span>
   );
 }
 
-function FixModal({ db, record, onClose }: { db: DemoDB; record: AttendanceRecord; onClose: () => void }) {
+function FixModal({ db, record, onClose, onOverlap }: { db: DemoDB; record: AttendanceRecord; onClose: () => void; onOverlap: () => void }) {
   const toast = useToast();
-  const [inTime, setInTime] = useState(hhmm(record.inAt));
-  const [outTime, setOutTime] = useState(record.outAt ? hhmm(record.outAt) : "17:00");
+  const recIn = hhmm(record.inAt);
+  const recOut = record.outAt ? hhmm(record.outAt) : "";
+  const [inTime, setInTime] = useState(recIn);
+  // 퇴근이 없는 기록이면 비워 둔다 — 출근만 고쳤는데 퇴근 17:00이 저절로 들어가던 문제 (D-80 현장·급여 점검)
+  const [outTime, setOutTime] = useState(recOut);
   const [note, setNote] = useState("");
+  const [longOk, setLongOk] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
   const who = db.users.find((u) => u.id === record.userId)?.name;
   const site = db.sites.find((s) => s.id === record.siteId)?.shortName;
-  // 출근 시각도 고칠 수 있게 (D-80 — 퇴근만 고칠 수 있어 출근을 잘못 누른 날은 고칠 길이 없었다). 퇴근이 출근보다 이르면 다음 날(야간)
-  const inAt = new Date(`${record.workDate}T${inTime}:00+09:00`).toISOString();
-  const outSameDay = new Date(`${record.workDate}T${outTime}:00+09:00`);
-  const outAt = (outTime < inTime ? new Date(outSameDay.getTime() + 86_400_000) : outSameDay).toISOString();
+  // 분 단위로 바뀐 것만 보낸다 — 사유만 써도 초가 잘려 ‘11:16 → 11:16’ 정정이 되던 문제 (D-80 버그 배시 M3)
+  const inChanged = inTime !== recIn;
+  const outChanged = !!outTime && outTime !== recOut;
+  const inAt = inChanged ? new Date(`${record.workDate}T${inTime}:00+09:00`).toISOString() : record.inAt;
+  // 야간(다음 날 퇴근)은 퇴근 칸을 바꿨을 때만 추정한다 — 출근만 잘못 고쳐 23시간 근무가 되던 문제 (D-80 공무 점검)
+  let outAt = record.outAt;
+  if (outChanged) {
+    const sameDay = new Date(`${record.workDate}T${outTime}:00+09:00`);
+    outAt = (outTime < inTime ? new Date(sameDay.getTime() + 86_400_000) : sameDay).toISOString();
+  }
+  const minutes = outAt ? Math.round((Date.parse(outAt) - Date.parse(inAt)) / 60_000) : null;
+  const was = minutesOf(record);
+  const orderBad = minutes !== null && minutes <= 0;
+  const long = minutes !== null && minutes > 14 * 60;
+  const nothing = !inChanged && !outChanged;
+  // 같은 현장 그날 다른 사람 퇴근 — 퇴근 누락을 넣을 때 참고 (D-80 공무 점검)
+  const others = (db.attendance ?? []).filter((x) => x.siteId === record.siteId && x.workDate === record.workDate && x.id !== record.id && x.outAt);
   const save = async () => {
+    if (busy || nothing || orderBad || (long && !longOk)) return;
+    setBusy(true);
+    setErrors({});
     try {
-      await run("correctAttendance", { attendanceId: record.id, ...(inAt !== record.inAt ? { inAt } : {}), outAt, note });
-      toast.push({ tone: "ok", title: "정정했습니다 (이력에 남음)" });
+      await run("correctAttendance", { attendanceId: record.id, ...(inChanged ? { inAt } : {}), ...(outChanged ? { outAt } : {}), note, expect: { inAt: record.inAt, outAt: record.outAt ?? null } });
+      toast.push({ tone: "ok", title: "정정했습니다 (이력에 남음)", desc: "현장 직원 휴대폰에 알림이 갑니다" });
       onClose();
     } catch (e) {
-      if (e instanceof CommandError) setErrors(e.fieldErrors);
-      toast.push({ tone: "err", title: e instanceof Error ? e.message : "정정 실패" });
+      if (e instanceof CommandError) setErrors({ ...e.fieldErrors, ...(Object.keys(e.fieldErrors).length ? {} : { time: e.message }) });
+      else setErrors({ time: e instanceof Error ? e.message : "정정 실패" });
+    } finally {
+      setBusy(false);
     }
   };
+  const fmtMin = (m: number) => `${Math.floor(m / 60)}시간 ${m % 60}분`;
   return (
     <Modal
       open
@@ -526,7 +559,7 @@ function FixModal({ db, record, onClose }: { db: DemoDB; record: AttendanceRecor
       footer={
         <>
           <Button onClick={onClose}>취소</Button>
-          <Button variant="cta" onClick={save} data-testid="att-fix-save">
+          <Button variant="cta" onClick={save} loading={busy} disabled={nothing || orderBad || (long && !longOk) || note.trim().length < 2} data-testid="att-fix-save">
             정정
           </Button>
         </>
@@ -537,11 +570,35 @@ function FixModal({ db, record, onClose }: { db: DemoDB; record: AttendanceRecor
           <Field label="출근 시각" htmlFor="fx-in">
             <input id="fx-in" type="time" className={cx(inputCls, "num w-36")} value={inTime} onChange={(e) => setInTime(e.target.value)} data-testid="att-fix-in" />
           </Field>
-          <Field label="퇴근 시각" htmlFor="fx-out" hint={outTime < inTime ? "다음 날 퇴근 (야간)" : undefined}>
+          <Field label="퇴근 시각" htmlFor="fx-out" hint={!outTime ? "퇴근 기록 없음 — 확인한 시각만 넣으세요 (비워 두면 그대로)" : outChanged && outTime < inTime ? "다음 날 퇴근 (야간)" : undefined}>
             <input id="fx-out" type="time" className={cx(inputCls, "num w-36")} value={outTime} onChange={(e) => setOutTime(e.target.value)} data-testid="att-fix-out" />
           </Field>
         </div>
-        {errors.time && <Notice tone="err" title={errors.time} />}
+        {!record.outAt && others.length > 0 && (
+          <p className="text-[0.78rem] text-ink-3">
+            같은 현장 그날 퇴근: {others.slice(0, 4).map((x) => `${db.users.find((u) => u.id === x.userId)?.name ?? ""} ${hhmm(x.outAt!)}`).join(" · ")}
+          </p>
+        )}
+        {minutes !== null && !nothing && (
+          <p className={cx("rounded-lg px-3 py-2 text-[0.84rem]", orderBad || long ? "bg-warn-bg text-ink" : "bg-surface-2 text-ink-2")} data-testid="att-fix-effect">
+            근무 {was === null ? "—" : fmtMin(was)} → <b>{orderBad ? "출근이 퇴근보다 늦습니다" : fmtMin(minutes)}</b>
+          </p>
+        )}
+        {long && !orderBad && (
+          <label className="flex items-center gap-2 text-[0.84rem] font-semibold text-warn">
+            <input type="checkbox" className="size-5" checked={longOk} onChange={(e) => setLongOk(e.target.checked)} data-testid="att-fix-long" /> 14시간 넘는 근무가 맞습니다 (시각을 다시 확인했어요)
+          </label>
+        )}
+        {errors.time && (
+          <div className="space-y-2">
+            <Notice tone="err" title={errors.time} />
+            {/겹/.test(errors.time) && (
+              <Button size="sm" variant="soft" onClick={onOverlap} data-testid="att-fix-to-overlap">
+                이 날 겹침 정리로 함께 고치기
+              </Button>
+            )}
+          </div>
+        )}
         <Field label="정정 사유" htmlFor="fx-note" required error={errors.note}>
           <input id="fx-note" className={inputCls} value={note} maxLength={120} onChange={(e) => setNote(e.target.value)} placeholder="예) 퇴근 버튼 누락 — 현장 반장 확인" data-testid="att-fix-note" />
         </Field>

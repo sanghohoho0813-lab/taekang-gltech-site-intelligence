@@ -294,7 +294,7 @@ describe("D-79 출퇴근 정정 — 같은 날 다른 현장 기록과 겹치지
     const db = createSeed(NOW);
     db.attendance = [rec("att-a", "site-a", "2026-11-12T00:00:00Z", "2026-11-12T03:30:00Z"), rec("att-b", "site-b", "2026-11-12T04:00:00Z", "2026-11-12T09:00:00Z")];
     // 판교 출근을 ‘11:00’으로 고쳐 달라는 요청 → 동탄(09~12:30)과 겹침 — 요청 때 바로 알린다
-    expect(err(() => requestAttendanceFix(db, { siteId: "site-b", workDate: "2026-11-12", kind: "wrong_time", inTime: "11:00", reason: "출근 시각 잘못 찍힘" }, ctx("u-field"))).message).toContain("겹칩니다");
+    expect(err(() => requestAttendanceFix(db, { siteId: "site-b", workDate: "2026-11-12", kind: "wrong_time", inTime: "11:00", reason: "출근 시각 잘못 찍힘" }, ctx("u-field"))).message).toContain("겹쳐요");
     // 요청한 뒤에 다른 기록이 생겨 겹치게 된 경우는 승인 때 막는다
     const asked = requestAttendanceFix({ ...db, attendance: [db.attendance![1]] } as DemoDB, { siteId: "site-b", workDate: "2026-11-12", kind: "wrong_time", inTime: "11:00", reason: "출근 시각 잘못 찍힘" }, ctx("u-field")).db;
     asked.attendance = db.attendance;

@@ -245,7 +245,8 @@ export function CloseBoard() {
               </thead>
               <tbody className="num">
                 {r.labor.map((l) => {
-                  const gap = l.actual - l.estimate;
+                  // 외주 팀 몫이 외주비로 들어온 것은 모자람이 아니다 — ‘정산함’인데 −480만이 남아 보이던 문제 (D-80 공무 점검)
+                  const gap = l.actual + l.subcontractCovered - l.estimate;
                   return (
                     <tr key={l.site.id} className="border-t border-line" data-testid="close-labor-row" data-site={l.site.id}>
                       <td className="px-3 py-2.5 pl-5 font-bold">{l.site.shortName}</td>
@@ -255,7 +256,10 @@ export function CloseBoard() {
                         {won(l.actual)}
                         {l.actualPending > 0 && <span className="block text-[0.72rem] font-semibold text-warn">확인 대기 {fmtMan(l.actualPending)}</span>}
                       </td>
-                      <td className={cx("px-3 py-2.5 text-right font-semibold", Math.abs(gap) > Math.max(1_000_000, l.estimate * 0.2) && "text-warn")}>{signed(gap)}</td>
+                      <td className={cx("px-3 py-2.5 text-right font-semibold", Math.abs(gap) > Math.max(1_000_000, l.estimate * 0.2) && "text-warn")}>
+                        {signed(gap)}
+                        {l.subcontractCovered > 0 && <span className="block text-[0.72rem] font-medium text-ink-3">외주비 {fmtMan(l.subcontractCovered)} 포함</span>}
+                      </td>
                       <td className="no-print px-3 py-2 font-sans">
                         {l.settled ? (
                           <span className="inline-flex flex-wrap items-center gap-1 text-[0.78rem] text-ink-2" data-testid="close-settled">
@@ -467,7 +471,7 @@ function LaborSettleModal({ db, row, month, onClose }: { db: DemoDB; row: CloseL
           <p className={cx("rounded-lg px-3 py-2 text-[0.82rem]", put > laborLeft ? "bg-warn-bg text-ink" : "bg-surface-2 text-ink-2")} data-testid="settle-effect">
             {put > laborLeft
               ? `노무 잔여예상 ${fmtMan(laborLeft)}을 넘어 예상이익이 ${fmtMan(put - laborLeft)} 줄어듭니다.`
-              : `예상이익 변화 없음 — 계획 안 집행이라 노무 잔여예상만 ${fmtMan(laborLeft)} → ${fmtMan(laborLeft - put)}로 줄어듭니다.`}
+              : `예상이익 변화 없음 — 계획 안 집행이라 노무 잔여예상만 줄어듭니다 (${fmtMan(laborLeft)} → ${fmtMan(laborLeft - put)}).`}
           </p>
         )}
         <MoneyField id="settle-amount" label="넣을 노무비" value={amount} onChange={setAmount} error={errors.amount} required hint="추정입니다 — 실제 지급액(노무비 명세·세금계산서)을 알면 그 금액으로 고쳐 넣으세요" />

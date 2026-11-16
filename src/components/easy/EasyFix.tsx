@@ -11,7 +11,8 @@ import { CommandError, errorMessage } from "@/lib/data/commands";
 import { FIX_KIND_LABEL } from "@/lib/data/opsCommands";
 import type { AttendanceRequest, Site } from "@/lib/domain/types";
 import { todayIso } from "@/lib/domain/format";
-import { hhmm, shiftDate } from "@/lib/domain/attendance";
+import { correctedTimes, hhmm, shiftDate } from "@/lib/domain/attendance";
+import { helpPhoneOf } from "@/lib/domain/companyPhone";
 import { uid } from "@/lib/domain/ids";
 import { Chip, Choice, EasyBar, EasyPageHead, EasyQuestion, SectionBar, AtBottom, NoSite, useWizardActive, useStepHistory } from "./ui";
 import { easyDate } from "./words";
@@ -48,6 +49,7 @@ export function EasyFix() {
   }, [step]);
   if (!db) return null;
   if (!sites.length) return <NoSite title="출퇴근 수정 요청" />;
+  const phone = helpPhoneOf(db.settings);
   const site = db.sites.find((s) => s.id === siteId) ?? (sites.length === 1 ? sites[0] : undefined);
   const go = (s: Step) => (setErr(null), setStack((x) => [...x, s]));
   const back = () => stack.length > 1 && setStack((x) => x.slice(0, -1));
@@ -97,13 +99,19 @@ export function EasyFix() {
       </div>
     );
 
+  // 본사가 이미 고친 시각이면 처음 누른 시각을 함께 (D-80 현장 점검: 고친 08:25를 ‘찍힌 시각’으로 보여 줌)
+  const ct = rec ? correctedTimes(rec) : {};
+  const corrNote = (testId: string) => {
+    const c = testId.includes("out") ? ct.out : ct.in;
+    return c ? (c.from ? hhmm(c.from) : "안 누름") : "";
+  };
   const timeChips = (list0: string[], value: string, set: (v: string) => void, label: string, testId: string, recorded?: string) => {
     const list = recorded && !list0.includes(recorded) ? [recorded, ...list0] : list0;
     return (
     <div className="space-y-2">
       <p className="text-[1.15rem] font-bold">
         {label}
-        {recorded && <span className="ml-2 text-[1rem] font-semibold text-ink-2">찍힌 시각 {recorded}{value === recorded ? " · 그대로" : ""}</span>}
+        {recorded && <span className="ml-2 text-[1rem] font-semibold text-ink-2">{corrNote(testId) ? `본사가 고친 시각 ${recorded} (처음 ${corrNote(testId)})` : `찍힌 시각 ${recorded}`}{value === recorded ? " · 그대로" : ""}</span>}
       </p>
       <div className="grid grid-cols-3 gap-2">
         {list.map((t) => (
@@ -213,6 +221,11 @@ export function EasyFix() {
             <p className="text-ink-2">사유: {reasons.join(", ")}</p>
           </div>
           {err && <p className="rounded-2xl bg-err-bg px-4 py-3 text-[1.05rem] font-semibold text-err">{err}</p>}
+          {err && phone && (
+            <a href={`tel:${phone.replace(/[^\d+]/g, "")}`} className="press flex min-h-[3.8rem] items-center justify-center gap-2 rounded-2xl border-2 border-line-strong bg-surface px-4 text-[1.15rem] font-extrabold" data-testid="fix-call">
+              본사에 전화하기 <span className="font-semibold text-ink-2">{phone}</span>
+            </a>
+          )}
         </EasyQuestion>
       );
       footer = <EasyBar onBack={back} onNext={send} nextLabel="본사로 보내기" loading={busy} nextTestId="fix-send" />;

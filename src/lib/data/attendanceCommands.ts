@@ -14,7 +14,7 @@ import { judgeGeo, geoText, validSample, type GeoSample } from "@/lib/domain/geo
 import { consentRecord, currentTerms, hasConsent, retentionText, sameTerms, stampTerms, viewersText, type ConsentTerms } from "@/lib/domain/privacy";
 import { todayIso } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
-import { minutesOf, overlapMessage, overlappingRecord } from "@/lib/domain/attendance";
+import { hhmm, minutesOf, overlapMessage, overlappingRecord } from "@/lib/domain/attendance";
 import { CommandError, claimKey, clone, log, nowIso, requireSite, touch, userName, validPhoto, type Ctx } from "./commands";
 
 /** 동의 문구 판·동의 확인은 개인위치정보 규칙(privacy.ts)에서 — 보관 기간·볼 수 있는 사람 조건 포함 (D-43) */
@@ -205,6 +205,13 @@ export function checkOut(db0: DemoDB, input: CheckInput, ctx: Ctx): { db: DemoDB
   if (pressed && pressed <= (open.inSentLater?.pressedAt ?? open.inAt))
     throw new CommandError("휴대폰에 저장한 퇴근 시각이 출근보다 앞서 기록하지 않았어요. 휴대폰 시계를 확인하고 ‘출퇴근이 잘못 찍혔나요? 수정 요청하기’로 알려 주세요.", "STATE");
   const geo = stamp(db, site.id, ctx.userId, consentOrSkip(db, input, ctx));
+  // 지난 날 열린 기록을 퇴근으로 닫을 때 — 그 뒤에 다른 출근 기록이 있거나, 24시간이 넘거나, 다른 기록과 겹치면 받지 않는다
+  // (승인된 ‘출근 못 누름’ 요청의 열린 기록을 다음 날 두 번째 퇴근이 닫아 918분·겹침이 생기던 문제 · D-80 버그 배시 M4)
+  if (open.workDate !== todayIso(new Date(at))) {
+    const later = db.attendance.some((r) => r.userId === ctx.userId && r.id !== open.id && r.inAt > open.inAt);
+    if (later || Date.parse(at) - Date.parse(open.inAt) > 24 * 3_600_000 || overlappingRecord(db, { ...open, outAt: at }))
+      throw new CommandError(`${open.workDate.slice(5).replace("-", "/")} 출근 기록의 퇴근은 지금 누를 수 없어요. ‘출퇴근이 잘못 찍혔나요?’로 본사에 알려 주세요.`, "STATE");
+  }
   const idx = db.attendance.findIndex((r) => r.id === open.id);
   let rec: AttendanceRecord = { ...open, outAt: at, outGeo: geo, ...(cleanDevice(input.deviceId) ? { outDevice: cleanDevice(input.deviceId) } : {}), ...(pressed ? { outSentLater: { pressedAt: pressed } } : {}) };
   db.attendance[idx] = rec;
@@ -255,44 +262,61 @@ export interface CorrectAttendanceInput {
   /** 바꿀 출근 시각 (ISO) */
   inAt?: string;
   note: string;
+  /** 창을 열 때 본 값 — 그 사이 다른 사람이 고쳤으면 덮어쓰지 않는다 (D-80 버그 배시: 동시 정정의 나중 것이 조용히 덮어씀) */
+  expect?: { inAt: string; outAt?: string | null };
 }
 
-/** 본사 정정 — 시각만 고칠 수 있고 위치 기록은 그대로 남는다 (사유 필수) */
-export function correctAttendance(db0: DemoDB, input: CorrectAttendanceInput, ctx: Ctx) {
+/**
+ * 본사 정정 — 시각만 고칠 수 있고 위치 기록은 그대로 남는다 (사유 필수).
+ * 시각은 숫자(ms)로 비교한다 — 문자열로 비교해 다른 시간대 표기(+09:00·-12:00)에서 음수 근무·미래 퇴근이 저장되던 문제 (D-80 버그 배시 M1)
+ */
+export function correctAttendance(db0: DemoDB, input: CorrectAttendanceInput, ctx: Ctx, opts: { skipOverlap?: boolean } = {}) {
   const db = clone(db0);
   db.attendance = [...(db.attendance ?? [])];
-  const idx = db.attendance.findIndex((r) => r.id === input.attendanceId);
+  const idx = db.attendance.findIndex((r) => r.id === input?.attendanceId);
   if (idx < 0) throw new CommandError("출퇴근 기록을 찾을 수 없습니다.", "NOT_FOUND");
-  const note = (input.note ?? "").trim();
+  const note = (typeof input.note === "string" ? input.note : "").trim();
   const errors: Record<string, string> = {};
   if (note.length < 2) errors.note = "정정 사유를 적어주세요 (예: 퇴근 버튼 누락 — 반장 확인)";
   const r = db.attendance[idx];
-  const inAt = input.inAt ?? r.inAt;
-  const outAt = input.outAt ?? r.outAt;
-  const iso = (v?: string) => !v || !Number.isNaN(new Date(v).getTime());
-  if (!iso(input.inAt) || !iso(input.outAt)) errors.time = "시각 형식을 확인해주세요.";
-  else if (outAt && outAt <= inAt) errors.time = "퇴근 시각이 출근 시각보다 늦어야 합니다.";
-  else if (outAt && new Date(outAt).getTime() - new Date(inAt).getTime() > 24 * 3_600_000) errors.time = "근무 시간이 24시간을 넘습니다.";
-  else if (outAt && outAt > nowIso(ctx)) errors.time = "미래 시각으로 정정할 수 없습니다.";
+  if (input.expect && (input.expect.inAt !== r.inAt || (input.expect.outAt ?? null) !== (r.outAt ?? null)))
+    throw new CommandError(`${r.workDate} ${userName(db, r.userId)} 기록을 그 사이 다른 사람이 고쳤습니다. 화면을 새로 고친 뒤 다시 해 주세요.`, "STATE");
+  const parse = (v: unknown) => (typeof v === "string" && v ? Date.parse(v) : NaN);
+  const inMs = input.inAt !== undefined ? parse(input.inAt) : Date.parse(r.inAt);
+  const outMs = input.outAt !== undefined ? parse(input.outAt) : r.outAt ? Date.parse(r.outAt) : null;
+  const nowMs = Date.parse(nowIso(ctx));
+  if (!Number.isFinite(inMs) || (outMs !== null && !Number.isFinite(outMs))) errors.time = "시각 형식을 확인해주세요.";
+  else if (inMs > nowMs || (outMs !== null && outMs > nowMs)) errors.time = "아직 오지 않은 시각으로 정정할 수 없습니다.";
   // 출근 시각은 그 근무일 안 (한국 날짜) — 다른 날짜로 옮기면 그날 다른 기록과 근무시간이 두 번 셈해졌다 (D-79 버그 배시 m-1)
-  else if (input.inAt && todayIso(new Date(input.inAt)) !== r.workDate) errors.time = `출근 시각은 그 근무일(${r.workDate}) 안이어야 합니다.`;
+  else if (input.inAt !== undefined && todayIso(new Date(inMs)) !== r.workDate) errors.time = `출근 시각은 그 근무일(${r.workDate}) 안이어야 합니다.`;
+  else if (outMs !== null && outMs <= inMs) errors.time = "퇴근 시각이 출근 시각보다 늦어야 합니다.";
+  else if (outMs !== null && outMs - inMs > 24 * 3_600_000) errors.time = "근무 시간이 24시간을 넘습니다.";
   if (Object.keys(errors).length) throw new CommandError("입력값을 확인해주세요.", "VALIDATION", errors);
-  // 같은 날 다른 현장 기록과 시간이 겹치게 고치지 않는다 (D-79 — 겹치면 근무시간이 두 번 셈)
-  const clash = overlappingRecord(db, { id: r.id, userId: r.userId, workDate: r.workDate, inAt: new Date(inAt).toISOString(), ...(outAt ? { outAt: new Date(outAt).toISOString() } : {}) });
-  if (clash) throw new CommandError(overlapMessage(db, clash), "VALIDATION", { time: "다른 기록과 겹침" });
+  const inAt = new Date(inMs).toISOString();
+  const outAt = outMs !== null ? new Date(outMs).toISOString() : undefined;
+  // 같은 날(앞뒤 하루) 다른 기록과 시간이 겹치게 고치지 않는다 (D-79 — 겹치면 근무시간이 두 번 셈) · 여러 건 정정은 모두 적용한 뒤 한 번에 본다 (D-80)
+  if (!opts.skipOverlap) {
+    const clash = overlappingRecord(db, { id: r.id, userId: r.userId, workDate: r.workDate, inAt, ...(outAt ? { outAt } : {}) });
+    if (clash) {
+      const msg = overlapMessage(db, clash);
+      throw new CommandError(msg, "VALIDATION", { time: msg });
+    }
+  }
   db.attendance[idx] = {
     ...r,
-    inAt: new Date(inAt).toISOString(),
-    ...(outAt ? { outAt: new Date(outAt).toISOString() } : {}),
-    corrections: [...(r.corrections ?? []), { at: nowIso(ctx), by: ctx.userId, note, before: { inAt: r.inAt, ...(r.outAt ? { outAt: r.outAt } : {}) } }],
+    inAt,
+    ...(outAt ? { outAt } : {}),
+    corrections: [...(r.corrections ?? []), { at: nowIso(ctx), by: ctx.userId, note, before: { inAt: r.inAt, ...(r.outAt ? { outAt: r.outAt } : {}) }, after: { inAt, ...(outAt ? { outAt } : {}) } }],
   };
-  log(db, ctx, "attendance", `출퇴근 정정 — ${userName(db, r.userId)} ${r.workDate} · ${note}`, r.siteId, "/attendance");
+  const nr = db.attendance[idx];
+  const what = [nr.inAt !== r.inAt ? `출근 ${kstHm(r.inAt)} → ${kstHm(nr.inAt)}` : "", (nr.outAt ?? "") !== (r.outAt ?? "") ? `퇴근 ${r.outAt ? kstHm(r.outAt) : "없음"} → ${nr.outAt ? kstHm(nr.outAt) : "없음"}` : ""].filter(Boolean).join(", ");
+  log(db, ctx, "attendance", `출퇴근 정정 — ${userName(db, r.userId)} ${r.workDate}${what ? ` (${what})` : ""} · ${note}`, r.siteId, "/attendance");
   touch(db, ctx);
   return { db, result: { attendanceId: r.id } };
 }
 
 export interface CorrectAttendanceBatchInput {
-  items: { attendanceId: string; inAt?: string; outAt?: string }[];
+  items: { attendanceId: string; inAt?: string; outAt?: string; expect?: { inAt: string; outAt?: string | null } }[];
   /** 모든 건에 같은 사유 (이력에 남음) */
   note: string;
   idempotencyKey?: string;
@@ -300,30 +324,38 @@ export interface CorrectAttendanceBatchInput {
 export const BATCH_FIX_MAX = 100;
 
 /**
- * 출퇴근 여러 건을 한 번에 정정 (D-80 · 겹침 정리) — 한 건씩 정정하는 규칙(사유·24시간·미래·근무일·겹침)을 그대로 차례로 적용하고,
- * 하나라도 안 되면 아무것도 바꾸지 않는다. 김도윤 같은 날 두 현장 11일을 하나씩 11번 고치던 일.
+ * 출퇴근 여러 건을 한 번에 정정 (D-80 · 겹침 정리) — 한 건씩 정정하는 규칙(사유·24시간·미래·근무일)을 차례로 적용하고,
+ * 겹침은 모두 적용한 최종 모양으로 본다(항목 순서에 따라 결과가 달라지지 않게 · 버그 배시 m1). 하나라도 안 되면 아무것도 바꾸지 않는다.
  */
 export function correctAttendanceBatch(db0: DemoDB, input: CorrectAttendanceBatchInput, ctx: Ctx) {
-  const items = Array.isArray(input.items) ? input.items : [];
+  const items = Array.isArray(input?.items) ? input.items : [];
   if (items.length === 0) throw new CommandError("정정할 기록을 골라 주세요.", "VALIDATION", { items: "0건" });
   if (items.length > BATCH_FIX_MAX) throw new CommandError(`한 번에 ${BATCH_FIX_MAX}건까지 정정할 수 있습니다.`, "VALIDATION", { items: "너무 많음" });
-  if (new Set(items.map((x) => x?.attendanceId)).size !== items.length) throw new CommandError("같은 기록이 두 번 들어 있습니다.", "VALIDATION", { items: "중복" });
+  if (items.some((x) => !x || typeof x !== "object" || typeof x.attendanceId !== "string")) throw new CommandError("정정할 기록 형식이 올바르지 않습니다.", "VALIDATION", { items: "형식" });
+  if (new Set(items.map((x) => x.attendanceId)).size !== items.length) throw new CommandError("같은 기록이 두 번 들어 있습니다.", "VALIDATION", { items: "중복" });
   if (input.idempotencyKey && db0.idempotencyKeys.includes(input.idempotencyKey)) throw new CommandError("이미 저장된 요청입니다. (중복 저장 방지)", "DUPLICATE");
   const touched = new Set(items.map((x) => x.attendanceId));
   const recs0 = (db0.attendance ?? []).filter((r) => touched.has(r.id));
   const keys = new Set(recs0.map((r) => `${r.userId}|${r.workDate}`));
   const total = (db: DemoDB) => (db.attendance ?? []).filter((r) => keys.has(`${r.userId}|${r.workDate}`)).reduce((a, r) => a + (minutesOf(r) ?? 0), 0);
+  const who = (db: DemoDB, id: string) => {
+    const r = (db.attendance ?? []).find((x) => x.id === id);
+    return r ? `${r.workDate} ${userName(db0, r.userId)}` : "기록";
+  };
   let db = db0;
   for (const it of items) {
-    const r = (db.attendance ?? []).find((x) => x.id === it?.attendanceId);
     try {
-      db = correctAttendance(db, { attendanceId: it.attendanceId, ...(it.inAt ? { inAt: it.inAt } : {}), ...(it.outAt ? { outAt: it.outAt } : {}), note: input.note }, ctx).db;
+      db = correctAttendance(db, { attendanceId: it.attendanceId, ...(it.inAt ? { inAt: it.inAt } : {}), ...(it.outAt ? { outAt: it.outAt } : {}), ...(it.expect ? { expect: it.expect } : {}), note: input.note }, ctx, { skipOverlap: true }).db;
     } catch (e) {
       if (!(e instanceof CommandError)) throw e;
-      const who = r ? `${r.workDate} ${userName(db0, r.userId)}` : "기록";
       const why = Object.values(e.fieldErrors)[0];
-      throw new CommandError(`${who}: ${why && e.message === "입력값을 확인해주세요." ? why : e.message} — 아무것도 바꾸지 않았습니다.`, e.code, e.fieldErrors);
+      throw new CommandError(`${who(db, it.attendanceId)}: ${why && e.message === "입력값을 확인해주세요." ? why : e.message} — 아무것도 바꾸지 않았습니다.`, e.code, e.fieldErrors);
     }
+  }
+  for (const id of touched) {
+    const r = (db.attendance ?? []).find((x) => x.id === id)!;
+    const clash = overlappingRecord(db, r);
+    if (clash) throw new CommandError(`${who(db, id)}: ${overlapMessage(db, clash)} — 아무것도 바꾸지 않았습니다.`, "VALIDATION", { items: "겹침" });
   }
   db = clone(db);
   claimKey(db, input.idempotencyKey);

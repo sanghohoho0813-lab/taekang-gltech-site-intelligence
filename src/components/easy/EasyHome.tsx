@@ -3,13 +3,14 @@
 /** 현장 직원 첫 화면 — 큰 버튼 몇 개로 끝나도록 */
 import Link from "next/link";
 import { helpPhoneOf } from "@/lib/domain/companyPhone";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Camera, CircleCheck, ClipboardPen, ListChecks, Phone, Receipt, Undo2, AlertCircle, Clock3, Users, Boxes } from "lucide-react";
 import { useMe } from "@/lib/data/hooks";
 import { run } from "@/lib/data/store";
 import { IS_LIVE } from "@/lib/mode";
 import type { CostCategory, CostEntry, DemoDB, FieldReport } from "@/lib/domain/types";
 import { todayIso } from "@/lib/domain/format";
+import { hqCorrections } from "@/lib/domain/attendance";
 import { activeItems } from "@/lib/domain/material";
 import { PageSkeleton, cx } from "@/components/ui/primitives";
 import { ActionTile, BigTile } from "./ui";
@@ -81,6 +82,7 @@ export function EasyHome() {
         )}
 
         <OutboxTile userId={userId} />
+        <CorrectionNotice db={db} userId={userId} />
 
         {sites.length > 0 && (
           <nav className="space-y-3" aria-label="할 일">
@@ -235,6 +237,32 @@ export function MyRecords({ db, userId, limit }: { db: DemoDB; userId: string; l
         })}
       </ul>
     </div>
+  );
+}
+
+/** 이 휴대폰에서 ‘본사가 고친 출퇴근’을 마지막으로 본 시각 (홈 안내 끄기) */
+export const CORR_SEEN_KEY = "tk-site-intel:corr-seen:v1";
+
+/**
+ * 본사가 출퇴근 시각을 고쳤는데 아직 ‘내 정보’에서 안 본 것 — 이 휴대폰에서 본 시각 이후 것만 (D-80 현장·급여 점검: 알아챌 길이 거의 없었음)
+ */
+function CorrectionNotice({ db, userId }: { db: DemoDB; userId: string }) {
+  const [seen, setSeen] = useState<string | null>(null);
+  useEffect(() => {
+    try {
+      setSeen(localStorage.getItem(CORR_SEEN_KEY) ?? "");
+    } catch {
+      setSeen("");
+    }
+  }, []);
+  if (seen === null) return null;
+  const days = new Set((db.attendance ?? []).filter((r) => r.userId === userId && hqCorrections(r).some((c) => c.at > seen)).map((r) => r.workDate));
+  if (!days.size) return null;
+  return (
+    <Link href="/my#my-corrections" className="press flex min-h-[4rem] items-center gap-3 rounded-2xl border-2 border-warn/40 bg-warn-bg px-4 py-3 text-[1.1rem] font-bold text-ink" data-testid="easy-corr-notice">
+      <Clock3 size={24} className="shrink-0 text-warn" aria-hidden />
+      <span className="min-w-0 flex-1">본사가 출퇴근 시각을 고쳤어요 ({days.size}일) — 눌러서 확인</span>
+    </Link>
   );
 }
 

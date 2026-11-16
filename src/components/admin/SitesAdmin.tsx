@@ -345,7 +345,9 @@ export function ForecastModal({ db, site, onClose, closeout = false }: { db: Dem
   const closedBefore = (db.forecastChanges ?? []).some((c) => c.siteId === site.id && c.closeout);
   const [vals, setVals] = useState<Record<CostCategory, string>>(() => Object.fromEntries(f.categories.map((c) => [c.category, closeout && !closedBefore && !(c.budget > 0 && c.incurred === 0) ? "0" : wonText(c.remaining)])) as Record<CostCategory, string>);
   // 직원 출퇴근은 있는데 노무비가 0원 (출력 기록이 없어 노무 표에도 안 뜨는 현장 · D-79 공무 점검: 판교 김도윤 오후 11일)
-  const staffDays = new Set((db.attendance ?? []).filter((a) => a.siteId === site.id).map((a) => `${a.userId}|${a.workDate}`)).size;
+  const staffAtt = (db.attendance ?? []).filter((a) => a.siteId === site.id);
+  const staffDays = new Set(staffAtt.map((a) => `${a.userId}|${a.workDate}`)).size;
+  const staffHours = staffAtt.reduce((a, r) => a + (r.outAt ? Math.max(0, Date.parse(r.outAt) - Date.parse(r.inAt)) : 0), 0) / 3_600_000;
   const laborIncurred = f.categories.find((c) => c.category === "labor")?.incurred ?? 0;
   const pendingCosts = db.costEntries.filter((e) => e.siteId === site.id && e.status === "pending");
   const [note, setNote] = useState("");
@@ -403,7 +405,7 @@ export function ForecastModal({ db, site, onClose, closeout = false }: { db: Dem
                   {CATEGORY_LABEL[c.category]} — 실행예산 {fmtMan(c.budget)}인데 들어온 원가가 없어 잔여예상을 그대로 두었습니다. 정말 들어갈 돈이 없을 때만 0으로 바꾸고 메모에 이유를 적으세요.
                 </li>
               ))}
-              {staffDays > 0 && laborIncurred === 0 && <li>이 현장에 직원 출퇴근 {staffDays}일이 있는데 노무비가 0원입니다 — 출력·노무비가 다른 현장으로 들어갔는지 확인하세요.</li>}
+              {staffDays > 0 && laborIncurred === 0 && <li>이 현장에 직원 출퇴근 {staffDays}일({staffHours.toFixed(1)}시간)이 있는데 노무비가 0원입니다 — 출력·노무비가 다른 현장으로 들어갔는지 확인하세요.</li>}
               {pendingCosts.length > 0 && <li>공무 확인 대기 원가 {pendingCosts.length}건({fmtMan(pendingCosts.reduce((a, e) => a + e.amount, 0))}) — 확인하면 마감 뒤에도 원가에 더해집니다.</li>}
             </ul>
           </Notice></div>

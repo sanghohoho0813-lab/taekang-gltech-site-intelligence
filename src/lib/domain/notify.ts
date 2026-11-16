@@ -75,6 +75,19 @@ export function noticesFor(before: DemoDB, after: DemoDB, actorId: string): Noti
     else if (prev.status === "pending" && q.status !== "pending") push({ to: [q.userId], title: q.status === "approved" ? "근태 수정 승인" : "근태 수정 반려", body: `${q.workDate.slice(5).replace("-", "/")}${q.reviewNote ? ` — ${clip(q.reviewNote, 50)}` : ""}`, url: "/field", tag: `fix-${q.id}` });
   }
 
+  // 본사가 출퇴근 시각을 직접 고침 (D-80) — 근무시간이 바뀌는 일이라 본인에게 (근태 요청 승인은 위에서 따로 알림). 사람마다 하나로 묶는다
+  const attBefore = new Map((before.attendance ?? []).map((r) => [r.id, r]));
+  const corrected = new Map<string, string[]>();
+  for (const r of after.attendance ?? []) {
+    const n0 = attBefore.get(r.id)?.corrections?.length ?? 0;
+    const added = (r.corrections ?? []).slice(n0).filter((c) => !c.note.startsWith("현장 요청 승인"));
+    if (added.length) corrected.set(r.userId, [...(corrected.get(r.userId) ?? []), r.workDate]);
+  }
+  for (const [u, days] of corrected) {
+    const d = [...new Set(days)].sort();
+    push({ to: [u], title: "본사가 출퇴근 시각을 고쳤어요", body: `${d[0].slice(5).replace("-", "/")}${d.length > 1 ? ` 외 ${d.length - 1}일` : ""} — 내 정보에서 확인해 주세요`, url: "/my#my-corrections", tag: `corr-${u}` });
+  }
+
   // 위험 조치 배정
   const actBefore = new Map(before.actions.map((a) => [a.id, a]));
   for (const a of after.actions) {

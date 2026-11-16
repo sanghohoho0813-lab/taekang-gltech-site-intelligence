@@ -9,7 +9,7 @@ import { worksOnSite } from "@/lib/domain/types";
 import type { AttendanceRecord, AttendanceRequest, DemoDB, WorkOrder } from "@/lib/domain/types";
 import { todayIso } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
-import { overlapMessage, overlappingRecord, shiftDate } from "@/lib/domain/attendance";
+import { hhmm, overlapMessage, overlappingRecord, shiftDate } from "@/lib/domain/attendance";
 import { CommandError, claimKey, clone, log, nowIso, requireSite, touch, userName, validPhoto, type Ctx } from "./commands";
 
 const HM = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -72,7 +72,12 @@ export function requestAttendanceFix(db0: DemoDB, input: FixRequestInput, ctx: C
     const wantIn = input.inTime ? kst(input.workDate, input.inTime) : rec?.inAt;
     const wantOut = input.outTime && wantIn ? outIso(input.workDate, input.outTime, wantIn) : rec?.outAt;
     const clash = wantIn ? overlappingRecord(db0, { id: rec?.id, userId: ctx.userId, workDate: input.workDate, inAt: wantIn, ...(wantOut ? { outAt: wantOut } : {}) }) : undefined;
-    if (clash) throw new CommandError(`${overlapMessage(db0, clash)} 본사에 전화해 주세요.`, "VALIDATION", { time: "다른 기록과 겹침" });
+    if (clash) {
+      // 현장 직원 휴대폰용 말 — 화면은 fieldErrors를 먼저 보여 주므로 같은 문장을 넣는다 (D-80 현장 점검: ‘다른 기록과 겹침’ 한 줄만 보임)
+      const sn = db0.sites.find((x) => x.id === clash.siteId)?.shortName ?? "다른 현장";
+      const msg = `${Number(clash.workDate.slice(5, 7))}월 ${Number(clash.workDate.slice(8, 10))}일 ${sn}에 ${hhmm(clash.inAt)}~${clash.outAt ? hhmm(clash.outAt) : "퇴근 전"} 출퇴근 기록이 있어 시간이 겹쳐요. 이 날은 본사에 전화해 주세요.`;
+      throw new CommandError(msg, "VALIDATION", { time: msg });
+    }
   }
   const waiting = (db0.attendanceRequests ?? []).find((q) => q.userId === ctx.userId && q.siteId === site.id && q.workDate === input.workDate && q.status === "pending");
   if (waiting)
@@ -131,7 +136,7 @@ export function reviewAttendanceFix(db0: DemoDB, input: { requestId: string; dec
       const outAt = q.outTime && !r.outAt ? outIso(q.workDate, q.outTime, inAt) : r.outAt;
       if (outAt && outAt <= inAt) throw new CommandError("요청한 출근 시각이 이미 기록된 퇴근 시각보다 늦습니다. 출퇴근 현황에서 직접 정정해 주세요.", "STATE");
       noOverlap(db, { id: r.id, userId: r.userId, workDate: r.workDate, inAt, ...(outAt ? { outAt } : {}) });
-      db.attendance[existing] = { ...r, inAt, ...(outAt ? { outAt } : {}), exceptionNote: stamp, corrections: [...(r.corrections ?? []), { at, by: ctx.userId, note: `${stamp} (그 뒤 누른 출근 기록의 시각을 고침)`, before: { inAt: r.inAt, ...(r.outAt ? { outAt: r.outAt } : {}) } }] };
+      db.attendance[existing] = { ...r, inAt, ...(outAt ? { outAt } : {}), exceptionNote: stamp, corrections: [...(r.corrections ?? []), { at, by: ctx.userId, note: `${stamp} (그 뒤 누른 출근 기록의 시각을 고침)`, before: { inAt: r.inAt, ...(r.outAt ? { outAt: r.outAt } : {}) }, after: { inAt, ...(outAt ? { outAt } : {}) } }] };
       attendanceId = r.id;
     } else if (q.kind === "missed_in") {
       const rec: AttendanceRecord = {
@@ -144,7 +149,7 @@ export function reviewAttendanceFix(db0: DemoDB, input: { requestId: string; dec
         ...(q.outTime ? { outAt: outIso(q.workDate, q.outTime, kst(q.workDate, q.inTime!)) } : {}),
         fromRequestId: q.id,
         exceptionNote: stamp,
-        corrections: [{ at, by: ctx.userId, note: stamp, before: { inAt: kst(q.workDate, q.inTime!) } }],
+        corrections: [{ at, by: ctx.userId, note: stamp, before: { inAt: kst(q.workDate, q.inTime!) }, after: { inAt: kst(q.workDate, q.inTime!), ...(q.outTime ? { outAt: outIso(q.workDate, q.outTime, kst(q.workDate, q.inTime!)) } : {}) } }],
       };
       noOverlap(db, rec);
       db.attendance.push(rec);
@@ -163,7 +168,7 @@ export function reviewAttendanceFix(db0: DemoDB, input: { requestId: string; dec
         ...(outAt ? { outAt } : {}),
         // 통신 불량 자동 요청은 ‘시각’만 확인한 것 — 위치 의심 표시(현장 밖 등)는 그대로 둔다 (리뷰 반영 D-55)
         ...(q.auto === "offline" ? {} : { exceptionNote: stamp }),
-        corrections: [...(r.corrections ?? []), { at, by: ctx.userId, note: stamp, before: { inAt: r.inAt, ...(r.outAt ? { outAt: r.outAt } : {}) } }],
+        corrections: [...(r.corrections ?? []), { at, by: ctx.userId, note: stamp, before: { inAt: r.inAt, ...(r.outAt ? { outAt: r.outAt } : {}) }, after: { inAt, ...(outAt ? { outAt } : {}) } }],
       };
     }
   }
