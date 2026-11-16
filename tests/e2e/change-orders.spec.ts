@@ -117,7 +117,7 @@ test("변경공사: 반려는 사유 필수 → 다시 청구(근거 원가 그�
   await cm.getByTestId("co-title").fill("아트리움 유리 사양 변경 (도면 근거 보강)");
   await cm.getByTestId("co-create-confirm").click();
   await expect(page.getByTestId("co-create-modal")).toHaveCount(0);
-  await expect(board.getByTestId("co-open").getByTestId("change-order").filter({ hasText: "도면 근거 보강" })).toContainText("다시 청구");
+  await expect(board.getByTestId("co-open").getByTestId("change-order").filter({ hasText: "도면 근거 보강" })).toContainText("재청구 건");
   await expect(rejected).toContainText("다시 청구함");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
 });

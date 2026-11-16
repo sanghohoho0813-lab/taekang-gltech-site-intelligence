@@ -32,7 +32,7 @@ function sample(db: DemoDB, name: CommandName): Record<string, unknown> {
 }
 
 describe("권한 매트릭스 — 모든 명령 × 역할", () => {
-  it("명령 목록이 바뀌면 이 표를 먼저 갱신한다 (67개)", () => {
+  it("명령 목록이 바뀌면 이 표를 먼저 갱신한다 (70개)", () => {
     expect(ALL).toEqual(
       [
         "addActionNote", "addBilling", "addPayment", "assignAction", "checkIn", "checkOut", "completeAction", "confirmPartnerRequest", "confirmProofEvent", "confirmQr", "correctAttendance", "createAction", "createKiosk", "createPartnerRequest", "createWorkOrder", "editCostEntry", "importCostRows", "importData", "purgeLocationsNow", "purgeMemberLocations", "recordMaterial", "reportCrew", "reportDeviceCheck", "reviewFeedback", "requestAttendanceFix", "reviewAttendanceFix", "reviewCostEntry", "reviewReport", "reviewWorkOrder", "revokeKiosk", "saveSite", "setActionStatus", "setChangeOrderStatus", "setCompanySettings", "setLocationPolicy", "setPhotoShare", "setSiteGeo", "setSiteMaterials", "setSiteWarranty", "sendFeedback", "setThresholds", "submitFieldReport", "supplementReport", "undoImport", "updateForecast", "updatePartnerRequest", "updateProgress", "voidCostEntry", "voidMaterialMove", "voidReport", "withdrawLocationConsent", "workOrderStep",
