@@ -361,6 +361,9 @@ test("자료 이관·점검: 준비 점검 → 기성·입금 붙여넣기(오�
   await page.setViewportSize({ width: 1440, height: 900 });
   await freshStart(page, { role: "manager" });
   await page.goto("/data");
+  // 숫자 맞추기 점검 (D-85) — 시연 자료는 화면끼리 다른 숫자 0건
+  await expect(page.getByTestId("integrity")).toHaveAttribute("data-err", "0");
+  await expect(page.getByTestId("integrity").getByTestId("integrity-row")).toHaveCount(9);
   // 준비 점검: B현장은 작업 인원 보고 없음 → ‘가져오기’ 누르면 작업 인원 양식으로
   const b = page.locator('[data-testid="ready-site"][data-site="site-b"]');
   await expect(b.locator('[data-key="crew"]')).toHaveAttribute("data-status", "warn");
