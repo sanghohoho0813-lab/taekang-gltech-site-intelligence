@@ -12,6 +12,7 @@ import { useMe, userLabel } from "@/lib/data/hooks";
 import { Badge, Button, EmptyState, Field, cx, inputCls } from "@/components/ui/primitives";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
+import { TeamInput } from "./TeamInput";
 
 export function CostEntryList({ db, entries, showSite = false, emptyText = "입력된 원가가 없습니다." }: { db: DemoDB; entries: CostEntry[]; showSite?: boolean; emptyText?: string }) {
   const { canSeeMoney, role, userId } = useMe();
@@ -44,6 +45,8 @@ export function CostEntryList({ db, entries, showSite = false, emptyText = "입�
                   {e.status === "rejected" && <Badge tone="err">공무 반려</Badge>}
                   {e.editedAt && <Badge tone="info">수정됨</Badge>}
                   {e.settle && <Badge tone="info">{Number(e.settle.month.slice(5))}월 노무 정산</Badge>}
+                  {e.team && <Badge tone="neutral">{e.team}</Badge>}
+                  {e.settle?.teams?.length ? <span className="text-[0.74rem] text-ink-3">{e.settle.teams.map((t) => `${t.team} ${fmtMan(t.amount)}`).join(" · ")}</span> : null}
                 </p>
                 <p className="mt-0.5 text-[0.76rem] text-ink-3">
                   {fmtDate(e.date)} · {REASON_LABEL[e.reason]} · {e.source === "FIELD" ? "모바일 현장보고" : e.source === "CSV" ? "CSV 가져오기" : e.source === "PC" ? "PC 입력" : "기준 시드"} · {userLabel(db, e.createdBy)} · {fmtRelative(e.createdAt)}
@@ -143,6 +146,8 @@ export function CostEntryList({ db, entries, showSite = false, emptyText = "입�
 
 function EditCostModal({ entry, onClose, canSeeMoney }: { entry: CostEntry; onClose: () => void; canSeeMoney: boolean }) {
   const toast = useToast();
+  const { db } = useMe();
+  const [team, setTeam] = useState(entry.team ?? "");
   const [category, setCategory] = useState<CostCategory>(entry.category);
   const [amountText, setAmountText] = useState(entry.amount.toLocaleString("ko-KR"));
   const [note, setNote] = useState(entry.note);
@@ -163,7 +168,7 @@ function EditCostModal({ entry, onClose, canSeeMoney }: { entry: CostEntry; onCl
             variant="cta"
             onClick={async () => {
               try {
-                const r = await run("editCostEntry", { entryId: entry.id, patch: { amount, category, note, forecastImpact: impact as "additional" | "within_forecast" } });
+                const r = await run("editCostEntry", { entryId: entry.id, patch: { amount, category, note, forecastImpact: impact as "additional" | "within_forecast", ...(category === "labor" || category === "subcontract" ? { team: team.trim() || null } : {}) } });
                 toast.push({ tone: "ok", title: "원가를 수정했습니다", desc: canSeeMoney ? `예상 총원가 ${fmtEok(r.before.eac)} → ${fmtEok(r.after.eac)}` : undefined });
                 onClose();
               } catch (e) {
@@ -186,8 +191,8 @@ function EditCostModal({ entry, onClose, canSeeMoney }: { entry: CostEntry; onCl
             ))}
           </select>
         </Field>
-        <Field label="금액 (원)" htmlFor="e-amt" error={error} hint={amount > 0 ? `= ${fmtMan(amount)}` : undefined}>
-          <input id="e-amt" inputMode="numeric" className={cx(inputCls, "num text-right")} value={amountText} onChange={(e) => setAmountText(e.target.value.replace(/[^\d]/g, "") ? Number(e.target.value.replace(/[^\d]/g, "")).toLocaleString("ko-KR") : "")} />
+        <Field label="금액 (원)" htmlFor="e-amt" error={error} hint={entry.settle?.teams?.length ? "팀별로 나눠 넣은 정산은 금액을 바꿀 수 없습니다 — 되돌린 뒤 다시 넣어 주세요" : amount > 0 ? `= ${fmtMan(amount)}` : undefined}>
+          <input id="e-amt" inputMode="numeric" readOnly={!!entry.settle?.teams?.length} className={cx(inputCls, "num text-right", !!entry.settle?.teams?.length && "bg-surface-2 text-ink-3")} value={amountText} onChange={(e) => setAmountText(e.target.value.replace(/[^\d]/g, "") ? Number(e.target.value.replace(/[^\d]/g, "")).toLocaleString("ko-KR") : "")} />
         </Field>
         <Field label="비용 성격" htmlFor="e-imp">
           <select id="e-imp" className={inputCls} value={impact} onChange={(e) => setImpact(e.target.value as "additional" | "within_forecast")}>
@@ -198,6 +203,7 @@ function EditCostModal({ entry, onClose, canSeeMoney }: { entry: CostEntry; onCl
         <Field label="메모" htmlFor="e-note">
           <input id="e-note" className={inputCls} value={note} onChange={(e) => setNote(e.target.value)} maxLength={160} />
         </Field>
+        {db && (category === "labor" || category === "subcontract") && !entry.settle && <TeamInput db={db} siteId={entry.siteId} id="e-team" value={team} onChange={setTeam} />}
       </div>
     </Modal>
   );

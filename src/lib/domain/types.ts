@@ -355,8 +355,10 @@ export interface CostEntry {
   editHistory?: { at: string; by: string; before: { amount: number; category: CostCategory; note: string } }[];
   /** 자료 가져오기 묶음 (가져오기 취소용) */
   importBatchId?: string;
-  /** 월 마감 노무 정산 (D-79) — 출력 인원 × 팀 단가 추정과 입력된 노무비의 차액을 본사가 한 번에 넣은 것 */
-  settle?: { month: string; estimate: number; actualBefore: number };
+  /** 월 마감 노무 정산 (D-79) — 출력 인원 × 팀 단가 추정과 입력된 노무비의 차액을 본사가 한 번에 넣은 것 · teams: 팀별로 나눈 금액 (D-81) */
+  settle?: { month: string; estimate: number; actualBefore: number; teams?: { team: string; amount: number }[] };
+  /** 어느 팀 몫인지 (D-81 · 노무비·외주비) — 작업 인원(출력)의 팀 이름과 같게 쓴다 */
+  team?: string;
 }
 
 /** 잔여예상원가를 다시 잡은 이력 (D-79) — 월 마감 ‘이달 예상이익을 바꾼 일’에 쓴다. 금액이 들어 있어 본사에만 보낸다 */

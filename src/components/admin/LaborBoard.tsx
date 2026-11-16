@@ -8,7 +8,9 @@ import { useMe } from "@/lib/data/hooks";
 import { downloadCsv } from "@/lib/browser/download";
 import { run } from "@/lib/data/store";
 import { CommandError } from "@/lib/data/commands";
-import { LABOR_FLAG_LABEL, laborEstimate, type LaborSite } from "@/lib/domain/labor";
+import { LABOR_FLAG_LABEL, laborEstimate, teamGuesses, type LaborSite } from "@/lib/domain/labor";
+import { uid } from "@/lib/domain/ids";
+import { Modal } from "@/components/ui/Modal";
 import { shiftDate } from "@/lib/domain/attendance";
 import { closeSites, monthBounds, previousMonth } from "@/lib/domain/monthClose";
 import { fmtDate, fmtMan, todayIso } from "@/lib/domain/format";
@@ -33,9 +35,13 @@ export function LaborBoard() {
   // 그 기간에 일한 현장 — 이미 준공한 현장도 (지난달에 끝난 현장의 노무가 빠지던 문제)
   const rows = closeSites(db, from, to).map((s) => laborEstimate(db, s, from, to)).filter((r) => r.site.status === "active" || r.teams.length > 0 || r.actual > 0);
   const csv = () => {
-    const head = ["현장", "기간", "팀", "구분", "출력 일수", "인원일", "1인 1일 단가", "추정 인건비", "단가 설정"];
-    const lines = rows.flatMap((r) => r.teams.map((t) => [r.site.shortName, `${r.compareFrom}~${r.to}`, t.team, t.kind === "direct" ? "직영" : "외주", t.days, t.personDays, t.dayRate, t.estimate, t.rateSet ? "팀 단가" : "기본 일당"]));
-    const sum = rows.map((r) => [r.site.shortName, `${r.compareFrom}~${r.to}`, "합계", "", "", r.teams.reduce((a, t) => a + t.personDays, 0), "", r.estimate, `실제 노무비 ${r.actual}`]);
+    const head = ["현장", "기간", "팀", "구분", "출력 일수", "인원일", "1인 1일 단가", "추정 인건비", "단가 설정", "팀으로 입력", "차이 (입력 − 추정)"];
+    const lines = rows.flatMap((r) => [
+      ...r.teams.map((t) => [r.site.shortName, `${r.compareFrom}~${r.to}`, t.team, t.kind === "direct" ? "직영" : "외주", t.days, t.personDays, t.dayRate, t.estimate, t.rateSet ? "팀 단가" : "기본 일당", t.entered, t.entered - t.estimate]),
+      ...r.otherTeams.map((o) => [r.site.shortName, `${r.compareFrom}~${r.to}`, o.team, "출력 기록 없음", "", "", "", "", "", o.amount, ""]),
+      ...(r.untagged > 0 ? [[r.site.shortName, `${r.compareFrom}~${r.to}`, "팀 미지정", "", "", "", "", "", "", r.untagged, ""]] : []),
+    ]);
+    const sum = rows.map((r) => [r.site.shortName, `${r.compareFrom}~${r.to}`, "합계", "", "", r.teams.reduce((a, t) => a + t.personDays, 0), "", r.estimate, "", r.actual, r.actual - r.estimate]);
     downloadCsv(`투입인건비_${from}_${to}.csv`, toCsv([head, ...lines, [], ...sum]));
   };
   return (
@@ -85,6 +91,9 @@ function SiteLabor({ r }: { r: LaborSite }) {
   const toast = useToast();
   const [edit, setEdit] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+  const [tagging, setTagging] = useState(false);
+  // 팀이 붙지 않은 노무비·외주비 중 메모에 팀 이름이 하나만 있는 것 (D-81)
+  const guesses = db ? teamGuesses(db, r.site.id, r.compareFrom, r.to) : [];
   const diff = r.actual - r.estimate;
   const budgetPct = r.laborBudget > 0 ? Math.round((r.laborToDate / r.laborBudget) * 100) : null;
   const empty = r.teams.length === 0 && r.actual === 0;
@@ -151,7 +160,7 @@ function SiteLabor({ r }: { r: LaborSite }) {
             <table className="w-full min-w-[38rem] text-[0.84rem]">
               <thead>
                 <tr className="text-left text-[0.74rem] text-ink-3">
-                  {["팀", "출력 일수", "인원일", "1인 1일 단가 (만 원)", "추정 인건비"].map((h) => (
+                  {["팀", "출력 일수", "인원일", "1인 1일 단가 (만 원)", "추정 인건비", "팀으로 입력", "차이"].map((h) => (
                     <th key={h} className="py-2 pr-3 font-semibold">
                       {h}
                     </th>
@@ -182,10 +191,36 @@ function SiteLabor({ r }: { r: LaborSite }) {
                       </span>
                     </td>
                     <td className="num py-2 pr-3 font-bold">{fmtMan(t.estimate)}</td>
+                    <td className="num py-2 pr-3" data-testid="labor-team-entered">
+                      {t.entered ? fmtMan(t.entered) : "—"}
+                      {t.enteredPending > 0 && <span className="block text-[0.72rem] text-warn">확인 대기 {fmtMan(t.enteredPending)}</span>}
+                    </td>
+                    <td className={cx("num py-2 pr-3 font-semibold", r.untagged > 0 ? "text-ink-3" : t.estimate - t.entered > 500_000 && "text-warn")}>{t.entered - t.estimate === 0 ? "0" : `${t.entered > t.estimate ? "+" : "−"}${fmtMan(Math.abs(t.entered - t.estimate))}`}</td>
+                  </tr>
+                ))}
+                {r.otherTeams.map((o) => (
+                  <tr key={o.team} className="border-t border-line text-ink-2" data-testid="labor-other-team">
+                    <td className="py-2 pr-3 font-semibold" colSpan={5}>
+                      {o.team} <span className="text-[0.74rem] text-warn">출력 기록에 없는 팀 이름</span>
+                    </td>
+                    <td className="num py-2 pr-3">{fmtMan(o.amount)}</td>
+                    <td />
                   </tr>
                 ))}
               </tbody>
             </table>
+            {r.untagged > 0 && (
+              <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl bg-surface-2 px-3.5 py-2.5 text-[0.84rem] text-ink-2" data-testid="labor-untagged">
+                <span>
+                  팀을 정하지 않은 노무비 <b className="num text-ink">{fmtMan(r.untagged)}</b> — 어느 팀 몫인지 몰라 팀별 차이에 들어가지 않았습니다.
+                </span>
+                {guesses.length > 0 && (
+                  <Button size="sm" variant="soft" onClick={() => setTagging(true)} data-testid="labor-tag-open">
+                    메모로 팀 붙이기 ({guesses.length}건)
+                  </Button>
+                )}
+              </div>
+            )}
             {Object.keys(edit).length > 0 && (
               <Button size="sm" variant="cta" className="mt-2" icon={<Save size={15} />} loading={busy} onClick={saveRates} data-testid="labor-rate-save">
                 단가 저장
@@ -193,6 +228,7 @@ function SiteLabor({ r }: { r: LaborSite }) {
             )}
           </div>
         )}
+        {tagging && db && <TagTeamsModal guesses={guesses} siteName={r.site.shortName} onClose={() => setTagging(false)} />}
         <p className="text-[0.8rem] text-ink-2" data-testid="labor-staff">
           직원 출퇴근 {r.staffDays}명·일 · 근무 {Math.floor(r.staffMinutes / 60)}시간 {r.staffMinutes % 60}분
           {r.noCheckout ? ` · 퇴근 누락 ${r.noCheckout}건 (시간 불확실)` : ""} — 직원 급여는 이 추정에 넣지 않습니다
@@ -204,4 +240,56 @@ function SiteLabor({ r }: { r: LaborSite }) {
 
 function Stat({ label, value, sub, tone, testId }: { label: string; value: string; sub?: string; tone?: "ok" | "err"; testId?: string }) {
   return <MetricTile label={label} value={value} sub={sub} tone={tone === "ok" ? undefined : tone} testId={testId} compact />;
+}
+
+/** 메모로 찾은 팀을 한 번에 붙이기 (D-81) — 금액·항목은 그대로, 붙인 사실은 활동 이력에 */
+function TagTeamsModal({ guesses, siteName, onClose }: { guesses: ReturnType<typeof teamGuesses>; siteName: string; onClose: () => void }) {
+  const toast = useToast();
+  const [pick, setPick] = useState<Record<string, boolean>>(() => Object.fromEntries(guesses.map((g) => [g.entryId, true])));
+  const [busy, setBusy] = useState(false);
+  const [key] = useState(() => uid("idem"));
+  const chosen = guesses.filter((g) => pick[g.entryId]);
+  const save = async () => {
+    if (busy || !chosen.length) return;
+    setBusy(true);
+    try {
+      await run("setCostTeams", { items: chosen.map((g) => ({ entryId: g.entryId, team: g.team })), idempotencyKey: key });
+      toast.push({ tone: "ok", title: `${chosen.length}건에 팀을 붙였습니다`, desc: "팀별 입력·차이가 다시 계산됩니다" });
+      onClose();
+    } catch (e) {
+      toast.push({ tone: "err", title: e instanceof Error ? e.message : "저장 실패" });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={`메모로 팀 붙이기 · ${siteName}`}
+      description="팀이 붙지 않은 노무비·외주비 중 메모에 팀 이름이 하나만 적힌 것입니다. 맞는 것만 골라 붙이세요 — 금액은 바뀌지 않습니다."
+      size="lg"
+      testId="labor-tag"
+      footer={
+        <>
+          <Button onClick={onClose}>취소</Button>
+          <Button variant="cta" onClick={save} loading={busy} disabled={!chosen.length} data-testid="labor-tag-save">
+            {chosen.length}건에 팀 붙이기
+          </Button>
+        </>
+      }
+    >
+      <ul className="divide-y divide-line rounded-xl border border-line">
+        {guesses.map((g) => (
+          <li key={g.entryId} className="flex items-center gap-3 px-3 py-2 text-[0.84rem]">
+            <input type="checkbox" className="size-5" aria-label={`${g.date} ${g.note} 팀 붙이기`} checked={!!pick[g.entryId]} onChange={(e) => setPick({ ...pick, [g.entryId]: e.target.checked })} />
+            <span className="num w-20 shrink-0 text-ink-3">{fmtDate(g.date)}</span>
+            <span className="num w-24 shrink-0 text-right font-semibold">{fmtMan(g.amount)}</span>
+            <span className="min-w-0 flex-1 truncate text-ink-2">{g.note}</span>
+            <Badge tone="info">{g.team}</Badge>
+          </li>
+        ))}
+      </ul>
+    </Modal>
+  );
 }

@@ -72,10 +72,12 @@ export interface CloseLabor extends LaborSite {
   suggested: number;
   /** 정산한 뒤에 다시 생긴 모자람 (출력 추가·정산 때 셈한 확인 대기 노무비 반려 등) */
   reShort: number;
+  /** 팀별 정산 안 (D-81) — 팀 미지정 입력·외주비는 팀 추정 비율로 나눠 뺀 기본값 */
+  teamPlan: { team: string; kind: "direct" | "subcontract"; estimate: number; entered: number; share: number; suggest: number }[];
 }
 
 /** 추정과 입력의 차이를 ‘모자람’으로 볼 기준 — 투입·인건비 화면(labor.ts)과 같은 값 */
-const LABOR_GAP_WON = 500_000;
+export const LABOR_GAP_WON = 500_000;
 const LABOR_GAP_RATIO = 1.2;
 export function laborShort(l: Pick<LaborSite, "estimate" | "actual">): boolean {
   return l.estimate > 0 && (l.actual === 0 || (l.estimate > l.actual * LABOR_GAP_RATIO && l.estimate - l.actual >= LABOR_GAP_WON));
@@ -221,9 +223,18 @@ export function monthClose(db: DemoDB, month: string, today = todayIso()): Month
       const later = settled
         ? db.costEntries.filter((e) => e.siteId === l.site.id && e.category === "labor" && e.id !== settled.id && !e.settle && (e.status === "active" || e.status === "pending") && inRange(e.date, from, to) && e.createdAt > settled.createdAt)
         : [];
-      const subEstimate = l.teams.filter((t) => t.kind === "subcontract").reduce((a, t) => a + t.estimate, 0);
-      const subCost = db.costEntries.filter((e) => e.siteId === l.site.id && e.category === "subcontract" && (e.status === "active" || e.status === "pending") && e.date >= l.compareFrom && e.date <= l.to).reduce((a, e) => a + e.amount, 0);
+      // 팀이 붙지 않은 외주비만 — 팀이 붙은 외주비는 이미 그 외주 팀 입력에 들어가 있다 (D-81)
+      const subRows = l.teams.filter((t) => t.kind === "subcontract");
+      const subEstimate = subRows.reduce((a, t) => a + Math.max(0, t.estimate - t.entered), 0);
+      const subCost = db.costEntries.filter((e) => e.siteId === l.site.id && e.category === "subcontract" && !e.team?.trim() && (e.status === "active" || e.status === "pending") && e.date >= l.compareFrom && e.date <= l.to).reduce((a, e) => a + e.amount, 0);
       const subcontractCovered = Math.min(subEstimate, subCost);
+      // 팀별 기본값: 추정 − 그 팀 입력 − (팀 미지정 노무비를 추정 비율로 나눈 몫) − (외주 팀이면 팀 미지정 외주비를 외주 팀 비율로 나눈 몫)
+      const estAll = l.teams.reduce((a, t) => a + t.estimate, 0);
+      const estSub = subRows.reduce((a, t) => a + t.estimate, 0);
+      const teamPlan = l.teams.map((t) => {
+        const share = Math.round((estAll > 0 ? (l.untagged * t.estimate) / estAll : 0) + (t.kind === "subcontract" && estSub > 0 ? (subcontractCovered * t.estimate) / estSub : 0));
+        return { team: t.team, kind: t.kind, estimate: t.estimate, entered: t.entered, share, suggest: Math.max(0, t.estimate - t.entered - share) };
+      });
       const shortfall = l.estimate - l.actual;
       // 정산 때 남겨 둔 모자람(일부러 일부만 넣은 경우)보다 더 모자라졌을 때만 다시 알린다
       const leftAtSettle = settled?.settle ? Math.max(0, settled.settle.estimate - settled.settle.actualBefore - settled.amount) : 0;
@@ -235,7 +246,8 @@ export function monthClose(db: DemoDB, month: string, today = todayIso()): Month
         shortfall,
         canSettle: ended && !settled && laborShort(l),
         subcontractCovered,
-        suggested: Math.max(0, shortfall - subcontractCovered),
+        suggested: teamPlan.length ? teamPlan.reduce((a, t) => a + t.suggest, 0) : Math.max(0, shortfall - subcontractCovered),
+        teamPlan,
         reShort: reShort >= LABOR_GAP_WON ? reShort : 0,
       };
     });
@@ -334,6 +346,7 @@ export function monthCostRows(db: DemoDB, month: string, today = todayIso()): (s
         kst(e.createdAt),
         site(e.siteId),
         CATEGORY_LABEL[e.category],
+        e.settle?.teams?.length ? e.settle.teams.map((t) => `${t.team} ${t.amount}`).join(" / ") : (e.team ?? ""),
         e.amount,
         IMPACT_LABEL[e.forecastImpact],
         REASON_LABEL[e.reason],
@@ -346,7 +359,7 @@ export function monthCostRows(db: DemoDB, month: string, today = todayIso()): (s
         [e.reviewNote, e.status === "voided" ? e.voidReason : ""].filter(Boolean).join(" · "),
       ];
     });
-  return [["발생일", "입력일", "현장", "항목", "금액(원)", "성격", "사유", "메모", "입력 경로", "입력한 사람", "상태", "공무 확인", "처음 금액(고치기 전)", "공무 메모·취소 사유"], ...rows];
+  return [["발생일", "입력일", "현장", "항목", "팀", "금액(원)", "성격", "사유", "메모", "입력 경로", "입력한 사람", "상태", "공무 확인", "처음 금액(고치기 전)", "공무 메모·취소 사유"], ...rows];
 }
 
 /**

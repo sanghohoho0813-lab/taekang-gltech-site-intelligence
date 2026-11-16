@@ -15,7 +15,7 @@ import { PageBody, PageHeader } from "@/components/shell/AppShell";
 import { Badge, Button, Card, CardHeader, EmptyState, Field, Notice, PageSkeleton, cx, inputCls } from "@/components/ui/primitives";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
-import { laborShort, monthClose, monthCostRows, previousMonth, type CloseItem, type CloseItemKind, type CloseLabor } from "@/lib/domain/monthClose";
+import { LABOR_GAP_WON, laborShort, monthClose, monthCostRows, previousMonth, type CloseItem, type CloseItemKind, type CloseLabor } from "@/lib/domain/monthClose";
 import { fmtDate, fmtMan, todayIso } from "@/lib/domain/format";
 import { CATEGORY_LABEL, COST_CATEGORIES } from "@/lib/domain/labels";
 import { toCsv } from "@/lib/domain/csv";
@@ -264,6 +264,7 @@ export function CloseBoard() {
                         {l.settled ? (
                           <span className="inline-flex flex-wrap items-center gap-1 text-[0.78rem] text-ink-2" data-testid="close-settled">
                             <Badge tone="ok">정산함</Badge> {fmtMan(l.settled.amount)} · {short(l.settled.date)}자{todayIso(new Date(l.settled.createdAt)) !== l.settled.date ? ` · ${short(todayIso(new Date(l.settled.createdAt)))} 입력` : ""}
+                            {l.settled.settle?.teams?.length ? <span className="block w-full text-[0.74rem] text-ink-3" data-testid="close-settled-teams">{l.settled.settle.teams.map((t) => `${t.team} ${fmtMan(t.amount)}`).join(" · ")}</span> : null}
                           </span>
                         ) : l.canSettle ? (
                           <Button size="sm" variant="soft" onClick={() => setSettling(l.site.id)} data-testid="close-settle-row">
@@ -382,7 +383,17 @@ function LaborSettleModal({ db, row, month, onClose }: { db: DemoDB; row: CloseL
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [key] = useState(() => uid("idem"));
-  const n = toWon(amount);
+  // 팀별로 나눠 넣기 (D-81) — 팀마다 기본값은 ‘추정 − 그 팀 입력 − 팀 미지정분 나눈 몫’
+  const hasPlan = row.teamPlan.length > 0;
+  const [byTeam, setByTeam] = useState(hasPlan);
+  const [teamAmt, setTeamAmt] = useState<Record<string, string>>(() => Object.fromEntries(row.teamPlan.map((t) => [t.team, t.suggest > 0 ? wonText(t.suggest) : ""])));
+  const teamWon = row.teamPlan.map((t) => {
+    const v = (teamAmt[t.team] ?? "").trim() ? toWon(teamAmt[t.team]) : 0;
+    return { team: t.team, amount: v };
+  });
+  const teamBad = byTeam && teamWon.some((t) => !Number.isFinite(t.amount) || t.amount < 0);
+  const teamSum = teamWon.reduce((a, t) => a + (Number.isFinite(t.amount) && t.amount > 0 ? t.amount : 0), 0);
+  const n = byTeam ? (teamBad ? NaN : teamSum) : toWon(amount);
   const m = Number(month.slice(5));
   // 예상이익에 주는 영향 — 노무 잔여예상 안이면 이익은 그대로, 넘으면 넘은 만큼 줄어든다
   const laborLeft = siteFinancials(db, row.site.id).categories.find((c) => c.category === "labor")?.remaining ?? 0;
@@ -392,7 +403,8 @@ function LaborSettleModal({ db, row, month, onClose }: { db: DemoDB; row: CloseL
     setBusy(true);
     setErrors({});
     try {
-      await run("settleLabor", { siteId: row.site.id, month, amount: Number.isFinite(n) ? n : 0, note, idempotencyKey: key });
+      const teams = byTeam ? teamWon.filter((t) => t.amount > 0) : undefined;
+      await run("settleLabor", { siteId: row.site.id, month, amount: Number.isFinite(n) ? n : 0, note, ...(teams?.length ? { teams } : {}), idempotencyKey: key });
       toast.push({ tone: "ok", title: `${row.site.shortName} ${m}월 노무 정산을 넣었습니다`, desc: `${fmtMan(Number.isFinite(n) ? n : 0)} · ${m}월 원가에 바로 반영` });
       onClose();
     } catch (e) {
@@ -407,8 +419,8 @@ function LaborSettleModal({ db, row, month, onClose }: { db: DemoDB; row: CloseL
       open
       onClose={onClose}
       title={`노무 차액 정산 · ${row.site.shortName} ${m}월`}
-      description="출력(작업 인원) 기준 추정과 그 달 입력된 노무비의 차이를 한 건으로 넣습니다. 본사 입력이라 바로 원가에 반영되고, 같은 현장·같은 달에는 한 번만 넣을 수 있습니다."
-      size="md"
+      description="출력(작업 인원) 기준 추정과 그 달 입력된 노무비의 차이를 한 건으로 넣습니다(팀별 금액은 그 건 안에 나눠 남음). 본사 입력이라 바로 원가에 반영되고, 같은 현장·같은 달에는 한 번만 넣을 수 있습니다."
+      size="lg"
       testId="settle-form"
       footer={
         <>
@@ -421,10 +433,10 @@ function LaborSettleModal({ db, row, month, onClose }: { db: DemoDB; row: CloseL
     >
       <div className="space-y-4">
         <div className="overflow-x-auto rounded-xl border border-line">
-          <table className="w-full min-w-[26rem] text-[0.84rem]">
+          <table className="w-full min-w-[30rem] text-[0.84rem]">
             <thead>
               <tr className="text-left text-[0.74rem] text-ink-3">
-                {["팀", "인원일", "단가", "추정"].map((h, i) => (
+                {["팀", "인원일 × 단가", "추정", "팀으로 입력", "차이"].map((h, i) => (
                   <th key={h} className={cx("px-3 py-2 font-semibold", i > 0 && "text-right")}>
                     {h}
                   </th>
@@ -433,39 +445,51 @@ function LaborSettleModal({ db, row, month, onClose }: { db: DemoDB; row: CloseL
             </thead>
             <tbody className="num">
               {row.teams.map((t) => (
-                <tr key={t.team} className="border-t border-line">
+                <tr key={t.team} className="border-t border-line" data-testid="settle-team-row">
                   <td className="px-3 py-2 font-sans">
                     {t.team} {!t.team.includes(t.kind === "subcontract" ? "외주" : "직영") && <span className="text-[0.72rem] text-ink-3">{t.kind === "subcontract" ? "외주" : "직영"}</span>}
                     {!t.rateSet && <span className="ml-1 text-[0.72rem] text-warn">(기본 일당)</span>}
                   </td>
-                  <td className="px-3 py-2 text-right">{t.personDays}</td>
-                  <td className="px-3 py-2 text-right">{fmtMan(t.dayRate)}</td>
+                  <td className="px-3 py-2 text-right text-ink-2">
+                    {t.personDays} × {fmtMan(t.dayRate)}
+                  </td>
                   <td className="px-3 py-2 text-right">{fmtMan(t.estimate)}</td>
+                  <td className="px-3 py-2 text-right">{t.entered ? fmtMan(t.entered) : "—"}</td>
+                  <td className={cx("px-3 py-2 text-right font-semibold", t.estimate - t.entered >= LABOR_GAP_WON && "text-warn")}>{t.entered >= t.estimate ? (t.entered === t.estimate ? "0" : `+${fmtMan(t.entered - t.estimate)}`) : `−${fmtMan(t.estimate - t.entered)}`}</td>
                 </tr>
               ))}
-              <tr className="border-t-2 border-line-strong font-bold">
-                <td className="px-3 py-2 font-sans">출력 기준 추정</td>
-                <td colSpan={3} className="px-3 py-2 text-right">{fmtMan(row.estimate)}</td>
-              </tr>
-              <tr className="border-t border-line">
-                <td className="px-3 py-2 font-sans">그 달 입력된 노무비{row.actualPending > 0 ? ` (확인 대기 ${fmtMan(row.actualPending)} 포함)` : ""}</td>
-                <td colSpan={3} className="px-3 py-2 text-right">{fmtMan(row.actual)}</td>
-              </tr>
-              <tr className="border-t border-line font-bold text-warn">
-                <td className="px-3 py-2 font-sans">모자란 금액</td>
-                <td colSpan={3} className="px-3 py-2 text-right">{fmtMan(row.shortfall)}</td>
-              </tr>
-              {row.subcontractCovered > 0 && (
-                <tr className="border-t border-line">
-                  <td className="px-3 py-2 font-sans">외주 팀 몫 중 이 달 외주비로 이미 들어온 금액 (뺌)</td>
-                  <td colSpan={3} className="px-3 py-2 text-right">−{fmtMan(row.subcontractCovered)}</td>
+              {row.untagged > 0 && (
+                <tr className="border-t border-line text-ink-2" data-testid="settle-untagged">
+                  <td className="px-3 py-2 font-sans" colSpan={3}>
+                    팀 미지정 노무비 <span className="text-[0.72rem] text-ink-3">(팀 추정 비율로 나눠 봄)</span>
+                  </td>
+                  <td className="px-3 py-2 text-right">{fmtMan(row.untagged)}</td>
+                  <td />
                 </tr>
               )}
+              {row.subcontractCovered > 0 && (
+                <tr className="border-t border-line text-ink-2">
+                  <td className="px-3 py-2 font-sans" colSpan={3}>
+                    팀 미지정 외주비 <span className="text-[0.72rem] text-ink-3">(외주 팀 몫으로 봄)</span>
+                  </td>
+                  <td className="px-3 py-2 text-right">{fmtMan(row.subcontractCovered)}</td>
+                  <td />
+                </tr>
+              )}
+              <tr className="border-t-2 border-line-strong font-bold">
+                <td className="px-3 py-2 font-sans" colSpan={2}>
+                  합계{row.actualPending > 0 ? <span className="ml-1 text-[0.72rem] font-normal text-ink-3">(확인 대기 {fmtMan(row.actualPending)} 포함)</span> : null}
+                </td>
+                <td className="px-3 py-2 text-right">{fmtMan(row.estimate)}</td>
+                <td className="px-3 py-2 text-right">{fmtMan(row.actual + row.subcontractCovered)}</td>
+                <td className="px-3 py-2 text-right text-warn">−{fmtMan(Math.max(0, row.shortfall - row.subcontractCovered))}</td>
+              </tr>
             </tbody>
           </table>
         </div>
         <p className="text-[0.78rem] text-ink-3">
-          기간 {fmtDate(row.compareFrom)} ~ {fmtDate(row.to)} · 출력 기록을 쓰기 시작한 날부터 셉니다. 넣는 날짜는 {fmtDate(row.to)}입니다. 입력된 노무비는 팀 구분 없는 합계입니다 — 급여로 따로 나가는 직영 인원이 있으면 그만큼 빼고 넣으세요.
+          기간 {fmtDate(row.compareFrom)} ~ {fmtDate(row.to)} · 출력 기록을 쓰기 시작한 날부터 셉니다. 넣는 날짜는 {fmtDate(row.to)}입니다. 급여로 따로 나가는 직영 인원이 있으면 그 팀 금액에서 빼고 넣으세요.
+          {row.untagged > 0 && " 팀 미지정 노무비는 투입·인건비 화면의 ‘메모로 팀 붙이기’나 원가 고치기에서 팀을 붙이면 팀별 차이가 정확해집니다."}
         </p>
         {put > 0 && (
           <p className={cx("rounded-lg px-3 py-2 text-[0.82rem]", put > laborLeft ? "bg-warn-bg text-ink" : "bg-surface-2 text-ink-2")} data-testid="settle-effect">
@@ -474,7 +498,48 @@ function LaborSettleModal({ db, row, month, onClose }: { db: DemoDB; row: CloseL
               : `예상이익 변화 없음 — 계획 안 집행이라 노무 잔여예상만 줄어듭니다 (${fmtMan(laborLeft)} → ${fmtMan(laborLeft - put)}).`}
           </p>
         )}
-        <MoneyField id="settle-amount" label="넣을 노무비" value={amount} onChange={setAmount} error={errors.amount} required hint="추정입니다 — 실제 지급액(노무비 명세·세금계산서)을 알면 그 금액으로 고쳐 넣으세요" />
+        {hasPlan && (
+          <label className="flex items-center gap-2 text-[0.86rem] font-semibold">
+            <input type="checkbox" className="size-5" checked={byTeam} onChange={(e) => setByTeam(e.target.checked)} data-testid="settle-byteam" />
+            팀별로 나눠 넣기
+            <span className="font-normal text-ink-3">— 팀별 노무비가 원가 목록·CSV에 남습니다</span>
+          </label>
+        )}
+        {byTeam ? (
+          <div className="space-y-2" data-testid="settle-teams">
+            {row.teamPlan.map((t) => (
+              <div key={t.team} className="flex items-center gap-3">
+                <label htmlFor={`settle-team-${t.team}`} className="min-w-0 flex-1 text-[0.86rem] font-semibold">
+                  {t.team}
+                  <span className="block text-[0.74rem] font-normal text-ink-3">
+                    기본 {fmtMan(t.suggest)}
+                    {t.share > 0 ? ` · 팀 미지정분 중 이 팀 몫으로 본 ${fmtMan(t.share)} 뺌` : ""}
+                  </span>
+                </label>
+                <div className="w-40 shrink-0">
+                  <input
+                    id={`settle-team-${t.team}`}
+                    inputMode="numeric"
+                    className={cx(inputCls, "num text-right")}
+                    value={teamAmt[t.team] ?? ""}
+                    placeholder="0"
+                    onChange={(e) => setTeamAmt({ ...teamAmt, [t.team]: e.target.value })}
+                    data-testid="settle-team-amount"
+                  />
+                  {(teamAmt[t.team] ?? "").trim() && Number.isFinite(toWon(teamAmt[t.team])) && <span className="mt-0.5 block text-right text-[0.72rem] text-ink-3">= {fmtMan(toWon(teamAmt[t.team]))}</span>}
+                </div>
+              </div>
+            ))}
+            <div className="flex items-center justify-between border-t border-line pt-2 text-[0.9rem] font-bold">
+              <span>넣을 노무비 합계</span>
+              <span className="num" data-testid="settle-team-sum">{teamBad ? "금액 확인" : fmtMan(teamSum)}</span>
+            </div>
+            {(errors.teams || errors.amount) && <p className="text-[0.8rem] text-err">{errors.teams || errors.amount}</p>}
+            <p className="text-[0.76rem] text-ink-3">추정입니다 — 팀별 실제 지급액(노무비 명세·세금계산서)을 알면 그 금액으로 고쳐 넣으세요. 넣지 않을 팀은 비워 두세요.</p>
+          </div>
+        ) : (
+          <MoneyField id="settle-amount" label="넣을 노무비" value={amount} onChange={setAmount} error={errors.amount || errors.teams} required hint="추정입니다 — 실제 지급액(노무비 명세·세금계산서)을 알면 그 금액으로 고쳐 넣으세요" />
+        )}
         <Field label="근거 메모 (원가 목록·CSV에 남음)" htmlFor="settle-note" error={errors.note} required>
           <input id="settle-note" className={inputCls} value={note} maxLength={200} onChange={(e) => setNote(e.target.value)} placeholder="예) 10월 노무비 명세 기준 · 협력업체 확인" />
         </Field>

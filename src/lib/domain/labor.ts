@@ -28,7 +28,14 @@ export interface LaborTeamRow {
   dayRate: number;
   rateSet: boolean;
   estimate: number;
+  /** 이 팀으로 입력된 노무비(외주 팀이면 외주비 포함) + 노무 정산에서 이 팀 몫 (D-81) */
+  entered: number;
+  /** 그중 공무 확인 대기 */
+  enteredPending: number;
 }
+
+/** 팀 이름 맞추기 — 앞뒤 공백·대소문자 무시 */
+export const teamKey = (t: string | undefined) => (t ?? "").trim().toLowerCase();
 
 export interface LaborSite {
   site: Site;
@@ -46,6 +53,10 @@ export interface LaborSite {
   staffDays: number;
   staffMinutes: number;
   noCheckout: number;
+  /** 팀을 정하지 않고 들어온 노무비 (D-81 — 어느 팀 몫인지 모름) */
+  untagged: number;
+  /** 출력에 없는 팀 이름으로 들어온 노무비·외주비 */
+  otherTeams: { team: string; amount: number }[];
   /** 노무 실행예산 · 누계 실제 노무비 (전체 기간) */
   laborBudget: number;
   laborToDate: number;
@@ -73,7 +84,7 @@ export function laborEstimate(db: DemoDB, site: Site, from: string, to: string):
   for (const c of crew) {
     const key = c.team.toLowerCase();
     const r = teamRate(db, c.team);
-    const row = byTeam.get(key) ?? { team: c.team, kind: c.kind, days: 0, personDays: 0, dayRate: r.rate, rateSet: r.set, estimate: 0 };
+    const row = byTeam.get(key) ?? { team: c.team, kind: c.kind, days: 0, personDays: 0, dayRate: r.rate, rateSet: r.set, estimate: 0, entered: 0, enteredPending: 0 };
     const ds = teamDays.get(key) ?? new Set<string>();
     ds.add(c.workDate);
     teamDays.set(key, ds);
@@ -89,6 +100,33 @@ export function laborEstimate(db: DemoDB, site: Site, from: string, to: string):
   const actual = inWindow.reduce((a, e) => a + e.amount, 0);
   const actualPending = inWindow.filter((e) => e.status === "pending").reduce((a, e) => a + e.amount, 0);
   const reportedManDays = Math.round(inWindow.reduce((a, e) => a + (e.qty?.manDays ?? 0), 0) * 10) / 10;
+  // 팀별 입력 (D-81) — 노무비는 팀이 붙은 것, 외주 팀은 그 팀 이름이 붙은 외주비까지. 노무 정산은 팀별로 나눈 금액을 그 팀에 더한다
+  const sub = db.costEntries.filter((e) => e.siteId === site.id && e.category === "subcontract" && (e.status === "active" || e.status === "pending") && e.date >= compareFrom && e.date <= to);
+  let untagged = 0;
+  const other = new Map<string, { team: string; amount: number }>();
+  const addTo = (team: string, amount: number, pending: boolean) => {
+    const row = byTeam.get(teamKey(team));
+    if (row) {
+      row.entered += amount;
+      if (pending) row.enteredPending += amount;
+    } else {
+      const o = other.get(teamKey(team)) ?? { team: team.trim(), amount: 0 };
+      o.amount += amount;
+      other.set(teamKey(team), o);
+    }
+  };
+  for (const e of inWindow) {
+    if (e.settle?.teams?.length) {
+      let rest = e.amount;
+      for (const t of e.settle.teams) {
+        addTo(t.team, t.amount, e.status === "pending");
+        rest -= t.amount;
+      }
+      if (rest > 0) untagged += rest;
+    } else if (e.team?.trim()) addTo(e.team, e.amount, e.status === "pending");
+    else untagged += e.amount;
+  }
+  for (const e of sub) if (e.team?.trim() && byTeam.get(teamKey(e.team))?.kind === "subcontract") addTo(e.team, e.amount, e.status === "pending");
   const att = (db.attendance ?? []).filter((r) => r.siteId === site.id && r.workDate >= from && r.workDate <= to);
   const staffDays = new Set(att.map((r) => `${r.userId}|${r.workDate}`)).size;
   const staffMinutes = att.reduce((a, r) => a + (minutesOf(r) ?? 0), 0);
@@ -104,7 +142,7 @@ export function laborEstimate(db: DemoDB, site: Site, from: string, to: string):
   for (const t of teams.filter((x) => !x.rateSet)) flags.push({ kind: "rate_missing", text: `${t.team} — 팀 단가가 없어 기본 일당 ${fmt(t.dayRate)}으로 계산` });
   if (noCheckout > 0) flags.push({ kind: "hours_uncertain", text: `직원 퇴근 누락 ${noCheckout}건 — 근무시간 합계가 실제보다 적을 수 있습니다` });
 
-  return { site, from, to, compareFrom, teams, estimate, actual, actualPending, reportedManDays, staffDays, staffMinutes, noCheckout, laborBudget, laborToDate, flags };
+  return { site, from, to, compareFrom, teams, estimate, actual, actualPending, reportedManDays, staffDays, staffMinutes, noCheckout, untagged, otherTeams: [...other.values()], laborBudget, laborToDate, flags };
 }
 
 
@@ -114,4 +152,45 @@ export function laborAttentionCount(db: DemoDB, from: string, to: string): numbe
     .filter((s) => s.status === "active")
     .map((s) => laborEstimate(db, s, from, to))
     .filter((l) => l.flags.some((f) => f.kind === "no_actual" || f.kind === "actual_over" || f.kind === "estimate_over" || f.kind === "no_crew")).length;
+}
+
+/**
+ * 현장의 팀 이름 목록 (D-81) — 작업 인원(출력)에 나온 팀을 최근 순으로. 노무비·외주비에 팀을 붙일 때 고르는 목록.
+ * 회사 팀 단가에만 있는 팀(extra)은 뒤에 붙인다 (본사 화면).
+ */
+export function siteTeams(db: Pick<DemoDB, "crewChecks">, siteId: string, extra: string[] = []): { team: string; kind?: CrewCheck["kind"] }[] {
+  const seen = new Map<string, { team: string; kind?: CrewCheck["kind"]; last: string }>();
+  for (const c of db.crewChecks ?? []) {
+    if (c.siteId !== siteId) continue;
+    const k = teamKey(c.team);
+    const cur = seen.get(k);
+    if (!cur || c.workDate > cur.last) seen.set(k, { team: c.team.trim(), kind: c.kind, last: c.workDate });
+  }
+  const list: { team: string; kind?: CrewCheck["kind"] }[] = [...seen.values()].sort((a, b) => b.last.localeCompare(a.last)).map(({ team, kind }) => ({ team, kind }));
+  for (const t of extra) if (t.trim() && !seen.has(teamKey(t))) {
+    seen.set(teamKey(t), { team: t.trim(), last: "" });
+    list.push({ team: t.trim() });
+  }
+  return list;
+}
+
+/** 메모에 팀 이름이 하나만 들어 있으면 그 팀 (D-81 · ‘창호1팀 주간 노무’) — 둘 이상이거나 없으면 모름 */
+export function guessTeam(note: string, teams: { team: string }[]): string | undefined {
+  const n = (note ?? "").toLowerCase();
+  const hits = teams.filter((t) => t.team.trim() && n.includes(t.team.trim().toLowerCase()));
+  // ‘창호1팀’과 ‘창호1팀장’처럼 겹치면 긴 이름 하나만 남긴다
+  const uniq = hits.filter((h) => !hits.some((o) => o !== h && o.team.length > h.team.length && o.team.toLowerCase().includes(h.team.toLowerCase())));
+  return uniq.length === 1 ? uniq[0].team.trim() : undefined;
+}
+
+/** 팀이 붙지 않은 노무비·외주비 중 메모로 팀을 알 수 있는 것 (D-81 · 이미 쌓인 자료에 한 번에 팀 붙이기) */
+export function teamGuesses(db: DemoDB, siteId: string, from?: string, to?: string): { entryId: string; team: string; amount: number; date: string; note: string; category: "labor" | "subcontract" }[] {
+  const teams = siteTeams(db, siteId);
+  if (!teams.length) return [];
+  return db.costEntries
+    .filter((e) => e.siteId === siteId && (e.category === "labor" || e.category === "subcontract") && !e.team?.trim() && !e.settle && (e.status === "active" || e.status === "pending") && (!from || e.date >= from) && (!to || e.date <= to))
+    .flatMap((e) => {
+      const t = guessTeam(e.note, teams);
+      return t ? [{ entryId: e.id, team: t, amount: e.amount, date: e.date, note: e.note, category: e.category as "labor" | "subcontract" }] : [];
+    });
 }

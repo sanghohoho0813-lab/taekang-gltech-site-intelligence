@@ -159,6 +159,15 @@ export interface CostLineInput {
   note?: string;
   /** 노무비를 공수 × 일당으로 입력한 경우 (금액 = 공수 × 일당) */
   qty?: { manDays: number; dayRate: number };
+  /** 어느 팀 몫인지 (D-81 · 노무비·외주비만) */
+  team?: string;
+}
+
+/** 팀 이름 정리 (D-81) — 노무비·외주비에만, 40자까지. 비우면 없음 */
+export function cleanTeam(category: CostCategory, team: unknown): string | undefined {
+  if (category !== "labor" && category !== "subcontract") return undefined;
+  const t = typeof team === "string" ? team.replace(/\s+/g, " ").trim().slice(0, 40) : "";
+  return t || undefined;
 }
 
 /** 현장 보고에 쓸 수 있는 날짜 범위 (오늘부터 며칠 전까지) */
@@ -276,6 +285,7 @@ export function submitFieldReport(db0: DemoDB, input: FieldReportInput, ctx: Ctx
       createdAt: at,
       status: pendingReview ? "pending" : "active",
       ...(c.qty ? { qty: { manDays: c.qty.manDays, dayRate: c.qty.dayRate } } : {}),
+      ...(cleanTeam(c.category, c.team) ? { team: cleanTeam(c.category, c.team) } : {}),
     };
     db.costEntries.push(entry);
     entryIds.push(entry.id);
@@ -451,7 +461,7 @@ export function voidReport(db0: DemoDB, reportId: string, ctx: Ctx) {
 export function editCostEntry(
   db0: DemoDB,
   entryId: string,
-  patch: { amount: number; category: CostCategory; note: string; forecastImpact?: Exclude<ForecastImpact, "baseline"> },
+  patch: { amount: number; category: CostCategory; note: string; forecastImpact?: Exclude<ForecastImpact, "baseline">; team?: string | null },
   ctx: Ctx,
 ) {
   const db = clone(db0);
@@ -463,12 +473,22 @@ export function editCostEntry(
   if (!COST_CATEGORIES.includes(patch.category)) throw new CommandError("비용 항목을 선택해주세요.");
   // 노무 정산 건은 노무비로만 — 항목을 바꾸면 ‘정산함’으로 남아 그 달 노무가 잠겼다 (D-79 버그 배시 m-2)
   if (e.settle && patch.category !== "labor") throw new CommandError("노무 정산 건은 항목을 바꿀 수 없습니다. 되돌린 뒤 다시 넣어 주세요.", "VALIDATION", { category: "노무 정산" });
+  // 팀별로 나눠 넣은 정산은 금액을 바꾸면 팀별 합이 어긋난다 (D-81)
+  if (e.settle?.teams?.length && patch.amount !== e.amount) throw new CommandError("팀별로 나눠 넣은 노무 정산은 금액을 바꿀 수 없습니다. 되돌린 뒤 다시 넣어 주세요.", "VALIDATION", { amount: "팀별 정산" });
   const before = siteFinancials(db0, e.siteId);
   e.editHistory = [...(e.editHistory ?? []), { at: nowIso(ctx), by: ctx.userId, before: { amount: e.amount, category: e.category, note: e.note } }];
   e.amount = patch.amount;
   e.category = patch.category;
   e.note = patch.note.trim() || e.note;
   if (patch.forecastImpact) e.forecastImpact = patch.forecastImpact;
+  // 팀 (D-81) — 보내면 바꾸고(null·빈 값이면 지움), 노무비·외주비가 아니게 되면 지운다
+  // 노무 정산 건은 팀을 정산 창에서만 정한다
+  if (e.settle) delete e.team;
+  else if (patch.team !== undefined) {
+    const t = cleanTeam(e.category, patch.team);
+    if (t) e.team = t;
+    else delete e.team;
+  } else if (e.team && !cleanTeam(e.category, e.team)) delete e.team;
   e.editedAt = nowIso(ctx);
   const after = siteFinancials(db, e.siteId);
   log(db, ctx, "cost_edit", `원가 수정 ${CATEGORY_LABEL[e.category]} → ${fmtMan(e.amount)} · 예상 총원가 ${fmtEok(before.eac)} → ${fmtEok(after.eac)}`, e.siteId, `/sites/${e.siteId}`);

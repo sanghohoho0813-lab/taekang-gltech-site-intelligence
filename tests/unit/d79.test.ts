@@ -248,14 +248,14 @@ describe("D-79 이달 원가 CSV", () => {
     const entryId = sent.db.costEntries.find((e) => e.amount === 3_300_000)!.id;
     const fixed = reviewCostEntry(sent.db, { entryId, decision: "approve", amount: 3_000_000, note: "세금계산서 기준" }, ctx("u-manager", new Date("2026-10-29T00:00:00Z"))).db;
     const rows = monthCostRows(fixed, "2026-10", "2026-11-14");
-    expect(rows[0]).toEqual(["발생일", "입력일", "현장", "항목", "금액(원)", "성격", "사유", "메모", "입력 경로", "입력한 사람", "상태", "공무 확인", "처음 금액(고치기 전)", "공무 메모·취소 사유"]);
-    const crane = rows.find((r) => r[7] === "크레인 대기")!;
+    expect(rows[0]).toEqual(["발생일", "입력일", "현장", "항목", "팀", "금액(원)", "성격", "사유", "메모", "입력 경로", "입력한 사람", "상태", "공무 확인", "처음 금액(고치기 전)", "공무 메모·취소 사유"]);
+    const crane = rows.find((r) => r[8] === "크레인 대기")!;
     expect(crane[1]).toBe("2026-10-28");
-    expect(crane[4]).toBe(3_000_000);
-    expect(crane[10]).toBe("확정");
-    expect(crane[12]).toBe(3_300_000);
-    expect(crane[13]).toBe("세금계산서 기준");
-    expect(String(crane[11])).toMatch(/^2026-10-29 /);
+    expect(crane[5]).toBe(3_000_000);
+    expect(crane[11]).toBe("확정");
+    expect(crane[13]).toBe(3_300_000);
+    expect(crane[14]).toBe("세금계산서 기준");
+    expect(String(crane[12])).toMatch(/^2026-10-29 /);
     // 다른 달 원가는 넣지 않는다
     expect(rows.slice(1).every((r) => String(r[0]).startsWith("2026-10"))).toBe(true);
     // 엑셀 수식 주입 방지 — 메모가 =로 시작해도 글자로

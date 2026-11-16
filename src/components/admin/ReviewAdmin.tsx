@@ -8,11 +8,13 @@ import { CATEGORY_LABEL, IMPACT_LABEL, REASON_LABEL } from "@/lib/domain/labels"
 import { fmtDateTime, fmtMan } from "@/lib/domain/format";
 import { run } from "@/lib/data/store";
 import { userLabel } from "@/lib/data/hooks";
-import { Badge, Button, Card, CardHeader, EmptyState, Field, Notice, inputCls } from "@/components/ui/primitives";
+import { Badge, Button, Card, CardHeader, EmptyState, Field, Notice, cx, inputCls } from "@/components/ui/primitives";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { MoneyField, toWon, wonText } from "./inputs";
 import { settledLaborFor } from "@/lib/domain/monthClose";
+import { guessTeam, siteTeams } from "@/lib/domain/labor";
+import { TeamInput } from "@/components/domain/TeamInput";
 import { fmtDate } from "@/lib/domain/format";
 
 export function ReviewAdmin({ db }: { db: DemoDB }) {
@@ -38,6 +40,7 @@ export function ReviewAdmin({ db }: { db: DemoDB }) {
                 <div className="min-w-[16rem] flex-1">
                   <p className="font-bold">
                     {db.sites.find((s) => s.id === e.siteId)?.shortName} · {CATEGORY_LABEL[e.category]} <span className="num">{fmtMan(e.amount)}</span>
+                    {(e.category === "labor" || e.category === "subcontract") && <span className={cx("ml-1.5 text-[0.78rem] font-semibold", e.team ? "text-ink-2" : "text-warn")}>{e.team ? `· ${e.team}` : "· 팀 미지정"}</span>}
                     {e.qty && <span className="ml-1.5 text-[0.78rem] font-medium text-ink-3 num">(공수 {e.qty.manDays} × 일당 {fmtMan(e.qty.dayRate)})</span>}
                   </p>
                   <p className="text-[0.8rem] text-ink-2">
@@ -100,6 +103,9 @@ function SettledHint({ db, e }: { db: DemoDB; e: CostEntry }) {
 function ReviewModal({ db, entry, decision, onClose }: { db: DemoDB; entry: CostEntry; decision: "approve" | "reject"; onClose: () => void }) {
   const toast = useToast();
   const [amount, setAmount] = useState(wonText(entry.amount));
+  // 노무비·외주비는 팀을 붙여 승인 (D-81) — 이미 있으면 그대로, 없으면 메모에 적힌 팀 이름을 미리 채운다
+  const teamable = entry.category === "labor" || entry.category === "subcontract";
+  const [team, setTeam] = useState(() => entry.team ?? (teamable ? (guessTeam(entry.note, siteTeams(db, entry.siteId)) ?? "") : ""));
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -109,7 +115,7 @@ function ReviewModal({ db, entry, decision, onClose }: { db: DemoDB; entry: Cost
     setBusy(true);
     try {
       const n = toWon(amount);
-      await run("reviewCostEntry", { entryId: entry.id, decision, amount: decision === "approve" && Number.isFinite(n) ? n : undefined, note });
+      await run("reviewCostEntry", { entryId: entry.id, decision, amount: decision === "approve" && Number.isFinite(n) ? n : undefined, note, ...(decision === "approve" && teamable ? { team: team.trim() || null } : {}) });
       toast.push({ tone: "ok", title: decision === "approve" ? "승인 — 손익에 반영했습니다" : "반려했습니다", desc: `${site?.shortName} ${CATEGORY_LABEL[entry.category]}` });
       onClose();
     } catch (e) {
@@ -138,6 +144,7 @@ function ReviewModal({ db, entry, decision, onClose }: { db: DemoDB; entry: Cost
       <div className="space-y-3">
         {decision === "approve" && <SettledHint db={db} e={entry} />}
         {decision === "approve" && <MoneyField id="rv-amt" label="확정 금액 (견적·세금계산서 기준, 원)" value={amount} onChange={setAmount} hint="현장 입력 금액과 다르면 고쳐서 승인 — 수정 이력이 남습니다" />}
+        {decision === "approve" && teamable && <TeamInput db={db} siteId={entry.siteId} id="rv-team" value={team} onChange={setTeam} hint={!entry.team && team ? "메모에 적힌 팀 이름으로 채웠습니다 — 다르면 고치세요" : undefined} />}
         <Field label={decision === "approve" ? "메모 (선택)" : "반려 사유"} htmlFor="rv-note" required={decision === "reject"} error={error ?? undefined}>
           <input id="rv-note" className={inputCls} value={note} maxLength={200} onChange={(e) => setNote(e.target.value)} placeholder={decision === "reject" ? "예) 원청 부담분 — 우리 원가 아님" : "예) ○○유리 견적서 기준"} />
         </Field>

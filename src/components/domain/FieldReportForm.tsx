@@ -8,6 +8,7 @@ import { useMe } from "@/lib/data/hooks";
 import { IS_LIVE } from "@/lib/mode";
 import { CommandError, submitFieldReport, type CostLineInput, type FieldReportResult } from "@/lib/data/commands";
 import { DEMO_SCENARIO } from "@/lib/data/seed";
+import { siteTeams } from "@/lib/domain/labor";
 import { CATEGORY_LABEL, COST_CATEGORIES, IMPACT_HELP, IMPACT_LABEL, REASON_LABEL } from "@/lib/domain/labels";
 import type { CostCategory, CostReason } from "@/lib/domain/types";
 import { fmtEok, fmtMan, fmtPct, todayIso } from "@/lib/domain/format";
@@ -26,6 +27,8 @@ interface CostRow {
   byQty?: boolean;
   manDays?: string;
   dayRate?: string;
+  /** 어느 팀 몫 (D-81 · 노무비·외주비) */
+  team?: string;
 }
 
 /** 공수 × 일당 → 원 (공수는 0.5 단위까지) */
@@ -102,11 +105,14 @@ export function FieldReportForm({ fixedSiteId, onClose, inSheet = false }: { fix
     }
   }, [siteId]);
 
-  const costLines: CostLineInput[] = costs.map((c) =>
-    c.byQty && c.category === "labor"
-      ? { category: c.category, amount: qtyAmount(c), forecastImpact: c.impact, note: c.note, qty: { manDays: Number((c.manDays ?? "").replace(/[^\d.]/g, "")), dayRate: parseAmount(c.dayRate ?? "") } }
-      : { category: c.category, amount: parseAmount(c.amountText), forecastImpact: c.impact, note: c.note },
-  );
+  const costLines: CostLineInput[] = costs.map((c) => {
+    const team = (c.category === "labor" || c.category === "subcontract") && c.team?.trim() ? { team: c.team.trim() } : {};
+    return c.byQty && c.category === "labor"
+      ? { category: c.category, amount: qtyAmount(c), forecastImpact: c.impact, note: c.note, qty: { manDays: Number((c.manDays ?? "").replace(/[^\d.]/g, "")), dayRate: parseAmount(c.dayRate ?? "") }, ...team }
+      : { category: c.category, amount: parseAmount(c.amountText), forecastImpact: c.impact, note: c.note, ...team };
+  });
+  // 이 현장 출력에 나온 팀 + 회사 팀 단가에 있는 팀 (D-81)
+  const teamOptions = db && siteId ? siteTeams(db, siteId, (db.settings?.teamRates ?? []).map((t) => t.team)) : [];
   const progressPct = progressText.trim() === "" ? undefined : Math.max(0, Math.min(100, Math.round(Number(progressText))));
 
   const input = {
@@ -458,6 +464,27 @@ export function FieldReportForm({ fixedSiteId, onClose, inSheet = false }: { fix
                     </Field>
                   )}
                 </div>
+                {(c.category === "labor" || c.category === "subcontract") && (
+                  <div className="mt-2">
+                    <Field label="팀 (선택)" htmlFor={`c-team-${i}`} hint="작업 인원(출력)의 팀 이름과 같게 — 월 마감 노무 정산이 팀별로 맞춰집니다">
+                      <input
+                        id={`c-team-${i}`}
+                        list={`c-team-list-${i}`}
+                        value={c.team ?? ""}
+                        maxLength={40}
+                        onChange={(e) => setCosts((x) => x.map((r) => (r.key === c.key ? { ...r, team: e.target.value } : r)))}
+                        className={inputCls}
+                        placeholder={teamOptions[0]?.team ? `예) ${teamOptions[0].team}` : "예) 창호1팀"}
+                        data-testid={`cost-team-${i}`}
+                      />
+                      <datalist id={`c-team-list-${i}`}>
+                        {teamOptions.map((t) => (
+                          <option key={t.team} value={t.team} />
+                        ))}
+                      </datalist>
+                    </Field>
+                  </div>
+                )}
                 {c.category === "labor" && (
                   <label className="mt-1.5 inline-flex items-center gap-2 text-[0.8rem] font-semibold text-ink-2">
                     <input

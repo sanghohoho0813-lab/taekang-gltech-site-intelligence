@@ -41,6 +41,7 @@ import { geoText, judgeGeo, type GeoSample } from "@/lib/domain/geo";
 import { locateOnce } from "@/lib/geo/client";
 import { todayIso } from "@/lib/domain/format";
 import { shiftDate } from "@/lib/domain/attendance";
+import { siteTeams } from "@/lib/domain/labor";
 import { uid } from "@/lib/domain/ids";
 import { cx } from "@/components/ui/primitives";
 import { BigNumber, Chip, Choice, EasyBar, EasyPageHead, EasyQuestion, SectionBar, Stepper, VoiceHint, easyTextareaCls, AtBottom, NoSite, useWizardActive, useStepHistory } from "./ui";
@@ -63,6 +64,8 @@ interface EasyCost {
   /** 1인 하루 일당 (원) */
   dayRate: number;
   impact: Impact | "";
+  /** 어느 팀 몫 (D-81 · 인건비·외주비) — 비우면 모름·여러 팀 */
+  team?: string;
 }
 
 interface Draft {
@@ -238,6 +241,8 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
   const settings = db.settings;
   const review = (settings?.costApproval ?? "immediate") === "review";
   const editing = d.costs.find((c) => c.key === editingKey) ?? null;
+  // 이 현장 작업 인원(출력)에 나온 팀 — 노무비·외주비를 어느 팀 몫인지 고를 때 (D-81)
+  const teamsHere = site ? siteTeams(db, site.id) : [];
   // 고치던 비용을 뺀 뒤 '이전'으로 돌아온 경우 → 비용 목록을 보여준다
   const step: StepId = (rawStep === "cost-amt" || rawStep === "cost-kind") && !editing ? "cost-list" : rawStep;
   const set = (patch: Partial<Draft>) => setD((x) => ({ ...x, ...patch }));
@@ -294,6 +299,7 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
       forecastImpact: c.impact === "within_forecast" ? "within_forecast" : "additional",
       note: c.category === "labor" && c.byPeople ? `${c.people}명 × ${c.days}일 (현장 보고)` : "현장 보고",
       ...(c.category === "labor" && c.byPeople ? { qty: { manDays: Math.round(c.people * c.days * 100) / 100, dayRate: c.dayRate } } : {}),
+      ...((c.category === "labor" || c.category === "subcontract") && c.team ? { team: c.team } : {}),
     }));
   const costSum = costLines.reduce((s, c) => s + c.amount, 0);
   // 오늘 작업한 공정 단계 (작업 고르기에서 누른 이름과 같은 단계)
@@ -834,6 +840,22 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
       const bigAmount = overCap || (!(labor && editing.byPeople) && won >= 10_000_000 && bigOk !== editing.key + ":" + editing.amountMan);
       body = (
         <EasyQuestion kicker={EASY_CATEGORY[editing.category].label} title={labor && editing.byPeople ? "몇 명이 며칠 일했나요?" : "대략 얼마 들었나요?"} help={labor && editing.byPeople ? "추가로 투입된 인원만 넣으세요." : "만 원 단위로 넣어요. 아래 버튼을 눌러 더해도 돼요."} testId="easy-cost-amt">
+          {/* 어느 팀 몫인지 (D-81) — 이 현장 작업 인원(출력)에 나온 팀만, 모르면 안 골라도 된다 */}
+          {(labor || editing.category === "subcontract") && teamsHere.length > 0 && (
+            <div className="space-y-2" data-testid="cost-team">
+              <p className="text-[1.1rem] font-bold">어느 팀이에요?</p>
+              <div className="grid grid-cols-2 gap-2">
+                {teamsHere.slice(0, 5).map((t) => (
+                  <Chip key={t.team} selected={editing.team === t.team} onClick={() => setCost({ team: editing.team === t.team ? undefined : t.team })} testId="cost-team-chip">
+                    {t.team}
+                  </Chip>
+                ))}
+                <Chip selected={!editing.team} onClick={() => setCost({ team: undefined })} testId="cost-team-none">
+                  모름 · 여러 팀
+                </Chip>
+              </div>
+            </div>
+          )}
           {labor && (
             <div className="grid grid-cols-2 gap-2">
               <Chip selected={editing.byPeople} onClick={() => setCost({ byPeople: true })} testId="labor-by-people">
@@ -988,6 +1010,7 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
                 <span className="min-w-0 flex-1">
                   <span className="block text-[1.15rem] font-bold">
                     {EASY_CATEGORY[c.category].label} <span className="num">{easyWon(costWon(c))}</span>
+                    {c.team && <span className="ml-1.5 text-[1rem] font-semibold text-ink-2">· {c.team}</span>}
                   </span>
                   <span className="block text-[0.98rem] text-ink-2">{c.impact === "within_forecast" ? "예산 안에서 쓴 돈" : c.impact === "unknown" ? "예산 여부 모름 (본사 확인)" : "예산에 없던 돈"}</span>
                 </span>
@@ -1155,6 +1178,7 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
                     {d.costs.map((c) => (
                       <span key={c.key} className="block">
                         {EASY_CATEGORY[c.category].label} <b className="num">{easyWon(costWon(c))}</b>
+                        {c.team && <span className="text-[0.98rem] text-ink-2"> · {c.team}</span>}
                         <span className="text-[0.98rem] text-ink-2"> · {c.impact === "within_forecast" ? "예산 안" : c.impact === "unknown" ? "예산 여부 모름" : "예산에 없던 돈"}</span>
                       </span>
                     ))}
