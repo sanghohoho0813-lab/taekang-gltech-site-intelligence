@@ -368,7 +368,10 @@ export function CloseBoard() {
               )}
             </li>
           ))}
-          <li className="px-5 py-3 text-[0.86rem]">
+          <li className="flex flex-wrap gap-2 px-5 py-3 text-[0.86rem]">
+            <Link href={`/report?month=${chosen}`} className="press rounded-lg bg-surface-2 px-2.5 py-1.5 font-semibold text-theme-ink" data-testid="close-doc-ceo-month">
+              대표 보고서 · {Number(chosen.slice(5))}월
+            </Link>
             <Link href="/report" className="press rounded-lg bg-surface-2 px-2.5 py-1.5 font-semibold text-theme-ink">
               대표 보고서 (현장 등록 이후 전체)
             </Link>

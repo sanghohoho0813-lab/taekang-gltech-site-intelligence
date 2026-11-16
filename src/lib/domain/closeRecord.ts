@@ -137,7 +137,11 @@ export function compareSnapshots(db: DemoDB, month: string, before: MonthCloseSn
     const href = (x: Key) => (k === "costs" ? `/sites/${x.siteId}?tab=cost` : "/finance");
     const what = (x: Key) => `${site(x.siteId)} ${k === "costs" ? (CATEGORY_LABEL[x.category as keyof typeof CATEGORY_LABEL] ?? "원가") : word} ${fmtMan(x.amount)} (${md(x.date)}${k !== "costs" && x.date < from ? " · 월말 미수에 영향" : ""})`;
     const at = (id: string) => {
-      if (k !== "costs") return undefined;
+      // 기성·입금은 넣은 시각 (D-83 · 그 전 기록에는 없음)
+      if (k !== "costs") {
+        const x = k === "billings" ? db.billings.find((b) => b.id === id) : db.payments.find((p) => p.id === id);
+        return x?.createdAt && x.createdAt > since ? x.createdAt : undefined;
+      }
       const e = db.costEntries.find((c) => c.id === id);
       return e ? [e.createdAt, e.reviewedAt, e.editedAt, e.voidedAt].filter((t): t is string => !!t && t > since).sort().at(-1) : undefined;
     };

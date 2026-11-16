@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { FilePlus2, FileSignature, BadgeCheck, Ban, Send, TrendingUp, Wallet } from "lucide-react";
-import { useMe, useFinancials } from "@/lib/data/hooks";
+import { useMe, useFinancials, userLabel } from "@/lib/data/hooks";
 import { PageBody, PageHeader } from "@/components/shell/AppShell";
 import { Badge, Button, Card, CardHeader, EmptyState, Field, Notice, PageSkeleton, cx, inputCls } from "@/components/ui/primitives";
 import { Modal } from "@/components/ui/Modal";
@@ -13,7 +13,7 @@ import { run } from "@/lib/data/store";
 import { siteFinancials } from "@/lib/domain/calc";
 import { receivableAging } from "@/lib/domain/risk";
 import { CATEGORY_LABEL, COST_CATEGORIES, CO_STATUS_LABEL } from "@/lib/domain/labels";
-import { fmtDate, fmtEok, fmtMan, fmtPct, todayIso } from "@/lib/domain/format";
+import { fmtDate, fmtDateTime, fmtEok, fmtMan, fmtPct, todayIso } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
 import type { ChangeOrder, CostCategory, DemoDB } from "@/lib/domain/types";
 import { IS_LIVE } from "@/lib/mode";
@@ -188,7 +188,8 @@ export default function FinancePage() {
             {[...db.billings].sort((a, b) => b.billedDate.localeCompare(a.billedDate)).map((b) => (
               <li key={b.id} className="flex justify-between py-2">
                 <span>
-                  <b>{db.sites.find((s) => s.id === b.siteId)?.shortName}</b> {b.round}차 <span className="text-ink-3">{fmtDate(b.billedDate)}</span>
+                  <b>{db.sites.find((s) => s.id === b.siteId)?.shortName}</b> {b.round ? `${b.round}차` : "이관"} <span className="text-ink-3">{fmtDate(b.billedDate)}</span>
+                  {b.createdAt && <span className="block text-[0.72rem] text-ink-3">입력 {fmtDateTime(b.createdAt)} {userLabel(db, b.createdBy)}</span>}
                 </span>
                 <b className="num">{fmtMan(b.amount)}</b>
               </li>
@@ -203,6 +204,7 @@ export default function FinancePage() {
               <li key={p.id} className="flex justify-between py-2">
                 <span>
                   <b>{db.sites.find((s) => s.id === p.siteId)?.shortName}</b> <span className="text-ink-3">{fmtDate(p.receivedDate)}</span>
+                  {p.createdAt && <span className="block text-[0.72rem] text-ink-3">입력 {fmtDateTime(p.createdAt)} {userLabel(db, p.createdBy)}</span>}
                 </span>
                 <b className="num">{fmtMan(p.amount)}</b>
               </li>

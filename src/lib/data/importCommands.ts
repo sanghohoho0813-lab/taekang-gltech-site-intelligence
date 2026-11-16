@@ -50,8 +50,8 @@ export function importData(db0: DemoDB, input: ImportDataInput, ctx: Ctx) {
   if (plan.kind === "billing") {
     for (const r of plan.rows as BillingRow[]) {
       sites.add(r.siteId);
-      if (r.kind === "billing") db.billings.push({ id: uid("bill"), siteId: r.siteId, round: 0, amount: r.amount, billedDate: r.date, status: "confirmed", importBatchId: batchId });
-      else db.payments.push({ id: uid("pay"), siteId: r.siteId, amount: r.amount, receivedDate: r.date, importBatchId: batchId });
+      if (r.kind === "billing") db.billings.push({ id: uid("bill"), siteId: r.siteId, round: 0, amount: r.amount, billedDate: r.date, status: "confirmed", importBatchId: batchId, createdAt: nowIso(ctx), createdBy: ctx.userId });
+      else db.payments.push({ id: uid("pay"), siteId: r.siteId, amount: r.amount, receivedDate: r.date, importBatchId: batchId, createdAt: nowIso(ctx), createdBy: ctx.userId });
     }
     // 차수는 청구일 순서로 다시 매긴다 (예전 기성을 나중에 넣어도 1차·2차가 맞도록)
     renumberRounds(db, sites);

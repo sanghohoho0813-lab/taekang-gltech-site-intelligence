@@ -144,6 +144,15 @@ export function monthBounds(month: string): { from: string; to: string } {
   const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
   return { from: `${month}-01`, to: `${month}-${pad(last)}` };
 }
+/** 고를 수 있는 달 — 이번 달부터 가장 이른 현장 착공 달까지 (최대 24개월) · 월 마감·대표 보고서 */
+export function monthOptions(db: Pick<DemoDB, "sites">, today: string): string[] {
+  if (!db.sites.length) return [today.slice(0, 7)];
+  const first = db.sites.map((s) => s.startDate).sort()[0].slice(0, 7);
+  const out: string[] = [];
+  for (let m = today.slice(0, 7); m >= first && out.length < 24; m = previousMonth(`${m}-01`)) out.push(m);
+  return out;
+}
+
 /** 지난달 (YYYY-MM) */
 export function previousMonth(today: string): string {
   const [y, m] = today.split("-").map(Number);

@@ -579,6 +579,9 @@ export interface ProgressBilling {
   status: "confirmed" | "draft";
   /** 자료 가져오기 묶음 (가져오기 취소용) */
   importBatchId?: string;
+  /** 넣은 시각·사람 (D-83 — 마감 뒤 바뀐 것·기성 이력에 ‘언제·누가’) · 그 전 기록에는 없음 */
+  createdAt?: string;
+  createdBy?: string;
 }
 
 export interface PaymentReceived {
@@ -589,6 +592,9 @@ export interface PaymentReceived {
   receivedDate: string;
   /** 자료 가져오기 묶음 (가져오기 취소용) */
   importBatchId?: string;
+  /** 넣은 시각·사람 (D-83) · 그 전 기록에는 없음 */
+  createdAt?: string;
+  createdBy?: string;
 }
 
 export type PartnerRequestStatus = "received" | "reviewing" | "answered";

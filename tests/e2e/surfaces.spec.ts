@@ -680,3 +680,37 @@ test("합계 카드 = 아래 표 (D-61): 기성·수금 합계는 현장별 표�
   await page.getByTestId("att-yesterday").click();
   await expect(page.getByTestId("att-stat-missing")).toContainText("오늘 날짜에서만 셉니다");
 });
+
+test("대표 보고서 달별 보기 (D-83): 누계 ↔ 지난달 · 마감 상태 · 이익을 바꾼 일 합 = 요약 · 월 마감에서 바로 가기", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await freshStart(page);
+  await page.goto("/report");
+  await expect(page.getByTestId("report-summary")).toBeVisible();
+  // 지난달 (한국 날짜)
+  const prev = await page.evaluate(() => {
+    const t = new Date(Date.now() + 9 * 3600_000);
+    const y = t.getUTCFullYear();
+    const m = t.getUTCMonth(); // 0-based → 지난달 번호
+    return m === 0 ? `${y - 1}-12` : `${y}-${String(m).padStart(2, "0")}`;
+  });
+  await page.getByTestId("report-month").selectOption(prev);
+  await expect(page).toHaveURL(new RegExp(`/report\\?month=${prev}$`));
+  await expect(page.getByTestId("report-month-summary")).toBeVisible();
+  await expect(page.getByTestId("report-month-close")).toHaveAttribute("data-state", /open|closed|confirmed/);
+  // 이익을 바꾼 일 합계 = 요약의 ‘이달 예상이익 변화’
+  const events = page.getByTestId("report-month-events");
+  if ((await events.locator("li").count()) > 1) {
+    const total = (await events.locator("li").last().locator(".num").innerText()).trim();
+    await expect(page.getByTestId("rm-profit")).toContainText(total);
+  }
+  // 주소로 바로 열어도 같은 달 · 누계로 돌아가기
+  await page.goto(`/report?month=${prev}`);
+  await expect(page.getByTestId("report-month")).toHaveValue(prev);
+  await page.getByTestId("report-month").selectOption("");
+  await expect(page.getByTestId("report-summary")).toBeVisible();
+  // 월 마감에서 그 달 대표 보고서로
+  await page.goto(`/close?month=${prev}`);
+  await page.getByTestId("close-doc-ceo-month").click();
+  await expect(page).toHaveURL(new RegExp(`/report\\?month=${prev}$`));
+  await expect(page.getByTestId("report-month-summary")).toBeVisible();
+});

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Printer, ArrowRight } from "lucide-react";
 import { useMe, useFinancials, usePortfolio, useSignals, userLabel } from "@/lib/data/hooks";
 import { PageBody, PageHeader } from "@/components/shell/AppShell";
@@ -12,11 +12,24 @@ import { entryEacImpact, simulateApprovedClaims } from "@/lib/domain/calc";
 import { ACTION_STATUS_LABEL, CATEGORY_LABEL, CO_STATUS_LABEL, IMPACT_LABEL, REASON_LABEL, RULE_LABEL } from "@/lib/domain/labels";
 import { fmtDate, fmtDateTime, fmtEok, fmtMan, fmtPct, fmtPp } from "@/lib/domain/format";
 import { receivableAging } from "@/lib/domain/risk";
-import { profitEvents } from "@/lib/domain/monthClose";
+import { monthOptions, profitEvents } from "@/lib/domain/monthClose";
+import { MonthlyReport } from "@/components/admin/MonthlyReport";
+import { todayIso } from "@/lib/domain/format";
+import { inputCls } from "@/components/ui/primitives";
 import { IS_LIVE, BASE_LABEL } from "@/lib/mode";
 
 export default function ReportPage() {
   const { db } = useMe();
+  // 달별 보기 (D-83) — ?month=YYYY-MM 이면 그 달 한 장, 아니면 지금까지 누계
+  const [month, setMonth] = useState("");
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get("month");
+    if (q && /^\d{4}-(0[1-9]|1[0-2])$/.test(q)) setMonth(q);
+  }, []);
+  const pickMonth = (m: string) => {
+    setMonth(m);
+    window.history.replaceState(null, "", m ? `/report?month=${m}` : "/report");
+  };
   const fin = useFinancials(db);
   const total = usePortfolio(db);
   const signals = useSignals(db);
@@ -30,6 +43,9 @@ export default function ReportPage() {
   }, [db]);
 
   if (!db || !total || !base) return <PageSkeleton />;
+  const today = todayIso();
+  const months = monthOptions(db, today);
+  if (month) return <MonthlyReport db={db} month={month} months={months.includes(month) ? months : [month, ...months]} today={today} onMonth={pickMonth} />;
 
   const sessionEntries = db.costEntries.filter((e) => e.source !== "SEED").sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const sessionReports = db.reports.filter((r) => !r.id.startsWith("rpt-seed") && !r.importBatchId).slice(0, 10);
@@ -79,9 +95,22 @@ export default function ReportPage() {
         title="대표 보고서 · 현장 수익 현황"
         desc={IS_LIVE ? "모든 수치는 저장된 원가·계약·기성 데이터에서 자동 계산됩니다. 기준 = 각 현장 등록 시점." : "모든 수치는 저장된 원가·계약·기성 데이터에서 자동 계산됩니다. 기준 = 데모 초기 상태 (가상 시연 데이터 · 실제 실적 아님)."}
         right={
-          <Button icon={<Printer size={17} />} onClick={() => window.print()} className="no-print">
-            인쇄·PDF
-          </Button>
+          <div className="no-print flex flex-wrap items-center gap-2">
+            <label className="inline-flex items-center gap-1.5 text-[0.84rem] font-semibold text-ink-2">
+              보기
+              <select className={cx(inputCls, "h-10 w-auto py-1")} value="" onChange={(e) => pickMonth(e.target.value)} data-testid="report-month">
+                <option value="">누계 (지금)</option>
+                {months.map((m) => (
+                  <option key={m} value={m}>
+                    {m.slice(0, 4)}년 {Number(m.slice(5))}월{m === today.slice(0, 7) ? " (진행 중)" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <Button icon={<Printer size={17} />} onClick={() => window.print()}>
+              인쇄·PDF
+            </Button>
+          </div>
         }
       />
 
