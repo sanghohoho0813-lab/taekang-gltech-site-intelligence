@@ -706,8 +706,28 @@ test("대표 보고서 달별 보기 (D-83): 누계 ↔ 지난달 · 마감 상�
   // 주소로 바로 열어도 같은 달 · 누계로 돌아가기
   await page.goto(`/report?month=${prev}`);
   await expect(page.getByTestId("report-month")).toHaveValue(prev);
+  await expect(page.getByTestId("report-month-headline")).toContainText("대표가 정할 일");
+  await expect(page.getByTestId("report-month-todos")).toBeVisible();
+  await expect(page.getByTestId("rm-outstanding-why")).toContainText("지난달 말 미수");
   await page.getByTestId("report-month").selectOption("");
   await expect(page.getByTestId("report-summary")).toBeVisible();
+  // 뒤로 가기 — 보던 달로 돌아간다 (주소를 따른다)
+  await page.goBack();
+  await expect(page.getByTestId("report-month")).toHaveValue(prev);
+  await expect(page.getByTestId("report-month-summary")).toBeVisible();
+  // 잘못된 달 — 알리고 누계
+  await page.goto("/report?month=2026-13");
+  await expect(page.getByTestId("report-bad-month")).toBeVisible();
+  await expect(page.getByTestId("report-summary")).toBeVisible();
+  await page.goto("/close?month=2026-13");
+  await expect(page.getByTestId("close-month")).toBeVisible();
+  // 휴대폰 — 현장별은 카드 (가로 표 대신)
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/report?month=${prev}`);
+  await expect(page.getByTestId("report-month-summary")).toBeVisible();
+  if ((await page.getByTestId("rm-site-cards").locator("li").count()) > 0) await expect(page.getByTestId("rm-site-cards")).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+  await page.setViewportSize({ width: 1440, height: 900 });
   // 월 마감에서 그 달 대표 보고서로
   await page.goto(`/close?month=${prev}`);
   await page.getByTestId("close-doc-ceo-month").click();

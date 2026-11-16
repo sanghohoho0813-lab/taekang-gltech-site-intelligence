@@ -200,25 +200,36 @@ function SiteTable({ rec, open }: { rec: MonthCloseRecord; open: boolean }) {
 }
 
 /** 마감 때 남긴 일 — 지금은 해결됐는지, 새로 생긴 일 (D-82 대표 점검) */
+/** 숫자(건수·금액·날짜)만 빼고 비교 — ‘확인 대기 3건’이 ‘2건’이 되면 해결이 아니라 바뀜 (D-83 점검) */
+const shape = (t: string) => t.replace(/[\d,.]+/g, "#");
 function LeftItems({ rec, r, open }: { rec: MonthCloseRecord; r: MonthCloseReport; open: boolean }) {
   const now = new Set(r.items.map((i) => i.text));
+  const nowShape = new Set(r.items.map((i) => shape(i.text)));
   const left = rec.snapshot.openItems;
-  const done = left.filter((t) => !now.has(t)).length;
-  const fresh = r.items.filter((i) => !left.includes(i.text)).length;
+  const leftShape = new Set(left.map(shape));
+  const state = (t: string): "open" | "changed" | "done" => (now.has(t) ? "open" : nowShape.has(shape(t)) ? "changed" : "done");
+  const done = left.filter((t) => state(t) === "done").length;
+  const changed = left.filter((t) => state(t) === "changed").length;
+  const fresh = r.items.filter((i) => !leftShape.has(shape(i.text))).length;
   return (
     <details className="rounded-xl bg-surface-2 px-3.5 py-2.5 text-[0.84rem]" open={open} data-testid="close-left-items">
       <summary className="cursor-pointer font-semibold">
-        마감 때 남긴 일 {left.length}건{done ? ` · 그 뒤 해결·바뀜 ${done}건` : ""}
+        마감 때 남긴 일 {left.length}건{done ? ` · 그 뒤 해결 ${done}건` : ""}
+        {changed ? ` · 숫자 바뀜 ${changed}건` : ""}
         {fresh ? ` · 새로 생긴 일 ${fresh}건 (아래 ‘남은 일’)` : ""}
       </summary>
       <ul className="mt-1.5 space-y-0.5 text-ink-2">
-        {left.map((t, i) => (
-          <li key={i} className={cx("flex gap-1.5", !now.has(t) && "text-ink-3")}>
-            <span aria-hidden>{now.has(t) ? "•" : "✓"}</span>
-            <span className={cx(!now.has(t) && "line-through")}>{t}</span>
-            {!now.has(t) && <span className="shrink-0 text-[0.74rem] font-semibold text-ok">해결·바뀜</span>}
-          </li>
-        ))}
+        {left.map((t, i) => {
+          const st = state(t);
+          return (
+            <li key={i} className={cx("flex gap-1.5", st === "done" && "text-ink-3")} data-state={st}>
+              <span aria-hidden>{st === "done" ? "✓" : "•"}</span>
+              <span className={cx(st === "done" && "line-through")}>{t}</span>
+              {st === "done" && <span className="shrink-0 text-[0.74rem] font-semibold text-ok">해결</span>}
+              {st === "changed" && <span className="shrink-0 text-[0.74rem] font-semibold text-warn">숫자 바뀜</span>}
+            </li>
+          );
+        })}
       </ul>
     </details>
   );

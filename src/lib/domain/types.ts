@@ -353,6 +353,11 @@ export interface CostEntry {
   voidReason?: string;
   editedAt?: string;
   editHistory?: { at: string; by: string; before: { amount: number; category: CostCategory; note: string; team?: string; date?: string } }[];
+  /**
+   * 잔여예상을 다시 잡기 전에 이 집행이 잔여예상을 넘었던 금액 (D-83 버그 배시) — 재추정 뒤에는 지금 잔여예상 기준으로 0이 되어
+   * ‘이익을 바꾼 일’에서 사라지고 합이 실제 변화와 어긋나던 문제. 재추정 때 그대로 남겨 둔다 (예상 총원가 계산에는 쓰지 않음)
+   */
+  frozenOver?: number;
   /** 자료 가져오기 묶음 (가져오기 취소용) */
   importBatchId?: string;
   /** 월 마감 노무 정산 (D-79) — 출력 인원 × 팀 단가 추정과 입력된 노무비의 차액을 본사가 한 번에 넣은 것 · teams: 팀별로 나눈 금액 (D-81) */
@@ -377,7 +382,7 @@ export interface ForecastChange {
 /** 월 마감 기록 (D-82) — 공무가 닫을 때의 숫자를 남기고, 대표가 확인한다. 데이터를 잠그지는 않는다 (마감 뒤 바뀐 것은 따로 보여 줌) */
 export interface MonthCloseSnapshot {
   totals: { billed: number; received: number; outstandingAtEnd: number; costTotal: number; pending: number };
-  sites: { siteId: string; name: string; billed: number; received: number; outstandingAtEnd: number; costTotal: number; pending: number; laborEstimate: number; laborCompared: number; expectedProfit: number }[];
+  sites: { siteId: string; name: string; billed: number; received: number; outstandingAtEnd: number; costTotal: number; pending: number; laborEstimate: number; laborCompared: number; expectedProfit: number; /** 이달 예상이익 변화 (이익을 바꾼 일의 합 · D-83) */ profitNet?: number }[];
   people: { userId: string; name: string; days: number; minutes: number }[];
   /** 마감할 때 남겨 둔 ‘닫기 전에 볼 것’ */
   openItems: string[];

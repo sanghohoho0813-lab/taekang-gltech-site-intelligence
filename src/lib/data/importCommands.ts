@@ -205,7 +205,8 @@ export function importData(db0: DemoDB, input: ImportDataInput, ctx: Ctx) {
   return { db, result: { batchId, added: plan.rows.length, skipped: plan.duplicates.length, unchanged, siteIds: [...sites], rebased } };
 }
 
-function renumberRounds(db: DemoDB, siteIds: Iterable<string>) {
+/** 현장 기성 차수를 날짜 순서로 다시 매긴다 (가져오기·직접 등록 모두 · D-83 버그 배시) */
+export function renumberRounds(db: DemoDB, siteIds: Iterable<string>) {
   for (const id of siteIds) {
     db.billings
       .filter((b) => b.siteId === id)

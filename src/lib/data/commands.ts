@@ -1011,6 +1011,11 @@ export function addBilling(db0: DemoDB, input: { siteId: string; amount: number;
   claimKey(db, input.idempotencyKey);
   const round = db.billings.filter((b) => b.siteId === input.siteId).length + 1;
   db.billings.push({ id: uid("bill"), siteId: input.siteId, round, amount: input.amount, billedDate: input.billedDate, status: "confirmed", createdAt: nowIso(ctx), createdBy: ctx.userId });
+  // 차수는 날짜 순서로 (지난 날짜로 넣으면 ‘3차 9/28’이 ‘1차 9/30’보다 앞서던 문제 · 가져오기와 같은 규칙 · D-83 버그 배시)
+  db.billings
+    .filter((b) => b.siteId === input.siteId)
+    .sort((a, b) => a.billedDate.localeCompare(b.billedDate) || (a.round || 999) - (b.round || 999))
+    .forEach((b, i) => (b.round = i + 1));
   const site = requireSite(db, input.siteId);
   log(db, ctx, "billing", `${site.shortName} ${round}차 기성청구 확정 ${fmtMan(input.amount)}`, input.siteId, "/finance");
   touch(db, ctx);

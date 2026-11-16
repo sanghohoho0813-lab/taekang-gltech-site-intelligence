@@ -5,7 +5,7 @@
 import { normalizeOfficePhone } from "@/lib/domain/intake";
 import type { CompanySettings, CostCategory, CostEntry, CostForecast, DemoDB, ForecastChange, Site, SiteStatus } from "@/lib/domain/types";
 import { DEFAULT_SETTINGS } from "@/lib/domain/types";
-import { siteFinancials, snapshotOf } from "@/lib/domain/calc";
+import { entryEacImpact, siteFinancials, snapshotOf } from "@/lib/domain/calc";
 import { CATEGORY_LABEL, COST_CATEGORIES } from "@/lib/domain/labels";
 import { fmtEok, fmtMan, todayIso } from "@/lib/domain/format";
 import { stagesWeightedPct, syncStageDone } from "@/lib/domain/schedule";
@@ -253,6 +253,12 @@ export function updateForecast(db0: DemoDB, input: UpdateForecastInput, ctx: Ctx
   const before = siteFinancials(db0, input.siteId);
   const closeout = input.closeout === true;
   const note = input.note?.trim() || (closeout ? "준공 원가 마감" : "잔여예상 재추정");
+  // 재추정 전에 잔여예상을 넘었던 집행은 그 금액을 원가 기록에 남긴다 — 새 기준으로는 0이 되어 ‘이익을 바꾼 일’에서 사라지던 문제 (D-83 버그 배시 M1)
+  for (const e of db.costEntries) {
+    if (e.siteId !== input.siteId || e.status !== "active" || e.forecastImpact !== "within_forecast") continue;
+    const over = entryEacImpact(db0, e);
+    if (over > 0) e.frozenOver = (e.frozenOver ?? 0) + over;
+  }
   for (const c of COST_CATEGORIES) {
     const row: CostForecast = { siteId: input.siteId, category: c, remaining: input.remaining[c], basisDate: todayIso(ctx.now), basisAt: at, note };
     const i = db.forecasts.findIndex((f) => f.siteId === input.siteId && f.category === c);

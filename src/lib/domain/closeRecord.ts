@@ -49,6 +49,7 @@ export function closeSnapshot(db: DemoDB, report: MonthCloseReport): MonthCloseS
       laborEstimate: labor.get(m.site.id)?.estimate ?? 0,
       laborCompared: labor.get(m.site.id)?.compared ?? 0,
       expectedProfit: profit.get(m.site.id)?.expectedProfit ?? 0,
+      profitNet: profit.get(m.site.id)?.net ?? 0,
     })),
     people: report.people.map((p) => ({ userId: p.row.userId, name: p.name, days: p.row.days, minutes: p.row.minutes })),
     openItems: report.items.map((i) => i.text),
@@ -113,11 +114,13 @@ export function compareSnapshots(db: DemoDB, month: string, before: MonthCloseSn
     ["pending", "공무 확인 대기 원가"],
     ["laborEstimate", "출력 기준 노무 추정"],
     ["laborCompared", "입력된 노무비"],
+    ["profitNet", "이달 예상이익 변화"],
   ];
   for (const id of ids) {
     const a = before.sites.find((s) => s.siteId === id);
     const b = now.sites.find((s) => s.siteId === id);
     for (const [f, label] of FIELDS) {
+      if (f === "profitNet" && a && a.profitNet === undefined) continue;
       const x = Number(a?.[f] ?? 0);
       const y = Number(b?.[f] ?? 0);
       if (x !== y) diffs.push({ siteId: id, name: site(id), label, before: x, after: y });
@@ -188,6 +191,18 @@ export function compareSnapshots(db: DemoDB, month: string, before: MonthCloseSn
 /** 바뀐 것을 한 줄씩 (대표 확인 이력에 남김) */
 export const changeLines = (ch: ChangesAfterClose): string[] => [...ch.events.map((e) => e.text), ...ch.people.map((p) => `출퇴근 시간 바뀜 · ${p.name} ${minutesText(p.before)} → ${minutesText(p.after)}`)];
 
+/** 앱을 처음 쓴 날 (가장 이른 보고·원가·출퇴근 · 가져온 지난 자료와 시작 전 원가는 빼고) — 그 전 달은 ‘앱을 쓰기 전 달’ */
+export function firstUseDate(db: DemoDB): string | undefined {
+  const used = [
+    ...db.reports.filter((r) => !r.importBatchId).map((r) => r.createdAt),
+    ...db.costEntries.filter((e) => e.source !== "SEED" && !e.importBatchId).map((e) => e.createdAt),
+    ...(db.attendance ?? []).map((a) => a.inAt),
+  ]
+    .filter(Boolean)
+    .sort()[0];
+  return used ? used.slice(0, 10) : undefined;
+}
+
 export interface CloseState {
   month: string;
   state: "open" | "closed" | "confirmed";
@@ -201,14 +216,7 @@ export interface CloseState {
 export function closeStatuses(db: DemoDB, today: string, back = 3): CloseState[] {
   const out: CloseState[] = [];
   // 앱을 쓰기 전 달은 마감하라고 하지 않는다 (첫 운영 달부터 · 지난 자료 가져오기·시작 전 원가는 빼고)
-  const used = [
-    ...db.reports.filter((r) => !r.importBatchId).map((r) => r.createdAt),
-    ...db.costEntries.filter((e) => e.source !== "SEED" && !e.importBatchId).map((e) => e.createdAt),
-    ...(db.attendance ?? []).map((a) => a.inAt),
-  ]
-    .filter(Boolean)
-    .sort()[0];
-  const startedOn = used ? used.slice(0, 10) : today;
+  const startedOn = firstUseDate(db) ?? today;
   let month = previousMonth(today);
   for (let i = 0; i < back; i++, month = previousMonth(`${month}-01`)) {
     const { from, to } = monthBounds(month);

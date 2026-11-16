@@ -130,6 +130,8 @@ export interface MonthCloseReport {
   totals: { billed: number; received: number; outstandingAtEnd: number; costTotal: number; pending: number; changeApproved: number };
   /** 달이 끝난 뒤에 손익에 들어온 이 달 날짜 원가 (D-79 — 인쇄해 둔 마감본과 숫자가 달라지는 이유) */
   late: { n: number; amount: number };
+  /** 달이 끝난 뒤에 넣은 이 달 날짜 기성·입금 (넣은 시각이 남은 것만 · D-83) */
+  lateMoney: { n: number; billed: number; received: number };
   profit: CloseSiteProfit[];
   labor: CloseLabor[];
   people: ClosePerson[];
@@ -188,7 +190,8 @@ export function profitEvents(db: DemoDB, siteId: string, from: string, to: strin
   for (const e of db.costEntries.filter((x) => x.siteId === siteId && x.status === "active")) {
     const when = kst(activeAt(e));
     if (!inRange(when, from, to)) continue;
-    const impact = entryEacImpact(db, e);
+    // 재추정 전에 넘었던 금액(frozenOver)은 그대로 — 재추정 뒤 지금 기준으로 다시 넘은 금액은 더한다 (D-83 버그 배시 M1)
+    const impact = entryEacImpact(db, e) + (e.frozenOver ?? 0);
     if (impact <= 0) continue;
     const occurred = e.date !== when ? ` (발생 ${short(e.date)})` : "";
     events.push(
@@ -238,6 +241,9 @@ export function monthClose(db: DemoDB, month: string, today = todayIso()): Month
   const sum = (f: (m: CloseSiteMoney) => number) => money.reduce((a, m) => a + f(m), 0);
   const lateEntries = ended ? db.costEntries.filter((e) => e.status === "active" && inRange(e.date, from, to) && kst(activeAt(e)) > b.to) : [];
   const late = { n: lateEntries.length, amount: lateEntries.reduce((a, e) => a + e.amount, 0) };
+  const lateBills = ended ? db.billings.filter((x) => x.status === "confirmed" && inRange(x.billedDate, from, to) && !!x.createdAt && kst(x.createdAt) > b.to) : [];
+  const latePays = ended ? db.payments.filter((x) => inRange(x.receivedDate, from, to) && !!x.createdAt && kst(x.createdAt) > b.to) : [];
+  const lateMoney = { n: lateBills.length + latePays.length, billed: lateBills.reduce((a, x) => a + x.amount, 0), received: latePays.reduce((a, x) => a + x.amount, 0) };
   const totals = { billed: sum((m) => m.billed), received: sum((m) => m.received), outstandingAtEnd: sum((m) => m.outstandingAtEnd), costTotal: sum((m) => m.costTotal), pending: sum((m) => m.pending.amount), changeApproved: sum((m) => m.changeApproved) };
 
   // ── 이익 변화 이유 (이 달에 생긴 일만 · 더하면 맞도록) ──
@@ -354,7 +360,7 @@ export function monthClose(db: DemoDB, month: string, today = todayIso()): Month
     else if (remaining > 0 && closed) items.push({ kind: "settle", text: `${s.shortName} 준공${when} — 원가 마감 때 청구서 대기로 남긴 ${man(remaining)}이 있습니다. 청구서가 오면 원가로 넣고, 안 오면 0으로 정리하세요`, href: `/sites/${s.id}?tab=cost`, action: { kind: "closeout", siteId: s.id } });
   }
   for (const s of completedSites) if (!s.warranty?.completedDate) items.push({ kind: "completion", text: `${s.shortName} — 상태는 준공인데 준공일이 없습니다`, href: `/sites/${s.id}?tab=requests` });
-  return { month, from, to, ended, money, totals, late, profit, labor, people, items, completedSites };
+  return { month, from, to, ended, money, totals, late, lateMoney, profit, labor, people, items, completedSites };
 }
 
 

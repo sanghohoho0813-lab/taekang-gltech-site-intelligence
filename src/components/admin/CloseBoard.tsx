@@ -60,9 +60,10 @@ export function CloseBoard() {
   const [month, setMonth] = useState("");
   useEffect(() => {
     const q = new URLSearchParams(window.location.search).get("month");
-    if (q && /^\d{4}-\d{2}$/.test(q)) setMonth(q);
+    if (q && /^\d{4}-(0[1-9]|1[0-2])$/.test(q)) setMonth(q);
   }, []);
-  const chosen = month || (months.includes(previousMonth(today)) ? previousMonth(today) : months[0]);
+  // 고를 수 있는 달만 — ?month=2026-13 같은 주소로 화면이 깨지지 않게 (D-83 버그 배시)
+  const chosen = months.includes(month) ? month : months.includes(previousMonth(today)) ? previousMonth(today) : months[0];
   const r = useMemo(() => (db ? monthClose(db, chosen, today) : null), [db, chosen, today]);
   const [settling, setSettling] = useState<string | null>(null);
   const [closing, setClosing] = useState<string | null>(null);

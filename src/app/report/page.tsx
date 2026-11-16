@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Suspense, useMemo, useState, type ReactNode } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Printer, ArrowRight } from "lucide-react";
 import { useMe, useFinancials, usePortfolio, useSignals, userLabel } from "@/lib/data/hooks";
 import { PageBody, PageHeader } from "@/components/shell/AppShell";
@@ -19,16 +20,23 @@ import { inputCls } from "@/components/ui/primitives";
 import { IS_LIVE, BASE_LABEL } from "@/lib/mode";
 
 export default function ReportPage() {
+  return (
+    <Suspense fallback={<PageSkeleton />}>
+      <ReportInner />
+    </Suspense>
+  );
+}
+
+function ReportInner() {
   const { db } = useMe();
-  // 달별 보기 (D-83) — ?month=YYYY-MM 이면 그 달 한 장, 아니면 지금까지 누계
-  const [month, setMonth] = useState("");
-  useEffect(() => {
-    const q = new URLSearchParams(window.location.search).get("month");
-    if (q && /^\d{4}-(0[1-9]|1[0-2])$/.test(q)) setMonth(q);
-  }, []);
+  // 달별 보기 (D-83) — ?month=YYYY-MM 이면 그 달 한 장, 아니면 지금까지 누계.
+  // 주소를 그대로 따른다 — 뒤로 가기·월 마감의 ‘대표 보고서로’ 링크가 바로 맞는 달을 연다 (D-83 점검)
+  const router = useRouter();
+  const q = useSearchParams().get("month") ?? "";
+  const [picked, setPicked] = useState(false);
   const pickMonth = (m: string) => {
-    setMonth(m);
-    window.history.replaceState(null, "", m ? `/report?month=${m}` : "/report");
+    setPicked(true);
+    router.push(m ? `/report?month=${m}` : "/report", { scroll: false });
   };
   const fin = useFinancials(db);
   const total = usePortfolio(db);
@@ -45,7 +53,10 @@ export default function ReportPage() {
   if (!db || !total || !base) return <PageSkeleton />;
   const today = todayIso();
   const months = monthOptions(db, today);
-  if (month) return <MonthlyReport db={db} month={month} months={months.includes(month) ? months : [month, ...months]} today={today} onMonth={pickMonth} />;
+  // 고를 수 있는 달만 — 잘못된 주소(2026-13·앱 쓰기 훨씬 전·미래 달)는 알리고 누계를 보여 준다
+  const month = months.includes(q) ? q : "";
+  const badMonth = q && !month ? q : "";
+  if (month) return <MonthlyReport db={db} month={month} months={months} today={today} onMonth={pickMonth} focusSelect={picked} />;
 
   const sessionEntries = db.costEntries.filter((e) => e.source !== "SEED").sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const sessionReports = db.reports.filter((r) => !r.id.startsWith("rpt-seed") && !r.importBatchId).slice(0, 10);
@@ -98,7 +109,7 @@ export default function ReportPage() {
           <div className="no-print flex flex-wrap items-center gap-2">
             <label className="inline-flex items-center gap-1.5 text-[0.84rem] font-semibold text-ink-2">
               보기
-              <select className={cx(inputCls, "h-10 w-auto py-1")} value="" onChange={(e) => pickMonth(e.target.value)} data-testid="report-month">
+              <select className={cx(inputCls, "h-10 w-auto py-1")} value="" autoFocus={picked} onChange={(e) => pickMonth(e.target.value)} data-testid="report-month">
                 <option value="">누계 (지금)</option>
                 {months.map((m) => (
                   <option key={m} value={m}>
@@ -113,6 +124,14 @@ export default function ReportPage() {
           </div>
         }
       />
+
+      {badMonth && (
+        <div data-testid="report-bad-month">
+          <Notice tone="warn" title={`‘${badMonth}’ 달은 볼 수 없습니다`}>
+            고를 수 있는 달은 첫 현장 착공 달부터 이번 달까지입니다. 지금은 누계를 보여 드립니다 — 오른쪽 위 ‘보기’에서 달을 고르세요.
+          </Notice>
+        </div>
+      )}
 
       <Card className="print-card" data-tour="report-summary" data-testid="report-summary">
         <CardHeader title="1. 요약" sub={`기준(${BASE_LABEL}) 대비 현재`} right={<MethodChip />} />
