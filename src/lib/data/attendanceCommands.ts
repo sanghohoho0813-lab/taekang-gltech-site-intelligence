@@ -14,7 +14,7 @@ import { judgeGeo, geoText, validSample, type GeoSample } from "@/lib/domain/geo
 import { consentRecord, currentTerms, hasConsent, retentionText, sameTerms, stampTerms, viewersText, type ConsentTerms } from "@/lib/domain/privacy";
 import { todayIso } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
-import { overlapMessage, overlappingRecord } from "@/lib/domain/attendance";
+import { minutesOf, overlapMessage, overlappingRecord } from "@/lib/domain/attendance";
 import { CommandError, claimKey, clone, log, nowIso, requireSite, touch, userName, validPhoto, type Ctx } from "./commands";
 
 /** 동의 문구 판·동의 확인은 개인위치정보 규칙(privacy.ts)에서 — 보관 기간·볼 수 있는 사람 조건 포함 (D-43) */
@@ -289,6 +289,45 @@ export function correctAttendance(db0: DemoDB, input: CorrectAttendanceInput, ct
   log(db, ctx, "attendance", `출퇴근 정정 — ${userName(db, r.userId)} ${r.workDate} · ${note}`, r.siteId, "/attendance");
   touch(db, ctx);
   return { db, result: { attendanceId: r.id } };
+}
+
+export interface CorrectAttendanceBatchInput {
+  items: { attendanceId: string; inAt?: string; outAt?: string }[];
+  /** 모든 건에 같은 사유 (이력에 남음) */
+  note: string;
+  idempotencyKey?: string;
+}
+export const BATCH_FIX_MAX = 100;
+
+/**
+ * 출퇴근 여러 건을 한 번에 정정 (D-80 · 겹침 정리) — 한 건씩 정정하는 규칙(사유·24시간·미래·근무일·겹침)을 그대로 차례로 적용하고,
+ * 하나라도 안 되면 아무것도 바꾸지 않는다. 김도윤 같은 날 두 현장 11일을 하나씩 11번 고치던 일.
+ */
+export function correctAttendanceBatch(db0: DemoDB, input: CorrectAttendanceBatchInput, ctx: Ctx) {
+  const items = Array.isArray(input.items) ? input.items : [];
+  if (items.length === 0) throw new CommandError("정정할 기록을 골라 주세요.", "VALIDATION", { items: "0건" });
+  if (items.length > BATCH_FIX_MAX) throw new CommandError(`한 번에 ${BATCH_FIX_MAX}건까지 정정할 수 있습니다.`, "VALIDATION", { items: "너무 많음" });
+  if (new Set(items.map((x) => x?.attendanceId)).size !== items.length) throw new CommandError("같은 기록이 두 번 들어 있습니다.", "VALIDATION", { items: "중복" });
+  if (input.idempotencyKey && db0.idempotencyKeys.includes(input.idempotencyKey)) throw new CommandError("이미 저장된 요청입니다. (중복 저장 방지)", "DUPLICATE");
+  const touched = new Set(items.map((x) => x.attendanceId));
+  const recs0 = (db0.attendance ?? []).filter((r) => touched.has(r.id));
+  const keys = new Set(recs0.map((r) => `${r.userId}|${r.workDate}`));
+  const total = (db: DemoDB) => (db.attendance ?? []).filter((r) => keys.has(`${r.userId}|${r.workDate}`)).reduce((a, r) => a + (minutesOf(r) ?? 0), 0);
+  let db = db0;
+  for (const it of items) {
+    const r = (db.attendance ?? []).find((x) => x.id === it?.attendanceId);
+    try {
+      db = correctAttendance(db, { attendanceId: it.attendanceId, ...(it.inAt ? { inAt: it.inAt } : {}), ...(it.outAt ? { outAt: it.outAt } : {}), note: input.note }, ctx).db;
+    } catch (e) {
+      if (!(e instanceof CommandError)) throw e;
+      const who = r ? `${r.workDate} ${userName(db0, r.userId)}` : "기록";
+      const why = Object.values(e.fieldErrors)[0];
+      throw new CommandError(`${who}: ${why && e.message === "입력값을 확인해주세요." ? why : e.message} — 아무것도 바꾸지 않았습니다.`, e.code, e.fieldErrors);
+    }
+  }
+  db = clone(db);
+  claimKey(db, input.idempotencyKey);
+  return { db, result: { corrected: items.length, minutesBefore: total(db0), minutesAfter: total(db) } };
 }
 
 /** 출근 뒤에 현장 QR로 확인 (태블릿이 늦게 켜졌거나 처음에 QR 없이 출근한 경우) — 확인될 때만 저장 */

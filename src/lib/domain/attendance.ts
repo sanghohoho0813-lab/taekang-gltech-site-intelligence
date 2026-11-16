@@ -5,7 +5,7 @@
 import type { AttendanceRecord, DemoDB, FieldReport, Site } from "./types";
 import { todayIso } from "./format";
 
-export type AttendanceFlagKind = "outside" | "no_location" | "weak" | "nosite" | "shared_device" | "same_spot" | "no_checkout" | "missing" | "no_qr" | "sent_later";
+export type AttendanceFlagKind = "outside" | "no_location" | "weak" | "nosite" | "shared_device" | "same_spot" | "no_checkout" | "missing" | "no_qr" | "sent_later" | "overlap";
 
 export interface AttendanceFlag {
   kind: AttendanceFlagKind;
@@ -27,10 +27,11 @@ export const FLAG_LABEL: Record<AttendanceFlagKind, string> = {
   missing: "미출근",
   no_qr: "현장 QR 없이 출근",
   sent_later: "통신 불량 — 나중에 전송",
+  overlap: "같은 시간 두 현장 (근무시간 두 번 셈)",
 };
 
 /** 위험도 순 (위가 먼저) */
-export const FLAG_ORDER: AttendanceFlagKind[] = ["shared_device", "same_spot", "no_qr", "outside", "sent_later", "no_location", "missing", "no_checkout", "weak", "nosite"];
+export const FLAG_ORDER: AttendanceFlagKind[] = ["shared_device", "same_spot", "no_qr", "outside", "overlap", "sent_later", "no_location", "missing", "no_checkout", "weak", "nosite"];
 
 const att = (db: DemoDB) => db.attendance ?? [];
 
@@ -75,6 +76,11 @@ export function dayFlags(db: DemoDB, date: string, now = new Date()): Attendance
     else if (r.inGeo.status === "none") flags.push({ kind: "no_location", userId: r.userId, siteId: r.siteId, recordId: r.id, workDate: date, text: `${name(r.userId)} — 위치 없이 출근했습니다` });
     else if (geos.some((g) => g!.status === "weak")) flags.push({ kind: "weak", userId: r.userId, siteId: r.siteId, recordId: r.id, workDate: date, text: `${name(r.userId)} — 위치 오차가 커서 확인이 필요합니다` });
     else if (r.inGeo.status === "nosite") flags.push({ kind: "nosite", userId: r.userId, siteId: r.siteId, recordId: r.id, workDate: date, text: `현장 위치가 등록되지 않아 판단할 수 없습니다` });
+  }
+  // 같은 사람이 같은 시간에 두 현장 — 근무시간이 두 번 셈해진다 (D-80 · 월 마감에만 보이고 출퇴근 현황엔 ‘의심 없음’이던 문제)
+  for (const o of overlapPairs(db, date, date)) {
+    const sn = (id: string) => db.sites.find((x) => x.id === id)?.shortName ?? "";
+    flags.push({ kind: "overlap", userId: o.userId, recordId: o.earlier.id, workDate: date, text: `${name(o.userId)} — ${sn(o.earlier.siteId)} ${span(o.earlier)}와 ${sn(o.later.siteId)} ${span(o.later)}이 ${o.minutes}분 겹칩니다` });
   }
   // 같은 휴대폰으로 같은 날 여러 명 출근 → 대리 출근 의심
   const byDevice = new Map<string, Set<string>>();
@@ -220,4 +226,60 @@ export function overlappingRecord(db: DemoDB, rec: { id?: string; userId: string
 export function overlapMessage(db: DemoDB, o: AttendanceRecord): string {
   const site = db.sites.find((s) => s.id === o.siteId)?.shortName ?? "다른 현장";
   return `${Number(o.workDate.slice(5, 7))}/${Number(o.workDate.slice(8, 10))} ${site} 기록(${hhmm(o.inAt)}~${o.outAt ? hhmm(o.outAt) : "퇴근 없음"})과 시간이 겹칩니다 — 근무시간이 두 번 셈해집니다. 그 기록을 먼저 고치거나 시각을 다시 확인해 주세요.`;
+}
+
+const span = (r: Pick<AttendanceRecord, "inAt" | "outAt">) => `${hhmm(r.inAt)}~${r.outAt ? hhmm(r.outAt) : "퇴근 없음"}`;
+
+/** 같은 사람의 시간이 겹치는 두 기록과 정리안 (D-80) */
+export interface OverlapPair {
+  userId: string;
+  /** 뒤 기록의 근무일 */
+  workDate: string;
+  /** 먼저 시작한 기록 */
+  earlier: AttendanceRecord;
+  /** 나중에 시작한 기록 */
+  later: AttendanceRecord;
+  /** 겹친 시간 (분) */
+  minutes: number;
+  /** 정리안: 앞 기록의 퇴근을 뒤 기록 출근 시각으로 (앞 현장에서 퇴근을 늦게 누른 경우가 가장 흔함) */
+  proposeOutAt: string;
+  /** 뒤 기록이 앞 기록 안에 다 들어가 있으면 — 정리안대로 하면 뒤 기록이 끝난 뒤 앞 현장에 있던 시간(분)이 빠진다 */
+  tailLostMin: number;
+  /** 뒤 기록에 퇴근이 없거나 두 기록이 같은 시각에 시작해 정리안을 낼 수 없음 — 직접 확인 */
+  manual: boolean;
+}
+
+/**
+ * 기간 안(뒤 기록의 근무일 기준)의 겹침 — 같은 사람·앞뒤 하루까지 (자정을 넘긴 야간 포함).
+ * 앞 기록의 퇴근이 없으면 겹침을 셀 수 없어 넣지 않는다 (퇴근 누락은 따로 잡힌다).
+ */
+export function overlapPairs(db: DemoDB, from: string, to: string, userId?: string): OverlapPair[] {
+  const out: OverlapPair[] = [];
+  const lo = shiftDate(from, -1);
+  const byUser = new Map<string, AttendanceRecord[]>();
+  for (const r of att(db)) {
+    if (r.workDate < lo || r.workDate > to || (userId && r.userId !== userId)) continue;
+    byUser.set(r.userId, [...(byUser.get(r.userId) ?? []), r]);
+  }
+  for (const [u, list] of byUser) {
+    const recs = list.slice().sort((a, b) => a.inAt.localeCompare(b.inAt));
+    for (let i = 0; i < recs.length; i++) {
+      const a = recs[i];
+      if (!a.outAt) continue;
+      const a0 = new Date(a.inAt).getTime();
+      const a1 = new Date(a.outAt).getTime();
+      for (let j = i + 1; j < recs.length; j++) {
+        const b = recs[j];
+        const b0 = new Date(b.inAt).getTime();
+        if (b0 >= a1) break;
+        if (b.workDate < from || b.workDate > to) continue;
+        const b1 = b.outAt ? new Date(b.outAt).getTime() : null;
+        const end = b1 === null ? a1 : Math.min(a1, b1);
+        const minutes = Math.round((end - b0) / 60_000);
+        const manual = b1 === null || b0 <= a0;
+        out.push({ userId: u, workDate: b.workDate, earlier: a, later: b, minutes, proposeOutAt: b.inAt, tailLostMin: b1 !== null && b1 < a1 ? Math.round((a1 - b1) / 60_000) : 0, manual });
+      }
+    }
+  }
+  return out.sort((x, y) => x.workDate.localeCompare(y.workDate) || x.userId.localeCompare(y.userId));
 }

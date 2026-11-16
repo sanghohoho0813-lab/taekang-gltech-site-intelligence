@@ -59,6 +59,7 @@ export const COMMAND_SPEC: Record<CommandName, { label: string; group: CmdGroup;
   reviewReport: { label: "현장 보고 확인·보완 요청", group: "review", allow: HQ },
   reviewAttendanceFix: { label: "근태 수정 요청 승인·반려", group: "review", allow: HQ },
   correctAttendance: { label: "출퇴근 정정 (사유 필수·이력)", group: "review", allow: HQ },
+  correctAttendanceBatch: { label: "출퇴근 여러 건 한 번에 정정 — 같은 시간 두 현장 정리 (하나라도 안 되면 전부 취소)", group: "review", allow: HQ },
   createAction: { label: "위험 신호 → 조치 만들기", group: "review", allow: HQ },
   assignAction: { label: "조치 담당자 배정", group: "review", allow: HQ },
   confirmProofEvent: { label: "조치 성과 기록 확인", group: "review", allow: HQ },

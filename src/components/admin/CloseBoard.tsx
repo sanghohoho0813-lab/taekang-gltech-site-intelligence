@@ -15,7 +15,7 @@ import { PageBody, PageHeader } from "@/components/shell/AppShell";
 import { Badge, Button, Card, CardHeader, EmptyState, Field, Notice, PageSkeleton, cx, inputCls } from "@/components/ui/primitives";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
-import { laborShort, monthClose, monthCostRows, previousMonth, type CloseItemKind, type CloseLabor } from "@/lib/domain/monthClose";
+import { laborShort, monthClose, monthCostRows, previousMonth, type CloseItem, type CloseItemKind, type CloseLabor } from "@/lib/domain/monthClose";
 import { fmtDate, fmtMan, todayIso } from "@/lib/domain/format";
 import { CATEGORY_LABEL, COST_CATEGORIES } from "@/lib/domain/labels";
 import { toCsv } from "@/lib/domain/csv";
@@ -24,6 +24,7 @@ import type { DemoDB } from "@/lib/domain/types";
 import { uid } from "@/lib/domain/ids";
 import { downloadCsv } from "@/lib/browser/download";
 import { ForecastModal } from "./SitesAdmin";
+import { OverlapFixModal } from "./OverlapFix";
 import { MoneyField, toWon, wonText } from "./inputs";
 
 const ITEM_LABEL: Record<CloseItemKind, string> = {
@@ -63,11 +64,12 @@ export function CloseBoard() {
   const r = useMemo(() => (db ? monthClose(db, chosen, today) : null), [db, chosen, today]);
   const [settling, setSettling] = useState<string | null>(null);
   const [closing, setClosing] = useState<string | null>(null);
+  const [overlapUser, setOverlapUser] = useState<string | null>(null);
   if (!db || !r) return <PageSkeleton />;
   const label = `${chosen.slice(0, 4)}년 ${Number(chosen.slice(5))}월`;
   const settleRow = settling ? r.labor.find((l) => l.site.id === settling) : undefined;
   const closeSite = closing ? db.sites.find((x) => x.id === closing) : undefined;
-  const openAction = (a: { kind: "settleLabor" | "closeout"; siteId: string }) => (a.kind === "settleLabor" ? setSettling(a.siteId) : setClosing(a.siteId));
+  const openAction = (a: NonNullable<CloseItem["action"]>) => (a.kind === "settleLabor" ? setSettling(a.siteId ?? null) : a.kind === "closeout" ? setClosing(a.siteId ?? null) : setOverlapUser(a.userId ?? null));
 
   return (
     <PageBody className="print-full">
@@ -119,8 +121,8 @@ export function CloseBoard() {
                   {!it.action && <ArrowRight size={16} className="no-print mt-0.5 shrink-0 text-ink-3" aria-hidden />}
                 </Link>
                 {it.action && (
-                  <Button size="sm" variant="soft" className="no-print mb-3 ml-5 shrink-0 sm:my-0 sm:ml-0" onClick={() => openAction(it.action!)} data-testid={it.action.kind === "settleLabor" ? "close-settle-open" : "close-closeout-open"}>
-                    {it.action.kind === "settleLabor" ? "차액 정산" : "원가 마감"}
+                  <Button size="sm" variant="soft" className="no-print mb-3 ml-5 shrink-0 sm:my-0 sm:ml-0" onClick={() => openAction(it.action!)} data-testid={it.action.kind === "settleLabor" ? "close-settle-open" : it.action.kind === "closeout" ? "close-closeout-open" : "close-overlap-open"}>
+                    {it.action.kind === "settleLabor" ? "차액 정산" : it.action.kind === "closeout" ? "원가 마감" : "겹침 정리"}
                   </Button>
                 )}
               </li>
@@ -360,6 +362,7 @@ export function CloseBoard() {
       <p className="text-[0.75rem] text-ink-3">* 기준: {fmtDate(r.from)} ~ {fmtDate(r.to)} · 금액은 원 단위로 저장된 값을 만 원으로 줄여 보여 줍니다.</p>
       {settleRow && <LaborSettleModal db={db} row={settleRow} month={chosen} onClose={() => setSettling(null)} />}
       {closeSite && <ForecastModal db={db} site={closeSite} closeout onClose={() => setClosing(null)} />}
+      {overlapUser && <OverlapFixModal db={db} from={r.from} to={r.to} userId={overlapUser} onClose={() => setOverlapUser(null)} />}
     </PageBody>
   );
 }

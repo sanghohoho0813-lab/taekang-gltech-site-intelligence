@@ -7,7 +7,7 @@ import type { CostCategory, CostEntry, DemoDB, Site } from "./types";
 import { CATEGORY_LABEL, COST_CATEGORIES, IMPACT_LABEL, REASON_LABEL } from "./labels";
 import { activeAt, entryEacImpact, siteFinancials } from "./calc";
 import { laborEstimate, type LaborSite } from "./labor";
-import { isOpenShift, minutesOf, periodSummary, type MonthRow } from "./attendance";
+import { isOpenShift, minutesOf, overlapPairs, periodSummary, type MonthRow } from "./attendance";
 import { todayIso } from "./format";
 
 export interface CloseSiteMoney {
@@ -52,7 +52,8 @@ export interface CloseItem {
   text: string;
   href: string;
   /** 이 화면에서 바로 처리할 수 있는 일 (D-79) — 노무 정산·준공 원가 마감 */
-  action?: { kind: "settleLabor" | "closeout"; siteId: string };
+  /** 현장 단위(노무 정산·원가 마감)는 siteId, 사람 단위(출퇴근 겹침 정리)는 userId */
+  action?: { kind: "settleLabor" | "closeout" | "fixOverlap"; siteId?: string; userId?: string };
 }
 
 /** 노무 한 줄 + 월 마감 정산 상태 (D-79) */
@@ -244,14 +245,8 @@ export function monthClose(db: DemoDB, month: string, today = todayIso()): Month
   const rows = periodSummary(db, from, to, today);
   const people: ClosePerson[] = rows.map((row) => {
     const mine = att.filter((r) => r.userId === row.userId);
-    // 시간이 겹치는 기록 — 같은 날뿐 아니라 자정을 넘긴 야간 기록과 다음 날 기록도 (D-79 버그 배시 m-1)
-    const overlap = new Set<string>();
-    const iv = mine.filter((r) => r.outAt).map((r) => ({ d: r.workDate, a: new Date(r.inAt).getTime(), b: new Date(r.outAt!).getTime() })).sort((x, y) => x.a - y.a);
-    let maxEnd = -Infinity;
-    for (const x of iv) {
-      if (x.a < maxEnd) overlap.add(x.d);
-      maxEnd = Math.max(maxEnd, x.b);
-    }
+    // 시간이 겹치는 기록 — 같은 날뿐 아니라 자정을 넘긴 야간 기록과 다음 날 기록도 (D-79 버그 배시 m-1) · 출퇴근 현황과 같은 계산 (D-80)
+    const overlap = new Set(overlapPairs(db, from, to, row.userId).map((o) => o.workDate));
     return {
       row,
       name: name(row.userId),
@@ -282,7 +277,7 @@ export function monthClose(db: DemoDB, month: string, today = todayIso()): Month
   }
   for (const p of people) {
     if (p.missedOut.length) items.push({ kind: "checkout", date: p.missedOut[0], text: `${p.name} 퇴근 누락 ${p.missedOut.length}일 (${p.missedOut.map(short).join(" · ")}) — 정정하거나 근태 수정 요청을 받아 주세요`, href: `/attendance?date=${p.missedOut[0]}` });
-    if (p.overlap.length) items.push({ kind: "overlap", date: p.overlap[0], text: `${p.name} 같은 날 두 현장 기록 시간이 겹침 ${p.overlap.length}일 (${p.overlap.slice(0, 5).map(short).join(" · ")}) — 근무시간이 두 번 셉니다`, href: `/attendance?date=${p.overlap[0]}` });
+    if (p.overlap.length) items.push({ kind: "overlap", date: p.overlap[0], text: `${p.name} 같은 날 두 현장 기록 시간이 겹침 ${p.overlap.length}일 (${p.overlap.slice(0, 5).map(short).join(" · ")}${p.overlap.length > 5 ? " …" : ""}) — 근무시간이 두 번 셉니다`, href: `/attendance?date=${p.overlap[0]}`, action: { kind: "fixOverlap", userId: p.row.userId } });
   }
   const fixes = (db.attendanceRequests ?? []).filter((q) => q.status === "pending" && q.workDate <= to);
   if (fixes.length) items.push({ kind: "fix", text: `근태 수정 요청 ${fixes.length}건 승인·반려 전`, href: "/orders?tab=fixes" });

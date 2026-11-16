@@ -14,7 +14,8 @@ import { CREW_FLAG_LABEL, crewFlags, crewSummary, mandayGap, mandayOver } from "
 import { qrPath } from "@/lib/geo/qrClient";
 import { GEO_LABEL, geoText, mapLink, splitLatLng } from "@/lib/domain/geo";
 import { monthBounds } from "@/lib/domain/monthClose";
-import { FLAG_LABEL, FLAG_ORDER, backdatedDays, dayFlags, hhmm, minutesOf, periodSummary, recentFlags, shiftDate, siteCrew, type AttendanceFlag } from "@/lib/domain/attendance";
+import { FLAG_LABEL, FLAG_ORDER, backdatedDays, dayFlags, hhmm, minutesOf, overlapPairs, periodSummary, recentFlags, shiftDate, siteCrew, type AttendanceFlag } from "@/lib/domain/attendance";
+import { OverlapFixModal } from "./OverlapFix";
 import { todayIso } from "@/lib/domain/format";
 import { locateOnce } from "@/lib/geo/client";
 import { PageBody, PageHeader } from "@/components/shell/AppShell";
@@ -70,6 +71,7 @@ export function AttendanceBoard() {
   }, [today]);
   const [geoSite, setGeoSite] = useState<Site | null>(null);
   const [fix, setFix] = useState<AttendanceRecord | null>(null);
+  const [overlapRange, setOverlapRange] = useState<{ from: string; to: string } | null>(null);
   const [pairing, setPairing] = useState<{ site: Site; code: string; expiresAt: string } | null>(null);
   const toast = useToast();
   if (!db) return <PageSkeleton />;
@@ -113,6 +115,8 @@ export function AttendanceBoard() {
   const monthEnd = monthBounds(date.slice(0, 7)).to;
   const monthTo = monthEnd < today ? monthEnd : today;
   const month = periodSummary(db, monthFrom, monthTo);
+  // 이 달 같은 시간 두 현장 (D-80) — 하루씩 고치지 않고 한 번에
+  const monthOverlaps = overlapPairs(db, monthFrom, monthTo).length;
   const elsewhere = (u: string) => records.find((r) => r.userId === u);
   const userFlags = (u: string, siteId?: string) => flags.filter((f) => f.userId === u && (!f.siteId || !siteId || f.siteId === siteId));
 
@@ -182,8 +186,13 @@ export function AttendanceBoard() {
           <div className="space-y-3 px-5 pb-5">
             {grouped.map((g) => (
               <div key={g.k} data-testid={`att-flag-${g.k}`}>
-                <p className="mb-1 flex items-center gap-1.5 text-[0.86rem] font-bold">
+                <p className="mb-1 flex flex-wrap items-center gap-1.5 text-[0.86rem] font-bold">
                   <AlertTriangle size={15} className={["shared_device", "same_spot", "outside"].includes(g.k) ? "text-err" : "text-warn"} aria-hidden /> {FLAG_LABEL[g.k]} <span className="num text-ink-3">{dedupe(g.items).length}</span>
+                  {g.k === "overlap" && (
+                    <Button size="sm" variant="soft" className="ml-1" onClick={() => setOverlapRange({ from: date, to: date })} data-testid="att-overlap-fix">
+                      겹침 정리
+                    </Button>
+                  )}
                 </p>
                 <ul className="space-y-0.5 pl-5 text-[0.82rem] text-ink-2">
                   {dedupe(g.items).slice(0, 6).map((f, i) => (
@@ -256,12 +265,12 @@ export function AttendanceBoard() {
                             {r ? (
                               <>
                                 <td className="py-2.5" data-label="출근">
-                                  <span className="num font-semibold">{hhmm(r.inAt)}</span> <GeoChip g={r.inGeo} /> <MapA g={r.inGeo} /> <QrChip q={r.inQr} required={qrMode} />
+                                  <span className="num font-semibold">{hhmm(r.inAt)}</span> <Pressed r={r} which="in" /> <GeoChip g={r.inGeo} /> <MapA g={r.inGeo} /> <QrChip q={r.inQr} required={qrMode} />
                                 </td>
                                 <td className="py-2.5" data-label="퇴근">
                                   {r.outAt ? (
                                     <>
-                                      <span className="num font-semibold">{hhmm(r.outAt)}</span> <GeoChip g={r.outGeo} label="본사 정정" /> <MapA g={r.outGeo} />
+                                      <span className="num font-semibold">{hhmm(r.outAt)}</span> <Pressed r={r} which="out" /> <GeoChip g={r.outGeo} label="본사 정정" /> <MapA g={r.outGeo} />
                                     </>
                                   ) : (
                                     <span className={cx("text-[0.8rem] font-semibold", date < today ? "text-warn" : "text-ink-3")}>{date < today ? "퇴근 기록 없음" : "근무 중"}</span>
@@ -324,9 +333,16 @@ export function AttendanceBoard() {
           title={`${date.slice(0, 7).replace("-", "년 ")}월 합계${monthTo < monthEnd ? ` (${Number(monthTo.slice(8))}일까지 · 진행 중)` : ""}`}
           sub="급여·공수 정산 근거 — 퇴근 누락·현장 밖·위치 없음은 사람에게 확인 후 정산하세요"
           right={
-            <Button size="sm" icon={<Download size={15} />} onClick={csv} disabled={month.length === 0} data-testid="att-csv">
-              CSV 내려받기
-            </Button>
+            <div className="flex flex-wrap gap-1.5">
+              {monthOverlaps > 0 && (
+                <Button size="sm" variant="soft" onClick={() => setOverlapRange({ from: monthFrom, to: monthTo })} data-testid="att-month-overlap">
+                  같은 시간 두 현장 {monthOverlaps}건 정리
+                </Button>
+              )}
+              <Button size="sm" icon={<Download size={15} />} onClick={csv} disabled={month.length === 0} data-testid="att-csv">
+                CSV 내려받기
+              </Button>
+            </div>
           }
         />
         {month.length === 0 ? (
@@ -368,6 +384,7 @@ export function AttendanceBoard() {
 
       {geoSite && <GeoModal site={geoSite} onClose={() => setGeoSite(null)} />}
       {fix && <FixModal db={db} record={fix} onClose={() => setFix(null)} />}
+      {overlapRange && <OverlapFixModal db={db} from={overlapRange.from} to={overlapRange.to} onClose={() => setOverlapRange(null)} />}
       {pairing && <PairModal {...pairing} onClose={() => setPairing(null)} />}
     </PageBody>
   );
@@ -460,16 +477,37 @@ function GeoModal({ site, onClose }: { site: Site; onClose: () => void }) {
 }
 
 /** 본사 정정 — 퇴근 누락 등. 위치 기록은 그대로 두고 시각만, 사유 필수 */
+/**
+ * 본사가 고친 시각이면 ‘정정’ 표시와 처음 누른 시각 — 위치 표시는 처음 누른 때의 위치라서 (D-79 공무 점검: 12:30으로 고친 퇴근에 17:35의 ‘현장 안 50m’가 붙어 보임)
+ */
+function Pressed({ r, which }: { r: AttendanceRecord; which: "in" | "out" }) {
+  const first = r.corrections?.[0]?.before;
+  if (!first) return null;
+  const orig = which === "in" ? first.inAt : first.outAt;
+  const now = which === "in" ? r.inAt : r.outAt;
+  if (!now || orig === now) return null;
+  return (
+    <span className="inline-flex items-center rounded-md bg-surface-3 px-1.5 py-0.5 text-[0.72rem] font-bold text-ink-2" title="본사가 고친 시각 — 옆의 위치는 처음 누른 때의 위치입니다" data-testid="att-corrected">
+      정정 · 처음 {orig ? hhmm(orig) : "누르지 않음"}
+    </span>
+  );
+}
+
 function FixModal({ db, record, onClose }: { db: DemoDB; record: AttendanceRecord; onClose: () => void }) {
   const toast = useToast();
+  const [inTime, setInTime] = useState(hhmm(record.inAt));
   const [outTime, setOutTime] = useState(record.outAt ? hhmm(record.outAt) : "17:00");
   const [note, setNote] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const who = db.users.find((u) => u.id === record.userId)?.name;
+  const site = db.sites.find((s) => s.id === record.siteId)?.shortName;
+  // 출근 시각도 고칠 수 있게 (D-80 — 퇴근만 고칠 수 있어 출근을 잘못 누른 날은 고칠 길이 없었다). 퇴근이 출근보다 이르면 다음 날(야간)
+  const inAt = new Date(`${record.workDate}T${inTime}:00+09:00`).toISOString();
+  const outSameDay = new Date(`${record.workDate}T${outTime}:00+09:00`);
+  const outAt = (outTime < inTime ? new Date(outSameDay.getTime() + 86_400_000) : outSameDay).toISOString();
   const save = async () => {
     try {
-      const outAt = new Date(`${record.workDate}T${outTime}:00+09:00`).toISOString();
-      await run("correctAttendance", { attendanceId: record.id, outAt, note });
+      await run("correctAttendance", { attendanceId: record.id, ...(inAt !== record.inAt ? { inAt } : {}), outAt, note });
       toast.push({ tone: "ok", title: "정정했습니다 (이력에 남음)" });
       onClose();
     } catch (e) {
@@ -482,7 +520,7 @@ function FixModal({ db, record, onClose }: { db: DemoDB; record: AttendanceRecor
       open
       onClose={onClose}
       title={`출퇴근 정정 · ${who}`}
-      description={`${record.workDate} · 출근 ${hhmm(record.inAt)} — 퇴근 시각만 고칠 수 있고, 위치 기록은 바뀌지 않습니다.`}
+      description={`${record.workDate} · ${site} — 출근·퇴근 시각을 고칩니다. 위치 기록은 바뀌지 않고, 처음 누른 시각과 사유가 이력에 남습니다. 같은 날 다른 현장 기록과 시간이 겹치면 저장되지 않습니다.`}
       size="sm"
       testId="att-fix-modal"
       footer={
@@ -495,9 +533,15 @@ function FixModal({ db, record, onClose }: { db: DemoDB; record: AttendanceRecor
       }
     >
       <div className="space-y-3">
-        <Field label="퇴근 시각" htmlFor="fx-out" error={errors.time}>
-          <input id="fx-out" type="time" className={cx(inputCls, "num w-40")} value={outTime} onChange={(e) => setOutTime(e.target.value)} />
-        </Field>
+        <div className="flex flex-wrap gap-3">
+          <Field label="출근 시각" htmlFor="fx-in">
+            <input id="fx-in" type="time" className={cx(inputCls, "num w-36")} value={inTime} onChange={(e) => setInTime(e.target.value)} data-testid="att-fix-in" />
+          </Field>
+          <Field label="퇴근 시각" htmlFor="fx-out" hint={outTime < inTime ? "다음 날 퇴근 (야간)" : undefined}>
+            <input id="fx-out" type="time" className={cx(inputCls, "num w-36")} value={outTime} onChange={(e) => setOutTime(e.target.value)} data-testid="att-fix-out" />
+          </Field>
+        </div>
+        {errors.time && <Notice tone="err" title={errors.time} />}
         <Field label="정정 사유" htmlFor="fx-note" required error={errors.note}>
           <input id="fx-note" className={inputCls} value={note} maxLength={120} onChange={(e) => setNote(e.target.value)} placeholder="예) 퇴근 버튼 누락 — 현장 반장 확인" data-testid="att-fix-note" />
         </Field>

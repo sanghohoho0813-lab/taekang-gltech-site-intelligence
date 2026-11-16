@@ -12,6 +12,7 @@ import { IS_LIVE } from "@/lib/mode";
 import { ROLE_LABEL } from "@/lib/domain/labels";
 import { PageSkeleton, cx } from "@/components/ui/primitives";
 import { FIX_KIND_LABEL } from "@/lib/data/opsCommands";
+import { hhmm } from "@/lib/domain/attendance";
 import { easyDate } from "./words";
 import { Choice, EasyPageHead } from "./ui";
 import { PushCard } from "@/components/PushCard";
@@ -40,6 +41,7 @@ export function EasyMy() {
       </section>
 
       {/* 출퇴근 수정 요청 결과 — 수정 요청 완료 화면이 ‘내 정보에서 결과를 볼 수 있어요’라고 안내하는 곳 (D-67 점검 반영) */}
+      <MyCorrections db={db} userId={userId} />
       <MyFixRequests db={db} userId={userId} />
 
       <section className="space-y-2.5" aria-labelledby="font-title">
@@ -107,6 +109,43 @@ export function EasyMy() {
         <p className="rounded-2xl bg-surface-2 px-4 py-3 text-[1rem] text-ink-2">DEMO에서는 로그인이 없습니다. 실제 운영에서는 여기서 비밀번호 변경·로그아웃을 합니다.</p>
       )}
     </div>
+  );
+}
+
+/**
+ * 본사가 고친 내 출퇴근 (D-80) — 근무시간이 바뀌는 일이라 본인이 알 수 있게. 처음 누른 시각 → 지금 시각과 이유.
+ * (비용을 본사가 고치면 보이던 것과 같은 원칙 · D-79). 최근 60일 기록만 휴대폰에 온다.
+ */
+function MyCorrections({ db, userId }: { db: NonNullable<ReturnType<typeof useMe>["db"]>; userId: string }) {
+  const list = (db.attendance ?? [])
+    .filter((r) => r.userId === userId && (r.corrections ?? []).length > 0)
+    .sort((a, b) => b.workDate.localeCompare(a.workDate))
+    .slice(0, 8);
+  if (!list.length) return null;
+  return (
+    <section className="space-y-3" aria-labelledby="corr-title" data-testid="my-corrections">
+      <h2 id="corr-title" className="text-[1.3rem] font-extrabold">
+        본사가 고친 출퇴근
+      </h2>
+      <ul className="space-y-2.5">
+        {list.map((r) => {
+          const first = r.corrections![0].before;
+          const last = r.corrections!.at(-1)!;
+          const changes = [first.inAt !== r.inAt ? `출근 ${hhmm(first.inAt)} → ${hhmm(r.inAt)}` : "", (first.outAt ?? "") !== (r.outAt ?? "") ? `퇴근 ${first.outAt ? hhmm(first.outAt) : "안 누름"} → ${r.outAt ? hhmm(r.outAt) : "없음"}` : ""].filter(Boolean);
+          return (
+            <li key={r.id} className="rounded-2xl border-2 border-line bg-surface p-4" data-testid="my-correction">
+              <p className="flex flex-wrap items-center gap-x-2 text-[1.05rem] font-semibold text-ink-2">
+                <b className="text-[1.12rem] text-ink">{db.sites.find((s) => s.id === r.siteId)?.shortName}</b>
+                {easyDate(r.workDate)}
+              </p>
+              <p className="mt-1 text-[1.08rem] font-bold num">{changes.join(" · ") || "시각은 그대로 (확인 표시만)"}</p>
+              <p className="mt-0.5 text-[1rem] text-ink-2">이유: {last.note}</p>
+            </li>
+          );
+        })}
+      </ul>
+      <p className="text-[0.98rem] text-ink-2">맞지 않으면 본사에 전화해 주세요.</p>
+    </section>
   );
 }
 
