@@ -53,8 +53,17 @@ export function noticesFor(before: DemoDB, after: DemoDB, actorId: string): Noti
     const prev = mcBefore.get(r.id);
     const m = `${Number(r.month.slice(5))}월`;
     if (!prev) push({ to: ceos, title: `${m} 마감 — 대표 확인 요청`, body: `${name(r.closedBy)}님이 ${m}을 마감했습니다${r.snapshot.openItems.length ? ` (남긴 일 ${r.snapshot.openItems.length}건)` : ""} — 눌러서 확인해 주세요`, url: `/close?month=${r.month}`, tag: `mcl-${r.month}` });
-    else if (!prev.confirmedAt && r.confirmedAt) push({ to: [r.closedBy], title: `${m} 마감 대표 확인`, body: r.confirmNote ? clip(r.confirmNote) : "대표가 마감을 확인했습니다", url: `/close?month=${r.month}`, tag: `mcl-${r.month}` });
-    else if (!prev.reopenedAt && r.reopenedAt) push({ to: hq, title: `${m} 마감을 다시 열었어요`, body: `${name(r.reopenedBy ?? "")} — ${clip(r.reopenReason ?? "", 50)}`, url: `/close?month=${r.month}`, tag: `mcl-${r.month}` });
+    // 대표 메모·다시 여는 이유는 금액이 들어갈 수 있어 잠금화면에 싣지 않는다 (D-82 점검)
+    else if (prev.confirmedAt !== r.confirmedAt && r.confirmedAt) push({ to: [r.closedBy], title: `${m} 마감 대표 ${prev.confirmedAt ? "다시 확인" : "확인"}`, body: `대표가 ${prev.confirmedAt ? "바뀐 것을 보고 다시 " : ""}확인했습니다${r.confirmNote ? " — 메모는 월 마감 화면에서" : ""}`, url: `/close?month=${r.month}`, tag: `mcl-${r.month}` });
+    else if (!prev.reopenedAt && r.reopenedAt) push({ to: hq, title: `${m} 마감을 다시 열었어요`, body: `${name(r.reopenedBy ?? "")} — 이유는 월 마감 화면에서 볼 수 있어요`, url: `/close?month=${r.month}`, tag: `mcl-${r.month}` });
+  }
+  // 대표가 확인한 달의 원가·기성·입금이 바뀌면 대표에게 (확인한 숫자가 모르게 바뀌지 않게 · D-82 점검) — 금액 없음
+  const confirmedMonths = (after.monthCloses ?? []).filter((r) => r.confirmedAt && !r.reopenedAt).map((r) => r.month);
+  for (const mo of new Set(confirmedMonths)) {
+    const inMo = (d?: string) => !!d && d.slice(0, 7) === mo;
+    const sig = (db: DemoDB) =>
+      [...db.costEntries.filter((e) => inMo(e.date)).map((e) => `${e.id}|${e.status}|${e.amount}|${e.category}`), ...db.billings.filter((b) => inMo(b.billedDate)).map((b) => `${b.id}|${b.status}|${b.amount}`), ...db.payments.filter((p) => inMo(p.receivedDate)).map((p) => `${p.id}|${p.amount}`)].sort().join(",");
+    if (sig(before) !== sig(after)) push({ to: ceos, title: `${Number(mo.slice(5))}월 — 확인한 마감 뒤 숫자가 바뀌었어요`, body: "월 마감 화면에서 무엇이 바뀌었는지 보고 다시 확인해 주세요", url: `/close?month=${mo}#close-changes`, tag: `mcl-chg-${mo}` });
   }
 
   // 앱 의견: 본사가 반영·보류하면 보낸 사람에게

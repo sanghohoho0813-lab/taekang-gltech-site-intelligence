@@ -4,7 +4,7 @@
  * 날짜는 모두 한국 날짜(YYYY-MM-DD). ‘이번 달’이면 오늘까지만 센다.
  */
 import type { CostCategory, CostEntry, DemoDB, Site } from "./types";
-import { CATEGORY_LABEL, COST_CATEGORIES, IMPACT_LABEL, REASON_LABEL } from "./labels";
+import { CATEGORY_LABEL, CO_STATUS_LABEL, COST_CATEGORIES, IMPACT_LABEL, REASON_LABEL } from "./labels";
 import { activeAt, entryEacImpact, siteFinancials } from "./calc";
 import { laborEstimate, type LaborSite } from "./labor";
 import { isOpenShift, minutesOf, overlapPairs, periodSummary, type MonthRow } from "./attendance";
@@ -246,7 +246,8 @@ export function monthClose(db: DemoDB, month: string, today = todayIso()): Month
     .map((l) => {
       const settled = db.costEntries.find((e) => e.siteId === l.site.id && e.settle?.month === month && (e.status === "active" || e.status === "pending"));
       const later = settled
-        ? db.costEntries.filter((e) => e.siteId === l.site.id && e.category === "labor" && e.id !== settled.id && !e.settle && (e.status === "active" || e.status === "pending") && inRange(e.date, from, to) && e.createdAt > settled.createdAt)
+        ? // 공무가 정산 경고를 보고 승인했거나 본사가 직접 넣은 것은 이미 안 것 — 지울 길 없이 남던 항목 (D-82 공무 점검)
+          db.costEntries.filter((e) => e.siteId === l.site.id && e.category === "labor" && e.id !== settled.id && !e.settle && (e.status === "active" || e.status === "pending") && inRange(e.date, from, to) && e.createdAt > settled.createdAt && !(e.reviewedAt && e.reviewedAt > settled.createdAt) && e.source !== "PC")
         : [];
       // 팀별 기본값 (D-81) — 입력·외주비 셈은 labor.ts 한 곳에서 (투입·인건비·정산 창·CSV와 같은 숫자)
       const teamPlan = teamPlanFor(l);
@@ -316,7 +317,13 @@ export function monthClose(db: DemoDB, month: string, today = todayIso()): Month
   const openRequests = db.partnerRequests.filter((r) => r.type !== "defect" && r.status !== "answered" && kst(r.createdAt) <= to);
   if (openRequests.length) items.push({ kind: "request", text: `회신 안 한 고객 요청 ${openRequests.length}건`, href: "/insights#requests" });
   const waitingCo = db.changeOrders.filter((c) => (c.status === "review" || c.status === "submitted") && kst(c.requestedAt) <= to);
-  if (waitingCo.length) items.push({ kind: "change", text: `결정 전 변경공사 ${waitingCo.length}건 (${waitingCo.map((c) => c.title).join(" · ")}) — 승인되기 전에는 계약·이익에 들어가지 않습니다`, href: "/finance" });
+  // 현장·금액·단계까지 — 누가 결정할 일인지 보이게, 누르면 그 변경공사로 (D-82 대표 점검)
+  if (waitingCo.length)
+    items.push({
+      kind: "change",
+      text: `결정 전 변경공사 ${waitingCo.length}건 (${waitingCo.map((c) => `${db.sites.find((s) => s.id === c.siteId)?.shortName ?? ""} ${c.title} ${man(c.amount)} · ${CO_STATUS_LABEL[c.status]} · ${short(kst(c.requestedAt))} 요청`).join(" / ")}) — 승인되기 전에는 계약·이익에 들어가지 않습니다`,
+      href: `/finance#co-${waitingCo[0].id}`,
+    });
   // 노무 — 달이 끝났는데 출력 기준 추정보다 노무비가 모자라면 (정산하면 빠진다) · 정산 뒤 같은 달 노무비가 더 들어오면 겹침 확인 (D-79)
   for (const l of labor) {
     if (ended && l.canSettle)

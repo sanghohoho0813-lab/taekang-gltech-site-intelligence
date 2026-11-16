@@ -112,6 +112,9 @@ describe("D-79 노무 차액 정산", () => {
     const { db, id } = octSite();
     db.crewChecks = [...db.crewChecks!, { id: "cc-sub", siteId: id, workDate: "2026-10-20", team: "실링 외주", kind: "subcontract", headcount: 10, at: "2026-10-20T00:00:00Z", by: "u-field" }];
     db.costEntries.push({ id: "ce-sub", siteId: id, category: "subcontract", amount: 1_500_000, date: "2026-10-21", forecastImpact: "within_forecast", reason: "planned", note: "실링 외주 기성", source: "PC", createdBy: "u-manager", createdAt: "2026-10-21T00:00:00Z", status: "active" });
+    // D-82: 팀 없는 외주비는 노무 비교에 넣지 않는다 (폐기물 같은 업체 외주비가 노무처럼 셈해지던 문제) — 외주 팀을 붙여야 셈
+    expect(monthClose(db, "2026-10", "2026-11-14").labor.find((l) => l.site.id === id)!.subcontractCovered).toBe(0);
+    db.costEntries.find((e) => e.id === "ce-sub")!.team = "실링 외주";
     const row = monthClose(db, "2026-10", "2026-11-14").labor.find((l) => l.site.id === id)!;
     expect(row.subcontractCovered).toBe(1_500_000);
     // D-81: 모자람 자체가 ‘노무비 + 외주 팀 몫 외주비’ 기준 — 기본값은 모자람 그대로

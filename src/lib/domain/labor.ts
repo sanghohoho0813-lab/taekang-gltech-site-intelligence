@@ -59,10 +59,10 @@ export interface LaborSite {
   otherTeams: { team: string; amount: number; category: "labor" | "subcontract" }[];
   /** 외주 팀 이름이 붙은 외주비 (그 팀 입력에 들어감) */
   subTagged: number;
-  /** 팀 미지정 외주비 전체 · 그중 외주 팀 몫으로 센 금액 (외주 팀의 남은 추정까지만) */
+  /** 팀 미지정 외주비 전체 (노무 비교에 넣지 않음) · subCovered는 D-82부터 늘 0 (팀을 붙여야 셈) */
   subUntagged: number;
   subCovered: number;
-  /** 외주 팀 몫으로 센 외주비 = subTagged + subCovered */
+  /** 외주 팀 몫으로 센 외주비 = 외주 팀 이름이 붙은 외주비 */
   subcontractCounted: number;
   /** 비교에 쓰는 입력 = 노무비 + 외주 팀 몫 외주비 — 투입·인건비·월 마감·정산·CSV가 모두 이 값 (D-81 점검) */
   compared: number;
@@ -150,8 +150,9 @@ export function laborEstimate(db: DemoDB, site: Site, from: string, to: string):
     } else if (e.team?.trim()) toOther(e.team, e.amount, "subcontract");
     else subUntagged += e.amount;
   }
-  const subRoom = teams.filter((t) => t.kind === "subcontract").reduce((a, t) => a + Math.max(0, t.estimate - t.entered), 0);
-  const subCovered = Math.min(subRoom, subUntagged);
+  // 팀 없는 외주비는 노무 비교에 넣지 않는다 — 폐기물·크레인 같은 업체 외주비가 노무처럼 셈해져 정산이 덜 들어가던 문제 (D-82 공무 점검).
+  // 외주 팀 몫이면 ‘팀 붙이기’로 그 팀에 붙인다 (붙이면 그 팀 입력이 된다)
+  const subCovered = 0;
   const subcontractCounted = subTagged + subCovered;
   const compared = actual + subcontractCounted;
   const att = (db.attendance ?? []).filter((r) => r.siteId === site.id && r.workDate >= from && r.workDate <= to);

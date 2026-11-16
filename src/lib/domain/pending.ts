@@ -8,9 +8,9 @@ import { shiftDate } from "./attendance";
 import { readinessAll } from "./readiness";
 import { defectTodoCount } from "./defects";
 import { warrantyStatus, WARRANTY_SOON_DAYS } from "./warranty";
-import { closeStatus } from "./closeRecord";
+import { closeStatuses } from "./closeRecord";
 
-export type PendingKey = "fix" | "report" | "wo-done" | "wo-late" | "partner" | "defect" | "warranty" | "labor" | "feedback" | "ready" | "cost" | "close" | "close-change";
+export type PendingKey = "fix" | "report" | "wo-done" | "wo-late" | "partner" | "defect" | "warranty" | "labor" | "feedback" | "ready" | "cost" | "close" | "close-confirm" | "close-change";
 export interface PendingItem {
   key: PendingKey;
   label: string;
@@ -18,14 +18,22 @@ export interface PendingItem {
   href: string;
 }
 
-export function pendingItems(db: DemoDB, today: string, live: boolean): PendingItem[] {
+/** role: 대표 확인 대기는 대표 화면에만 (공무 합계를 부풀리지 않게 · D-82 점검). 없으면(아침 알림 등) 모두 */
+export function pendingItems(db: DemoDB, today: string, live: boolean, role?: string): PendingItem[] {
   const wos = db.workOrders ?? [];
-  // 지난달 마감 (D-82) — 마감 전이면 공무에게, 마감했으면 대표 확인 대기, 마감 뒤 그 달 숫자가 바뀌었으면 몇 건
-  const cs = closeStatus(db, today);
-  const ml = cs ? `${Number(cs.month.slice(5))}월` : "";
+  // 끝난 최근 석 달 마감 (D-82) — 아직 마감 안 한 달 · 대표 확인 대기 · 마감(확인) 뒤 바뀐 것. 해당 없으면 줄을 보이지 않는다
+  const cs = closeStatuses(db, today);
+  const ml = (xs: { month: string }[]) => xs.map((x) => `${Number(x.month.slice(5))}월`).reverse().join("·");
+  const open = cs.filter((c) => c.state === "open");
+  const waiting = cs.filter((c) => c.state === "closed");
+  const changed = cs.filter((c) => c.state !== "open" && c.changes > 0);
+  const closeRows: PendingItem[] = [
+    ...(open.length ? [{ key: "close" as const, label: `${ml(open)} 아직 마감 안 함`, n: open.length, href: `/close?month=${open[open.length - 1].month}` }] : []),
+    ...(waiting.length && role !== "manager" && role !== "field" ? [{ key: "close-confirm" as const, label: `${ml(waiting)} 마감 대표 확인 대기`, n: waiting.length, href: `/close?month=${waiting[0].month}` }] : []),
+    ...(changed.length ? [{ key: "close-change" as const, label: `${ml(changed)} 마감 뒤 바뀐 것`, n: changed.reduce((a, c) => a + c.changes, 0), href: `/close?month=${changed[0].month}#close-changes` }] : []),
+  ];
   return [
-    ...(cs ? [{ key: "close" as const, label: cs.state === "open" ? `${ml} 마감 전 (월 마감에서 닫기)` : `${ml} 마감 대표 확인 대기`, n: cs.state === "confirmed" ? 0 : 1, href: `/close?month=${cs.month}` }] : []),
-    ...(cs && cs.state !== "open" ? [{ key: "close-change" as const, label: `${ml} 마감 뒤 바뀐 것 (그 달 날짜로 들어온·바뀐 원가·기성·근무시간)`, n: cs.changes, href: `/close?month=${cs.month}#close-changes` }] : []),
+    ...closeRows,
     { key: "fix", label: "근태 수정 요청", n: (db.attendanceRequests ?? []).filter((q) => q.status === "pending").length, href: "/orders?tab=fixes" },
     // 엑셀로 옮긴 지난 기록은 이미 확인된 것 (D-71)
     { key: "report", label: "확인 안 한 현장 보고", n: db.reports.filter((r) => r.status !== "voided" && !r.review && !r.importBatchId).length, href: "/orders?tab=reports" },

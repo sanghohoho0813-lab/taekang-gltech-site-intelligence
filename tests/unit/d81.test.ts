@@ -297,25 +297,26 @@ describe("D-81 팀별 노무 정산", () => {
     expect(Math.abs(row.suggested - row.shortfall)).toBeLessThanOrEqual(1000);
   });
 
-  it("외주비 — 외주 팀 이름이 붙으면 그 팀 입력, 팀이 없으면 외주 팀 남은 추정만큼, 직영·없는 이름이면 따로 보이고 비교에서 뺀다 · 모든 숫자가 같은 ‘입력’", () => {
+  it("외주비 — 외주 팀 이름이 붙어야 그 팀 입력으로 셈 · 팀 없는 외주비는 비교에 넣지 않음(D-82) · 직영·없는 이름이면 따로 보이고 비교에서 뺀다 · 모든 숫자가 같은 ‘입력’", () => {
     const { db, id } = teamSite();
     db.costEntries.push(cost("ce-sub", id, { category: "subcontract", amount: 4_000_000, note: "외주 기성" }));
     const l0 = est(db, id);
     expect(l0.subUntagged).toBe(4_000_000);
-    expect(l0.subCovered).toBe(4_000_000);
-    expect(l0.compared).toBe(6_000_000 + 4_000_000);
+    expect(l0.subCovered).toBe(0);
+    expect(l0.compared).toBe(6_000_000);
     const row = monthClose(db, "2026-10", "2026-11-14").labor.find((l) => l.site.id === id)!;
-    expect(row.subcontractCovered).toBe(4_000_000);
-    expect(row.shortfall).toBe(15_800_000 - 10_000_000);
+    expect(row.subcontractCovered).toBe(0);
+    expect(row.shortfall).toBe(15_800_000 - 6_000_000);
     expect(Math.abs(row.suggested - row.shortfall)).toBeLessThanOrEqual(1000);
-    // 팀을 붙여도 입력·모자람은 그대로 (팀 행으로 옮겨 갈 뿐)
+    // 외주 팀을 붙이면 그 팀 입력이 되고 입력·모자람에 들어간다
     const t = setCostTeams(db, { items: [{ entryId: "ce-sub", team: "창호1팀" }] }, ctx("u-manager")).db;
     const l1 = est(t, id);
     expect(l1.subTagged).toBe(4_000_000);
     expect(l1.teams.find((x) => x.team === "창호1팀")!.entered).toBe(4_000_000);
-    expect(l1.compared).toBe(l0.compared);
+    expect(l1.compared).toBe(10_000_000);
     const row1 = monthClose(t, "2026-10", "2026-11-14").labor.find((l) => l.site.id === id)!;
-    expect(row1.shortfall).toBe(row.shortfall);
+    expect(row1.subcontractCovered).toBe(4_000_000);
+    expect(row1.shortfall).toBe(15_800_000 - 10_000_000);
     // 직영 팀·없는 이름이 붙은 외주비는 사라지지 않고 따로 보인다 (비교에서는 뺌)
     const d = setCostTeams(db, { items: [{ entryId: "ce-sub", team: "직영" }] }, ctx("u-manager")).db;
     const l2 = est(d, id);

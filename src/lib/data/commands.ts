@@ -326,6 +326,8 @@ export function submitFieldReport(db0: DemoDB, input: FieldReportInput, ctx: Ctx
     createdAt: at,
     status: "submitted",
     ...(input.kind === "photo" || input.kind === "cost" ? { kind: input.kind } : {}),
+    // 본사가 PC로 넣은 보고는 본사가 이미 안 것 — ‘확인 안 한 현장 보고’로 자기 입력을 다시 확인하던 문제 (D-82 공무 점검)
+    ...((input.source ?? "FIELD") === "PC" ? { review: { status: "confirmed" as const, at, by: ctx.userId, note: "본사 입력" } } : {}),
   };
   if (input.geo) {
     // 위치 기록 동의가 있을 때만 좌표를 남긴다. 판정은 서버(이 함수)가 다시 한다.
@@ -483,7 +485,7 @@ export function voidReport(db0: DemoDB, reportId: string, ctx: Ctx) {
 export function editCostEntry(
   db0: DemoDB,
   entryId: string,
-  patch: { amount: number; category: CostCategory; note: string; forecastImpact?: Exclude<ForecastImpact, "baseline">; team?: string | null },
+  patch: { amount: number; category: CostCategory; note: string; forecastImpact?: Exclude<ForecastImpact, "baseline">; team?: string | null; date?: string },
   ctx: Ctx,
 ) {
   const db = clone(db0);
@@ -499,8 +501,18 @@ export function editCostEntry(
   if (te) throw new CommandError(te, "VALIDATION", { team: te });
   // 팀별로 나눠 넣은 정산은 금액을 바꾸면 팀별 합이 어긋난다 (D-81)
   if (e.settle?.teams?.length && patch.amount !== e.amount) throw new CommandError("팀별로 나눠 넣은 노무 정산은 금액을 바꿀 수 없습니다. 되돌린 뒤 다시 넣어 주세요.", "VALIDATION", { amount: "팀별 정산" });
+  // 발생일 고치기 (D-82 공무 점검 — 마감한 달 원가를 다음 달로 옮길 길이 없었다) · 본사만 · 정산 건은 안 됨
+  const newDate = patch.date !== undefined && patch.date !== e.date ? patch.date : undefined;
+  if (newDate !== undefined) {
+    const role = db0.users.find((u) => u.id === ctx.userId)?.role;
+    if (role !== "ceo" && role !== "manager") throw new CommandError("발생일은 본사만 고칠 수 있습니다.", "VALIDATION", { date: "본사만" });
+    if (e.settle) throw new CommandError("노무 정산 건은 발생일을 바꿀 수 없습니다. 되돌린 뒤 다시 넣어 주세요.", "VALIDATION", { date: "노무 정산" });
+    if (!pastCalendarDate(newDate, ctx)) throw new CommandError("발생일을 확인해 주세요 (오늘 이후 날짜는 안 됩니다).", "VALIDATION", { date: "날짜 확인" });
+  }
   const before = siteFinancials(db0, e.siteId);
-  e.editHistory = [...(e.editHistory ?? []), { at: nowIso(ctx), by: ctx.userId, before: { amount: e.amount, category: e.category, note: e.note, ...(e.team ? { team: e.team } : {}) } }];
+  e.editHistory = [...(e.editHistory ?? []), { at: nowIso(ctx), by: ctx.userId, before: { amount: e.amount, category: e.category, note: e.note, ...(e.team ? { team: e.team } : {}), ...(newDate ? { date: e.date } : {}) } }];
+  const oldDate = e.date;
+  if (newDate) e.date = newDate;
   e.amount = patch.amount;
   e.category = patch.category;
   e.note = patch.note.trim() || e.note;
@@ -515,7 +527,7 @@ export function editCostEntry(
   } else if (e.team && !cleanTeam(e.category, e.team)) delete e.team;
   e.editedAt = nowIso(ctx);
   const after = siteFinancials(db, e.siteId);
-  log(db, ctx, "cost_edit", `원가 수정 ${CATEGORY_LABEL[e.category]} → ${fmtMan(e.amount)} · 예상 총원가 ${fmtEok(before.eac)} → ${fmtEok(after.eac)}`, e.siteId, `/sites/${e.siteId}`);
+  log(db, ctx, "cost_edit", `원가 수정 ${CATEGORY_LABEL[e.category]} → ${fmtMan(e.amount)}${newDate ? ` · 발생일 ${oldDate} → ${newDate}` : ""} · 예상 총원가 ${fmtEok(before.eac)} → ${fmtEok(after.eac)}`, e.siteId, `/sites/${e.siteId}`);
   touch(db, ctx);
   return { db, result: { before, after } };
 }

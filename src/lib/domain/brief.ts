@@ -9,7 +9,8 @@ import { shiftDate } from "./attendance";
 import { pendingItems, type PendingKey } from "./pending";
 
 /** 아침 알림에 넣는 처리 대기 — 매일 손댈 것만 (인건비·운영 자료·앱 의견·하자보증은 따로 알리거나 대시보드에서) */
-const HQ_KEYS: PendingKey[] = ["wo-late", "report", "wo-done", "fix", "defect", "partner", "cost"];
+// 마감한 달 숫자가 바뀐 것도 (D-82) — 달마다 몇 번 안 되지만 대표가 모르고 지나가지 않게
+const HQ_KEYS: PendingKey[] = ["wo-late", "report", "wo-done", "fix", "defect", "partner", "cost", "close-change"];
 const SHORT: Partial<Record<PendingKey, string>> = {
   "wo-late": "기한 지난·미접수 작업지시",
   report: "확인 안 한 현장 보고",
@@ -18,6 +19,7 @@ const SHORT: Partial<Record<PendingKey, string>> = {
   defect: "하자보수 본사 할 일",
   partner: "회신 안 한 고객 요청",
   cost: "공무 확인 대기 원가",
+  "close-change": "마감한 달 숫자 바뀜",
 };
 
 const weekday = (date: string) => new Date(`${date}T12:00:00Z`).getUTCDay();

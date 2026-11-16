@@ -7,11 +7,13 @@ import type { DemoDB } from "@/lib/domain/types";
 import { todayIso } from "@/lib/domain/format";
 import { pendingItems } from "@/lib/domain/pending";
 import { IS_LIVE } from "@/lib/mode";
+import { useMe } from "@/lib/data/hooks";
 import { Card, CardHeader, cx } from "@/components/ui/primitives";
 
 export function PendingBoard({ db }: { db: DemoDB }) {
   // 목록 계산은 lib/domain/pending.ts — 아침 알림도 같은 계산을 쓴다 (D-72)
-  const items = pendingItems(db, todayIso(), IS_LIVE);
+  const { role } = useMe();
+  const items = pendingItems(db, todayIso(), IS_LIVE, role);
   const total = items.reduce((a, b) => a + b.n, 0);
   return (
     <Card data-testid="pending-board">

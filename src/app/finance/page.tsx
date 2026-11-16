@@ -17,6 +17,7 @@ import { fmtDate, fmtEok, fmtMan, fmtPct, todayIso } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
 import type { ChangeOrder, CostCategory, DemoDB } from "@/lib/domain/types";
 import { IS_LIVE } from "@/lib/mode";
+import { ClosedMonthHint } from "@/components/domain/ClosedMonthHint";
 
 export default function FinancePage() {
   const { db } = useMe();
@@ -136,7 +137,7 @@ export default function FinancePage() {
               const s = db.sites.find((x) => x.id === c.siteId);
               const decided = c.status === "approved" || c.status === "rejected";
               return (
-                <li key={c.id} className="flex flex-wrap items-center gap-3 py-3" data-testid="change-order" data-status={c.status}>
+                <li key={c.id} id={`co-${c.id}`} className="flex scroll-mt-24 flex-wrap items-center gap-3 py-3" data-testid="change-order" data-status={c.status}>
                   <div className="min-w-0 flex-1 basis-[16rem]">
                     <p className="flex flex-wrap items-center gap-1.5 text-[0.88rem]">
                       <b>{s?.shortName}</b> {c.title}
@@ -277,7 +278,7 @@ function ChangeOrderModal({ db, c, to, onClose }: { db: DemoDB; c: ChangeOrder; 
                     ))}
                   </select>
                 </Field>
-                <Field label="이 공사에 들어갈 예상 원가 (원 · 선택)" htmlFor="co-cost" hint={addedCost ? `= ${fmtMan(addedCost)} — 잔여예상원가에 더합니다` : "넣지 않으면 승인 금액 전부가 이익으로 잡힙니다"}>
+                <Field label="이 공사에 들어갈 예상 원가 (원 · 선택)" htmlFor="co-cost" hint={addedCost ? `= ${fmtMan(addedCost)} — 잔여예상원가에 더합니다. 이 공사 원가가 이미 원가로 들어가 있으면 두 번 계상되니 넣지 마세요` : "넣지 않으면 승인 금액 전부가 이익으로 잡힙니다 — 단, 이 공사 원가가 이미 원가(추가 비용)로 들어가 있으면 넣지 마세요(두 번 계상)"}>
                   <input id="co-cost" inputMode="numeric" className={cx(inputCls, "num text-right")} value={costText} onChange={(e) => setCostText(e.target.value.replace(/[^\d]/g, "") ? Number(e.target.value.replace(/[^\d]/g, "")).toLocaleString("ko-KR") : "")} data-testid="co-cost" />
                 </Field>
               </div>
@@ -352,6 +353,16 @@ function MoneyFormModal({ db, kind, onClose }: { db: DemoDB; kind: "billing" | "
         <Field label={kind === "billing" ? "청구일" : "입금일"} htmlFor="m-date">
           <input id="m-date" type="date" className={inputCls} value={date} onChange={(e) => setDate(e.target.value)} />
         </Field>
+        {/* 누계 기성이 계약(승인 변경 포함)을 넘으면 알린다 — 판교 104%가 아무 표시 없이 들어가던 문제 (D-82 대표 점검) */}
+        {kind === "billing" && amount > 0 && (() => {
+          const billed = db.billings.filter((b) => b.siteId === siteId && b.status === "confirmed").reduce((a, b) => a + b.amount, 0) + amount;
+          return f.adjustedContract > 0 && billed > f.adjustedContract ? (
+            <p className="rounded-lg bg-warn-bg px-3 py-2 text-[0.8rem] font-semibold text-ink" data-testid="billing-over">
+              이 기성을 넣으면 누계 기성 {fmtMan(billed)} — 계약(승인 변경공사 포함) {fmtMan(f.adjustedContract)}의 {Math.round((billed / f.adjustedContract) * 1000) / 10}%입니다. 변경공사 승인이 먼저인지 확인하세요.
+            </p>
+          ) : null;
+        })()}
+        <ClosedMonthHint db={db} date={date} action="넣으면" what={kind === "billing" ? "기성" : "입금"} />
         <p className="text-[0.74rem] text-ink-3">{IS_LIVE ? "로그인한 사용자 이름으로 활동 이력에 기록됩니다." : "현재 Demo 역할 사용자로 활동 이력에 기록됩니다 (DEMO 저장소)."}</p>
       </div>
     </Modal>

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Pencil, Undo2 } from "lucide-react";
 import type { CostCategory, CostEntry, DemoDB } from "@/lib/domain/types";
 import { CATEGORY_LABEL, COST_CATEGORIES, IMPACT_LABEL, REASON_LABEL } from "@/lib/domain/labels";
-import { fmtDate, fmtEok, fmtMan, fmtPct, fmtRelative } from "@/lib/domain/format";
+import { fmtDate, fmtEok, fmtMan, fmtPct, fmtRelative, todayIso } from "@/lib/domain/format";
 import { entryEacImpact } from "@/lib/domain/calc";
 import { CommandError } from "@/lib/data/commands";
 import { run } from "@/lib/data/store";
@@ -61,12 +61,13 @@ export function CostEntryList({ db, entries, showSite = false, emptyText = "입�
                     고친 이력:{" "}
                     {(e.editHistory ?? [])
                       .map((h, i, all) => {
-                        const next = all[i + 1]?.before ?? { amount: e.amount, category: e.category, team: e.team };
+                        const next = all[i + 1]?.before ?? { amount: e.amount, category: e.category, team: e.team, date: e.date };
                         const what =
                           [
                             h.before.amount !== next.amount ? `${fmtMan(h.before.amount)} → ${fmtMan(next.amount)}` : "",
                             h.before.category !== next.category ? `${CATEGORY_LABEL[h.before.category]} → ${CATEGORY_LABEL[next.category]}` : "",
                             (h.before.team ?? "") !== (next.team ?? "") ? `팀 ${h.before.team ?? "없음"} → ${next.team ?? "없음"}` : "",
+                            h.before.date ? `발생일 ${fmtDate(h.before.date)} → ${fmtDate(all.slice(i + 1).find((x) => x.before.date)?.before.date ?? e.date)}` : "",
                           ]
                             .filter(Boolean)
                             .join(" · ") || "메모";
@@ -139,7 +140,7 @@ export function CostEntryList({ db, entries, showSite = false, emptyText = "입�
       >
         {voiding && (
           <div className="space-y-3">
-            {db && <ClosedMonthHint db={db} date={voiding.date} action="무효 처리" />}
+            {db && <ClosedMonthHint db={db} date={voiding.date} action="무효 처리하면" />}
             <p className="text-[0.9rem] text-ink-2">
               {CATEGORY_LABEL[voiding.category]} <b className="num">{fmtMan(voiding.amount)}</b> — 기록은 삭제하지 않고 ‘무효’로 남겨 이력을 보존합니다.
             </p>
@@ -157,6 +158,8 @@ function EditCostModal({ entry, onClose, canSeeMoney }: { entry: CostEntry; onCl
   const toast = useToast();
   const { db } = useMe();
   const [team, setTeam] = useState(entry.team ?? "");
+  // 발생일 (본사만 · D-82) — 마감한 달 원가를 다음 달로 옮길 때
+  const [date, setDate] = useState(entry.date);
   const [category, setCategory] = useState<CostCategory>(entry.category);
   const [amountText, setAmountText] = useState(entry.amount.toLocaleString("ko-KR"));
   const [note, setNote] = useState(entry.note);
@@ -177,7 +180,7 @@ function EditCostModal({ entry, onClose, canSeeMoney }: { entry: CostEntry; onCl
             variant="cta"
             onClick={async () => {
               try {
-                const r = await run("editCostEntry", { entryId: entry.id, patch: { amount, category, note, forecastImpact: impact as "additional" | "within_forecast", ...(category === "labor" || category === "subcontract" ? { team: team.trim() || null } : {}) } });
+                const r = await run("editCostEntry", { entryId: entry.id, patch: { amount, category, note, forecastImpact: impact as "additional" | "within_forecast", ...(category === "labor" || category === "subcontract" ? { team: team.trim() || null } : {}), ...(canSeeMoney && date !== entry.date ? { date } : {}) } });
                 toast.push({ tone: "ok", title: "원가를 수정했습니다", desc: canSeeMoney ? `예상 총원가 ${fmtEok(r.before.eac)} → ${fmtEok(r.after.eac)}` : undefined });
                 onClose();
               } catch (e) {
@@ -191,7 +194,12 @@ function EditCostModal({ entry, onClose, canSeeMoney }: { entry: CostEntry; onCl
       }
     >
       <div className="space-y-3">
-        {db && <ClosedMonthHint db={db} date={entry.date} action="고치기" />}
+        {db && <ClosedMonthHint db={db} date={entry.date} action="고치면" />}
+        {canSeeMoney && !entry.settle && (
+          <Field label="발생일" htmlFor="e-date" hint={date !== entry.date ? `${entry.date} → ${date} · 그 달 원가로 옮겨집니다 (이력에 남음)` : "다음 달 몫이면 다음 달 날짜로 바꾸세요"}>
+            <input id="e-date" type="date" className={inputCls} value={date} max={todayIso()} onChange={(e) => setDate(e.target.value)} data-testid="e-date" />
+          </Field>
+        )}
         <Field label="항목" htmlFor="e-cat">
           <select id="e-cat" className={cx(inputCls, entry.settle && "bg-surface-2 text-ink-3")} value={category} disabled={!!entry.settle} onChange={(e) => setCategory(e.target.value as CostCategory)}>
             {COST_CATEGORIES.map((c) => (

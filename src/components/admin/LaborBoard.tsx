@@ -230,7 +230,7 @@ function SiteLabor({ r }: { r: LaborSite }) {
                   {r.subUntagged > 0 && (
                     <>
                       팀을 정하지 않은 외주비 <b className="num text-ink">{fmtMan(r.subUntagged)}</b>
-                      {r.subCovered > 0 ? ` — 그중 ${fmtMan(r.subCovered)}을 외주 팀 몫으로 셈했습니다.` : " — 외주 팀 추정이 이미 차서 비교에 넣지 않았습니다."}{" "}
+                      {" — 노무 비교에 넣지 않았습니다. 외주 팀 몫이면 ‘팀 붙이기’로 그 팀에 붙이세요 (폐기물·크레인 같은 업체 외주비는 그대로)."}{" "}
                     </>
                   )}
                   {r.untagged === 0 && r.subUntagged === 0 && "팀 이름이 출력 기록과 맞지 않는 원가가 있습니다."}

@@ -352,7 +352,7 @@ export interface CostEntry {
   voidedBy?: string;
   voidReason?: string;
   editedAt?: string;
-  editHistory?: { at: string; by: string; before: { amount: number; category: CostCategory; note: string; team?: string } }[];
+  editHistory?: { at: string; by: string; before: { amount: number; category: CostCategory; note: string; team?: string; date?: string } }[];
   /** 자료 가져오기 묶음 (가져오기 취소용) */
   importBatchId?: string;
   /** 월 마감 노무 정산 (D-79) — 출력 인원 × 팀 단가 추정과 입력된 노무비의 차액을 본사가 한 번에 넣은 것 · teams: 팀별로 나눈 금액 (D-81) */
@@ -396,6 +396,10 @@ export interface MonthCloseRecord {
   confirmedAt?: string;
   confirmedBy?: string;
   confirmNote?: string;
+  /** 대표가 확인할 때의 숫자 (D-82 점검) — 확인 뒤 바뀐 것은 이것과 비교한다. 마감 때 숫자(snapshot)는 화면에 그대로 둔다 */
+  confirmSnapshot?: MonthCloseSnapshot;
+  /** 대표 확인 이력 — 마감 뒤(또는 지난 확인 뒤) 바뀐 것을 보고 다시 확인할 때마다 한 줄 */
+  confirmations?: { at: string; by: string; note?: string; changes: string[] }[];
   /** 다시 열면 이 기록은 끝나고, 다시 마감하면 새 기록이 생긴다 (이력은 남김) */
   reopenedAt?: string;
   reopenedBy?: string;

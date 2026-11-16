@@ -27,6 +27,7 @@ import { ForecastModal } from "./SitesAdmin";
 import { OverlapFixModal } from "./OverlapFix";
 import { MoneyField, toWon, wonText } from "./inputs";
 import { CloseRecordCard } from "./CloseRecordCard";
+import { currentClose } from "@/lib/domain/closeRecord";
 
 const ITEM_LABEL: Record<CloseItemKind, string> = {
   cost: "원가",
@@ -110,8 +111,8 @@ export function CloseBoard() {
       {/* 1. 닫기 전에 볼 것 */}
       <Card data-testid="close-items">
         <CardHeader
-          title={r.items.length ? `닫기 전에 볼 것 ${r.items.length}건` : "닫기 전에 볼 것 없음"}
-          sub={r.items.length ? "누르면 처리하는 화면으로 갑니다. 노무 정산·준공 원가 마감은 여기서 바로 할 수 있습니다. 처리하면 이 목록에서 빠집니다." : "이 달에 남은 확인·처리 거리가 없습니다."}
+          title={currentClose(db, chosen) ? (r.items.length ? `남은 일 ${r.items.length}건` : "남은 일 없음") : r.items.length ? `닫기 전에 볼 것 ${r.items.length}건` : "닫기 전에 볼 것 없음"}
+          sub={<span className="no-print">{r.items.length ? "누르면 처리하는 화면으로 갑니다. 노무 정산·준공 원가 마감은 여기서 바로 할 수 있습니다. 처리하면 이 목록에서 빠집니다." : "이 달에 남은 확인·처리 거리가 없습니다."}</span>}
         />
         {r.items.length ? (
           <ul className="divide-y divide-line border-t border-line">
@@ -182,7 +183,8 @@ export function CloseBoard() {
             </tbody>
           </table>
         </div>
-        {r.late.n > 0 && (
+        {/* 마감 기록이 있으면 ‘마감 뒤 바뀐 것’(맨 위 카드)이 정확한 비교라 이 안내는 마감 전에만 (D-82 공무 점검) */}
+        {r.late.n > 0 && !currentClose(db, chosen) && (
           <p className="mx-5 mt-2 rounded-lg bg-surface-2 px-3 py-2 text-[0.8rem] text-ink-2" data-testid="close-late">
             달이 끝난 뒤에 넣거나 확인한 {Number(chosen.slice(5))}월 날짜 원가 {r.late.n}건({fmtMan(r.late.amount)})이 포함돼 있습니다 — 그 전에 인쇄해 둔 마감본과 숫자가 다를 수 있습니다.
           </p>
@@ -488,12 +490,12 @@ function LaborSettleModal({ db, row, month, onClose }: { db: DemoDB; row: CloseL
                   <td />
                 </tr>
               ))}
-              {row.subCovered > 0 && (
-                <tr className="border-t border-line text-ink-2">
+              {row.subUntagged > 0 && (
+                <tr className="border-t border-line text-ink-2" data-testid="settle-sub-untagged">
                   <td className="px-3 py-2 font-sans" colSpan={3}>
-                    팀 미지정 외주비 <span className="text-[0.72rem] text-ink-3">(외주 팀 몫으로 봄{row.subUntagged > row.subCovered ? ` · ${fmtMan(row.subUntagged)} 중` : ""})</span>
+                    팀 미지정 외주비 <span className="text-[0.72rem] text-ink-3">(노무 비교에 넣지 않음 — 외주 팀 몫이면 투입·인건비 ‘팀 붙이기’)</span>
                   </td>
-                  <td className="px-3 py-2 text-right">{fmtMan(row.subCovered)}</td>
+                  <td className="px-3 py-2 text-right text-ink-3 line-through">{fmtMan(row.subUntagged)}</td>
                   <td />
                 </tr>
               )}

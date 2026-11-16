@@ -126,7 +126,8 @@ export function FieldReportForm({ fixedSiteId, onClose, inSheet = false }: { fix
     costs: costLines,
     reason: reason || undefined,
     reasonNote,
-    source: (inSheet || role === "field" ? "FIELD" : "PC") as "FIELD" | "PC",
+    // 본사가 현장 상세에서 넣어도 본사 입력(PC) — 공무 확인 대기·‘모바일 현장보고’로 들어가던 문제 (D-82 공무 점검)
+    source: (role === "field" ? "FIELD" : "PC") as "FIELD" | "PC",
     ...(progressPct !== undefined && Number.isFinite(progressPct) ? { progressPct } : {}),
   };
 
@@ -344,7 +345,7 @@ export function FieldReportForm({ fixedSiteId, onClose, inSheet = false }: { fix
         </Field>
       </div>
       {/* 마감한 달 날짜로 비용을 넣으면 알린다 (D-82 · 본사만 마감 기록을 봄) */}
-      {db && costs.length > 0 && <ClosedMonthHint db={db} date={reportDate} action="넣기" />}
+      {db && costs.length > 0 && <ClosedMonthHint db={db} date={reportDate} action="넣으면" />}
 
       <Field label="오늘의 작업 내용" htmlFor="f-work" required counter={workCount} error={errors.workDone}>
         <textarea id="f-work" rows={3} maxLength={500} value={workDone} onChange={(e) => setWorkDone(e.target.value)} className={inputCls} placeholder="예) 3층 남측 커튼월 유닛 10개 설치 완료" />
