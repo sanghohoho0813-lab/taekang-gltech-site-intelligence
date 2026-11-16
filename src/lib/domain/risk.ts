@@ -280,6 +280,11 @@ export function computeSignals(db: DemoDB, now = new Date()): RiskSignal[] {
             `청구일로부터 ${days}일 경과 > 기준 ${t.changeOrderPendingDays}일`,
             `승인 전 금액은 예상이익 계산에서 제외(보수적 계산)`,
             `승인 시 변경 반영 계약금액 +${fmtMan(co.amount)}`,
+            // 마지막으로 발주처에 확인한 기록 · 다음 확인할 날 (D-84)
+            ...(() => {
+              const last = [...(co.log ?? [])].reverse().find((l) => l.kind === "follow_up" || l.kind === "client_reply");
+              return [last ? `마지막 확인 ${last.date} — ${last.note}` : "청구 뒤 발주처에 확인한 기록 없음", ...(co.nextFollowUp ? [`다음 확인할 날 ${co.nextFollowUp}`] : [])];
+            })(),
           ],
           dataUsed: ["change_orders"],
           threshold: `변경공사 승인 대기 ${t.changeOrderPendingDays}일 초과`,

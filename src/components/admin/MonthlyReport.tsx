@@ -17,6 +17,7 @@ import { laborShort, monthClose, profitEvents, type MonthCloseReport } from "@/l
 import { changesAfterClose, currentClose, firstUseDate, type ChangesAfterClose } from "@/lib/domain/closeRecord";
 import { siteFinancials } from "@/lib/domain/calc";
 import { computeSignals } from "@/lib/domain/risk";
+import { CLAIMABLE_REASONS, coBoard, coByEntry, coStageText, rejectedByEntry } from "@/lib/domain/changeOrders";
 import { CATEGORY_LABEL, COST_CATEGORIES } from "@/lib/domain/labels";
 import { fmtDate, fmtDateTime, fmtMan, fmtPct } from "@/lib/domain/format";
 import { IS_LIVE } from "@/lib/mode";
@@ -53,6 +54,11 @@ function ceoTodos(db: DemoDB, r: MonthCloseReport, ch: ChangesAfterClose | null,
     }
   }
   for (const it of r.items.filter((i) => i.kind === "change" || i.kind === "settle")) out.push({ tone: "warn", text: it.text, href: it.href });
+  // 청구 안 한 설계변경 추가 원가 (D-84) — 청구하지 않으면 그대로 이익 감소
+  const ids0 = new Set(r.money.map((x) => x.site.id));
+  const unclaimed = coBoard(db, today).unclaimed.filter((e) => ids0.has(e.siteId));
+  if (unclaimed.length)
+    out.push({ tone: "warn", text: `변경공사로 청구 안 한 설계변경 추가 원가 ${unclaimed.length}건 ${man(unclaimed.reduce((a, e) => a + e.amount, 0))} (${unclaimed.slice(0, 3).map((e) => `${db.sites.find((x) => x.id === e.siteId)?.shortName ?? ""} ${e.note || ""}`.trim()).join(" · ")}) — 청구할지 정하기`, href: "/finance#co-unclaimed" });
   for (const l of r.labor.filter((x) => x.canSettle)) out.push({ tone: "warn", text: `${l.site.shortName} 노무 — 출력 기준 추정보다 입력이 ${man(l.shortfall)} 적음 · 명세가 오면 넣거나 차액 정산`, href: `/close?month=${r.month}#close-labor` });
   const ids = new Set(r.money.map((x) => x.site.id));
   for (const s of computeSignals(db, new Date(`${today}T03:00:00Z`)).filter((x) => x.rule === "BILLING_LAG" && ids.has(x.siteId))) out.push({ tone: "warn", text: `${s.title} — ${s.summary}`, href: "/finance" });
@@ -78,7 +84,9 @@ export function MonthlyReport({ db, month, months, today, onMonth, focusSelect }
   const prevOut = r.money.reduce((a, m) => a + (m.outstandingAtEnd - m.billed + m.received), 0);
   const nowOut = r.money.reduce((a, m) => a + siteFinancials(db, m.site.id).outstanding, 0);
   const todos = ceoTodos(db, r, ch, today);
-  const waitingCo = (siteId: string) => db.changeOrders.filter((c) => c.siteId === siteId && (c.status === "review" || c.status === "submitted"));
+  // 원가 → 그 원가로 청구한 변경공사 (D-84 — 같은 현장의 아무 변경공사가 아니라 그 원가의 것)
+  const claimedBy = coByEntry(db);
+  const rejectedBy = rejectedByEntry(db);
   const rows = new Map(r.money.map((m) => [m.site.id, siteRow(db, r, m.site.id, today)]));
 
   // 핵심 요약 — 데이터에서 자동 생성 (사람이 지어낸 문장 아님)
@@ -297,7 +305,10 @@ export function MonthlyReport({ db, month, months, today, onMonth, focusSelect }
         {events.length ? (
           <ul className="divide-y divide-line border-t border-line text-[0.86rem]">
             {events.map((e, i) => {
-              const co = e.amount < 0 ? waitingCo(e.siteId) : [];
+              const co = e.entryId ? claimedBy.get(e.entryId) : undefined;
+              const rej = e.entryId && !co ? rejectedBy.get(e.entryId) : undefined;
+              const entry = e.entryId && !co && !rej ? db.costEntries.find((x) => x.id === e.entryId) : undefined;
+              const canClaim = !!entry && entry.forecastImpact === "additional" && CLAIMABLE_REASONS.has(entry.reason);
               return (
                 <li key={i} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 px-5 py-2.5" data-testid="rm-event">
                   <span className="num shrink-0 text-ink-3 sm:w-12">{md(e.date)}</span>
@@ -305,9 +316,21 @@ export function MonthlyReport({ db, month, months, today, onMonth, focusSelect }
                   <b className={cx("num ml-auto shrink-0 whitespace-nowrap sm:order-last", e.amount < 0 ? "text-err" : "text-ok")}>{signed(e.amount)}</b>
                   <span className="basis-full text-ink-2 sm:min-w-0 sm:flex-1 sm:basis-auto">
                     {e.text}
-                    {co.length > 0 && (
-                      <Link href={`/finance#co-${co[0].id}`} className="no-print mt-0.5 block text-[0.8rem] font-semibold text-theme-ink">
-                        → 결정 전 변경공사 {co.map((c) => `${c.title} ${man(c.amount)}`).join(", ")} — 승인되면 이익에 더해집니다
+                    {co && (
+                      <Link href={`/finance#co-${co.id}`} className="mt-0.5 block text-[0.8rem] font-semibold text-theme-ink" data-testid="rm-event-co">
+                        {co.status === "approved"
+                          ? `→ 변경공사 승인 ${man(co.approvedAmount ?? co.amount)} (회수)`
+                          : `→ 변경공사 ${man(co.amount)} ${coStageText(co, today)}${co.nextFollowUp ? ` · 다음 확인 ${md(co.nextFollowUp)}` : ""} — 승인되면 이익에 더해집니다`}
+                      </Link>
+                    )}
+                    {rej && (
+                      <Link href={`/finance#co-${rej.id}`} className="mt-0.5 block text-[0.8rem] font-semibold text-err" data-testid="rm-event-co">
+                        → 변경공사 반려{rej.decisionNote ? ` (${rej.decisionNote})` : ""} — 다시 청구할지 정하기
+                      </Link>
+                    )}
+                    {canClaim && (
+                      <Link href="/finance#co-unclaimed" className="mt-0.5 block text-[0.8rem] font-semibold text-warn" data-testid="rm-event-co">
+                        → 변경공사로 청구 안 함 — 청구할지 정하기
                       </Link>
                     )}
                   </span>

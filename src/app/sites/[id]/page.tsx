@@ -16,6 +16,7 @@ import { FieldReportForm } from "@/components/domain/FieldReportForm";
 import { EasyReport } from "@/components/easy/EasyReport";
 import { stagePlan } from "@/lib/domain/schedule";
 import { todayIso } from "@/lib/domain/format";
+import { coBoard, coRow, coStageText } from "@/lib/domain/changeOrders";
 import { useFrameCommand } from "@/components/device/frameCommands";
 import { CostEntryList } from "@/components/domain/CostEntryList";
 import { MaterialTab } from "@/components/admin/MaterialTab";
@@ -620,6 +621,8 @@ function ReportsTab({ db, site }: { db: DemoDB; site: Site }) {
 function ContractTab({ db, site, f }: { db: DemoDB; site: Site; f: SiteFinancials }) {
   const contract = db.contracts.find((c) => c.siteId === site.id)!;
   const cos = db.changeOrders.filter((c) => c.siteId === site.id);
+  const today = todayIso();
+  const unclaimed = coBoard(db, today, site.id).unclaimed;
   return (
     <div className="grid gap-5 @min-[900px]:grid-cols-2">
       <Card>
@@ -634,22 +637,28 @@ function ContractTab({ db, site, f }: { db: DemoDB; site: Site; f: SiteFinancial
         </dl>
       </Card>
       <Card>
-        <CardHeader title="변경공사" sub="‘승인’된 금액만 계약에 반영" right={<Link href="/finance"><Button size="sm">정산에서 처리</Button></Link>} />
+        <CardHeader title="변경공사" sub={unclaimed.length ? `청구 안 한 설계변경 추가 원가 ${unclaimed.length}건 ${fmtMan(unclaimed.reduce((a, e) => a + e.amount, 0))} · ‘승인’된 금액만 계약에 반영` : "‘승인’된 금액만 계약에 반영"} right={<Link href="/finance#co-board"><Button size="sm">청구·회수에서 처리</Button></Link>} />
         {cos.length === 0 ? (
           <EmptyState title="변경공사가 없습니다." />
         ) : (
-          <ul className="divide-y divide-line px-5 pb-3">
-            {cos.map((c) => (
-              <li key={c.id} className="py-2.5">
-                <p className="flex flex-wrap items-center gap-1.5 text-[0.86rem]">
-                  <b>{c.title}</b>
-                  <Badge tone={c.status === "approved" ? "ok" : c.status === "rejected" ? "neutral" : "warn"}>{CO_STATUS_LABEL[c.status]}</Badge>
-                </p>
-                <p className="text-[0.78rem] text-ink-3 num">
-                  {fmtMan(c.amount)} · {fmtDateTime(c.requestedAt)} · {c.status === "approved" ? "계약 반영" : "이익 미반영"}
-                </p>
-              </li>
-            ))}
+          <ul className="divide-y divide-line px-5 pb-3" data-testid="site-change-orders">
+            {cos.map((c) => {
+              const r = coRow(db, c, today);
+              return (
+                <li key={c.id} className="py-2.5">
+                  <Link href={`/finance#co-${c.id}`} className="flex flex-wrap items-center gap-1.5 text-[0.86rem]">
+                    <b>{c.title}</b>
+                    <Badge tone={c.status === "approved" ? "ok" : c.status === "rejected" ? "neutral" : "warn"}>{CO_STATUS_LABEL[c.status]}</Badge>
+                  </Link>
+                  <p className="text-[0.78rem] text-ink-3 num">
+                    {c.status === "approved" ? `승인 ${fmtMan(c.approvedAmount ?? c.amount)}${(c.approvedAmount ?? c.amount) !== c.amount ? ` (요청 ${fmtMan(c.amount)})` : ""}` : fmtMan(c.amount)} · {coStageText(c, today)}
+                    {r.linkedCost > 0 && ` · 근거 추가 원가 ${fmtMan(r.linkedCost)}`}
+                    {c.nextFollowUp && (c.status === "review" || c.status === "submitted") && ` · 다음 확인 ${fmtDate(c.nextFollowUp)}`} · {c.status === "approved" ? "계약 반영" : "이익 미반영"}
+                  </p>
+                  {c.decisionNote && <p className="text-[0.78rem] text-ink-2">{c.status === "rejected" ? "반려 사유" : "승인 메모"}: {c.decisionNote}</p>}
+                </li>
+              );
+            })}
           </ul>
         )}
       </Card>

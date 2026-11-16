@@ -132,7 +132,7 @@ describe("D-77 감액 변경공사", () => {
     const co = { id: "co-minus", siteId: "site-a", title: "감액", amount: -3_000_000, status: "submitted" as const, requestedAt: "2026-10-10T00:00:00Z", sourceEntryIds: [], note: "" };
     const db1 = { ...db0, changeOrders: [...db0.changeOrders, co] } as DemoDB;
     const before = siteFinancials(db1, "site-a").adjustedContract;
-    const r = setChangeOrderStatus(db1, "co-minus", "approved", 2_500_000, { userId: "u-manager", role: "manager", now: new Date("2026-11-13T01:00:00Z") } as never);
+    const r = setChangeOrderStatus(db1, "co-minus", "approved", 2_500_000, { userId: "u-manager", role: "manager", now: new Date("2026-11-13T01:00:00Z") } as never, undefined, { note: "감액 일부만 인정" }); // 요청과 다른 금액은 사유 필수 (D-84)
     expect(r.db.changeOrders.find((c) => c.id === "co-minus")!.approvedAmount).toBe(-2_500_000);
     expect(siteFinancials(r.db, "site-a").adjustedContract).toBe(before - 2_500_000);
   });

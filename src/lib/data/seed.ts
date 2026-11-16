@@ -276,8 +276,16 @@ export function createSeed(now = new Date()): DemoDB {
       amount: 80 * M,
       status: "submitted",
       requestedAt: dayOffset(now, -45),
+      submittedAt: dayOffset(now, -43),
       sourceEntryIds: [],
       note: "발주처 요청에 따른 사양 변경 — 승인 대기 (가상)",
+      // 청구·확인 기록 (D-84 · 가상)
+      log: [
+        { id: "col-c-1-a", at: dayOffset(now, -45), by: "u-manager", date: dateOnly(dayOffset(now, -45)), kind: "created", note: "발주처 요청 사양 변경 — 견적 작성 (가상)" },
+        { id: "col-c-1-b", at: dayOffset(now, -43), by: "u-manager", date: dateOnly(dayOffset(now, -43)), kind: "submitted", note: "견적서·변경 도면 메일 발송 (가상)" },
+        { id: "col-c-1-c", at: dayOffset(now, -12), by: "u-manager", date: dateOnly(dayOffset(now, -12)), kind: "follow_up", note: "원청 공무 통화 — 설계사무소 검토 중 (가상)" },
+      ],
+      nextFollowUp: dateOnly(dayOffset(now, 3)),
     },
   ];
 

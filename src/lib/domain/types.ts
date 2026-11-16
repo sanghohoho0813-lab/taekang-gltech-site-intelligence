@@ -573,6 +573,28 @@ export interface ChangeOrder {
   importBatchId?: string;
   /** 승인할 때 넣은 이 공사의 예상 원가 — 잔여예상원가에 더해 이익이 100%로 잡히지 않게 (D-78 첫 달 리허설) */
   addedCost?: { category: CostCategory; amount: number };
+  /** 등록한 사람 (D-84 — 본사가 추가 원가에서 바로 만든 건) */
+  createdBy?: string;
+  /** 청구·확인·답변 기록 (D-84) — 최근 50개 */
+  log?: ChangeOrderLog[];
+  /** 다음에 발주처에 확인할 날 (YYYY-MM-DD · D-84) — 지나면 처리 대기에 */
+  nextFollowUp?: string;
+  /** 일부 승인·반려 사유 (D-84) */
+  decisionNote?: string;
+  /** 반려된 변경공사를 다시 청구한 건이면 이전 건 (D-84) */
+  reclaimOf?: string;
+}
+
+/** 변경공사 진행 기록 (D-84) */
+export interface ChangeOrderLog {
+  id: string;
+  /** 기록한 시각 */
+  at: string;
+  by: string;
+  /** 일어난 날 (YYYY-MM-DD) */
+  date: string;
+  kind: "created" | "submitted" | "follow_up" | "client_reply" | "note" | "approved" | "rejected";
+  note: string;
 }
 
 export interface ProgressBilling {

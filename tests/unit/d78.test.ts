@@ -56,7 +56,7 @@ describe("D-78 변경공사 승인 — 예상 원가와 승인 금액", () => {
     const co = { id: "co-d78", siteId: "site-a", title: "로비 자동문", amount: 14_500_000, status: "submitted" as const, requestedAt: "2026-10-16T00:00:00Z", sourceEntryIds: [], note: "발주처 요청에서 등록된 변경공사 검토 건 — 승인 전 계약·이익 미반영" };
     const db = { ...db0, changeOrders: [...db0.changeOrders, co] } as DemoDB;
     const before = siteFinancials(db, "site-a");
-    const r = setChangeOrderStatus(db, "co-d78", "approved", 13_800_000, ctx("u-ceo"), { category: "subcontract", amount: 9_000_000 });
+    const r = setChangeOrderStatus(db, "co-d78", "approved", 13_800_000, ctx("u-ceo"), { category: "subcontract", amount: 9_000_000 }, { note: "원청 단가 협의" }); // 요청과 다른 금액은 사유 필수 (D-84)
     const after = siteFinancials(r.db, "site-a");
     expect(after.adjustedContract - before.adjustedContract).toBe(13_800_000);
     expect(after.eac - before.eac).toBe(9_000_000);

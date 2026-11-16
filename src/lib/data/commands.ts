@@ -34,6 +34,7 @@ import { fmtEok, fmtMan, fmtPct, todayIso } from "@/lib/domain/format";
 import { shiftDate } from "@/lib/domain/attendance";
 import { DECISION_METHOD } from "@/lib/domain/risk";
 import { uid } from "@/lib/domain/ids";
+import { followUpError, pushCoLog } from "@/lib/domain/changeOrders";
 import { IS_LIVE } from "@/lib/mode";
 import { partnerRepairView, repairConfirmable, repliedAfterDone } from "@/lib/domain/partnerFeed";
 
@@ -951,12 +952,29 @@ export function confirmPartnerRequest(db0: DemoDB, input: { requestId: string; n
 
 // ───────────────────────── 정산: 변경공사·기성·입금 ─────────────────────────
 
-export function setChangeOrderStatus(db0: DemoDB, coId: string, status: ChangeOrderStatus, approvedAmount: number | undefined, ctx: Ctx, addedCost?: { category: CostCategory; amount: number }) {
+/** 상태를 바꿀 때 함께 남기는 것 (D-84) — 메모(일부 승인·반려는 사유 필수) · 발주처 청구 때 다음 확인할 날 */
+export interface ChangeOrderStatusExtra {
+  note?: string;
+  followUp?: string;
+}
+
+export function setChangeOrderStatus(db0: DemoDB, coId: string, status: ChangeOrderStatus, approvedAmount: number | undefined, ctx: Ctx, addedCost?: { category: CostCategory; amount: number }, extra: ChangeOrderStatusExtra = {}) {
   const db = clone(db0);
   const co = db.changeOrders.find((x) => x.id === coId);
   if (!co) throw new CommandError("변경공사를 찾을 수 없습니다.", "NOT_FOUND");
   if (co.status === "approved" || co.status === "rejected") throw new CommandError("이미 결정된 변경공사입니다.", "STATE");
   if (status === "review") throw new CommandError("검토 단계로 되돌릴 수 없습니다.", "STATE");
+  if (!(["submitted", "approved", "rejected"] as string[]).includes(status)) throw new CommandError("상태를 확인해 주세요.", "VALIDATION", { status: "청구·승인·반려" });
+  if (status === "submitted" && co.status === "submitted") throw new CommandError("이미 발주처에 청구한 변경공사입니다.", "STATE");
+  // 사유·다음 확인할 날 (D-84) — 일부 승인·반려는 왜 그런지 남긴다(나중에 다시 청구·협의할 근거)
+  const note = typeof extra.note === "string" ? tidyName(extra.note, 1000) : "";
+  if (Array.from(note).length > 200) throw new CommandError("사유는 200자 이내로 적어 주세요.", "VALIDATION", { note: "200자 이내" });
+  const partial = status === "approved" && approvedAmount !== undefined && Math.abs(approvedAmount) !== Math.abs(co.amount);
+  if ((status === "rejected" || partial) && Array.from(note).length < 2)
+    throw new CommandError(status === "rejected" ? "반려 사유를 적어 주세요 (예: 원청 설계 범위 안이라 불인정 — 다시 청구 근거)." : "요청과 다른 금액으로 승인한 사유를 적어 주세요 (예: 원청 단가 협의로 5% 감액).", "VALIDATION", { note: "사유 필수" });
+  if (extra.followUp !== undefined && status !== "submitted") throw new CommandError("다음 확인할 날은 발주처에 청구할 때만 정합니다.", "VALIDATION", { followUp: "청구 때만" });
+  const fe = followUpError(extra.followUp, todayIso(ctx.now));
+  if (fe) throw new CommandError(fe, "VALIDATION", { followUp: fe });
   // 승인할 때 이 공사에 들어갈 예상 원가(선택) — 잔여예상원가에 더한다. 없으면 승인액 전부가 이익으로 잡히던 문제 (D-78 첫 달 리허설)
   if (addedCost !== undefined && addedCost !== null) {
     if (status !== "approved") throw new CommandError("예상 원가는 승인할 때만 넣습니다.", "VALIDATION", { addedCost: "승인 때만" });
@@ -980,6 +998,22 @@ export function setChangeOrderStatus(db0: DemoDB, coId: string, status: ChangeOr
     }
   }
   co.statusChangedAt = nowIso(ctx);
+  if (status === "submitted") {
+    if (extra.followUp) co.nextFollowUp = extra.followUp;
+  } else {
+    delete co.nextFollowUp;
+    if (note) co.decisionNote = note;
+  }
+  pushCoLog(co, {
+    at: nowIso(ctx),
+    by: ctx.userId,
+    date: todayIso(ctx.now),
+    kind: status,
+    note:
+      status === "approved"
+        ? `${partial ? `요청 ${fmtMan(co.amount)} → ` : ""}승인 ${fmtMan(co.approvedAmount ?? co.amount)}${note ? ` — ${note}` : ""}`
+        : note || (status === "submitted" ? "발주처에 청구" : ""),
+  });
   const after = siteFinancials(db, co.siteId);
   const site = requireSite(db, co.siteId);
   log(

@@ -34,6 +34,8 @@ export interface CloseProfitEvent {
   /** 예상이익에 미친 금액 (+ 늘어남 · − 줄어듦) */
   amount: number;
   text: string;
+  /** 원가 때문이면 그 원가 (D-84 — 그 원가로 청구한 변경공사를 옆에 보여 준다) */
+  entryId?: string;
 }
 
 export interface CloseSiteProfit {
@@ -196,8 +198,8 @@ export function profitEvents(db: DemoDB, siteId: string, from: string, to: strin
     const occurred = e.date !== when ? ` (발생 ${short(e.date)})` : "";
     events.push(
       e.forecastImpact === "additional"
-        ? { date: when, amount: -impact, text: `추가 원가 — ${e.note || "사유 미기재"}${occurred}` }
-        : { date: when, amount: -impact, text: `잔여예상을 넘은 집행 — ${CATEGORY_LABEL[e.category]} ${e.note || ""}${occurred}`.replace(/\s+/g, " ").trim() },
+        ? { date: when, amount: -impact, text: `추가 원가 — ${e.note || "사유 미기재"}${occurred}`, entryId: e.id }
+        : { date: when, amount: -impact, text: `잔여예상을 넘은 집행 — ${CATEGORY_LABEL[e.category]} ${e.note || ""}${occurred}`.replace(/\s+/g, " ").trim(), entryId: e.id },
     );
   }
   for (const c of db.changeOrders.filter((x) => x.siteId === siteId && x.status === "approved" && x.decidedAt && inRange(kst(x.decidedAt), from, to))) {
