@@ -31,7 +31,14 @@ export function followUpError(v: unknown, today: string): string | undefined {
 
 /** 기록 하나 더하기 — 최근 50개만 남긴다 */
 export function pushCoLog(co: ChangeOrder, entry: Omit<ChangeOrderLog, "id">) {
-  co.log = [...(co.log ?? []), { id: uid("col"), ...entry }].slice(-CO_LOG_MAX);
+  const all = [...(co.log ?? []), { id: uid("col"), ...entry }];
+  // 넘치면 확인·답변·메모부터 오래된 것을 지운다 — 등록·청구·승인·반려 기록은 남긴다 (D-84 버그 배시)
+  const key = new Set(["created", "submitted", "approved", "rejected", "no_reclaim"]);
+  while (all.length > CO_LOG_MAX) {
+    const i = all.findIndex((l) => !key.has(l.kind));
+    all.splice(i >= 0 ? i : 0, 1);
+  }
+  co.log = all;
 }
 
 export const coOpen = (c: Pick<ChangeOrder, "status">) => c.status === "review" || c.status === "submitted";
@@ -58,17 +65,25 @@ export function coDays(c: ChangeOrder, today: string): number {
   return Math.max(0, dayDiff(kstDate(c.submittedAt ?? c.requestedAt), today));
 }
 
-/** 한 줄 단계 설명 — ‘발주처 청구 14일째’ · ‘청구 검토 3일째’ · ‘승인 11/5’ */
+const mdOf = (iso: string) => {
+  const d = iso.length > 10 ? kstDate(iso) : iso;
+  return `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
+};
+
+/** 한 줄 단계 설명 — ‘발주처 청구 14일째 (11/2)’ · ‘오늘 청구’ · ‘청구 검토 3일째’ · ‘승인 11/5’ */
 export function coStageText(c: ChangeOrder, today: string): string {
-  const md = (iso: string) => {
-    const d = kstDate(iso);
-    return `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
-  };
-  if (c.status === "submitted") return `발주처 청구 ${coDays(c, today)}일째`;
-  if (c.status === "review") return `청구 검토 ${coDays(c, today)}일째`;
-  if (c.status === "approved") return `승인 ${c.decidedAt ? md(c.decidedAt) : ""}`.trim();
-  return `반려 ${c.decidedAt ? md(c.decidedAt) : ""}`.trim();
+  const d = coDays(c, today);
+  if (c.status === "submitted") return d ? `발주처 청구 ${d}일째 (${mdOf(c.submittedAt ?? c.requestedAt)})` : "오늘 발주처 청구";
+  if (c.status === "review") return d ? `청구 검토 ${d}일째 (${mdOf(c.requestedAt)} 등록)` : "오늘 등록 · 청구 검토";
+  if (c.status === "approved") return `승인 ${c.decidedAt ? mdOf(c.decidedAt) : ""}`.trim();
+  return `반려 ${c.decidedAt ? mdOf(c.decidedAt) : ""}`.trim();
 }
+
+export const APPROVAL_BASIS_LABEL: Record<NonNullable<ChangeOrder["approvalBasis"]>, string> = {
+  contract: "변경계약서 날인",
+  letter: "발주처 공문·메일로 승인",
+  verbal: "구두 승인 (서면 대기)",
+};
 
 export interface CoRow {
   co: ChangeOrder;
@@ -79,8 +94,12 @@ export interface CoRow {
   days: number;
   /** 다음 확인할 날이 오늘이거나 지났다 */
   followDue: boolean;
+  /** 발주처에 청구했는데 다음 확인할 날이 없다 (D-84 대표 점검 — ‘챙길 것 0’으로 방치되던 문제) */
+  noFollow: boolean;
   /** 청구 검토로 오래 머묾 (발주처에 아직 안 보냄) */
   reviewStale: boolean;
+  /** 반려됐는데 다시 청구할지·손실로 정리할지 아직 안 정함 */
+  reclaimUndecided: boolean;
   last?: ChangeOrderLog;
   /** 반려된 건을 다시 청구한 새 건 (있으면) */
   reclaimedBy?: ChangeOrder;
@@ -91,30 +110,44 @@ export interface CoBoard {
   unclaimed: CostEntry[];
   /** 다른 사유(공기 지연·물량 증가 등) 추가 원가 중 청구 안 한 것 — 발주처 사유면 청구할 수 있다 */
   otherExtra: CostEntry[];
+  /** 청구하지 않기로 정한 추가 원가 (사유와 함께) */
+  declined: CostEntry[];
   open: CoRow[];
   decided: CoRow[];
   totals: {
     unclaimed: number;
     unclaimedN: number;
-    open: number;
-    openN: number;
-    /** 진행 중 중 가장 오래된 날 수 */
+    /** 발주처 결정 대기 (발주처에 청구한 것만) */
+    submitted: number;
+    submittedN: number;
+    /** 아직 발주처에 안 보낸 것 (청구 검토) */
+    review: number;
+    reviewN: number;
+    /** 발주처 결정 대기 중 가장 오래된 날 수 */
     oldest: number;
     followDue: number;
+    noFollow: number;
     reviewStale: number;
-    /** 결정된 청구의 근거 추가 원가 합 (다시 청구한 반려 건 제외) */
+    reclaimUndecided: number;
+    /** 챙길 것 합 */
+    attention: number;
+    /** 결정된 청구 (다시 청구한 반려 건·감액 건 제외) — 청구 금액 합 · 승인 금액 합 · 청구 대비 승인 % */
+    claimed: number;
+    approved: number;
+    claimPct: number | null;
+    /** 그중 근거 추가 원가가 있는 건 — 근거 원가 합 · 그 건들의 승인 합 · 근거 원가 대비 % */
     decidedCost: number;
-    /** 그중 승인 금액 합 */
     recovered: number;
-    /** 회수율 (%) — 결정된 청구가 없으면 null */
     recoveryPct: number | null;
   };
 }
 
 export function coRow(db: DemoDB, c: ChangeOrder, today: string): CoRow {
-  const linked = c.sourceEntryIds.map((id) => db.costEntries.find((e) => e.id === id)).filter((e): e is CostEntry => !!e);
-  const live = linked.filter((e) => e.status === "active" || e.status === "pending");
+  // 근거 원가는 살아 있는 추가 원가만 — 무효·반려되거나 계획 안 집행으로 바뀐 원가는 빼고 센다 (회수율 1300%·건수 불일치 · D-84 버그 배시)
+  const linked = c.sourceEntryIds.map((id) => db.costEntries.find((e) => e.id === id)).filter((e): e is CostEntry => !!e && (e.status === "active" || e.status === "pending") && e.forecastImpact === "additional");
+  const live = linked;
   const open = coOpen(c);
+  const reclaimedBy = c.status === "rejected" ? db.changeOrders.find((x) => x.reclaimOf === c.id) : undefined;
   return {
     co: c,
     site: db.sites.find((s) => s.id === c.siteId),
@@ -122,54 +155,80 @@ export function coRow(db: DemoDB, c: ChangeOrder, today: string): CoRow {
     linkedCost: live.reduce((a, e) => a + e.amount, 0),
     days: coDays(c, today),
     followDue: open && !!c.nextFollowUp && c.nextFollowUp <= today,
+    noFollow: c.status === "submitted" && !c.nextFollowUp,
     reviewStale: c.status === "review" && coDays(c, today) > CO_REVIEW_STALE_DAYS,
+    reclaimUndecided: c.status === "rejected" && !reclaimedBy && !c.noReclaim && c.amount > 0,
     last: c.log?.length ? c.log[c.log.length - 1] : undefined,
-    reclaimedBy: c.status === "rejected" ? db.changeOrders.find((x) => x.reclaimOf === c.id) : undefined,
+    reclaimedBy,
   };
 }
+
+const pct = (a: number, b: number) => (b > 0 ? Math.round((a / b) * 100) : null);
 
 export function coBoard(db: DemoDB, today: string, siteId?: string): CoBoard {
   const cos = db.changeOrders.filter((c) => !siteId || c.siteId === siteId);
   // 한 번이라도 변경공사 근거로 쓴 원가는 ‘청구 안 함’이 아니다 — 반려된 건은 그 건의 ‘다시 청구’로 (위험 신호 ‘변경공사 미등록’과 같은 기준)
   const used = new Set(db.changeOrders.flatMap((c) => c.sourceEntryIds));
-  const extra = db.costEntries.filter((e) => (!siteId || e.siteId === siteId) && e.status === "active" && e.forecastImpact === "additional" && !used.has(e.id));
+  const extra0 = db.costEntries.filter((e) => (!siteId || e.siteId === siteId) && e.status === "active" && e.forecastImpact === "additional" && !used.has(e.id));
   const byDate = (a: CostEntry, b: CostEntry) => a.date.localeCompare(b.date) || a.createdAt.localeCompare(b.createdAt);
+  // 청구하지 않기로 정한 추가 원가는 따로 (사유와 함께 · 되돌릴 수 있음)
+  const declined = extra0.filter((e) => e.noClaim).sort(byDate);
+  const extra = extra0.filter((e) => !e.noClaim);
   const unclaimed = extra.filter((e) => CLAIMABLE_REASONS.has(e.reason)).sort(byDate);
   const otherExtra = extra.filter((e) => !CLAIMABLE_REASONS.has(e.reason)).sort(byDate);
+  const attentionOf = (r: CoRow) => r.followDue || r.noFollow || r.reviewStale || r.reclaimUndecided;
   const open = cos
     .filter(coOpen)
     .map((c) => coRow(db, c, today))
-    .sort((a, b) => Number(b.followDue) - Number(a.followDue) || b.days - a.days);
+    .sort((a, b) => Number(attentionOf(b)) - Number(attentionOf(a)) || b.days - a.days);
   const decided = cos
     .filter((c) => !coOpen(c))
     .map((c) => coRow(db, c, today))
-    .sort((a, b) => (b.co.decidedAt ?? "").localeCompare(a.co.decidedAt ?? ""));
-  const counted = decided.filter((r) => r.linkedCost > 0 && !r.reclaimedBy);
-  const decidedCost = counted.reduce((a, r) => a + r.linkedCost, 0);
-  const recovered = counted.reduce((a, r) => a + (r.co.status === "approved" ? (r.co.approvedAmount ?? r.co.amount) : 0), 0);
+    .sort((a, b) => Number(b.reclaimUndecided) - Number(a.reclaimUndecided) || (b.co.decidedAt ?? "").localeCompare(a.co.decidedAt ?? ""));
+  // 회수율 — 다시 청구한 반려 건은 새 건으로 대신 세고, 감액 변경공사는 뺀다
+  const final = decided.filter((r) => !r.reclaimedBy && r.co.amount > 0);
+  const won = (r: CoRow) => (r.co.status === "approved" ? (r.co.approvedAmount ?? r.co.amount) : 0);
+  const claimed = final.reduce((a, r) => a + r.co.amount, 0);
+  const approved = final.reduce((a, r) => a + won(r), 0);
+  const based = final.filter((r) => r.linkedCost > 0);
+  const decidedCost = based.reduce((a, r) => a + r.linkedCost, 0);
+  const recovered = based.reduce((a, r) => a + won(r), 0);
+  // 감액 변경공사는 대기 합에서 뺀다 (합계가 줄어 보이던 문제 · D-84 버그 배시)
+  const sub = open.filter((r) => r.co.status === "submitted" && r.co.amount > 0);
+  const rev = open.filter((r) => r.co.status === "review" && r.co.amount > 0);
+  const all = [...open, ...decided];
   return {
     unclaimed,
     otherExtra,
+    declined,
     open,
     decided,
     totals: {
       unclaimed: unclaimed.reduce((a, e) => a + e.amount, 0),
       unclaimedN: unclaimed.length,
-      open: open.reduce((a, r) => a + r.co.amount, 0),
-      openN: open.length,
-      oldest: open.reduce((a, r) => Math.max(a, r.days), 0),
-      followDue: open.filter((r) => r.followDue).length,
-      reviewStale: open.filter((r) => r.reviewStale).length,
+      submitted: sub.reduce((a, r) => a + r.co.amount, 0),
+      submittedN: sub.length,
+      review: rev.reduce((a, r) => a + r.co.amount, 0),
+      reviewN: rev.length,
+      oldest: sub.reduce((a, r) => Math.max(a, r.days), 0),
+      followDue: all.filter((r) => r.followDue).length,
+      noFollow: all.filter((r) => r.noFollow).length,
+      reviewStale: all.filter((r) => r.reviewStale).length,
+      reclaimUndecided: all.filter((r) => r.reclaimUndecided).length,
+      attention: all.filter(attentionOf).length,
+      claimed,
+      approved,
+      claimPct: pct(approved, claimed),
       decidedCost,
       recovered,
-      recoveryPct: decidedCost > 0 ? Math.round((recovered / decidedCost) * 1000) / 10 : null,
+      recoveryPct: pct(recovered, decidedCost),
     },
   };
 }
 
-/** 처리 대기 ‘변경공사 챙길 것’ — 확인할 날이 됐거나 지난 것 + 청구 검토로 오래 머문 것 */
+/** 처리 대기 ‘변경공사 챙길 것’ — 확인할 날이 됨 · 청구했는데 확인할 날 없음 · 보내기 전 7일 넘음 · 반려 뒤 다시 청구할지 안 정함 */
 export function coAttentionCount(db: DemoDB, today: string): number {
-  return db.changeOrders.filter(coOpen).filter((c) => (c.nextFollowUp && c.nextFollowUp <= today) || (c.status === "review" && coDays(c, today) > CO_REVIEW_STALE_DAYS)).length;
+  return coBoard(db, today).totals.attention;
 }
 
 export const CO_LOG_LABEL: Record<ChangeOrderLog["kind"], string> = {
@@ -180,4 +239,5 @@ export const CO_LOG_LABEL: Record<ChangeOrderLog["kind"], string> = {
   note: "메모",
   approved: "승인",
   rejected: "반려",
+  no_reclaim: "다시 청구 안 함",
 };

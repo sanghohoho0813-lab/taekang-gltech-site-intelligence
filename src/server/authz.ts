@@ -83,6 +83,8 @@ export function authorize(m: Member, name: CommandName, argsIn: unknown, db: Dem
         const e = entry(args.entryId);
         if (!e || e.createdBy !== m.id || !sites.has(e.siteId)) throw new ForbiddenError("본인이 입력한 원가만 고칠 수 있습니다.");
         if (e.reviewedAt) throw new ForbiddenError("본사가 이미 확인한 원가입니다. 바꾸려면 본사에 요청해주세요.");
+        // 본사가 변경공사로 청구한 원가는 현장에서 혼자 고치거나 취소하지 못한다 (D-84 버그 배시 M1 — 청구 근거가 사라지던 문제)
+        if (db.changeOrders.some((c) => c.status !== "rejected" && c.sourceEntryIds.includes(e.id))) throw new ForbiddenError("본사가 변경공사로 청구한 비용입니다. 바꾸려면 본사에 요청해주세요.");
         // 원가 수정으로 현장 입력 상한(1억)을 넘기지 못하게 (D-67 점검 반영)
         if (name === "editCostEntry" && typeof (args.patch as { amount?: unknown } | undefined)?.amount === "number" && (args.patch as { amount: number }).amount > FIELD_COST_MAX)
           throw new ForbiddenError("현장에서는 1건에 1억 원까지 넣을 수 있어요. 금액을 확인하거나 본사에 알려 주세요.");

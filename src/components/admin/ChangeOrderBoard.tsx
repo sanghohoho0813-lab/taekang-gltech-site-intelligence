@@ -7,7 +7,7 @@
  */
 import { useState } from "react";
 import Link from "next/link";
-import { BadgeCheck, Ban, ChevronDown, FilePlus2, MessageSquarePlus, RotateCcw, Send } from "lucide-react";
+import { BadgeCheck, Ban, ChevronDown, CircleSlash, FilePlus2, MessageSquarePlus, RotateCcw, Send, Undo2 } from "lucide-react";
 import { userLabel } from "@/lib/data/hooks";
 import { Badge, Button, Card, CardHeader, Field, Notice, cx, inputCls } from "@/components/ui/primitives";
 import { Modal } from "@/components/ui/Modal";
@@ -19,7 +19,7 @@ import { shiftDate } from "@/lib/domain/attendance";
 import { CATEGORY_LABEL, COST_CATEGORIES, CO_STATUS_LABEL, REASON_LABEL } from "@/lib/domain/labels";
 import { fmtDate, fmtEok, fmtMan, fmtPct, todayIso } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
-import { CO_LOG_LABEL, CO_REVIEW_STALE_DAYS, coBoard, coStageText, type CoRow } from "@/lib/domain/changeOrders";
+import { APPROVAL_BASIS_LABEL, CO_LOG_LABEL, CO_REVIEW_STALE_DAYS, coBoard, coStageText, type CoRow } from "@/lib/domain/changeOrders";
 import type { ChangeOrder, ChangeOrderLog, CostCategory, CostEntry, DemoDB } from "@/lib/domain/types";
 import { IS_LIVE } from "@/lib/mode";
 
@@ -38,6 +38,8 @@ export function ChangeOrderBoard({ db }: { db: DemoDB }) {
   const [create, setCreate] = useState<{ entries: CostEntry[]; reclaim?: ChangeOrder } | null>(null);
   const [status, setStatus] = useState<{ c: ChangeOrder; to: StatusTo } | null>(null);
   const [logging, setLogging] = useState<ChangeOrder | null>(null);
+  const [reason, setReason] = useState<{ kind: "decline"; entries: CostEntry[] } | { kind: "no_reclaim"; c: ChangeOrder } | null>(null);
+  const [showDeclined, setShowDeclined] = useState(false);
   const pickedEntries = picked.map((id) => db.costEntries.find((e) => e.id === id)).filter((e): e is CostEntry => !!e);
   const pickedSites = new Set(pickedEntries.map((e) => e.siteId));
   const toggle = (id: string) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
@@ -68,12 +70,33 @@ export function ChangeOrderBoard({ db }: { db: DemoDB }) {
           </Button>
         }
       />
-      {/* 한눈에 — 청구 안 함 · 결정 대기 · 확인할 날 · 회수율 */}
+      {/* 한눈에 — 청구 안 함 · 발주처 결정 대기 · 챙길 것 · 승인율 */}
       <div className="grid grid-cols-2 gap-2.5 px-5 pb-4 @min-[900px]:grid-cols-4" data-testid="co-summary">
-        <Mini label="청구 안 한 추가 원가" value={t.unclaimedN ? `${fmtMan(t.unclaimed)}` : "없음"} sub={t.unclaimedN ? `설계변경·발주처 요청 ${t.unclaimedN}건` : "설계변경 추가 원가는 모두 청구함"} tone={t.unclaimedN ? "warn" : undefined} testId="co-sum-unclaimed" />
-        <Mini label="결정 대기" value={t.openN ? fmtMan(t.open) : "없음"} sub={t.openN ? `${t.openN}건 · 가장 오래 ${t.oldest}일` : "진행 중인 청구 없음"} testId="co-sum-open" />
-        <Mini label="챙길 것" value={`${t.followDue + t.reviewStale}건`} sub={`확인할 날 된 것 ${t.followDue} · 청구 전 ${CO_REVIEW_STALE_DAYS}일 넘음 ${t.reviewStale}`} tone={t.followDue + t.reviewStale ? "warn" : undefined} testId="co-sum-due" />
-        <Mini label="회수율 (결정된 청구)" value={t.recoveryPct === null ? "—" : `${t.recoveryPct}%`} sub={t.recoveryPct === null ? "근거 원가가 있는 결정 건이 아직 없음" : `근거 추가 원가 ${fmtMan(t.decidedCost)} → 승인 ${fmtMan(t.recovered)}`} testId="co-sum-recovery" />
+        <Mini
+          label="청구 안 한 추가 원가"
+          value={t.unclaimedN ? `${fmtMan(t.unclaimed)}` : "없음"}
+          sub={t.unclaimedN ? `설계변경·발주처 요청 ${t.unclaimedN}건` : t.reviewN ? `모두 변경공사로 만듦 · 발주처에 보내기 전 ${t.reviewN}건` : "설계변경 추가 원가는 모두 변경공사로 만듦"}
+          tone={t.unclaimedN ? "warn" : undefined}
+          testId="co-sum-unclaimed"
+        />
+        <Mini label="발주처 결정 대기" value={t.submittedN ? fmtMan(t.submitted) : "없음"} sub={`${t.submittedN ? `${t.submittedN}건 · 가장 오래 ${t.oldest}일` : "발주처에 청구한 건 없음"}${t.reviewN ? ` · 보내기 전 ${t.reviewN}건 ${fmtMan(t.review)}` : ""}`} testId="co-sum-open" />
+        <Mini
+          label="챙길 것"
+          value={`${t.attention}건`}
+          sub={
+            t.attention
+              ? [t.followDue ? `확인할 날 됨 ${t.followDue}` : "", t.noFollow ? `확인할 날 없음 ${t.noFollow}` : "", t.reviewStale ? `발주처 미발송 ${CO_REVIEW_STALE_DAYS}일 넘음 ${t.reviewStale}` : "", t.reclaimUndecided ? `반려 뒤 결정 ${t.reclaimUndecided}` : ""].filter(Boolean).join(" · ")
+              : "확인할 날·미발송·반려 뒤 결정 모두 없음"
+          }
+          tone={t.attention ? "warn" : undefined}
+          testId="co-sum-due"
+        />
+        <Mini
+          label="승인율 (청구 대비)"
+          value={t.claimPct === null ? "—" : `${t.claimPct}%`}
+          sub={t.claimPct === null ? "결정된 청구가 아직 없음" : `결정된 청구 ${fmtMan(t.claimed)} → 승인 ${fmtMan(t.approved)}${t.recoveryPct !== null ? ` · 근거 원가 대비 ${t.recoveryPct}%` : ""}`}
+          testId="co-sum-recovery"
+        />
       </div>
 
       {/* 1. 청구 안 한 추가 원가 */}
@@ -81,9 +104,14 @@ export function ChangeOrderBoard({ db }: { db: DemoDB }) {
         <div className="flex flex-wrap items-center justify-between gap-2 px-5 pt-3 pb-1">
           <h3 className="text-[0.92rem] font-bold">청구 안 한 추가 원가 {b.unclaimed.length ? `${b.unclaimed.length}건` : ""}</h3>
           {picked.length > 0 && (
-            <Button size="sm" variant="cta" icon={<FilePlus2 size={15} />} disabled={pickedSites.size > 1} title={pickedSites.size > 1 ? "같은 현장의 원가만 한 변경공사로 묶을 수 있습니다" : undefined} onClick={() => setCreate({ entries: pickedEntries })} data-testid="co-make">
-              고른 {picked.length}건({fmtMan(pickedEntries.reduce((a, e) => a + e.amount, 0))})으로 변경공사 만들기
-            </Button>
+            <span className="flex flex-wrap gap-1.5">
+              <Button size="sm" variant="ghost" icon={<CircleSlash size={15} />} onClick={() => setReason({ kind: "decline", entries: pickedEntries })} data-testid="co-decline">
+                청구 안 함
+              </Button>
+              <Button size="sm" variant="cta" icon={<FilePlus2 size={15} />} disabled={pickedSites.size > 1} title={pickedSites.size > 1 ? "같은 현장의 원가만 한 변경공사로 묶을 수 있습니다" : undefined} onClick={() => setCreate({ entries: pickedEntries })} data-testid="co-make">
+                고른 {picked.length}건({fmtMan(pickedEntries.reduce((a, e) => a + e.amount, 0))})으로 변경공사 만들기
+              </Button>
+            </span>
           )}
         </div>
         {pickedSites.size > 1 && <p className="px-5 text-[0.8rem] font-semibold text-warn">같은 현장의 원가만 한 변경공사로 묶을 수 있습니다.</p>}
@@ -101,6 +129,29 @@ export function ChangeOrderBoard({ db }: { db: DemoDB }) {
           </div>
         )}
         {showOther && <ul className="divide-y divide-line border-t border-line">{b.otherExtra.map(extraRow)}</ul>}
+        {b.declined.length > 0 && (
+          <div className="px-5 pb-3">
+            <button type="button" className="inline-flex items-center gap-1 text-[0.82rem] font-semibold text-ink-2" onClick={() => setShowDeclined((v) => !v)} aria-expanded={showDeclined} data-testid="co-declined-toggle">
+              <ChevronDown size={15} className={cx("transition-transform", showDeclined && "rotate-180")} aria-hidden />
+              청구 안 하기로 한 추가 원가 {b.declined.length}건 ({fmtMan(b.declined.reduce((a, e) => a + e.amount, 0))})
+            </button>
+          </div>
+        )}
+        {showDeclined && (
+          <ul className="divide-y divide-line border-t border-line" data-testid="co-declined">
+            {b.declined.map((e) => (
+              <li key={e.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 px-5 py-2.5 text-[0.84rem]">
+                <span className="shrink-0 font-semibold">{siteName(db, e.siteId)}</span>
+                <span className="num shrink-0 text-ink-3">{md(e.date)}</span>
+                <span className="min-w-0 flex-1 basis-[12rem] text-ink-2">
+                  {e.note || CATEGORY_LABEL[e.category]} <span className="text-ink-3">· 청구 안 함: {e.noClaim?.note} ({userLabel(db, e.noClaim?.by)})</span>
+                </span>
+                <b className="num shrink-0 whitespace-nowrap">{fmtMan(e.amount)}</b>
+                <UndoDecline id={e.id} />
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       {/* 2. 진행 중 */}
@@ -123,7 +174,7 @@ export function ChangeOrderBoard({ db }: { db: DemoDB }) {
           <h3 className="px-5 pt-3 pb-1 text-[0.92rem] font-bold">결정됨 {b.decided.length}건</h3>
           <ul className="divide-y divide-line">
             {b.decided.map((r) => (
-              <CoItem key={r.co.id} db={db} r={r} today={today} onReclaim={() => setCreate({ entries: r.linked.filter((e) => e.status === "active"), reclaim: r.co })} />
+              <CoItem key={r.co.id} db={db} r={r} today={today} onReclaim={() => setCreate({ entries: r.linked.filter((e) => e.status === "active"), reclaim: r.co })} onNoReclaim={() => setReason({ kind: "no_reclaim", c: r.co })} />
             ))}
           </ul>
         </section>
@@ -142,6 +193,16 @@ export function ChangeOrderBoard({ db }: { db: DemoDB }) {
       )}
       {status && <StatusModal db={db} c={status.c} to={status.to} onClose={() => setStatus(null)} />}
       {logging && <LogModal db={db} c={logging} onClose={() => setLogging(null)} />}
+      {reason && (
+        <ReasonModal
+          db={db}
+          target={reason}
+          onClose={(done) => {
+            setReason(null);
+            if (done) setPicked([]);
+          }}
+        />
+      )}
     </Card>
   );
 }
@@ -156,7 +217,7 @@ function Mini({ label, value, sub, tone, testId }: { label: string; value: strin
   );
 }
 
-function CoItem({ db, r, today, onStatus, onLog, onReclaim }: { db: DemoDB; r: CoRow; today: string; onStatus?: (to: StatusTo) => void; onLog?: () => void; onReclaim?: () => void }) {
+function CoItem({ db, r, today, onStatus, onLog, onReclaim, onNoReclaim }: { db: DemoDB; r: CoRow; today: string; onStatus?: (to: StatusTo) => void; onLog?: () => void; onReclaim?: () => void; onNoReclaim?: () => void }) {
   const c = r.co;
   const [open, setOpen] = useState(false);
   const decided = c.status === "approved" || c.status === "rejected";
@@ -169,7 +230,7 @@ function CoItem({ db, r, today, onStatus, onLog, onReclaim }: { db: DemoDB; r: C
             <b>{r.site?.shortName}</b> {c.title}
             <Badge tone={c.status === "approved" ? "ok" : c.status === "rejected" ? "neutral" : "warn"}>{CO_STATUS_LABEL[c.status]}</Badge>
             {c.amount < 0 && <Badge tone="neutral">감액</Badge>}
-            {c.reclaimOf && <Badge tone="info">다시 청구</Badge>}
+            {c.reclaimOf && <Badge tone="neutral">재청구 건</Badge>}
           </p>
           <p className="num text-[0.8rem] text-ink-2">
             {c.status === "approved" && approved !== c.amount ? (
@@ -185,7 +246,7 @@ function CoItem({ db, r, today, onStatus, onLog, onReclaim }: { db: DemoDB; r: C
             {" · "}
             {r.linkedCost > 0 ? (
               <>
-                근거 추가 원가 {fmtMan(r.linkedCost)} ({r.linked.length}건){c.status === "approved" && <> · 회수 {Math.round((approved / r.linkedCost) * 100)}%</>}
+                근거 추가 원가 {fmtMan(r.linkedCost)} ({r.linked.length}건){c.status === "approved" && <> · 원가 대비 승인 {Math.round((approved / r.linkedCost) * 100)}%</>}
               </>
             ) : (
               <span className="text-ink-3">근거 원가 없음 (발주처 요청 추가공사 등)</span>
@@ -198,16 +259,29 @@ function CoItem({ db, r, today, onStatus, onLog, onReclaim }: { db: DemoDB; r: C
                 {r.followDue ? `확인할 날 ${md(c.nextFollowUp)} 됨` : `다음 확인 ${md(c.nextFollowUp)}`}
               </span>
             )}
+            {r.noFollow && <span className="font-semibold text-warn" data-testid="co-no-follow"> · 다음 확인할 날 없음 — ‘기록’에서 정하기</span>}
             {r.reviewStale && <span className="font-semibold text-warn"> · 아직 발주처에 안 보냄</span>}
           </p>
+          {c.status === "approved" && c.approvalBasis && <p className="text-[0.8rem] text-ink-2">승인 근거: {APPROVAL_BASIS_LABEL[c.approvalBasis]}</p>}
           {c.decisionNote && (
             <p className="text-[0.8rem] text-ink-2" data-testid="co-decision-note">
               {c.status === "rejected" ? "반려 사유" : "승인 메모"}: {c.decisionNote}
             </p>
           )}
-          {r.last && r.last.kind !== "created" && !open && (
+          {r.last && !["created", "approved", "rejected", "no_reclaim"].includes(r.last.kind) && !open && (
             <p className="text-[0.78rem] text-ink-3">
-              마지막 기록 {md(r.last.date)} {CO_LOG_LABEL[r.last.kind]} — {r.last.note}
+              마지막 기록 {md(r.last.date)} {CO_LOG_LABEL[r.last.kind]}
+              {r.last.note ? ` — ${r.last.note}` : ""} ({userLabel(db, r.last.by)})
+            </p>
+          )}
+          {r.reclaimUndecided && (
+            <p className="text-[0.8rem] font-semibold text-warn" data-testid="co-reclaim-undecided">
+              반려된 {fmtMan(c.amount)} — 근거를 보강해 다시 청구할지, 손실로 정리할지 정하기
+            </p>
+          )}
+          {c.noReclaim && (
+            <p className="text-[0.8rem] text-ink-2">
+              다시 청구 안 함: {c.noReclaim.note} ({userLabel(db, c.noReclaim.by)})
             </p>
           )}
           {r.reclaimedBy && (
@@ -248,6 +322,11 @@ function CoItem({ db, r, today, onStatus, onLog, onReclaim }: { db: DemoDB; r: C
               다시 청구
             </Button>
           )}
+          {r.reclaimUndecided && onNoReclaim && (
+            <Button size="sm" variant="ghost" icon={<CircleSlash size={15} />} onClick={onNoReclaim} data-testid="co-no-reclaim">
+              다시 청구 안 함
+            </Button>
+          )}
         </div>
       </div>
       {open && (
@@ -275,7 +354,8 @@ function CreateModal({ db, entries, reclaim, onClose }: { db: DemoDB; entries: C
   const toast = useToast();
   const sum = entries.reduce((a, e) => a + e.amount, 0);
   const [siteId, setSiteId] = useState(reclaim?.siteId ?? entries[0]?.siteId ?? db.sites[0]?.id ?? "");
-  const [title, setTitle] = useState(reclaim ? reclaim.title : entries.length === 1 ? (entries[0].note || "").slice(0, 80) : "");
+  // 기본 이름 — 첫 원가 메모의 앞부분만 (‘·’·‘—’ 앞) · 40자 (메모를 다 이어 붙여 62자가 되던 문제 · D-84 공무 점검)
+  const [title, setTitle] = useState(reclaim ? reclaim.title : entries.length ? Array.from((entries[0].note || "").split(/\s[·—]\s|\s\(/)[0].trim()).slice(0, 40).join("") : "");
   const [amountText, setAmountText] = useState(reclaim ? Math.abs(reclaim.amount).toLocaleString("ko-KR") : sum ? sum.toLocaleString("ko-KR") : "");
   const [note, setNote] = useState("");
   const [key] = useState(() => uid("idem"));
@@ -343,7 +423,7 @@ function CreateModal({ db, entries, reclaim, onClose }: { db: DemoDB; entries: C
         <Field label="무슨 공사인지" htmlFor="co-title" required error={err?.fields?.title} counter={`${Array.from(title).length}/80`}>
           <input id="co-title" className={inputCls} value={title} maxLength={80} onChange={(e) => setTitle(e.target.value)} placeholder="예: 3층 남측 유리 사양 상향 (로이복층 → 삼중)" data-testid="co-title" />
         </Field>
-        <Field label="발주처에 청구할 금액 (원)" htmlFor="co-amount" required error={err?.fields?.amount} hint={amount ? `= ${fmtMan(amount)}${sum && amount !== sum ? ` · 근거 원가 ${fmtMan(sum)}보다 ${amount > sum ? `${fmtMan(amount - sum)} 많음 (간접비·이윤 포함이면 보통)` : `${fmtMan(sum - amount)} 적음`}` : ""}` : "견적 금액 — 간접비·이윤을 붙여 근거 원가보다 크게 잡는 것이 보통입니다"}>
+        <Field label="발주처에 청구할 금액 (원)" htmlFor="co-amount" required error={err?.fields?.amount} hint={amount ? `= ${fmtMan(amount)}${sum && amount !== sum ? ` · 근거 원가 ${fmtMan(sum)}보다 ${amount > sum ? `${fmtMan(amount - sum)} 많음 (간접비·이윤 포함이면 보통)` : `${fmtMan(sum - amount)} 적음`}` : ""}` : sum ? "견적 금액 — 간접비·이윤을 붙여 근거 원가보다 크게 잡는 것이 보통입니다" : "발주처에 낼 견적 금액 (간접비·이윤 포함)"}>
           <input id="co-amount" inputMode="numeric" className={cx(inputCls, "num text-right")} value={amountText} onChange={(e) => setAmountText(commas(e.target.value))} data-testid="co-amount" />
         </Field>
         <Field label="메모 (선택)" htmlFor="co-note" error={err?.fields?.note} counter={`${Array.from(note).length}/200`}>
@@ -385,7 +465,7 @@ function LogModal({ db, c, onClose }: { db: DemoDB; c: ChangeOrder; onClose: () 
             onClick={async () => {
               setBusy(true);
               try {
-                await run("logChangeOrder", { coId: c.id, kind, date, note, nextFollowUp: clear ? null : follow, idempotencyKey: key });
+                await run("logChangeOrder", { coId: c.id, kind, date, note, nextFollowUp: clear && c.status === "review" ? null : follow, idempotencyKey: key });
                 toast.push({ tone: "ok", title: "기록했습니다", desc: clear ? "다음 확인할 날을 지웠습니다" : `다음 확인 ${fmtDate(follow)}` });
                 onClose();
               } catch (e) {
@@ -405,7 +485,7 @@ function LogModal({ db, c, onClose }: { db: DemoDB; c: ChangeOrder; onClose: () 
         <fieldset className="flex flex-wrap gap-1.5">
           <legend className="mb-1 text-[0.82rem] font-semibold text-ink-2">무슨 기록</legend>
           {(["follow_up", "client_reply", "note"] as const).map((k) => (
-            <label key={k} className={cx("cursor-pointer rounded-lg border px-3 py-1.5 text-[0.84rem] font-semibold", kind === k ? "border-active bg-active-soft text-theme-ink" : "border-line")}>
+            <label key={k} className={cx("cursor-pointer rounded-lg border px-3 py-1.5 text-[0.84rem] font-semibold has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-active/40", kind === k ? "border-active bg-active-soft text-theme-ink" : "border-line")}>
               <input type="radio" name="co-kind" className="sr-only" checked={kind === k} onChange={() => setKind(k)} />
               {CO_LOG_LABEL[k]}
             </label>
@@ -419,15 +499,18 @@ function LogModal({ db, c, onClose }: { db: DemoDB; c: ChangeOrder; onClose: () 
         </Field>
         <Field label="다음 확인할 날" htmlFor="co-log-follow" error={err?.fields?.nextFollowUp} hint="그날이 되면 대시보드 처리 대기·아침 알림에 ‘변경공사 챙길 것’으로 뜹니다">
           <div className="flex flex-wrap items-center gap-1.5">
-            <input id="co-log-follow" type="date" className={cx(inputCls, "w-auto")} value={follow} min={shiftDate(today, 1)} disabled={clear} onChange={(e) => setFollow(e.target.value)} data-testid="co-log-follow" />
+            <input id="co-log-follow" type="date" className={cx(inputCls, "w-auto")} value={follow} min={shiftDate(today, 1)} max={shiftDate(today, 180)} disabled={clear} onChange={(e) => setFollow(e.target.value)} data-testid="co-log-follow" />
             {[7, 14].map((d) => (
               <Button key={d} size="sm" variant="ghost" disabled={clear} onClick={() => setFollow(shiftDate(today, d))}>
                 +{d}일
               </Button>
             ))}
-            <label className="inline-flex items-center gap-1 text-[0.82rem]">
-              <input type="checkbox" checked={clear} onChange={(e) => setClear(e.target.checked)} /> 정하지 않음
-            </label>
+            {/* 발주처에 청구한 건은 다음 확인할 날을 꼭 둔다 — 지우면 아무도 챙기지 않던 문제 (D-84 점검) */}
+            {c.status === "review" && (
+              <label className="inline-flex items-center gap-1 text-[0.82rem]">
+                <input type="checkbox" checked={clear} onChange={(e) => setClear(e.target.checked)} /> 정하지 않음
+              </label>
+            )}
           </div>
         </Field>
         {err && <Notice tone="err">{err.msg}</Notice>}
@@ -443,6 +526,9 @@ function StatusModal({ db, c, to, onClose }: { db: DemoDB; c: ChangeOrder; to: S
   const [amountText, setAmountText] = useState(Math.abs(c.amount).toLocaleString("ko-KR"));
   const [note, setNote] = useState("");
   const [follow, setFollow] = useState(shiftDate(today, 14));
+  const [date, setDate] = useState(today);
+  const [basis, setBasis] = useState<"" | "contract" | "letter" | "verbal">("");
+  const [showCost, setShowCost] = useState(false);
   const [err, setErr] = useState<{ msg: string; fields?: Record<string, string> } | null>(null);
   const [busy, setBusy] = useState(false);
   // 감액 건은 칸에 크기만 적고 계산은 −로 (D-77)
@@ -457,7 +543,7 @@ function StatusModal({ db, c, to, onClose }: { db: DemoDB; c: ChangeOrder; to: S
   const afterAdj = f.adjustedContract + (to === "approved" ? amount : 0);
   const afterEac = f.eac + (to === "approved" ? addedCost : 0);
   const afterMargin = afterAdj ? ((afterAdj - afterEac) / afterAdj) * 100 : 0;
-  const linked = c.sourceEntryIds.length > 0;
+  const linked = c.sourceEntryIds.some((id) => db.costEntries.some((e) => e.id === id && e.status === "active"));
   const title = { submitted: "발주처에 청구", approved: "변경공사 승인 반영", rejected: "변경공사 반려" }[to];
   const noteLabel = to === "rejected" ? "반려 사유" : to === "approved" ? (partial ? "요청과 다른 금액으로 승인한 사유" : "메모 (선택)") : "메모 (선택)";
   return (
@@ -475,6 +561,10 @@ function StatusModal({ db, c, to, onClose }: { db: DemoDB; c: ChangeOrder; to: S
             variant={to === "rejected" ? "danger" : "cta"}
             loading={busy}
             onClick={async () => {
+              if (to === "approved" && !basis) {
+                setErr({ msg: "무엇을 받고 승인 반영하는지 골라 주세요.", fields: { basis: "승인 근거" } });
+                return;
+              }
               setBusy(true);
               try {
                 const r = await run("setChangeOrderStatus", {
@@ -484,6 +574,8 @@ function StatusModal({ db, c, to, onClose }: { db: DemoDB; c: ChangeOrder; to: S
                   ...(to === "approved" && addedCost > 0 ? { addedCost: { category: costCat, amount: addedCost } } : {}),
                   ...(note.trim() ? { note } : {}),
                   ...(to === "submitted" && follow ? { followUp: follow } : {}),
+                  ...(date !== today ? { date } : {}),
+                  ...(to === "approved" && basis ? { basis } : {}),
                 });
                 toast.push({ tone: "ok", title: `${title} 완료`, desc: to === "approved" ? `이익률 ${fmtPct(r.before.marginPct)} → ${fmtPct(r.after.marginPct)}` : to === "submitted" ? `다음 확인 ${fmtDate(follow)}` : undefined });
                 onClose();
@@ -501,14 +593,39 @@ function StatusModal({ db, c, to, onClose }: { db: DemoDB; c: ChangeOrder; to: S
       }
     >
       <div className="space-y-3 text-[0.88rem]">
+        <Field label={to === "submitted" ? "발주처에 보낸 날" : to === "approved" ? "승인 받은 날" : "반려 받은 날"} htmlFor="co-status-date" error={err?.fields?.date} hint={to === "approved" ? "이 날 이익에 반영됩니다 — 공문·변경계약서 날짜" : "늦게 넣어도 실제 날짜로 적으면 며칠째가 맞습니다"}>
+          <input id="co-status-date" type="date" className={cx(inputCls, "w-auto")} value={date} max={today} onChange={(e) => setDate(e.target.value)} data-testid="co-status-date" />
+        </Field>
+        {to === "approved" && (
+          <fieldset data-testid="co-basis">
+            <legend className="mb-1 text-[0.82rem] font-semibold text-ink-2">
+              무엇을 받고 승인 반영하나요 <span className="text-err">*</span>
+            </legend>
+            <div className="flex flex-wrap gap-1.5">
+              {(["contract", "letter", "verbal"] as const).map((k) => (
+                <label key={k} className={cx("cursor-pointer rounded-lg border px-3 py-1.5 text-[0.84rem] font-semibold has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-active/40", basis === k ? "border-active bg-active-soft text-theme-ink" : "border-line")}>
+                  <input type="radio" name="co-basis" className="sr-only" checked={basis === k} onChange={() => setBasis(k)} data-testid={`co-basis-${k}`} />
+                  {APPROVAL_BASIS_LABEL[k]}
+                </label>
+              ))}
+            </div>
+            {err?.fields?.basis && <p className="mt-1 text-[0.8rem] font-semibold text-err">승인 근거를 골라 주세요.</p>}
+            {basis === "verbal" && <p className="mt-1 text-[0.8rem] font-semibold text-warn">구두 승인도 계약·이익에 바로 들어갑니다. 서면을 받으면 ‘기록’으로 남기세요.</p>}
+          </fieldset>
+        )}
         {to === "approved" && (
           <>
-            <Field label={minus ? "승인 감액 (원)" : "승인 금액 (원)"} htmlFor="co-amt" hint={amount ? `= ${minus ? "감액 " : ""}${fmtMan(Math.abs(amount))}${partial ? ` · 요청 ${fmtMan(Math.abs(c.amount))}과 다름 — 사유를 적어 주세요` : ""}` : undefined}>
+            <Field label={minus ? "승인 감액 (원)" : "승인 금액 (원)"} htmlFor="co-amt" error={err?.fields?.approvedAmount} hint={amount ? `= ${minus ? "감액 " : ""}${fmtMan(Math.abs(amount))}${partial ? ` · 요청 ${fmtMan(Math.abs(c.amount))}과 다름 — 사유를 적어 주세요` : ""}` : undefined}>
               <input id="co-amt" inputMode="numeric" className={cx(inputCls, "num text-right")} value={amountText} onChange={(e) => setAmountText(commas(e.target.value))} data-testid="co-amt" />
             </Field>
-            {!minus && (
-              <div className="grid grid-cols-[auto_1fr] items-end gap-2">
-                <Field label="원가 항목" htmlFor="co-cost-cat">
+            {!minus && linked && !showCost && (
+              <button type="button" className="text-[0.82rem] font-semibold text-theme-ink" onClick={() => setShowCost(true)} data-testid="co-cost-open">
+                이 공사에 앞으로 더 들어갈 원가가 있으면 넣기 (이미 들어온 근거 원가는 넣지 마세요)
+              </button>
+            )}
+            {!minus && (!linked || showCost) && (
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-[auto_1fr] sm:items-end">
+                <Field label="원가 항목" htmlFor="co-cost-cat" error={err?.fields?.addedCostCategory}>
                   <select id="co-cost-cat" className={cx(inputCls, "w-auto")} value={costCat} onChange={(e) => setCostCat(e.target.value as CostCategory)} data-testid="co-cost-cat">
                     {COST_CATEGORIES.map((k) => (
                       <option key={k} value={k}>
@@ -520,6 +637,7 @@ function StatusModal({ db, c, to, onClose }: { db: DemoDB; c: ChangeOrder; to: S
                 <Field
                   label="이 공사에 들어갈 예상 원가 (원 · 선택)"
                   htmlFor="co-cost"
+                  error={err?.fields?.addedCostAmount}
                   hint={
                     linked
                       ? "이 변경공사는 이미 들어온 추가 원가를 근거로 만들었습니다 — 그 원가는 이미 손익에 있으니 보통 비워 둡니다(두 번 계상)"
@@ -535,6 +653,7 @@ function StatusModal({ db, c, to, onClose }: { db: DemoDB; c: ChangeOrder; to: S
             <Notice tone="info" title="반영 결과 (확정)">
               변경 반영 계약 {fmtEok(f.adjustedContract)} → {fmtEok(afterAdj)}
               {addedCost > 0 && <> · 예상 총원가 {fmtEok(f.eac)} → {fmtEok(afterEac)}</>} · 예상이익률 {fmtPct(f.marginPct)} → {fmtPct(afterMargin)}
+              {linked && addedCost > 0 && <span className="mt-1 block font-semibold text-warn">근거 추가 원가는 이미 손익에 들어 있습니다 — 같은 원가를 또 넣으면 두 번 계상됩니다.</span>}
             </Notice>
           </>
         )}
@@ -543,7 +662,7 @@ function StatusModal({ db, c, to, onClose }: { db: DemoDB; c: ChangeOrder; to: S
             <p>‘발주처 청구(승인 대기)’로 바뀝니다. 계약금액·이익에는 아직 반영되지 않습니다.</p>
             <Field label="다음 확인할 날" htmlFor="co-follow" error={err?.fields?.followUp} hint="그날이 되면 처리 대기·아침 알림에 뜹니다 — 발주처 검토 일정을 묻는 날">
               <div className="flex flex-wrap items-center gap-1.5">
-                <input id="co-follow" type="date" className={cx(inputCls, "w-auto")} value={follow} min={shiftDate(today, 1)} onChange={(e) => setFollow(e.target.value)} data-testid="co-follow-date" />
+                <input id="co-follow" type="date" className={cx(inputCls, "w-auto")} value={follow} min={shiftDate(today, 1)} max={shiftDate(today, 180)} onChange={(e) => setFollow(e.target.value)} data-testid="co-follow-date" />
                 {[7, 14, 30].map((d) => (
                   <Button key={d} size="sm" variant="ghost" onClick={() => setFollow(shiftDate(today, d))}>
                     +{d}일
@@ -570,5 +689,86 @@ function StatusModal({ db, c, to, onClose }: { db: DemoDB; c: ChangeOrder; to: S
         {err && <Notice tone="err">{err.msg}</Notice>}
       </div>
     </Modal>
+  );
+}
+
+/** 청구 안 함(추가 원가) · 다시 청구 안 함(반려 건) — 이유와 함께 */
+function ReasonModal({ db, target, onClose }: { db: DemoDB; target: { kind: "decline"; entries: CostEntry[] } | { kind: "no_reclaim"; c: ChangeOrder }; onClose: (done?: boolean) => void }) {
+  const toast = useToast();
+  const [note, setNote] = useState("");
+  const [key] = useState(() => uid("idem"));
+  const [err, setErr] = useState<{ msg: string; fields?: Record<string, string> } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const decline = target.kind === "decline";
+  const sum = decline ? target.entries.reduce((a, e) => a + e.amount, 0) : target.c.amount;
+  return (
+    <Modal
+      open
+      onClose={() => onClose()}
+      title={decline ? "변경공사로 청구 안 함" : "다시 청구 안 함 (손실로 정리)"}
+      description={decline ? `추가 원가 ${target.entries.length}건 ${fmtMan(sum)}` : `${siteName(db, target.c.siteId)} ${target.c.title} · 반려 ${fmtMan(sum)}`}
+      size="sm"
+      testId="co-reason-modal"
+      footer={
+        <>
+          <Button onClick={() => onClose()}>취소</Button>
+          <Button
+            variant="cta"
+            loading={busy}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                if (decline) await run("declineClaim", { entryIds: target.entries.map((e) => e.id), note, idempotencyKey: key });
+                else await run("logChangeOrder", { coId: target.c.id, kind: "no_reclaim", date: todayIso(), note, idempotencyKey: key });
+                toast.push({ tone: "ok", title: decline ? "청구 안 함으로 정리했습니다" : "다시 청구 안 함으로 정리했습니다", desc: "그 금액은 그대로 이익 감소로 남습니다" });
+                onClose(true);
+              } catch (e) {
+                setErr(e instanceof CommandError ? { msg: e.message, fields: e.fieldErrors } : { msg: "저장하지 못했습니다. 다시 눌러 주세요." });
+              } finally {
+                setBusy(false);
+              }
+            }}
+            data-testid="co-reason-confirm"
+          >
+            정리
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-3 text-[0.88rem]">
+        <p>{decline ? "‘청구 안 한 추가 원가’·위험 신호·대표가 정할 일에서 빠지고, 아래 ‘청구 안 하기로 한 추가 원가’에 이유와 함께 남습니다. 되돌릴 수 있습니다." : "반려된 금액은 이익 감소로 남고, ‘챙길 것’·대표가 정할 일에서 빠집니다."}</p>
+        <Field label="이유" htmlFor="co-reason-note" required error={err?.fields?.note} counter={`${Array.from(note).length}/200`}>
+          <textarea id="co-reason-note" rows={2} className={inputCls} value={note} maxLength={200} onChange={(e) => setNote(e.target.value)} placeholder={decline ? "예: 자재 반입 지연은 우리 책임 — 청구 근거 없음" : "예: 원청과 관계 고려 — 이번 현장은 우리가 부담 (대표 결정)"} data-testid="co-reason-note" />
+        </Field>
+        {err && <Notice tone="err">{err.msg}</Notice>}
+      </div>
+    </Modal>
+  );
+}
+
+function UndoDecline({ id }: { id: string }) {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  return (
+    <Button
+      size="sm"
+      variant="ghost"
+      icon={<Undo2 size={14} />}
+      loading={busy}
+      onClick={async () => {
+        setBusy(true);
+        try {
+          await run("declineClaim", { entryIds: [id], undo: true });
+          toast.push({ tone: "ok", title: "되돌렸습니다", desc: "다시 ‘청구 안 한 추가 원가’에 나옵니다" });
+        } catch (e) {
+          toast.push({ tone: "err", title: e instanceof CommandError ? e.message : "되돌리지 못했습니다" });
+        } finally {
+          setBusy(false);
+        }
+      }}
+      data-testid="co-undo-decline"
+    >
+      되돌리기
+    </Button>
   );
 }

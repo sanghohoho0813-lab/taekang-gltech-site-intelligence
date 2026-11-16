@@ -29,12 +29,18 @@ const weekday = (date: string) => new Date(`${date}T12:00:00Z`).getUTCDay();
 export const briefRestDay = (date: string) => weekday(date) === 0;
 
 /** 그날 출근(또는 작업 인원 기록)이 있었는데 현장 보고가 없는 진행 중 현장 (엑셀로 옮긴 기록은 보고로 치지 않음) */
+/** 본사(대표·공무)가 현장 상세에서 넣은 보고·비용 — 현장 보고로 세지 않는다 (D-84 공무 점검 — 본사가 넣은 비용 때문에 보고 없는 현장이 가려지던 문제) */
+export function hqReport(db: Pick<DemoDB, "users">, r: { createdBy: string }): boolean {
+  const role = db.users.find((u) => u.id === r.createdBy)?.role;
+  return role === "ceo" || role === "manager";
+}
+
 export function missingReportSites(db: DemoDB, date: string): { siteId: string; name: string }[] {
   return db.sites
     .filter((s) => s.status === "active")
     .filter((s) => (db.attendance ?? []).some((a) => a.siteId === s.id && a.workDate === date) || (db.crewChecks ?? []).some((c) => c.siteId === s.id && c.workDate === date && !c.imported))
     // 사진만·비용만 보낸 것은 그날 보고로 치지 않는다 (현장 홈 ‘오늘 보고’와 같은 기준 · D-65·D-72 점검 반영)
-    .filter((s) => !db.reports.some((r) => r.siteId === s.id && r.reportDate === date && r.status !== "voided" && !r.importBatchId && !r.kind))
+    .filter((s) => !db.reports.some((r) => r.siteId === s.id && r.reportDate === date && r.status !== "voided" && !r.importBatchId && !r.kind && !hqReport(db, r)))
     .map((s) => ({ siteId: s.id, name: s.shortName }));
 }
 

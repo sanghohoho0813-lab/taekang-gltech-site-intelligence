@@ -275,6 +275,12 @@ export function FieldReportForm({ fixedSiteId, onClose, inSheet = false }: { fix
                 입력한 원가 <b className="num">{fmtMan(done.costSum)}</b>이 본사 손익 계산에 반영되었습니다. (이익률은 대표·관리자 화면에서 확인{IS_LIVE ? "" : " — 권한 프리뷰"})
               </p>
             )}
+            {/* 설계변경 추가 원가면 바로 변경공사로 (D-84 공무 점검 — 기성·수금으로 직접 찾아가야 했다) */}
+            {canSeeMoney && reason === "design_change" && (
+              <Link href="/finance#co-unclaimed" className="mt-2.5 inline-flex items-center gap-1 text-[0.86rem] font-bold text-theme-ink" data-testid="report-to-co">
+                변경공사로 청구하기 →
+              </Link>
+            )}
           </div>
         )}
         <div className="grid grid-cols-2 gap-2">

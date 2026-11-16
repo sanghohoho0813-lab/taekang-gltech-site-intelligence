@@ -34,7 +34,7 @@ import { fmtEok, fmtMan, fmtPct, todayIso } from "@/lib/domain/format";
 import { shiftDate } from "@/lib/domain/attendance";
 import { DECISION_METHOD } from "@/lib/domain/risk";
 import { uid } from "@/lib/domain/ids";
-import { followUpError, pushCoLog } from "@/lib/domain/changeOrders";
+import { APPROVAL_BASIS_LABEL, coByEntry, followUpError, pushCoLog } from "@/lib/domain/changeOrders";
 import { IS_LIVE } from "@/lib/mode";
 import { partnerRepairView, repairConfirmable, repliedAfterDone } from "@/lib/domain/partnerFeed";
 
@@ -168,7 +168,9 @@ export interface CostLineInput {
 /** 이름 다듬기 — 폭 없는 문자·짝 없는 서로게이트를 빼고 공백을 하나로, 글자(코드 포인트) 단위로 자른다 (이모지 반쪽이 저장 오류를 내던 문제 · D-81 점검) */
 export function tidyName(v: string, max: number): string {
   const t = v
-    .replace(/[\u200B-\u200D\u2060\uFEFF]/g, "")
+    // 폭 없는 문자·글자 방향 바꾸기 문자(U+202A–202E·2066–2069)는 지우고, 이모지를 잇는 ZWJ(👨‍👩‍👧)는 이모지 사이에서만 남긴다 (D-84 버그 배시)
+    .replace(/[\u200B\u200C\u2060\uFEFF\u202A-\u202E\u2066-\u2069]/g, "")
+    .replace(/(?<![\uD800-\uDFFF\uFE0F])\u200D|\u200D(?![\uD800-\uDFFF])/g, "")
     .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "")
     .replace(/\s+/g, " ")
     .trim();
@@ -406,6 +408,9 @@ export function voidCostEntry(db0: DemoDB, entryId: string, reason: string, ctx:
   if (e.status === "voided") throw new CommandError("이미 무효 처리된 원가입니다.", "STATE");
   if (e.status === "rejected") throw new CommandError("공무가 반려한 원가는 무효 처리할 필요가 없습니다.", "STATE");
   if (e.source === "SEED") throw new CommandError("시스템 시작 전 발생원가는 무효 처리할 수 없습니다. 시연에서는 ‘데모 초기화’를 쓰세요.", "STATE");
+  // 진행 중·승인된 변경공사의 근거 원가는 무효로 하지 않는다 — 변경공사가 근거 없이 남던 문제 (D-84 버그 배시 M1)
+  const claim = coByEntry(db0).get(e.id);
+  if (claim) throw new CommandError(`변경공사 ‘${claim.title}’의 근거 원가입니다. 잘못 넣은 원가면 그 변경공사를 먼저 반려(사유)하거나, 금액을 고치세요.`, "STATE");
   const before = siteFinancials(db0, e.siteId);
   e.status = "voided";
   e.voidedAt = nowIso(ctx);
@@ -439,6 +444,10 @@ export function voidReport(db0: DemoDB, reportId: string, ctx: Ctx) {
   const r = db.reports.find((x) => x.id === reportId);
   if (!r) throw new CommandError("현장보고를 찾을 수 없습니다.", "NOT_FOUND");
   if (r.status === "voided") throw new CommandError("이미 되돌린 보고입니다.", "STATE");
+  // 이 보고의 비용을 변경공사로 청구했으면 되돌리지 않는다 (D-84 — 청구 근거가 사라지던 문제)
+  const claimedBy = coByEntry(db0);
+  const claimed = r.costEntryIds.map((id) => claimedBy.get(id)).find(Boolean);
+  if (claimed) throw new CommandError(`이 보고의 비용으로 변경공사 ‘${claimed.title}’를 청구했습니다. 되돌리려면 본사에 요청해주세요.`, "STATE");
   const before = siteFinancials(db0, r.siteId);
   if (r.importBatchId) unlinkImportedProgress(db, r);
   r.status = "voided";
@@ -496,6 +505,9 @@ export function editCostEntry(
   if (e.source === "SEED") throw new CommandError("시스템 시작 전 발생원가는 수정할 수 없습니다.", "STATE");
   validateAmount(patch.amount);
   if (!COST_CATEGORIES.includes(patch.category)) throw new CommandError("비용 항목을 선택해주세요.");
+  // 변경공사 근거 원가는 ‘추가 원가’로 남아야 한다 — 계획 안 집행으로 바꾸면 청구 근거가 흐려진다 (D-84 버그 배시)
+  const claim = coByEntry(db0).get(e.id);
+  if (claim && patch.forecastImpact !== undefined && patch.forecastImpact !== "additional") throw new CommandError(`변경공사 ‘${claim.title}’의 근거 원가는 ‘추가 원가’로 둡니다. 바꾸려면 변경공사를 먼저 정리하세요.`, "VALIDATION", { forecastImpact: "변경공사 근거" });
   // 노무 정산 건은 노무비로만 — 항목을 바꾸면 ‘정산함’으로 남아 그 달 노무가 잠겼다 (D-79 버그 배시 m-2)
   if (e.settle && patch.category !== "labor") throw new CommandError("노무 정산 건은 항목을 바꿀 수 없습니다. 되돌린 뒤 다시 넣어 주세요.", "VALIDATION", { category: "노무 정산" });
   const te = teamError(patch.team);
@@ -686,7 +698,11 @@ export function completeAction(db0: DemoDB, actionId: string, input: CompleteAct
   const site = requireSite(db, a.siteId);
 
   let coId: string | undefined;
-  if (input.registerChangeOrder && input.claimAmount) {
+  // 같은 원가를 두 번 청구하지 않게 — 기성·수금의 변경공사 보드에서 이미 청구한 원가면 새 건을 만들지 않는다 (D-84 버그 배시 B1 · 이익이 이중으로 잡히던 문제).
+  // 현장 직원 화면에는 변경공사가 안 보여 미리 알 수 없으므로 오류로 막지 않고 조치만 완료한다
+  const claimedBy = coByEntry(db0);
+  const dup = a.causeEntryIds.map((id) => claimedBy.get(id)).find(Boolean);
+  if (input.registerChangeOrder && input.claimAmount && !dup) {
     const co: ChangeOrder = {
       id: uid("co"),
       siteId: a.siteId,
@@ -705,8 +721,8 @@ export function completeAction(db0: DemoDB, actionId: string, input: CompleteAct
   const from = a.status;
   a.status = "done";
   a.result = input.result.trim();
-  a.claimAmount = input.registerChangeOrder ? input.claimAmount : undefined;
-  a.changeOrderId = coId;
+  a.claimAmount = input.registerChangeOrder && !dup ? input.claimAmount : undefined;
+  a.changeOrderId = coId ?? (input.registerChangeOrder && dup ? dup.id : undefined);
   a.completedAt = at;
   a.completedBy = ctx.userId;
   a.history.push({ at, by: ctx.userId, from, to: "done", note: input.result.trim() });
@@ -725,7 +741,7 @@ export function completeAction(db0: DemoDB, actionId: string, input: CompleteAct
     human_approval: { by: a.approvedBy, at: a.createdAt },
     action: `${a.title}${a.assigneeUserId ? ` (담당: ${userName(db, a.assigneeUserId)})` : ""}`,
     action_id: a.id,
-    result: input.result.trim() + (coId ? ` · 변경공사 청구 검토 ${fmtMan(input.claimAmount ?? 0)} 등록(승인 전, 이익 미반영)` : ""),
+    result: input.result.trim() + (coId ? ` · 변경공사 청구 검토 ${fmtMan(input.claimAmount ?? 0)} 등록(승인 전, 이익 미반영)` : input.registerChangeOrder && dup ? ` · 이미 변경공사 ‘${dup.title}’로 청구함` : ""),
     kpi_before: {
       "예상이익률": fmtPct(a.kpiBefore.marginPct),
       "예상이익": fmtEok(a.kpiBefore.expectedProfit),
@@ -956,7 +972,13 @@ export function confirmPartnerRequest(db0: DemoDB, input: { requestId: string; n
 export interface ChangeOrderStatusExtra {
   note?: string;
   followUp?: string;
+  /** 실제로 청구·승인·반려한 날 (YYYY-MM-DD · 없으면 오늘) — 금요일 청구를 월요일에 넣어도 며칠째·이익 반영 달이 맞게 (D-84 공무 점검) */
+  date?: string;
+  /** 승인 근거 (D-84 대표 점검) */
+  basis?: "contract" | "letter" | "verbal";
 }
+
+const APPROVAL_BASES = new Set(["contract", "letter", "verbal"]);
 
 export function setChangeOrderStatus(db0: DemoDB, coId: string, status: ChangeOrderStatus, approvedAmount: number | undefined, ctx: Ctx, addedCost?: { category: CostCategory; amount: number }, extra: ChangeOrderStatusExtra = {}) {
   const db = clone(db0);
@@ -969,12 +991,32 @@ export function setChangeOrderStatus(db0: DemoDB, coId: string, status: ChangeOr
   // 사유·다음 확인할 날 (D-84) — 일부 승인·반려는 왜 그런지 남긴다(나중에 다시 청구·협의할 근거)
   const note = typeof extra.note === "string" ? tidyName(extra.note, 1000) : "";
   if (Array.from(note).length > 200) throw new CommandError("사유는 200자 이내로 적어 주세요.", "VALIDATION", { note: "200자 이내" });
+  // 승인 금액을 먼저 본다 — 비우거나 0이면 사유 칸이 아니라 금액 칸에 오류 (D-84 버그 배시)
+  if (status === "approved" && approvedAmount !== undefined) {
+    validateAmount(typeof approvedAmount === "number" ? Math.abs(approvedAmount) : approvedAmount, "approvedAmount");
+    // 청구보다 많이 승인하는 일은 드물고, 0 하나 더 누른 실수가 계약·이익에 바로 들어간다 — 더 받으면 새 변경공사로
+    if (Math.abs(approvedAmount) > Math.abs(co.amount)) throw new CommandError(`승인 금액이 청구 금액(${fmtMan(Math.abs(co.amount))})보다 큽니다. 더 받기로 했으면 차액은 새 변경공사로 만드세요.`, "VALIDATION", { approvedAmount: "청구 금액 이하" });
+  }
   const partial = status === "approved" && approvedAmount !== undefined && Math.abs(approvedAmount) !== Math.abs(co.amount);
   if ((status === "rejected" || partial) && Array.from(note).length < 2)
     throw new CommandError(status === "rejected" ? "반려 사유를 적어 주세요 (예: 원청 설계 범위 안이라 불인정 — 다시 청구 근거)." : "요청과 다른 금액으로 승인한 사유를 적어 주세요 (예: 원청 단가 협의로 5% 감액).", "VALIDATION", { note: "사유 필수" });
   if (extra.followUp !== undefined && status !== "submitted") throw new CommandError("다음 확인할 날은 발주처에 청구할 때만 정합니다.", "VALIDATION", { followUp: "청구 때만" });
   const fe = followUpError(extra.followUp, todayIso(ctx.now));
   if (fe) throw new CommandError(fe, "VALIDATION", { followUp: fe });
+  if (extra.basis !== undefined && status !== "approved") throw new CommandError("승인 근거는 승인할 때만 고릅니다.", "VALIDATION", { basis: "승인 때만" });
+  if (extra.basis !== undefined && !APPROVAL_BASES.has(extra.basis as string)) throw new CommandError("승인 근거를 골라 주세요.", "VALIDATION", { basis: "근거" });
+  // 실제로 한 날 — 오늘이나 지난 날, 등록한 날(결정은 청구한 날) 이후
+  const kstDay = (iso: string) => todayIso(new Date(iso));
+  const today = todayIso(ctx.now);
+  let when = nowIso(ctx);
+  let day = today;
+  if (extra.date !== undefined && extra.date !== today) {
+    if (!pastCalendarDate(extra.date, ctx)) throw new CommandError("날짜는 오늘이나 지난 날로 적어 주세요.", "VALIDATION", { date: "오늘 이전" });
+    const floor = status !== "submitted" && co.submittedAt ? kstDay(co.submittedAt) : kstDay(co.requestedAt);
+    if (extra.date < floor) throw new CommandError(`날짜는 ${status !== "submitted" && co.submittedAt ? "발주처에 청구한 날" : "변경공사를 등록한 날"}(${floor}) 이후로 적어 주세요.`, "VALIDATION", { date: "등록·청구 이후" });
+    day = extra.date;
+    when = `${extra.date}T03:00:00.000Z`; // 그날 한국 시간 정오
+  }
   // 승인할 때 이 공사에 들어갈 예상 원가(선택) — 잔여예상원가에 더한다. 없으면 승인액 전부가 이익으로 잡히던 문제 (D-78 첫 달 리허설)
   if (addedCost !== undefined && addedCost !== null) {
     if (status !== "approved") throw new CommandError("예상 원가는 승인할 때만 넣습니다.", "VALIDATION", { addedCost: "승인 때만" });
@@ -985,8 +1027,9 @@ export function setChangeOrderStatus(db0: DemoDB, coId: string, status: ChangeOr
   co.status = status;
   // 감액 변경공사(가져온 이력의 − 금액, D-77): 승인 금액도 감액으로 — 크기만 검사한다
   if (status === "approved") co.approvedAmount = co.amount < 0 ? -validateAmount(Math.abs(approvedAmount ?? co.amount), "approvedAmount") : validateAmount(approvedAmount ?? co.amount, "approvedAmount");
-  if (status === "approved" || status === "rejected") co.decidedAt = nowIso(ctx);
-  if (status === "submitted") co.submittedAt = nowIso(ctx);
+  if (status === "approved" || status === "rejected") co.decidedAt = when;
+  if (status === "submitted") co.submittedAt = when;
+  if (status === "approved" && extra.basis) co.approvalBasis = extra.basis;
   if (status === "approved") {
     // 승인 전 문구가 승인 뒤에도 남던 문제 — 결정 기록으로 바꾼다
     co.note = co.note.replace(/\s*—?\s*(원청\(발주처\) )?승인 전(까지)? 계약·이익 미반영/, "").trim();
@@ -1007,12 +1050,12 @@ export function setChangeOrderStatus(db0: DemoDB, coId: string, status: ChangeOr
   pushCoLog(co, {
     at: nowIso(ctx),
     by: ctx.userId,
-    date: todayIso(ctx.now),
+    date: day,
     kind: status,
     note:
       status === "approved"
-        ? `${partial ? `요청 ${fmtMan(co.amount)} → ` : ""}승인 ${fmtMan(co.approvedAmount ?? co.amount)}${note ? ` — ${note}` : ""}`
-        : note || (status === "submitted" ? "발주처에 청구" : ""),
+        ? `${partial ? `요청 ${fmtMan(co.amount)} → ` : ""}승인 ${fmtMan(co.approvedAmount ?? co.amount)}${extra.basis ? ` · ${APPROVAL_BASIS_LABEL[extra.basis]}` : ""}${note ? ` — ${note}` : ""}`
+        : note,
   });
   const after = siteFinancials(db, co.siteId);
   const site = requireSite(db, co.siteId);

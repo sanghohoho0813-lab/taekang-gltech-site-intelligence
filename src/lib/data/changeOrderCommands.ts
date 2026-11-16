@@ -6,7 +6,8 @@
  */
 import type { ChangeOrder, DemoDB } from "@/lib/domain/types";
 import { coByEntry, coOpen, followUpError, pushCoLog } from "@/lib/domain/changeOrders";
-import { fmtMan, todayIso } from "@/lib/domain/format";
+import { fmtEok, fmtMan, todayIso } from "@/lib/domain/format";
+import { siteFinancials } from "@/lib/domain/calc";
 import { uid } from "@/lib/domain/ids";
 import { CommandError, claimKey, clone, log, nowIso, pastCalendarDate, requireSite, tidyName, touch, validateAmount, type Ctx } from "./commands";
 
@@ -40,8 +41,19 @@ export function createChangeOrder(db0: DemoDB, input: CreateChangeOrderInput, ct
   if (len(note) > NOTE_MAX) errors.note = `${NOTE_MAX}자 이내`;
   if (input.entryIds !== undefined && (!Array.isArray(input.entryIds) || input.entryIds.some((x) => typeof x !== "string"))) errors.entryIds = "근거 원가 형식을 확인해 주세요.";
   else if ((input.entryIds?.length ?? 0) > ENTRY_MAX) errors.entryIds = `근거 원가는 ${ENTRY_MAX}건까지`;
-  if (Object.keys(errors).length) throw new CommandError("입력값을 확인해주세요.", "VALIDATION", errors);
-  const amount = validateAmount(input.amount, "amount");
+  if (input.note !== undefined && input.note !== null && typeof input.note !== "string") errors.note = "메모 형식을 확인해 주세요.";
+  // 금액 오류도 한 번에 (제목·금액이 둘 다 틀리면 두 번 눌러야 하던 문제 · D-84 버그 배시)
+  let amount = 0;
+  try {
+    amount = validateAmount(input.amount, "amount");
+    // 계약금액보다 큰 변경공사는 단위 실수일 가능성이 크다 (49.9억 · D-84 버그 배시)
+    const f = siteFinancials(db0, site.id);
+    if (f.adjustedContract > 0 && amount > f.adjustedContract) errors.amount = `현장 계약금액(${fmtEok(f.adjustedContract)})보다 큰 금액입니다. 금액 단위를 확인해 주세요.`;
+  } catch (e) {
+    if (e instanceof CommandError) Object.assign(errors, e.fieldErrors);
+    else throw e;
+  }
+  if (Object.keys(errors).length) throw new CommandError(errors.amount && !errors.title ? errors.amount : "입력값을 확인해주세요.", "VALIDATION", errors);
 
   // 다시 청구 — 반려된 같은 현장 건, 한 번만
   let prev: ChangeOrder | undefined;
@@ -51,7 +63,9 @@ export function createChangeOrder(db0: DemoDB, input: CreateChangeOrderInput, ct
     if (prev.status !== "rejected") throw new CommandError("반려된 변경공사만 다시 청구할 수 있습니다.", "STATE");
     if (db0.changeOrders.some((c) => c.reclaimOf === prev!.id)) throw new CommandError("이미 다시 청구한 변경공사입니다.", "DUPLICATE");
   }
-  const ids = [...new Set(input.entryIds?.length ? input.entryIds : (prev?.sourceEntryIds ?? []))];
+  // 다시 청구 때 근거를 비우면 이전 건의 원가 중 아직 살아 있는 추가 원가만 (모두 무효면 근거 없이 · D-84 버그 배시)
+  const prevLive = (prev?.sourceEntryIds ?? []).filter((id) => db0.costEntries.some((e) => e.id === id && e.status === "active" && e.forecastImpact === "additional"));
+  const ids = [...new Set(input.entryIds?.length ? input.entryIds : prevLive)];
   const claimed = coByEntry(db0);
   for (const id of ids) {
     const e = db0.costEntries.find((x) => x.id === id);
@@ -80,6 +94,8 @@ export function createChangeOrder(db0: DemoDB, input: CreateChangeOrderInput, ct
   };
   pushCoLog(co, { at, by: ctx.userId, date: todayIso(ctx.now), kind: "created", note: prev ? `반려된 ‘${prev.title}’ 다시 청구${note ? ` — ${note}` : ""}` : note || (ids.length ? `추가 원가 ${ids.length}건 ${fmtMan(sum)} 근거` : "근거 원가 없이 등록") });
   db.changeOrders.push(co);
+  // ‘청구 안 함’으로 정했던 원가를 근거로 쓰면 그 표시는 지운다
+  for (const e of db.costEntries) if (ids.includes(e.id) && e.noClaim) delete e.noClaim;
   log(db, ctx, "change_order", `${site.shortName} 변경공사 ${prev ? "다시 청구" : "청구 검토 등록"} ${fmtMan(amount)}: ${title}${ids.length ? ` (근거 추가 원가 ${ids.length}건 ${fmtMan(sum)})` : ""}`, site.id, `/finance#co-${co.id}`);
   touch(db, ctx);
   return { db, result: { id: co.id } };
@@ -87,7 +103,8 @@ export function createChangeOrder(db0: DemoDB, input: CreateChangeOrderInput, ct
 
 export interface LogChangeOrderInput {
   coId: string;
-  kind: "follow_up" | "client_reply" | "note";
+  /** no_reclaim: 반려된 건을 다시 청구하지 않기로 정함 (사유 필수 · 대표 점검) */
+  kind: "follow_up" | "client_reply" | "note" | "no_reclaim";
   /** 일어난 날 (YYYY-MM-DD) — 오늘 이전, 등록한 날 이후 */
   date: string;
   note: string;
@@ -96,7 +113,7 @@ export interface LogChangeOrderInput {
   idempotencyKey?: string;
 }
 
-const LOG_KINDS = new Set(["follow_up", "client_reply", "note"]);
+const LOG_KINDS = new Set(["follow_up", "client_reply", "note", "no_reclaim"]);
 
 export function logChangeOrder(db0: DemoDB, input: LogChangeOrderInput, ctx: Ctx) {
   const c0 = db0.changeOrders.find((c) => c.id === input.coId);
@@ -107,9 +124,17 @@ export function logChangeOrder(db0: DemoDB, input: LogChangeOrderInput, ctx: Ctx
   if (len(note) < 2) errors.note = "내용을 2자 이상 적어 주세요 (예: 담당 과장 통화 — 다음 주 검토 회의).";
   else if (len(note) > NOTE_MAX) errors.note = `${NOTE_MAX}자 이내`;
   const requested = new Date(new Date(c0.requestedAt).getTime() + 9 * 3_600_000).toISOString().slice(0, 10);
-  if (!pastCalendarDate(input.date, ctx)) errors.date = "오늘이나 지난 날짜로 적어 주세요.";
+  if (typeof input.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(input.date) || Number.isNaN(Date.parse(`${input.date}T00:00:00Z`)) || new Date(`${input.date}T00:00:00Z`).toISOString().slice(0, 10) !== input.date) errors.date = "날짜 형식을 확인해 주세요.";
+  else if (!pastCalendarDate(input.date, ctx)) errors.date = "오늘이나 지난 날짜로 적어 주세요.";
   else if (input.date < requested) errors.date = "변경공사를 등록한 날 이후로 적어 주세요.";
+  if (input.kind === "no_reclaim") {
+    if (c0.status !== "rejected") errors.kind = "반려된 변경공사만 ‘다시 청구 안 함’으로 정리합니다.";
+    else if (db0.changeOrders.some((c) => c.reclaimOf === c0.id)) errors.kind = "이미 다시 청구한 변경공사입니다.";
+    else if (c0.noReclaim) errors.kind = "이미 ‘다시 청구 안 함’으로 정리했습니다.";
+  } else if (input.kind !== "note" && !coOpen(c0)) errors.kind = "결정된 변경공사에는 메모만 남깁니다.";
   if (input.nextFollowUp !== undefined && !coOpen(c0)) errors.nextFollowUp = "결정된 변경공사에는 다음 확인할 날을 정하지 않습니다.";
+  // 발주처에 청구한 건은 다음 확인할 날을 지우지 않는다 — 날짜가 없으면 아무도 챙기지 않던 문제 (D-84 점검)
+  else if (input.nextFollowUp === null && c0.status === "submitted") errors.nextFollowUp = "발주처에 청구한 건은 다음 확인할 날이 있어야 합니다.";
   else {
     const fe = followUpError(input.nextFollowUp, todayIso(ctx.now));
     if (fe) errors.nextFollowUp = fe;
@@ -119,10 +144,54 @@ export function logChangeOrder(db0: DemoDB, input: LogChangeOrderInput, ctx: Ctx
   claimKey(db, input.idempotencyKey);
   const co = db.changeOrders.find((c) => c.id === input.coId)!;
   pushCoLog(co, { at: nowIso(ctx), by: ctx.userId, date: input.date, kind: input.kind, note });
+  if (input.kind === "no_reclaim") co.noReclaim = { at: nowIso(ctx), by: ctx.userId, note };
   if (input.nextFollowUp === null) delete co.nextFollowUp;
   else if (typeof input.nextFollowUp === "string") co.nextFollowUp = input.nextFollowUp;
   const site = db.sites.find((s) => s.id === co.siteId);
   log(db, ctx, "change_order", `${site?.shortName ?? ""} 변경공사 기록 — ${co.title}`, co.siteId, `/finance#co-${co.id}`);
   touch(db, ctx);
   return { db, result: { id: co.id } };
+}
+
+export interface DeclineClaimInput {
+  /** 청구하지 않기로 할(또는 되돌릴) 추가 원가 */
+  entryIds: string[];
+  /** 왜 청구하지 않는지 (우리 책임·소액·관계 등) — 되돌릴 때는 없어도 됨 */
+  note?: string;
+  /** true면 ‘청구 안 함’을 되돌린다 */
+  undo?: boolean;
+  idempotencyKey?: string;
+}
+
+/** 추가 원가를 변경공사로 청구하지 않기로 정한다 (사유와 함께 · 되돌릴 수 있음) — 청구 안 한 목록·위험 신호·대표가 정할 일에서 빠진다 (D-84 공무 점검) */
+export function declineClaim(db0: DemoDB, input: DeclineClaimInput, ctx: Ctx) {
+  if (!Array.isArray(input.entryIds) || !input.entryIds.length || input.entryIds.some((x) => typeof x !== "string")) throw new CommandError("원가를 골라 주세요.", "VALIDATION", { entryIds: "원가" });
+  if (input.entryIds.length > ENTRY_MAX) throw new CommandError(`한 번에 ${ENTRY_MAX}건까지`, "VALIDATION", { entryIds: `${ENTRY_MAX}건까지` });
+  const undo = input.undo === true;
+  const note = text(input.note);
+  if (!undo && len(note) < 2) throw new CommandError("청구하지 않는 이유를 적어 주세요 (예: 자재 반입 지연은 우리 책임).", "VALIDATION", { note: "이유 필수" });
+  if (len(note) > NOTE_MAX) throw new CommandError(`${NOTE_MAX}자 이내`, "VALIDATION", { note: `${NOTE_MAX}자 이내` });
+  const used = new Set(db0.changeOrders.flatMap((c) => c.sourceEntryIds));
+  const ids = [...new Set(input.entryIds)];
+  for (const id of ids) {
+    const e = db0.costEntries.find((x) => x.id === id);
+    if (!e) throw new CommandError("원가를 찾을 수 없습니다.", "NOT_FOUND");
+    if (e.status !== "active" || e.forecastImpact !== "additional") throw new CommandError("확정된 추가 원가만 정리할 수 있습니다.", "VALIDATION", { entryIds: "확정 추가 원가만" });
+    if (used.has(id)) throw new CommandError("이미 변경공사의 근거로 쓴 원가입니다.", "STATE");
+    if (undo ? !e.noClaim : !!e.noClaim) throw new CommandError(undo ? "‘청구 안 함’으로 정한 원가가 아닙니다." : "이미 ‘청구 안 함’으로 정한 원가입니다.", "STATE");
+  }
+  const db = clone(db0);
+  claimKey(db, input.idempotencyKey);
+  const at = nowIso(ctx);
+  for (const e of db.costEntries)
+    if (ids.includes(e.id)) {
+      if (undo) delete e.noClaim;
+      else e.noClaim = { at, by: ctx.userId, note };
+    }
+  const first = db.costEntries.find((e) => e.id === ids[0])!;
+  const sum = db.costEntries.filter((e) => ids.includes(e.id)).reduce((a, e) => a + e.amount, 0);
+  const site = db.sites.find((s) => s.id === first.siteId);
+  log(db, ctx, "change_order", `${site?.shortName ?? ""} 추가 원가 ${ids.length}건 ${fmtMan(sum)} ${undo ? "‘청구 안 함’ 되돌림" : `변경공사로 청구 안 함 — ${note}`}`, first.siteId, "/finance#co-board");
+  touch(db, ctx);
+  return { db, result: { n: ids.length } };
 }

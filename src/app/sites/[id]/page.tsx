@@ -620,8 +620,9 @@ function ReportsTab({ db, site }: { db: DemoDB; site: Site }) {
 
 function ContractTab({ db, site, f }: { db: DemoDB; site: Site; f: SiteFinancials }) {
   const contract = db.contracts.find((c) => c.siteId === site.id)!;
-  const cos = db.changeOrders.filter((c) => c.siteId === site.id);
   const today = todayIso();
+  // 진행 중 먼저, 그다음 최근 결정 순 (D-84 버그 배시 — 정렬이 없었다)
+  const cos = db.changeOrders.filter((c) => c.siteId === site.id).sort((a, b) => Number(b.status === "review" || b.status === "submitted") - Number(a.status === "review" || a.status === "submitted") || (b.decidedAt ?? b.requestedAt).localeCompare(a.decidedAt ?? a.requestedAt));
   const unclaimed = coBoard(db, today, site.id).unclaimed;
   return (
     <div className="grid gap-5 @min-[900px]:grid-cols-2">
@@ -649,13 +650,17 @@ function ContractTab({ db, site, f }: { db: DemoDB; site: Site; f: SiteFinancial
                   <Link href={`/finance#co-${c.id}`} className="flex flex-wrap items-center gap-1.5 text-[0.86rem]">
                     <b>{c.title}</b>
                     <Badge tone={c.status === "approved" ? "ok" : c.status === "rejected" ? "neutral" : "warn"}>{CO_STATUS_LABEL[c.status]}</Badge>
+                    {c.reclaimOf && <Badge tone="neutral">재청구 건</Badge>}
                   </Link>
                   <p className="text-[0.78rem] text-ink-3 num">
                     {c.status === "approved" ? `승인 ${fmtMan(c.approvedAmount ?? c.amount)}${(c.approvedAmount ?? c.amount) !== c.amount ? ` (요청 ${fmtMan(c.amount)})` : ""}` : fmtMan(c.amount)} · {coStageText(c, today)}
-                    {r.linkedCost > 0 && ` · 근거 추가 원가 ${fmtMan(r.linkedCost)}`}
-                    {c.nextFollowUp && (c.status === "review" || c.status === "submitted") && ` · 다음 확인 ${fmtDate(c.nextFollowUp)}`} · {c.status === "approved" ? "계약 반영" : "이익 미반영"}
+                    {r.linkedCost > 0 && !r.reclaimedBy && ` · 근거 추가 원가 ${fmtMan(r.linkedCost)}`}
+                    {c.nextFollowUp && (c.status === "review" || c.status === "submitted") && ` · 다음 확인 ${Number(c.nextFollowUp.slice(5, 7))}/${Number(c.nextFollowUp.slice(8, 10))}`}
+                    {r.noFollow && " · 다음 확인할 날 없음"} · {c.status === "approved" ? "계약 반영" : "이익 미반영"}
                   </p>
                   {c.decisionNote && <p className="text-[0.78rem] text-ink-2">{c.status === "rejected" ? "반려 사유" : "승인 메모"}: {c.decisionNote}</p>}
+                  {r.reclaimedBy && <p className="text-[0.78rem] text-ink-2">→ 다시 청구함: {r.reclaimedBy.title}</p>}
+                  {r.reclaimUndecided && <p className="text-[0.78rem] font-semibold text-warn">반려 뒤 다시 청구할지 정하기</p>}
                 </li>
               );
             })}

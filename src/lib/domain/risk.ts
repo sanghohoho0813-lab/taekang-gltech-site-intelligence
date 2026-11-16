@@ -5,7 +5,8 @@
 import type { CostEntry, DemoDB, RiskSignal, Severity } from "./types";
 import { siteFinancials } from "./calc";
 import { CATEGORY_LABEL, RULE_VERSION } from "./labels";
-import { daysBetween, fmtEok, fmtMan, fmtPct, fmtPp } from "./format";
+import { daysBetween, fmtEok, fmtMan, fmtPct, fmtPp, todayIso } from "./format";
+import { coDays } from "./changeOrders";
 import { siteInstallPct } from "./material";
 
 const SEV_ORDER: Record<Severity, number> = { high: 0, medium: 1, low: 2 };
@@ -168,7 +169,8 @@ export function computeSignals(db: DemoDB, now = new Date()): RiskSignal[] {
 
     // 5) 설계변경 추가원가 — 변경공사 미등록
     const linked = new Set(db.changeOrders.filter((co) => co.siteId === site.id).flatMap((co) => co.sourceEntryIds));
-    const unbilled = additional.filter((e) => e.reason === "design_change" && !linked.has(e.id));
+    // 청구하지 않기로 사유를 남긴 원가는 빼고 (D-84)
+    const unbilled = additional.filter((e) => e.reason === "design_change" && !linked.has(e.id) && !e.noClaim);
     if (unbilled.length) {
       const sum = unbilled.reduce((s, e) => s + e.amount, 0);
       const first = [...unbilled].sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
@@ -267,7 +269,8 @@ export function computeSignals(db: DemoDB, now = new Date()): RiskSignal[] {
     // 7) 미승인 변경공사 장기 대기
     for (const co of db.changeOrders.filter((c) => c.siteId === site.id && c.status === "submitted")) {
       // 발주처에 청구한 날부터 센다 (내부 검토 기간은 빼고 · D-66 점검 반영)
-      const days = daysBetween(co.submittedAt ?? co.requestedAt, now);
+      // 변경공사 보드와 같은 날 수 (한국 날짜 기준 · D-84 버그 배시 — 보드 31일째인데 신호는 30일이라 안 뜨던 문제)
+      const days = coDays(co, todayIso(now));
       if (days > t.changeOrderPendingDays) {
         signals.push({
           key: `PENDING_CHANGE_ORDER:${site.id}:${co.id}`,
@@ -279,7 +282,7 @@ export function computeSignals(db: DemoDB, now = new Date()): RiskSignal[] {
           why: [
             `청구일로부터 ${days}일 경과 > 기준 ${t.changeOrderPendingDays}일`,
             `승인 전 금액은 예상이익 계산에서 제외(보수적 계산)`,
-            `승인 시 변경 반영 계약금액 +${fmtMan(co.amount)}`,
+            `승인 시 변경 반영 계약금액 ${co.amount < 0 ? "−" : "+"}${fmtMan(Math.abs(co.amount))}`,
             // 마지막으로 발주처에 확인한 기록 · 다음 확인할 날 (D-84)
             ...(() => {
               const last = [...(co.log ?? [])].reverse().find((l) => l.kind === "follow_up" || l.kind === "client_reply");

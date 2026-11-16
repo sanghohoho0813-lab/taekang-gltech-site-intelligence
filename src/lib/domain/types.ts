@@ -358,6 +358,8 @@ export interface CostEntry {
    * ‘이익을 바꾼 일’에서 사라지고 합이 실제 변화와 어긋나던 문제. 재추정 때 그대로 남겨 둔다 (예상 총원가 계산에는 쓰지 않음)
    */
   frozenOver?: number;
+  /** 변경공사로 청구하지 않기로 정한 추가 원가 (D-84 점검 — 우리 책임·소액 등, 사유와 함께) */
+  noClaim?: { at: string; by: string; note: string };
   /** 자료 가져오기 묶음 (가져오기 취소용) */
   importBatchId?: string;
   /** 월 마감 노무 정산 (D-79) — 출력 인원 × 팀 단가 추정과 입력된 노무비의 차액을 본사가 한 번에 넣은 것 · teams: 팀별로 나눈 금액 (D-81) */
@@ -583,6 +585,10 @@ export interface ChangeOrder {
   decisionNote?: string;
   /** 반려된 변경공사를 다시 청구한 건이면 이전 건 (D-84) */
   reclaimOf?: string;
+  /** 승인 근거 (D-84 대표 점검) — 변경계약서 날인 · 발주처 공문·메일 · 구두(서면 대기) */
+  approvalBasis?: "contract" | "letter" | "verbal";
+  /** 반려된 건을 다시 청구하지 않기로 정함 (D-84 대표 점검 — 손실로 정리) */
+  noReclaim?: { at: string; by: string; note: string };
 }
 
 /** 변경공사 진행 기록 (D-84) */
@@ -593,7 +599,7 @@ export interface ChangeOrderLog {
   by: string;
   /** 일어난 날 (YYYY-MM-DD) */
   date: string;
-  kind: "created" | "submitted" | "follow_up" | "client_reply" | "note" | "approved" | "rejected";
+  kind: "created" | "submitted" | "follow_up" | "client_reply" | "note" | "approved" | "rejected" | "no_reclaim";
   note: string;
 }
 

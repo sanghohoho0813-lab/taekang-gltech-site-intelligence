@@ -7,6 +7,7 @@ import type { DemoDB } from "@/lib/domain/types";
 import { todayIso } from "@/lib/domain/format";
 import { userLabel } from "@/lib/data/hooks";
 import { IS_LIVE } from "@/lib/mode";
+import { hqReport } from "@/lib/domain/brief";
 import { Card, CardHeader, cx } from "@/components/ui/primitives";
 
 function daysBetween(a: string, b: string) {
@@ -21,14 +22,17 @@ export function TodayReports({ db }: { db: DemoDB }) {
   const pending = db.costEntries.filter((e) => e.status === "pending").length;
   const rows = sites.map((s) => {
     // 엑셀로 옮긴 지난 기록은 ‘마지막 보고’로 치지 않는다 (보고 끊긴 날수가 가려지던 문제 · D-71 점검 반영)
-    const reports = db.reports.filter((r) => r.siteId === s.id && r.status !== "voided" && !r.importBatchId);
+    // 본사가 넣은 보고·비용은 현장 보고로 치지 않고 따로 센다 (D-84 공무 점검)
+    const all = db.reports.filter((r) => r.siteId === s.id && r.status !== "voided" && !r.importBatchId);
+    const reports = all.filter((r) => !hqReport(db, r));
+    const hqToday = all.filter((r) => r.reportDate === today && hqReport(db, r)).length;
     const todays = reports.filter((r) => r.reportDate === today);
     const last = reports.map((r) => r.reportDate).sort().at(-1);
     const photos = todays.reduce((n, r) => n + r.photoIds.length, 0);
     const costs = todays.reduce((n, r) => n + r.costEntryIds.length, 0);
     const att = (db.attendance ?? []).filter((a) => a.siteId === s.id && a.workDate === today);
     const attIssue = att.some((a) => a.inGeo.status !== "inside");
-    return { s, todays, last, photos, costs, att, attIssue };
+    return { s, todays, last, photos, costs, att, attIssue, hqToday };
   });
   const missing = rows.filter((r) => r.todays.length === 0).length;
   return (
@@ -56,7 +60,7 @@ export function TodayReports({ db }: { db: DemoDB }) {
         }
       />
       <ul className="divide-y divide-line border-t border-line">
-        {rows.map(({ s, todays, last, photos, costs, att, attIssue }) => {
+        {rows.map(({ s, todays, last, photos, costs, att, attIssue, hqToday }) => {
           const ok = todays.length > 0;
           const gap = last ? daysBetween(last, today) : null;
           return (
@@ -73,6 +77,7 @@ export function TodayReports({ db }: { db: DemoDB }) {
                 </span>
                 <span className={cx("shrink-0 text-right text-[0.8rem] font-semibold", ok ? "text-ok" : "text-warn")}>
                   {ok ? `보고 ${todays.length}건${photos ? ` · 사진 ${photos}` : ""}${costs ? ` · 비용 ${costs}` : ""}` : gap === null ? "보고 기록 없음" : gap === 1 ? "보고는 어제가 마지막" : `보고 ${gap}일째 없음`}
+                  {hqToday > 0 && <span className="block text-[0.74rem] font-normal text-ink-3">본사 입력 {hqToday}건</span>}
                 </span>
               </Link>
             </li>

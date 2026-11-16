@@ -18,7 +18,7 @@ import { changesAfterClose, currentClose, firstUseDate, type ChangesAfterClose }
 import { siteFinancials } from "@/lib/domain/calc";
 import { computeSignals } from "@/lib/domain/risk";
 import { CLAIMABLE_REASONS, coBoard, coByEntry, coStageText, rejectedByEntry } from "@/lib/domain/changeOrders";
-import { CATEGORY_LABEL, COST_CATEGORIES } from "@/lib/domain/labels";
+import { CATEGORY_LABEL, COST_CATEGORIES, REASON_LABEL } from "@/lib/domain/labels";
 import { fmtDate, fmtDateTime, fmtMan, fmtPct } from "@/lib/domain/format";
 import { IS_LIVE } from "@/lib/mode";
 
@@ -53,10 +53,15 @@ function ceoTodos(db: DemoDB, r: MonthCloseReport, ch: ChangesAfterClose | null,
       });
     }
   }
-  for (const it of r.items.filter((i) => i.kind === "change" || i.kind === "settle")) out.push({ tone: "warn", text: it.text, href: it.href });
-  // 청구 안 한 설계변경 추가 원가 (D-84) — 청구하지 않으면 그대로 이익 감소
+  // 결정 전 변경공사는 공무·발주처의 일이라 여기서 뺀다 (‘닫기 전에 볼 것’에 있음 · D-84 대표 점검)
+  for (const it of r.items.filter((i) => i.kind === "settle")) out.push({ tone: "warn", text: it.text, href: it.href });
+  // 청구 안 한 설계변경 추가 원가 (D-84) — 청구하지 않으면 그대로 이익 감소 · 이 달 말까지 생긴 것만 (지난달 보고서가 나중에 바뀌지 않게)
   const ids0 = new Set(r.money.map((x) => x.site.id));
-  const unclaimed = coBoard(db, today).unclaimed.filter((e) => ids0.has(e.siteId));
+  const board = coBoard(db, today);
+  const unclaimed = board.unclaimed.filter((e) => ids0.has(e.siteId) && e.date <= r.to);
+  // 반려됐는데 다시 청구할지·손실로 정리할지 안 정한 것 — 대표가 정할 일 (D-84 대표 점검)
+  for (const x of board.decided.filter((d) => d.reclaimUndecided && ids0.has(d.co.siteId)))
+    out.push({ tone: "warn", text: `${x.site?.shortName ?? ""} 변경공사 ‘${x.co.title}’ ${man(x.co.amount)} 반려${x.co.decisionNote ? ` (${x.co.decisionNote})` : ""} — 근거를 보강해 다시 청구할지, 손실로 정리할지`, href: `/finance#co-${x.co.id}` });
   if (unclaimed.length)
     out.push({ tone: "warn", text: `변경공사로 청구 안 한 설계변경 추가 원가 ${unclaimed.length}건 ${man(unclaimed.reduce((a, e) => a + e.amount, 0))} (${unclaimed.slice(0, 3).map((e) => `${db.sites.find((x) => x.id === e.siteId)?.shortName ?? ""} ${e.note || ""}`.trim()).join(" · ")}) — 청구할지 정하기`, href: "/finance#co-unclaimed" });
   for (const l of r.labor.filter((x) => x.canSettle)) out.push({ tone: "warn", text: `${l.site.shortName} 노무 — 출력 기준 추정보다 입력이 ${man(l.shortfall)} 적음 · 명세가 오면 넣거나 차액 정산`, href: `/close?month=${r.month}#close-labor` });
@@ -308,7 +313,8 @@ export function MonthlyReport({ db, month, months, today, onMonth, focusSelect }
               const co = e.entryId ? claimedBy.get(e.entryId) : undefined;
               const rej = e.entryId && !co ? rejectedBy.get(e.entryId) : undefined;
               const entry = e.entryId && !co && !rej ? db.costEntries.find((x) => x.id === e.entryId) : undefined;
-              const canClaim = !!entry && entry.forecastImpact === "additional" && CLAIMABLE_REASONS.has(entry.reason);
+              const extra = !!entry && entry.forecastImpact === "additional";
+              const canClaim = extra && !entry!.noClaim && CLAIMABLE_REASONS.has(entry!.reason);
               return (
                 <li key={i} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 px-5 py-2.5" data-testid="rm-event">
                   <span className="num shrink-0 text-ink-3 sm:w-12">{md(e.date)}</span>
@@ -319,7 +325,7 @@ export function MonthlyReport({ db, month, months, today, onMonth, focusSelect }
                     {co && (
                       <Link href={`/finance#co-${co.id}`} className="mt-0.5 block text-[0.8rem] font-semibold text-theme-ink" data-testid="rm-event-co">
                         {co.status === "approved"
-                          ? `→ 변경공사 승인 ${man(co.approvedAmount ?? co.amount)} (회수)`
+                          ? `→ 변경공사 승인 ${man(co.approvedAmount ?? co.amount)}`
                           : `→ 변경공사 ${man(co.amount)} ${coStageText(co, today)}${co.nextFollowUp ? ` · 다음 확인 ${md(co.nextFollowUp)}` : ""} — 승인되면 이익에 더해집니다`}
                       </Link>
                     )}
@@ -331,6 +337,16 @@ export function MonthlyReport({ db, month, months, today, onMonth, focusSelect }
                     {canClaim && (
                       <Link href="/finance#co-unclaimed" className="mt-0.5 block text-[0.8rem] font-semibold text-warn" data-testid="rm-event-co">
                         → 변경공사로 청구 안 함 — 청구할지 정하기
+                      </Link>
+                    )}
+                    {extra && entry!.noClaim && (
+                      <span className="mt-0.5 block text-[0.8rem] text-ink-3" data-testid="rm-event-co">
+                        → 청구 안 하기로 함: {entry!.noClaim.note}
+                      </span>
+                    )}
+                    {extra && !entry!.noClaim && !CLAIMABLE_REASONS.has(entry!.reason) && (
+                      <Link href="/finance#co-unclaimed" className="mt-0.5 block text-[0.8rem] text-ink-3" data-testid="rm-event-co">
+                        → 변경공사 청구 안 함 ({REASON_LABEL[entry!.reason]} — 발주처 때문이면 청구할 수 있음)
                       </Link>
                     )}
                   </span>

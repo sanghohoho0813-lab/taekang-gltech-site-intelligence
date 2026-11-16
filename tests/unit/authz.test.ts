@@ -49,7 +49,7 @@ describe("권한 매트릭스 — 모든 명령 × 역할", () => {
         // 월 마감 기록 (D-82) — 마감·다시 열기는 본사, 확인은 대표만
         "closeMonth", "confirmMonthClose", "reopenMonthClose",
         // 변경공사 청구·회수 (D-84) — 본사만
-        "createChangeOrder", "logChangeOrder",
+        "createChangeOrder", "logChangeOrder", "declineClaim",
       ].sort(),
     );
     // QR 태블릿 연결은 로그인 없는 전용 API로만 (명령 목록에 없어야 함)

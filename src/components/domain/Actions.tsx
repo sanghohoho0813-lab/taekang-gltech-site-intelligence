@@ -5,7 +5,8 @@ import { worksOnSite } from "@/lib/domain/types";
 import { useState } from "react";
 import { CircleCheck, Play, Pause, UserPlus, MessageSquarePlus, BadgeCheck, Camera, Wand2, ChevronDown } from "lucide-react";
 import type { ActionItem, ActionStatus, DemoDB, RiskSignal } from "@/lib/domain/types";
-import { ACTION_STATUS_LABEL, RULE_LABEL } from "@/lib/domain/labels";
+import { ACTION_STATUS_LABEL, CO_STATUS_LABEL, RULE_LABEL } from "@/lib/domain/labels";
+import { coByEntry } from "@/lib/domain/changeOrders";
 import { fmtDate, fmtDateTime, fmtEok, fmtMan, fmtPct, fmtRelative, todayIso } from "@/lib/domain/format";
 import { siteFinancials } from "@/lib/domain/calc";
 import { CommandError } from "@/lib/data/commands";
@@ -130,7 +131,9 @@ export function CompleteModal({ db, action, open, onClose }: { db: DemoDB; actio
   const { role } = useMe();
   const toast = useToast();
   const causeSum = db.costEntries.filter((e) => action.causeEntryIds.includes(e.id) && e.status === "active").reduce((s, e) => s + e.amount, 0);
-  const isClaim = action.rule === "UNBILLED_CHANGE";
+  // 이미 기성·수금 변경공사 보드에서 청구한 원가면 다시 등록하지 않는다 (D-84 버그 배시 B1)
+  const already = action.causeEntryIds.map((id) => coByEntry(db).get(id)).find(Boolean);
+  const isClaim = action.rule === "UNBILLED_CHANGE" && !already;
   const [result, setResult] = useState("");
   const [register, setRegister] = useState(isClaim);
   const [amountText, setAmountText] = useState(causeSum ? causeSum.toLocaleString("ko-KR") : "");
@@ -182,6 +185,11 @@ export function CompleteModal({ db, action, open, onClose }: { db: DemoDB; actio
         {!IS_LIVE && (<button type="button" onClick={() => setResult(demoResult)} className="press inline-flex items-center gap-1 rounded-lg bg-[#FFF7D6] px-2 py-1 text-[0.75rem] font-bold text-[#7A5200]" data-testid="fill-result">
           <Wand2 size={14} aria-hidden /> DEMO 결과 채우기
         </button>)}
+        {already && (
+          <p className="rounded-xl bg-surface-2 p-3 text-[0.84rem] text-ink-2" data-testid="complete-already-claimed">
+            이 원가는 이미 변경공사 ‘{already.title}’로 청구했습니다 ({CO_STATUS_LABEL[already.status]}). 기성·수금의 변경공사 보드에서 챙깁니다.
+          </p>
+        )}
         {isClaim && (
           <div className="rounded-xl border border-line bg-surface-2 p-3">
             <label className="flex items-start gap-2.5 text-[0.86rem]">

@@ -42,8 +42,8 @@ export function pendingItems(db: DemoDB, today: string, live: boolean, role?: st
     // 발주처가 이미 ‘확인 완료’한 하자의 작업지시는 하자보수 할 일에서 빠지므로 여기서 센다 — 어디에도 안 잡히던 문제 (D-78 첫 달 리허설)
     { key: "wo-done", label: "완료 확인할 작업지시", n: wos.filter((w) => w.status === "done" && (!w.sourcePartnerRequestId || !!db.partnerRequests.find((r) => r.id === w.sourcePartnerRequestId)?.confirmedAt)).length, href: "/orders" },
     { key: "wo-late", label: "기한 지난·미접수 작업지시", n: wos.filter((w) => !["done", "confirmed"].includes(w.status) && ((w.dueDate && w.dueDate < today) || w.status === "sent")).length, href: "/orders" },
-    // 변경공사 (D-84) — 발주처에 확인할 날이 됐거나, 청구 검토로 7일 넘게 머문 것
-    { key: "co", label: "변경공사 챙길 것 (확인할 날 · 청구 전 7일 넘음)", n: coAttentionCount(db, today), href: "/finance#co-board" },
+    // 변경공사 (D-84) — 발주처에 확인할 날이 됐거나 날이 없음 · 청구 검토로 7일 넘게 머묾 · 반려 뒤 다시 청구할지 안 정함
+    { key: "co", label: "변경공사 챙길 것 (발주처 확인할 날 · 미발송 7일 넘음 · 반려 뒤 결정)", n: coAttentionCount(db, today), href: "/finance#co-board" },
     { key: "partner", label: "회신 안 한 고객 요청 (견적·주문 등)", n: db.partnerRequests.filter((r) => r.status !== "answered" && r.type !== "defect").length, href: "/insights#requests" },
     // 하자보수: 작업지시·회신·남은 보수 확인 — 메뉴 배지와 같은 수 (D-69 · 점검 12차: ‘남은 보수 확인’이 빠져 배지와 달랐다)
     { key: "defect", label: "하자보수 — 본사 할 일", n: defectTodoCount(db, today), href: "/defects?view=todo" },

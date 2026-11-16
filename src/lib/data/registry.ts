@@ -36,11 +36,12 @@ export const COMMANDS = {
   createPartnerRequest: (db: DemoDB, a: Parameters<typeof C.createPartnerRequest>[1], ctx: Ctx) => C.createPartnerRequest(db, a, ctx),
   updatePartnerRequest: (db: DemoDB, a: { requestId: string; patch: Parameters<typeof C.updatePartnerRequest>[2] }, ctx: Ctx) => C.updatePartnerRequest(db, a.requestId, a.patch, ctx),
   confirmPartnerRequest: (db: DemoDB, a: { requestId: string; note?: string }, ctx: Ctx) => C.confirmPartnerRequest(db, a, ctx),
-  setChangeOrderStatus: (db: DemoDB, a: { coId: string; status: ChangeOrderStatus; approvedAmount?: number; addedCost?: { category: CostCategory; amount: number }; note?: string; followUp?: string }, ctx: Ctx) =>
-    C.setChangeOrderStatus(db, a.coId, a.status, a.approvedAmount, ctx, a.addedCost, { note: a.note, followUp: a.followUp }),
+  setChangeOrderStatus: (db: DemoDB, a: { coId: string; status: ChangeOrderStatus; approvedAmount?: number; addedCost?: { category: CostCategory; amount: number }; note?: string; followUp?: string; date?: string; basis?: "contract" | "letter" | "verbal" }, ctx: Ctx) =>
+    C.setChangeOrderStatus(db, a.coId, a.status, a.approvedAmount, ctx, a.addedCost, { note: a.note, followUp: a.followUp, date: a.date, basis: a.basis }),
   // 변경공사 회수 관리 (D-84) — 본사만
   createChangeOrder: (db: DemoDB, a: CO.CreateChangeOrderInput, ctx: Ctx) => CO.createChangeOrder(db, a, ctx),
   logChangeOrder: (db: DemoDB, a: CO.LogChangeOrderInput, ctx: Ctx) => CO.logChangeOrder(db, a, ctx),
+  declineClaim: (db: DemoDB, a: CO.DeclineClaimInput, ctx: Ctx) => CO.declineClaim(db, a, ctx),
   addBilling: (db: DemoDB, a: Parameters<typeof C.addBilling>[1], ctx: Ctx) => C.addBilling(db, a, ctx),
   addPayment: (db: DemoDB, a: Parameters<typeof C.addPayment>[1], ctx: Ctx) => C.addPayment(db, a, ctx),
   setThresholds: (db: DemoDB, a: RiskThresholds, ctx: Ctx) => C.setThresholds(db, a, ctx),

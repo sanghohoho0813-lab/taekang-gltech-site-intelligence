@@ -68,6 +68,11 @@ test("변경공사 청구·회수: 청구 안 한 추가 원가 → 만들기 �
   await row.getByTestId("co-approve").click();
   const am = page.getByTestId("co-status-modal");
   await am.getByTestId("co-amt").fill("44000000");
+  // 근거 원가로 만든 건은 ‘예상 원가’ 칸이 접혀 있다 (두 번 계상 방지)
+  await expect(am.getByTestId("co-cost")).toHaveCount(0);
+  await am.getByTestId("co-confirm").click();
+  await expect(am).toContainText("무엇을 받고");
+  await am.getByTestId("co-basis").getByText("발주처 공문·메일로 승인").click();
   await am.getByTestId("co-confirm").click();
   await expect(am).toContainText("사유");
   await am.getByTestId("co-status-note").fill("원청 단가 협의로 감액");
@@ -76,8 +81,11 @@ test("변경공사 청구·회수: 청구 안 한 추가 원가 → 만들기 �
   const done = board.getByTestId("co-decided").getByTestId("change-order").filter({ hasText: "3층 남측 유리 사양 상향" });
   await expect(done).toHaveAttribute("data-status", "approved");
   await expect(done.getByTestId("co-decision-note")).toContainText("원청 단가 협의로 감액");
-  await expect(done).toContainText("회수 110%");
-  await expect(board.getByTestId("co-sum-recovery")).toContainText("110%");
+  await expect(done).toContainText("원가 대비 승인 110%");
+  await expect(done).toContainText("승인 근거: 발주처 공문·메일로 승인");
+  // 승인율 = 청구 4,600만 대비 승인 4,400만 · 근거 원가 대비 110%
+  await expect(board.getByTestId("co-sum-recovery")).toContainText("96%");
+  await expect(board.getByTestId("co-sum-recovery")).toContainText("근거 원가 대비 110%");
   // 위험 신호 ‘설계변경 추가원가 — 변경공사 미등록’이 풀림
   await page.goto("/insights");
   await expect(page.getByTestId("signal-board")).toBeVisible();
@@ -101,6 +109,9 @@ test("변경공사: 반려는 사유 필수 → 다시 청구(근거 원가 그�
   await expect(page.getByTestId("co-status-modal")).toHaveCount(0);
   const rejected = board.getByTestId("co-decided").getByTestId("change-order").filter({ hasText: title }).first();
   await expect(rejected).toHaveAttribute("data-status", "rejected");
+  // 반려 뒤 다시 청구할지 정할 것 — 챙길 것에 셈
+  await expect(rejected.getByTestId("co-reclaim-undecided")).toBeVisible();
+  await expect(board.getByTestId("co-sum-due")).toContainText("반려 뒤 결정 1");
   await rejected.getByTestId("co-reclaim").click();
   const cm = page.getByTestId("co-create-modal");
   await cm.getByTestId("co-title").fill("아트리움 유리 사양 변경 (도면 근거 보강)");
@@ -109,4 +120,33 @@ test("변경공사: 반려는 사유 필수 → 다시 청구(근거 원가 그�
   await expect(board.getByTestId("co-open").getByTestId("change-order").filter({ hasText: "도면 근거 보강" })).toContainText("다시 청구");
   await expect(rejected).toContainText("다시 청구함");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+});
+
+test("변경공사: 우리 책임 추가 원가는 ‘청구 안 함’(이유) → 목록에서 빠지고 되돌릴 수 있음", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await freshStart(page);
+  await page.goto("/sites/site-a");
+  await page.getByTestId("open-report-sheet-pc").click();
+  const sheet = page.getByTestId("report-sheet");
+  await sheet.getByTestId("fill-demo").click();
+  await sheet.getByTestId("submit-report").click();
+  await expect(sheet.getByTestId("report-impact")).toBeVisible();
+  await sheet.getByRole("button", { name: "닫기" }).first().click();
+  await page.goto("/finance#co-board");
+  const board = page.getByTestId("co-board");
+  const extras = board.getByTestId("co-unclaimed").getByTestId("co-extra");
+  await expect(extras).toHaveCount(2);
+  await extras.nth(0).locator("input[type=checkbox]").check();
+  await board.getByTestId("co-decline").click();
+  const rm = page.getByTestId("co-reason-modal");
+  await rm.getByTestId("co-reason-confirm").click();
+  await expect(rm).toContainText("이유");
+  await rm.getByTestId("co-reason-note").fill("우리 책임 — 청구 근거 없음");
+  await rm.getByTestId("co-reason-confirm").click();
+  await expect(page.getByTestId("co-reason-modal")).toHaveCount(0);
+  await expect(extras).toHaveCount(1);
+  await board.getByTestId("co-declined-toggle").click();
+  await expect(board.getByTestId("co-declined")).toContainText("우리 책임");
+  await board.getByTestId("co-declined").getByTestId("co-undo-decline").click();
+  await expect(extras).toHaveCount(2);
 });
