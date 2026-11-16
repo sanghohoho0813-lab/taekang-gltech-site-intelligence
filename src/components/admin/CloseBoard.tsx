@@ -26,6 +26,7 @@ import { downloadCsv } from "@/lib/browser/download";
 import { ForecastModal } from "./SitesAdmin";
 import { OverlapFixModal } from "./OverlapFix";
 import { MoneyField, toWon, wonText } from "./inputs";
+import { CloseRecordCard } from "./CloseRecordCard";
 
 const ITEM_LABEL: Record<CloseItemKind, string> = {
   cost: "원가",
@@ -46,7 +47,7 @@ const won = (v: number) => (v === 0 ? "—" : fmtMan(v, { unit: false }));
 const signed = (v: number) => (v === 0 ? "0" : `${v > 0 ? "+" : "−"}${fmtMan(Math.abs(v))}`);
 
 export function CloseBoard() {
-  const { db } = useMe();
+  const { db, role } = useMe();
   const today = todayIso();
   const months = useMemo(() => {
     if (!db?.sites.length) return [today.slice(0, 7)];
@@ -102,6 +103,9 @@ export function CloseBoard() {
           이번 달은 아직 끝나지 않았습니다 — {fmtDate(r.from)}부터 오늘({fmtDate(r.to)})까지만 셉니다.
         </Notice>
       )}
+
+      {/* 0. 마감 기록 (D-82) — 마감 전이면 ‘이 달 마감’, 마감 뒤면 누가·언제·대표 확인·마감 뒤 바뀐 것 */}
+      <CloseRecordCard db={db} r={r} role={role} today={today} />
 
       {/* 1. 닫기 전에 볼 것 */}
       <Card data-testid="close-items">

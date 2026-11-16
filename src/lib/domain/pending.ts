@@ -8,8 +8,9 @@ import { shiftDate } from "./attendance";
 import { readinessAll } from "./readiness";
 import { defectTodoCount } from "./defects";
 import { warrantyStatus, WARRANTY_SOON_DAYS } from "./warranty";
+import { closeStatus } from "./closeRecord";
 
-export type PendingKey = "fix" | "report" | "wo-done" | "wo-late" | "partner" | "defect" | "warranty" | "labor" | "feedback" | "ready" | "cost";
+export type PendingKey = "fix" | "report" | "wo-done" | "wo-late" | "partner" | "defect" | "warranty" | "labor" | "feedback" | "ready" | "cost" | "close" | "close-change";
 export interface PendingItem {
   key: PendingKey;
   label: string;
@@ -19,7 +20,12 @@ export interface PendingItem {
 
 export function pendingItems(db: DemoDB, today: string, live: boolean): PendingItem[] {
   const wos = db.workOrders ?? [];
+  // 지난달 마감 (D-82) — 마감 전이면 공무에게, 마감했으면 대표 확인 대기, 마감 뒤 그 달 숫자가 바뀌었으면 몇 건
+  const cs = closeStatus(db, today);
+  const ml = cs ? `${Number(cs.month.slice(5))}월` : "";
   return [
+    ...(cs ? [{ key: "close" as const, label: cs.state === "open" ? `${ml} 마감 전 (월 마감에서 닫기)` : `${ml} 마감 대표 확인 대기`, n: cs.state === "confirmed" ? 0 : 1, href: `/close?month=${cs.month}` }] : []),
+    ...(cs && cs.state !== "open" ? [{ key: "close-change" as const, label: `${ml} 마감 뒤 바뀐 것 (그 달 날짜로 들어온·바뀐 원가·기성·근무시간)`, n: cs.changes, href: `/close?month=${cs.month}#close-changes` }] : []),
     { key: "fix", label: "근태 수정 요청", n: (db.attendanceRequests ?? []).filter((q) => q.status === "pending").length, href: "/orders?tab=fixes" },
     // 엑셀로 옮긴 지난 기록은 이미 확인된 것 (D-71)
     { key: "report", label: "확인 안 한 현장 보고", n: db.reports.filter((r) => r.status !== "voided" && !r.review && !r.importBatchId).length, href: "/orders?tab=reports" },

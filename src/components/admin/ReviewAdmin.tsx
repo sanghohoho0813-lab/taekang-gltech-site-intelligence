@@ -15,6 +15,7 @@ import { MoneyField, toWon, wonText } from "./inputs";
 import { settledLaborFor } from "@/lib/domain/monthClose";
 import { guessTeam, siteTeams, teamRate } from "@/lib/domain/labor";
 import { TeamInput } from "@/components/domain/TeamInput";
+import { ClosedMonthHint } from "@/components/domain/ClosedMonthHint";
 import { fmtDate } from "@/lib/domain/format";
 
 export function ReviewAdmin({ db }: { db: DemoDB }) {
@@ -147,6 +148,7 @@ function ReviewModal({ db, entry, decision, onClose }: { db: DemoDB; entry: Cost
     >
       <div className="space-y-3">
         {decision === "approve" && <SettledHint db={db} e={entry} />}
+        {decision === "approve" && <ClosedMonthHint db={db} date={entry.date} action="승인" />}
         {decision === "approve" && <MoneyField id="rv-amt" label="확정 금액 (견적·세금계산서 기준, 원)" value={amount} onChange={setAmount} hint={rateHint ?? "현장 입력 금액과 다르면 고쳐서 승인 — 수정 이력이 남습니다"} />}
         {decision === "approve" && teamable && <TeamInput db={db} siteId={entry.siteId} id="rv-team" value={team} onChange={setTeam} category={entry.category} hint={!entry.team && team ? "메모에 적힌 팀 이름으로 채웠습니다 — 다르면 고치세요" : undefined} />}
         <Field label={decision === "approve" ? "메모 (선택)" : "반려 사유"} htmlFor="rv-note" required={decision === "reject"} error={error ?? undefined}>

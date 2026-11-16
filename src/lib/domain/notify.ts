@@ -46,6 +46,17 @@ export function noticesFor(before: DemoDB, after: DemoDB, actorId: string): Noti
     else if (prev.status !== w.status && w.status === "done") push({ to: [w.createdBy], title: "작업지시 완료 보고", body: `${site(w.siteId)} · ${clip(w.title)} — ${name(w.assigneeUserId)}`, url: "/orders", tag: `wo-${w.id}` });
   }
 
+  // 월 마감 (D-82) — 공무가 닫으면 대표에게 확인 요청, 대표가 확인하면 닫은 사람에게, 다시 열면 본사에 (금액 없음)
+  const mcBefore = new Map((before.monthCloses ?? []).map((r) => [r.id, r]));
+  const ceos = after.users.filter((u) => u.role === "ceo" && !u.inactive).map((u) => u.id);
+  for (const r of after.monthCloses ?? []) {
+    const prev = mcBefore.get(r.id);
+    const m = `${Number(r.month.slice(5))}월`;
+    if (!prev) push({ to: ceos, title: `${m} 마감 — 대표 확인 요청`, body: `${name(r.closedBy)}님이 ${m}을 마감했습니다${r.snapshot.openItems.length ? ` (남긴 일 ${r.snapshot.openItems.length}건)` : ""} — 눌러서 확인해 주세요`, url: `/close?month=${r.month}`, tag: `mcl-${r.month}` });
+    else if (!prev.confirmedAt && r.confirmedAt) push({ to: [r.closedBy], title: `${m} 마감 대표 확인`, body: r.confirmNote ? clip(r.confirmNote) : "대표가 마감을 확인했습니다", url: `/close?month=${r.month}`, tag: `mcl-${r.month}` });
+    else if (!prev.reopenedAt && r.reopenedAt) push({ to: hq, title: `${m} 마감을 다시 열었어요`, body: `${name(r.reopenedBy ?? "")} — ${clip(r.reopenReason ?? "", 50)}`, url: `/close?month=${r.month}`, tag: `mcl-${r.month}` });
+  }
+
   // 앱 의견: 본사가 반영·보류하면 보낸 사람에게
   const fbBefore = new Map((before.feedback ?? []).map((f) => [f.id, f]));
   for (const f of after.feedback ?? []) {

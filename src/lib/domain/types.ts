@@ -374,6 +374,34 @@ export interface ForecastChange {
   closeout?: true;
 }
 
+/** 월 마감 기록 (D-82) — 공무가 닫을 때의 숫자를 남기고, 대표가 확인한다. 데이터를 잠그지는 않는다 (마감 뒤 바뀐 것은 따로 보여 줌) */
+export interface MonthCloseSnapshot {
+  totals: { billed: number; received: number; outstandingAtEnd: number; costTotal: number; pending: number };
+  sites: { siteId: string; name: string; billed: number; received: number; outstandingAtEnd: number; costTotal: number; pending: number; laborEstimate: number; laborCompared: number; expectedProfit: number }[];
+  people: { userId: string; name: string; days: number; minutes: number }[];
+  /** 마감할 때 남겨 둔 ‘닫기 전에 볼 것’ */
+  openItems: string[];
+  /** 그 달 원가·기성·입금의 지문 — 마감 뒤에 무엇이 들어오고 바뀌었는지 찾는다 (id|현장|상태|금액|항목|날짜) */
+  keys: { costs: string[]; billings: string[]; payments: string[] };
+}
+
+export interface MonthCloseRecord {
+  id: string;
+  /** YYYY-MM */
+  month: string;
+  closedAt: string;
+  closedBy: string;
+  note?: string;
+  snapshot: MonthCloseSnapshot;
+  confirmedAt?: string;
+  confirmedBy?: string;
+  confirmNote?: string;
+  /** 다시 열면 이 기록은 끝나고, 다시 마감하면 새 기록이 생긴다 (이력은 남김) */
+  reopenedAt?: string;
+  reopenedBy?: string;
+  reopenReason?: string;
+}
+
 export interface FieldReport {
   id: string;
   siteId: string;
@@ -839,6 +867,8 @@ export interface DemoDB {
   forecasts: CostForecast[];
   /** 잔여예상 재추정 이력 (D-79 · 최근 1,000건) */
   forecastChanges?: ForecastChange[];
+  /** 월 마감 기록 (D-82) */
+  monthCloses?: MonthCloseRecord[];
   costEntries: CostEntry[];
   reports: FieldReport[];
   photos: SitePhoto[];

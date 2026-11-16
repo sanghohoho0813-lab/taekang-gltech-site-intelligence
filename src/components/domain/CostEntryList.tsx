@@ -13,6 +13,7 @@ import { Badge, Button, EmptyState, Field, cx, inputCls } from "@/components/ui/
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { TeamInput } from "./TeamInput";
+import { ClosedMonthHint } from "./ClosedMonthHint";
 
 export function CostEntryList({ db, entries, showSite = false, emptyText = "입력된 원가가 없습니다." }: { db: DemoDB; entries: CostEntry[]; showSite?: boolean; emptyText?: string }) {
   const { canSeeMoney, role, userId } = useMe();
@@ -138,6 +139,7 @@ export function CostEntryList({ db, entries, showSite = false, emptyText = "입�
       >
         {voiding && (
           <div className="space-y-3">
+            {db && <ClosedMonthHint db={db} date={voiding.date} action="무효 처리" />}
             <p className="text-[0.9rem] text-ink-2">
               {CATEGORY_LABEL[voiding.category]} <b className="num">{fmtMan(voiding.amount)}</b> — 기록은 삭제하지 않고 ‘무효’로 남겨 이력을 보존합니다.
             </p>
@@ -189,6 +191,7 @@ function EditCostModal({ entry, onClose, canSeeMoney }: { entry: CostEntry; onCl
       }
     >
       <div className="space-y-3">
+        {db && <ClosedMonthHint db={db} date={entry.date} action="고치기" />}
         <Field label="항목" htmlFor="e-cat">
           <select id="e-cat" className={cx(inputCls, entry.settle && "bg-surface-2 text-ink-3")} value={category} disabled={!!entry.settle} onChange={(e) => setCategory(e.target.value as CostCategory)}>
             {COST_CATEGORIES.map((c) => (

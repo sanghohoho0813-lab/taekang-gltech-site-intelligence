@@ -34,7 +34,8 @@ export function fieldSiteIds(m: Member, db: DemoDB): Set<string> {
 }
 
 type Args = Record<string, unknown>;
-const CEO_ONLY = new Set<CommandName>(["setLocationPolicy", "purgeLocationsNow", "purgeMemberLocations"]);
+// 월 마감 확인(D-82)은 대표만 — 공무가 닫고 대표가 확인하는 두 사람 절차
+const CEO_ONLY = new Set<CommandName>(["setLocationPolicy", "purgeLocationsNow", "purgeMemberLocations", "confirmMonthClose"]);
 const str = (v: unknown) => (typeof v === "string" ? v : "");
 
 /** 실행 가능하면 (서버 값으로 보정된) 인자를 돌려주고, 아니면 ForbiddenError */
@@ -221,6 +222,7 @@ export function viewFor(m: Member, db: DemoDB, now = new Date()): DemoDB {
     budgets: [],
     forecasts: [],
     forecastChanges: [],
+    monthCloses: [],
     costEntries: [],
     reports: [],
     photos: [],

@@ -9,6 +9,7 @@ import { IS_LIVE } from "@/lib/mode";
 import { CommandError, submitFieldReport, type CostLineInput, type FieldReportResult } from "@/lib/data/commands";
 import { DEMO_SCENARIO } from "@/lib/data/seed";
 import { TeamInput } from "./TeamInput";
+import { ClosedMonthHint } from "./ClosedMonthHint";
 import { CATEGORY_LABEL, COST_CATEGORIES, IMPACT_HELP, IMPACT_LABEL, REASON_LABEL } from "@/lib/domain/labels";
 import type { CostCategory, CostReason } from "@/lib/domain/types";
 import { fmtEok, fmtMan, fmtPct, todayIso } from "@/lib/domain/format";
@@ -342,6 +343,8 @@ export function FieldReportForm({ fixedSiteId, onClose, inSheet = false }: { fix
           </div>
         </Field>
       </div>
+      {/* 마감한 달 날짜로 비용을 넣으면 알린다 (D-82 · 본사만 마감 기록을 봄) */}
+      {db && costs.length > 0 && <ClosedMonthHint db={db} date={reportDate} action="넣기" />}
 
       <Field label="오늘의 작업 내용" htmlFor="f-work" required counter={workCount} error={errors.workDone}>
         <textarea id="f-work" rows={3} maxLength={500} value={workDone} onChange={(e) => setWorkDone(e.target.value)} className={inputCls} placeholder="예) 3층 남측 커튼월 유닛 10개 설치 완료" />

@@ -16,6 +16,7 @@ import * as M from "./materialCommands";
 import * as PT from "./portalCommands";
 import * as SH from "./shareCommands";
 import * as IN from "./intakeCommands";
+import * as MC from "./closeCommands";
 
 type Ctx = C.Ctx;
 
@@ -48,6 +49,10 @@ export const COMMANDS = {
   settleLabor: (db: DemoDB, a: A.SettleLaborInput, ctx: Ctx) => A.settleLabor(db, a, ctx),
   // 노무비·외주비에 팀 붙이기 (D-81) — 본사만
   setCostTeams: (db: DemoDB, a: A.SetCostTeamsInput, ctx: Ctx) => A.setCostTeams(db, a, ctx),
+  // 월 마감 기록 (D-82) — 마감·다시 열기는 본사, 확인은 대표만
+  closeMonth: (db: DemoDB, a: MC.CloseMonthInput, ctx: Ctx) => MC.closeMonth(db, a, ctx),
+  confirmMonthClose: (db: DemoDB, a: MC.ConfirmMonthCloseInput, ctx: Ctx) => MC.confirmMonthClose(db, a, ctx),
+  reopenMonthClose: (db: DemoDB, a: MC.ReopenMonthCloseInput, ctx: Ctx) => MC.reopenMonthClose(db, a, ctx),
   updateProgress: (db: DemoDB, a: A.UpdateProgressInput, ctx: Ctx) => A.updateProgress(db, a, ctx),
   setCompanySettings: (db: DemoDB, a: A.CompanySettingsInput, ctx: Ctx) => A.setCompanySettings(db, a, ctx),
   reviewCostEntry: (db: DemoDB, a: A.ReviewCostEntryInput, ctx: Ctx) => A.reviewCostEntry(db, a, ctx),
