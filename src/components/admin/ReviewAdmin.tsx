@@ -13,7 +13,7 @@ import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { MoneyField, toWon, wonText } from "./inputs";
 import { settledLaborFor } from "@/lib/domain/monthClose";
-import { guessTeam, siteTeams } from "@/lib/domain/labor";
+import { guessTeam, siteTeams, teamRate } from "@/lib/domain/labor";
 import { TeamInput } from "@/components/domain/TeamInput";
 import { fmtDate } from "@/lib/domain/format";
 
@@ -70,9 +70,10 @@ export function ReviewAdmin({ db }: { db: DemoDB }) {
           <ul className="divide-y divide-line border-t border-line text-[0.84rem]">
             {recent.map((e) => (
               <li key={e.id} className="flex flex-wrap items-center gap-2 px-5 py-2.5">
-                <Badge tone={e.status === "rejected" ? "err" : "ok"}>{e.status === "rejected" ? "반려" : "승인"}</Badge>
+                <Badge tone={e.status === "rejected" ? "err" : e.status === "voided" ? "neutral" : "ok"}>{e.status === "rejected" ? "반려" : e.status === "voided" ? "승인 뒤 취소" : "승인"}</Badge>
                 <span className="font-semibold">
-                  {db.sites.find((s) => s.id === e.siteId)?.shortName} · {CATEGORY_LABEL[e.category]} {fmtMan(e.amount)}
+                  {db.sites.find((s) => s.id === e.siteId)?.shortName} · {e.settle ? `${Number(e.settle.month.slice(5))}월 노무 정산` : CATEGORY_LABEL[e.category]} {fmtMan(e.amount)}
+                  {e.team ? <span className="font-normal text-ink-3"> · {e.team}</span> : null}
                 </span>
                 <span className="text-ink-3">
                   {userLabel(db, e.reviewedBy)} · {e.reviewedAt ? fmtDateTime(e.reviewedAt) : ""}
@@ -95,7 +96,7 @@ function SettledHint({ db, e }: { db: DemoDB; e: CostEntry }) {
   const m = Number(s.settle.month.slice(5));
   return (
     <p className="mt-1 rounded-md bg-warn-bg px-2 py-1 text-[0.76rem] font-semibold text-ink" data-testid="review-settled-hint">
-      이 현장 {m}월 노무는 이미 정산했습니다 ({fmtMan(s.amount)} · {fmtDate(s.createdAt)} 입력). {m}월 몫 노무비라면 정산과 두 번 들어갑니다 — 반려하거나 정산 건을 고치세요.
+      이 노무비 발생일은 {fmtDate(e.date)}입니다. 이 현장 {m}월 노무는 이미 정산했습니다 ({fmtMan(s.amount)} · {fmtDate(s.createdAt)} 입력). {m}월 몫 노무비라면 정산과 두 번 들어갑니다 — 반려하거나, {s.settle.teams?.length ? "정산 건을 되돌린 뒤 다시 넣으세요 (팀별 정산은 금액을 고칠 수 없음)" : "정산 건 금액을 고치세요"}.
     </p>
   );
 }
@@ -105,7 +106,10 @@ function ReviewModal({ db, entry, decision, onClose }: { db: DemoDB; entry: Cost
   const [amount, setAmount] = useState(wonText(entry.amount));
   // 노무비·외주비는 팀을 붙여 승인 (D-81) — 이미 있으면 그대로, 없으면 메모에 적힌 팀 이름을 미리 채운다
   const teamable = entry.category === "labor" || entry.category === "subcontract";
-  const [team, setTeam] = useState(() => entry.team ?? (teamable ? (guessTeam(entry.note, siteTeams(db, entry.siteId)) ?? "") : ""));
+  const [team, setTeam] = useState(() => entry.team ?? (teamable ? (guessTeam(entry.note, siteTeams(db, entry.siteId).filter((t) => entry.category === "labor" || t.kind === "subcontract")) ?? "") : ""));
+  // 현장은 팀 단가를 모르고 기본 일당으로 넣는다 — 팀 단가 기준 금액을 옆에 보여 준다 (D-81 점검)
+  const rate = entry.qty && team.trim() ? teamRate(db, team.trim()) : undefined;
+  const rateHint = entry.qty && rate?.set && rate.rate !== entry.qty.dayRate ? `팀 단가 기준이면 ${entry.qty.manDays}명·일 × ${fmtMan(rate.rate)} = ${fmtMan(Math.round(entry.qty.manDays * rate.rate))} (현장은 일당 ${fmtMan(entry.qty.dayRate)}으로 넣음)` : undefined;
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -129,7 +133,7 @@ function ReviewModal({ db, entry, decision, onClose }: { db: DemoDB; entry: Cost
       open
       onClose={onClose}
       title={decision === "approve" ? "원가 승인 · 금액 확정" : "원가 반려"}
-      description={`${site?.shortName} · ${CATEGORY_LABEL[entry.category]} · 현장 입력 ${fmtMan(entry.amount)}`}
+      description={`${site?.shortName} · ${CATEGORY_LABEL[entry.category]} · 발생일 ${fmtDate(entry.date)} · 현장 입력 ${fmtMan(entry.amount)}`}
       size="sm"
       testId="review-form"
       footer={
@@ -143,8 +147,8 @@ function ReviewModal({ db, entry, decision, onClose }: { db: DemoDB; entry: Cost
     >
       <div className="space-y-3">
         {decision === "approve" && <SettledHint db={db} e={entry} />}
-        {decision === "approve" && <MoneyField id="rv-amt" label="확정 금액 (견적·세금계산서 기준, 원)" value={amount} onChange={setAmount} hint="현장 입력 금액과 다르면 고쳐서 승인 — 수정 이력이 남습니다" />}
-        {decision === "approve" && teamable && <TeamInput db={db} siteId={entry.siteId} id="rv-team" value={team} onChange={setTeam} hint={!entry.team && team ? "메모에 적힌 팀 이름으로 채웠습니다 — 다르면 고치세요" : undefined} />}
+        {decision === "approve" && <MoneyField id="rv-amt" label="확정 금액 (견적·세금계산서 기준, 원)" value={amount} onChange={setAmount} hint={rateHint ?? "현장 입력 금액과 다르면 고쳐서 승인 — 수정 이력이 남습니다"} />}
+        {decision === "approve" && teamable && <TeamInput db={db} siteId={entry.siteId} id="rv-team" value={team} onChange={setTeam} category={entry.category} hint={!entry.team && team ? "메모에 적힌 팀 이름으로 채웠습니다 — 다르면 고치세요" : undefined} />}
         <Field label={decision === "approve" ? "메모 (선택)" : "반려 사유"} htmlFor="rv-note" required={decision === "reject"} error={error ?? undefined}>
           <input id="rv-note" className={inputCls} value={note} maxLength={200} onChange={(e) => setNote(e.target.value)} placeholder={decision === "reject" ? "예) 원청 부담분 — 우리 원가 아님" : "예) ○○유리 견적서 기준"} />
         </Field>

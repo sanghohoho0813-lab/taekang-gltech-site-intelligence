@@ -8,7 +8,7 @@ import { useMe } from "@/lib/data/hooks";
 import { downloadCsv } from "@/lib/browser/download";
 import { run } from "@/lib/data/store";
 import { CommandError } from "@/lib/data/commands";
-import { LABOR_FLAG_LABEL, laborEstimate, teamGuesses, type LaborSite } from "@/lib/domain/labor";
+import { LABOR_FLAG_LABEL, laborEstimate, untaggedCosts, type LaborSite, type UntaggedCost } from "@/lib/domain/labor";
 import { uid } from "@/lib/domain/ids";
 import { Modal } from "@/components/ui/Modal";
 import { shiftDate } from "@/lib/domain/attendance";
@@ -33,15 +33,17 @@ export function LaborBoard() {
   const from = picked ? monthBounds(picked).from : period === "month" ? `${today.slice(0, 8)}01` : shiftDate(today, -29);
   const to = picked ? monthBounds(picked).to : today;
   // 그 기간에 일한 현장 — 이미 준공한 현장도 (지난달에 끝난 현장의 노무가 빠지던 문제)
-  const rows = closeSites(db, from, to).map((s) => laborEstimate(db, s, from, to)).filter((r) => r.site.status === "active" || r.teams.length > 0 || r.actual > 0);
+  const rows = closeSites(db, from, to).map((s) => laborEstimate(db, s, from, to)).filter((r) => r.site.status === "active" || r.teams.length > 0 || r.actual > 0 || r.subcontractCounted > 0);
   const csv = () => {
     const head = ["현장", "기간", "팀", "구분", "출력 일수", "인원일", "1인 1일 단가", "추정 인건비", "단가 설정", "팀으로 입력", "차이 (입력 − 추정)"];
     const lines = rows.flatMap((r) => [
       ...r.teams.map((t) => [r.site.shortName, `${r.compareFrom}~${r.to}`, t.team, t.kind === "direct" ? "직영" : "외주", t.days, t.personDays, t.dayRate, t.estimate, t.rateSet ? "팀 단가" : "기본 일당", t.entered, t.entered - t.estimate]),
-      ...r.otherTeams.map((o) => [r.site.shortName, `${r.compareFrom}~${r.to}`, o.team, "출력 기록 없음", "", "", "", "", "", o.amount, ""]),
-      ...(r.untagged > 0 ? [[r.site.shortName, `${r.compareFrom}~${r.to}`, "팀 미지정", "", "", "", "", "", "", r.untagged, ""]] : []),
+      ...r.otherTeams.map((o) => [r.site.shortName, `${r.compareFrom}~${r.to}`, o.team, o.category === "labor" ? "노무비 · 출력 기록 없는 이름" : "외주비 · 비교 제외", "", "", "", "", "", o.amount, ""]),
+      ...(r.untagged > 0 ? [[r.site.shortName, `${r.compareFrom}~${r.to}`, "팀 미지정 노무비", "", "", "", "", "", "", r.untagged, ""]] : []),
+      ...(r.subCovered > 0 ? [[r.site.shortName, `${r.compareFrom}~${r.to}`, "팀 미지정 외주비 (외주 팀 몫으로 셈)", "", "", "", "", "", "", r.subCovered, ""]] : []),
     ]);
-    const sum = rows.map((r) => [r.site.shortName, `${r.compareFrom}~${r.to}`, "합계", "", "", r.teams.reduce((a, t) => a + t.personDays, 0), "", r.estimate, "", r.actual, r.actual - r.estimate]);
+    // 합계 = 노무비 + 외주 팀 몫 외주비 (출력 기록 없는 이름의 외주비는 빼고) — 위 줄을 더한 값과 같다
+    const sum = rows.map((r) => [r.site.shortName, `${r.compareFrom}~${r.to}`, "합계 (입력 = 노무비 + 외주 팀 외주비)", "", "", r.teams.reduce((a, t) => a + t.personDays, 0), "", r.estimate, "", r.compared, r.compared - r.estimate]);
     downloadCsv(`투입인건비_${from}_${to}.csv`, toCsv([head, ...lines, [], ...sum]));
   };
   return (
@@ -92,11 +94,13 @@ function SiteLabor({ r }: { r: LaborSite }) {
   const [edit, setEdit] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [tagging, setTagging] = useState(false);
-  // 팀이 붙지 않은 노무비·외주비 중 메모에 팀 이름이 하나만 있는 것 (D-81)
-  const guesses = db ? teamGuesses(db, r.site.id, r.compareFrom, r.to) : [];
-  const diff = r.actual - r.estimate;
+  // 팀이 없거나 맞지 않는 노무비·외주비 (D-81 점검 — 메모에 팀 이름이 없어도 고를 수 있게)
+  const toTag = db ? untaggedCosts(db, r.site.id, r.compareFrom, r.to) : [];
+  const guessed = toTag.filter((u) => u.guess).length;
+  // 입력 = 노무비 + 외주 팀 몫 외주비 (월 마감·정산 창·CSV와 같은 숫자)
+  const diff = r.compared - r.estimate;
   const budgetPct = r.laborBudget > 0 ? Math.round((r.laborToDate / r.laborBudget) * 100) : null;
-  const empty = r.teams.length === 0 && r.actual === 0;
+  const empty = r.teams.length === 0 && r.compared === 0 && r.actual === 0;
   const saveRates = async () => {
     if (!db) return;
     const changed = Object.entries(edit).filter(([, v]) => v.trim());
@@ -133,11 +137,16 @@ function SiteLabor({ r }: { r: LaborSite }) {
         ) : (
         <div className="grid gap-2 @min-[760px]:grid-cols-3">
           <Stat label="추정 인건비 (출력 기준)" value={fmtMan(r.estimate)} sub={`${r.teams.reduce((a, t) => a + t.personDays, 0)}명·일`} testId="labor-estimate" />
-          <Stat label="실제 입력 노무비" value={fmtMan(r.actual)} sub={r.actualPending ? `이 중 공무 확인 대기 ${fmtMan(r.actualPending)}` : r.reportedManDays ? `보고 공수 ${r.reportedManDays}` : "같은 기간"} testId="labor-actual" />
+          <Stat
+            label={r.subcontractCounted > 0 ? "입력된 노무비 (외주 팀 외주비 포함)" : "입력된 노무비"}
+            value={fmtMan(r.compared)}
+            sub={r.subcontractCounted > 0 ? `노무비 ${fmtMan(r.actual)} + 외주비 ${fmtMan(r.subcontractCounted)}${r.actualPending ? ` · 확인 대기 ${fmtMan(r.actualPending)}` : ""}` : r.actualPending ? `이 중 공무 확인 대기 ${fmtMan(r.actualPending)}` : r.reportedManDays ? `보고 공수 ${r.reportedManDays}` : "같은 기간"}
+            testId="labor-actual"
+          />
           {r.teams.length === 0 ? (
-            <Stat label="차이 (실제 − 추정)" value="비교 불가" sub="출력 기록이 없어 추정할 수 없습니다" testId="labor-diff" />
+            <Stat label="차이 (입력 − 추정)" value="비교 불가" sub="출력 기록이 없어 추정할 수 없습니다" testId="labor-diff" />
           ) : (
-          <Stat label="차이 (실제 − 추정)" value={`${diff > 0 ? "+" : diff < 0 ? "−" : ""}${fmtMan(Math.abs(diff))}`} sub={budgetPct !== null ? `노무 실행예산 대비 누계 ${budgetPct}%` : "실행예산 없음"} tone={r.flags.some((f) => ["actual_over", "estimate_over", "no_actual", "no_crew"].includes(f.kind)) ? "err" : "ok"} testId="labor-diff" />
+          <Stat label="차이 (입력 − 추정)" value={`${diff > 0 ? "+" : diff < 0 ? "−" : ""}${fmtMan(Math.abs(diff))}`} sub={budgetPct !== null ? `노무 실행예산 대비 누계 ${budgetPct}%` : "실행예산 없음"} tone={r.flags.some((f) => ["actual_over", "estimate_over", "no_actual", "no_crew"].includes(f.kind)) ? "err" : "ok"} testId="labor-diff" />
           )}
         </div>
         )}
@@ -160,7 +169,7 @@ function SiteLabor({ r }: { r: LaborSite }) {
             <table className="w-full min-w-[38rem] text-[0.84rem]">
               <thead>
                 <tr className="text-left text-[0.74rem] text-ink-3">
-                  {["팀", "출력 일수", "인원일", "1인 1일 단가 (만 원)", "추정 인건비", "팀으로 입력", "차이"].map((h) => (
+                  {["팀", "출력 일수", "인원일", "1인 1일 단가 (만 원)", "추정 인건비", "팀으로 입력", r.untagged > 0 ? "차이 (팀 미지정 빼고)" : "차이"].map((h) => (
                     <th key={h} className="py-2 pr-3 font-semibold">
                       {h}
                     </th>
@@ -199,9 +208,10 @@ function SiteLabor({ r }: { r: LaborSite }) {
                   </tr>
                 ))}
                 {r.otherTeams.map((o) => (
-                  <tr key={o.team} className="border-t border-line text-ink-2" data-testid="labor-other-team">
+                  <tr key={`${o.category}|${o.team}`} className="border-t border-line text-ink-2" data-testid="labor-other-team">
                     <td className="py-2 pr-3 font-semibold" colSpan={5}>
-                      {o.team} <span className="text-[0.74rem] text-warn">출력 기록에 없는 팀 이름</span>
+                      {o.team}{" "}
+                      <span className="text-[0.74rem] text-warn">{o.category === "labor" ? "노무비 · 출력 기록에 없는 팀 이름" : "외주비 · 외주 팀이 아닌 이름 — 비교에 넣지 않음"}</span>
                     </td>
                     <td className="num py-2 pr-3">{fmtMan(o.amount)}</td>
                     <td />
@@ -209,14 +219,25 @@ function SiteLabor({ r }: { r: LaborSite }) {
                 ))}
               </tbody>
             </table>
-            {r.untagged > 0 && (
+            {(r.untagged > 0 || r.subUntagged > 0 || toTag.length > 0) && (
               <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl bg-surface-2 px-3.5 py-2.5 text-[0.84rem] text-ink-2" data-testid="labor-untagged">
-                <span>
-                  팀을 정하지 않은 노무비 <b className="num text-ink">{fmtMan(r.untagged)}</b> — 어느 팀 몫인지 몰라 팀별 차이에 들어가지 않았습니다.
+                <span className="min-w-0 flex-1">
+                  {r.untagged > 0 && (
+                    <>
+                      팀을 정하지 않은 노무비 <b className="num text-ink">{fmtMan(r.untagged)}</b> — 어느 팀 몫인지 몰라 팀별 차이에 들어가지 않았습니다.{" "}
+                    </>
+                  )}
+                  {r.subUntagged > 0 && (
+                    <>
+                      팀을 정하지 않은 외주비 <b className="num text-ink">{fmtMan(r.subUntagged)}</b>
+                      {r.subCovered > 0 ? ` — 그중 ${fmtMan(r.subCovered)}을 외주 팀 몫으로 셈했습니다.` : " — 외주 팀 추정이 이미 차서 비교에 넣지 않았습니다."}{" "}
+                    </>
+                  )}
+                  {r.untagged === 0 && r.subUntagged === 0 && "팀 이름이 출력 기록과 맞지 않는 원가가 있습니다."}
                 </span>
-                {guesses.length > 0 && (
+                {toTag.length > 0 && (
                   <Button size="sm" variant="soft" onClick={() => setTagging(true)} data-testid="labor-tag-open">
-                    메모로 팀 붙이기 ({guesses.length}건)
+                    팀 붙이기 ({toTag.length}건{guessed ? ` · 메모로 ${guessed}건 채움` : ""})
                   </Button>
                 )}
               </div>
@@ -228,7 +249,7 @@ function SiteLabor({ r }: { r: LaborSite }) {
             )}
           </div>
         )}
-        {tagging && db && <TagTeamsModal guesses={guesses} siteName={r.site.shortName} onClose={() => setTagging(false)} />}
+        {tagging && db && <TagTeamsModal rows={toTag} siteName={r.site.shortName} onClose={() => setTagging(false)} />}
         <p className="text-[0.8rem] text-ink-2" data-testid="labor-staff">
           직원 출퇴근 {r.staffDays}명·일 · 근무 {Math.floor(r.staffMinutes / 60)}시간 {r.staffMinutes % 60}분
           {r.noCheckout ? ` · 퇴근 누락 ${r.noCheckout}건 (시간 불확실)` : ""} — 직원 급여는 이 추정에 넣지 않습니다
@@ -242,18 +263,21 @@ function Stat({ label, value, sub, tone, testId }: { label: string; value: strin
   return <MetricTile label={label} value={value} sub={sub} tone={tone === "ok" ? undefined : tone} testId={testId} compact />;
 }
 
-/** 메모로 찾은 팀을 한 번에 붙이기 (D-81) — 금액·항목은 그대로, 붙인 사실은 활동 이력에 */
-function TagTeamsModal({ guesses, siteName, onClose }: { guesses: ReturnType<typeof teamGuesses>; siteName: string; onClose: () => void }) {
+/**
+ * 팀 붙이기 (D-81 · 점검 반영) — 팀이 없거나 출력 기록과 맞지 않는 노무비·외주비를 줄마다 팀을 골라 한 번에.
+ * 메모에 팀 이름이 하나만 있거나 비슷한 이름이면 미리 채운다. 외주비는 외주 팀만 고를 수 있다. 금액은 그대로, 바꾼 것은 이력에.
+ */
+function TagTeamsModal({ rows, siteName, onClose }: { rows: UntaggedCost[]; siteName: string; onClose: () => void }) {
   const toast = useToast();
-  const [pick, setPick] = useState<Record<string, boolean>>(() => Object.fromEntries(guesses.map((g) => [g.entryId, true])));
+  const [pick, setPick] = useState<Record<string, string>>(() => Object.fromEntries(rows.map((g) => [g.entryId, g.guess ?? ""])));
   const [busy, setBusy] = useState(false);
   const [key] = useState(() => uid("idem"));
-  const chosen = guesses.filter((g) => pick[g.entryId]);
+  const chosen = rows.filter((g) => pick[g.entryId]);
   const save = async () => {
     if (busy || !chosen.length) return;
     setBusy(true);
     try {
-      await run("setCostTeams", { items: chosen.map((g) => ({ entryId: g.entryId, team: g.team })), idempotencyKey: key });
+      await run("setCostTeams", { items: chosen.map((g) => ({ entryId: g.entryId, team: pick[g.entryId] })), idempotencyKey: key });
       toast.push({ tone: "ok", title: `${chosen.length}건에 팀을 붙였습니다`, desc: "팀별 입력·차이가 다시 계산됩니다" });
       onClose();
     } catch (e) {
@@ -266,8 +290,8 @@ function TagTeamsModal({ guesses, siteName, onClose }: { guesses: ReturnType<typ
     <Modal
       open
       onClose={onClose}
-      title={`메모로 팀 붙이기 · ${siteName}`}
-      description="팀이 붙지 않은 노무비·외주비 중 메모에 팀 이름이 하나만 적힌 것입니다. 맞는 것만 골라 붙이세요 — 금액은 바뀌지 않습니다."
+      title={`팀 붙이기 · ${siteName}`}
+      description="팀이 없거나 출력 기록의 팀 이름과 맞지 않는 노무비·외주비입니다. 메모로 짐작한 팀은 미리 골라 두었습니다 — 맞는지 보고, 모르는 건은 ‘그대로 둠’으로 두세요. 금액은 바뀌지 않습니다."
       size="lg"
       testId="labor-tag"
       footer={
@@ -280,16 +304,29 @@ function TagTeamsModal({ guesses, siteName, onClose }: { guesses: ReturnType<typ
       }
     >
       <ul className="divide-y divide-line rounded-xl border border-line">
-        {guesses.map((g) => (
-          <li key={g.entryId} className="flex items-center gap-3 px-3 py-2 text-[0.84rem]">
-            <input type="checkbox" className="size-5" aria-label={`${g.date} ${g.note} 팀 붙이기`} checked={!!pick[g.entryId]} onChange={(e) => setPick({ ...pick, [g.entryId]: e.target.checked })} />
+        {rows.map((g) => (
+          <li key={g.entryId} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2 text-[0.84rem]" data-testid="labor-tag-row">
             <span className="num w-20 shrink-0 text-ink-3">{fmtDate(g.date)}</span>
+            <Badge tone={g.category === "labor" ? "neutral" : "info"}>{g.category === "labor" ? "노무비" : "외주비"}</Badge>
             <span className="num w-24 shrink-0 text-right font-semibold">{fmtMan(g.amount)}</span>
-            <span className="min-w-0 flex-1 truncate text-ink-2">{g.note}</span>
-            <Badge tone="info">{g.team}</Badge>
+            <span className="min-w-[8rem] flex-1 truncate text-ink-2" title={g.note}>
+              {g.note}
+              {g.current && <span className="ml-1 text-[0.74rem] text-warn">지금 ‘{g.current}’</span>}
+            </span>
+            <span className="block w-36 shrink-0">
+              <select aria-label={`${fmtDate(g.date)} ${g.note} 팀`} className={cx(inputCls, "h-9 py-1")} value={pick[g.entryId] ?? ""} onChange={(e) => setPick({ ...pick, [g.entryId]: e.target.value })} data-testid="labor-tag-pick">
+                <option value="">그대로 둠</option>
+                {g.options.map((o) => (
+                  <option key={o} value={o}>
+                    {o}
+                  </option>
+                ))}
+              </select>
+            </span>
           </li>
         ))}
       </ul>
+      {rows.some((g) => g.category === "subcontract") && <p className="mt-2 text-[0.76rem] text-ink-3">외주비는 외주 팀에만 붙일 수 있습니다. 크레인·폐기물처럼 출력에 없는 업체 외주비는 그대로 두세요.</p>}
     </Modal>
   );
 }

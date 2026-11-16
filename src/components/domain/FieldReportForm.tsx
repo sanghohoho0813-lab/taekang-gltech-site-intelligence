@@ -8,7 +8,7 @@ import { useMe } from "@/lib/data/hooks";
 import { IS_LIVE } from "@/lib/mode";
 import { CommandError, submitFieldReport, type CostLineInput, type FieldReportResult } from "@/lib/data/commands";
 import { DEMO_SCENARIO } from "@/lib/data/seed";
-import { siteTeams } from "@/lib/domain/labor";
+import { TeamInput } from "./TeamInput";
 import { CATEGORY_LABEL, COST_CATEGORIES, IMPACT_HELP, IMPACT_LABEL, REASON_LABEL } from "@/lib/domain/labels";
 import type { CostCategory, CostReason } from "@/lib/domain/types";
 import { fmtEok, fmtMan, fmtPct, todayIso } from "@/lib/domain/format";
@@ -112,7 +112,6 @@ export function FieldReportForm({ fixedSiteId, onClose, inSheet = false }: { fix
       : { category: c.category, amount: parseAmount(c.amountText), forecastImpact: c.impact, note: c.note, ...team };
   });
   // 이 현장 출력에 나온 팀 + 회사 팀 단가에 있는 팀 (D-81)
-  const teamOptions = db && siteId ? siteTeams(db, siteId, (db.settings?.teamRates ?? []).map((t) => t.team)) : [];
   const progressPct = progressText.trim() === "" ? undefined : Math.max(0, Math.min(100, Math.round(Number(progressText))));
 
   const input = {
@@ -464,25 +463,10 @@ export function FieldReportForm({ fixedSiteId, onClose, inSheet = false }: { fix
                     </Field>
                   )}
                 </div>
-                {(c.category === "labor" || c.category === "subcontract") && (
+                {(c.category === "labor" || c.category === "subcontract") && db && siteId && (
                   <div className="mt-2">
-                    <Field label="팀 (선택)" htmlFor={`c-team-${i}`} hint="작업 인원(출력)의 팀 이름과 같게 — 월 마감 노무 정산이 팀별로 맞춰집니다">
-                      <input
-                        id={`c-team-${i}`}
-                        list={`c-team-list-${i}`}
-                        value={c.team ?? ""}
-                        maxLength={40}
-                        onChange={(e) => setCosts((x) => x.map((r) => (r.key === c.key ? { ...r, team: e.target.value } : r)))}
-                        className={inputCls}
-                        placeholder={teamOptions[0]?.team ? `예) ${teamOptions[0].team}` : "예) 창호1팀"}
-                        data-testid={`cost-team-${i}`}
-                      />
-                      <datalist id={`c-team-list-${i}`}>
-                        {teamOptions.map((t) => (
-                          <option key={t.team} value={t.team} />
-                        ))}
-                      </datalist>
-                    </Field>
+                    {/* 출력에 없는 이름이면 바로 알리고, 외주비는 외주 팀만 보여 준다 (D-81 점검) */}
+                    <TeamInput db={db} siteId={siteId} id={`cost-team-${i}`} category={c.category} value={c.team ?? ""} onChange={(v) => setCosts((x) => x.map((r) => (r.key === c.key ? { ...r, team: v } : r)))} />
                   </div>
                 )}
                 {c.category === "labor" && (

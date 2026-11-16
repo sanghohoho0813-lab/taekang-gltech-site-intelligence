@@ -114,7 +114,9 @@ describe("D-79 노무 차액 정산", () => {
     db.costEntries.push({ id: "ce-sub", siteId: id, category: "subcontract", amount: 1_500_000, date: "2026-10-21", forecastImpact: "within_forecast", reason: "planned", note: "실링 외주 기성", source: "PC", createdBy: "u-manager", createdAt: "2026-10-21T00:00:00Z", status: "active" });
     const row = monthClose(db, "2026-10", "2026-11-14").labor.find((l) => l.site.id === id)!;
     expect(row.subcontractCovered).toBe(1_500_000);
-    expect(row.suggested).toBe(row.shortfall - 1_500_000);
+    // D-81: 모자람 자체가 ‘노무비 + 외주 팀 몫 외주비’ 기준 — 기본값은 모자람 그대로
+    expect(row.shortfall).toBe(row.estimate - row.actual - 1_500_000);
+    expect(row.suggested).toBe(row.shortfall);
   });
 
   it("정산 건은 노무비로만 — 항목을 바꾸면 막는다 · 그 현장 지난달 정산 뒤 들어온 노무비는 공무 확인 때 알려 준다", () => {

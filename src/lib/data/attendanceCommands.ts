@@ -15,7 +15,7 @@ import { consentRecord, currentTerms, hasConsent, retentionText, sameTerms, stam
 import { todayIso } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
 import { hhmm, minutesOf, overlapMessage, overlappingRecord } from "@/lib/domain/attendance";
-import { CommandError, claimKey, clone, log, nowIso, requireSite, touch, userName, validPhoto, type Ctx } from "./commands";
+import { CommandError, claimKey, clone, log, nowIso, requireSite, tidyName, touch, userName, validPhoto, type Ctx } from "./commands";
 
 /** 동의 문구 판·동의 확인은 개인위치정보 규칙(privacy.ts)에서 — 보관 기간·볼 수 있는 사람 조건 포함 (D-43) */
 export { CONSENT_VERSION, hasConsent } from "@/lib/domain/privacy";
@@ -452,7 +452,7 @@ export interface CrewInput {
   idempotencyKey?: string;
 }
 
-export const normTeam = (t: string) => t.trim().replace(/\s+/g, " ").slice(0, 30);
+export const normTeam = (t: string) => tidyName(typeof t === "string" ? t : "", 30);
 
 export function reportCrew(db0: DemoDB, input: CrewInput, ctx: Ctx) {
   const site = requireSite(db0, input.siteId);

@@ -2,8 +2,8 @@
 import { describe, expect, it } from "vitest";
 import { createSeed } from "@/lib/data/seed";
 import { reviewCostEntry, saveSite, setCostTeams, settleLabor } from "@/lib/data/adminCommands";
-import { CommandError, cleanTeam, editCostEntry, submitFieldReport, voidCostEntry } from "@/lib/data/commands";
-import { guessTeam, laborEstimate, siteTeams, teamGuesses } from "@/lib/domain/labor";
+import { CommandError, cleanTeam, editCostEntry, submitFieldReport, teamError, tidyName, voidCostEntry } from "@/lib/data/commands";
+import { guessTeam, laborEstimate, siteTeams, teamGuesses, untaggedCosts } from "@/lib/domain/labor";
 import { monthClose, monthCostRows } from "@/lib/domain/monthClose";
 import { authorize, ForbiddenError, viewFor } from "@/server/authz";
 import type { Member } from "@/server/auth";
@@ -95,11 +95,35 @@ describe("D-81 팀 이름 다듬기 · 현장 입력", () => {
     expect(mat.team).toBeUndefined();
   });
 
-  it("현장 팀 목록은 출력에 나온 팀을 최근 순으로, 회사 단가에만 있는 팀은 뒤에", () => {
+  it("현장 팀 목록은 최근 30일 인원일이 많은 순 · 회사 단가에만 있는 팀은 그 현장에 출력이 없을 때만", () => {
     const { db, id } = teamSite();
-    db.crewChecks!.push({ id: "cc-late", siteId: id, workDate: "2026-11-02", team: "직영", kind: "direct", headcount: 1, at: "2026-11-02T00:00:00Z", by: "u-field" });
+    // 창호1팀 4명×10일 > 직영 2명×10일
+    expect(siteTeams(db, id).map((t) => t.team)).toEqual(["창호1팀", "직영"]);
+    db.crewChecks!.push(...Array.from({ length: 6 }, (_, i) => ({ id: `cc-late${i}`, siteId: id, workDate: `2026-11-0${i + 1}`, team: "직영", kind: "direct" as const, headcount: 5, at: "2026-11-01T00:00:00Z", by: "u-field" })));
     expect(siteTeams(db, id).map((t) => t.team)).toEqual(["직영", "창호1팀"]);
-    expect(siteTeams(db, id, ["창호1팀", "도장팀"]).map((t) => t.team)).toEqual(["직영", "창호1팀", "도장팀"]);
+    // 다른 현장 팀(회사 단가)은 섞지 않는다
+    expect(siteTeams(db, id, ["창호1팀", "도장팀"]).map((t) => t.team)).toEqual(["직영", "창호1팀"]);
+    expect(siteTeams(db, "site-empty", ["도장팀"]).map((t) => t.team)).toEqual(["도장팀"]);
+  });
+
+  it("팀 이름은 글자 단위로 다듬는다 — 이모지 반쪽·폭 없는 문자 없이, 40자 넘으면 오류", () => {
+    expect(tidyName("가".repeat(39) + "😀😀", 40)).toBe("가".repeat(39) + "😀");
+    expect(tidyName("창호1팀\u200B", 40)).toBe("창호1팀");
+    expect(tidyName("A\uD83D", 40)).toBe("A");
+    expect(teamError("가".repeat(41))).toContain("40자");
+    expect(teamError("가".repeat(39) + "😀")).toBeUndefined();
+    expect(teamError(123)).toBeTruthy();
+    expect(teamError({ a: 1 })).toBeTruthy();
+    expect(teamError(null)).toBeUndefined();
+    const { db, id } = teamSite();
+    const e = err(() =>
+      submitFieldReport(db, { idempotencyKey: "idem-d81-emoji-0001", siteId: id, reportDate: "2026-11-13", workDone: "", kind: "cost", reason: "planned", costs: [{ category: "labor", amount: 10_000, forecastImpact: "additional", team: "가".repeat(39) + "😀😀" }] }, ctx("u-field")),
+    );
+    expect(e.fieldErrors["costs.0.team"]).toContain("40자");
+    expect(err(() => setCostTeams(db, { items: [{ entryId: "ce-a", team: 123 as never }] }, ctx("u-manager"))).code).toBe("VALIDATION");
+    db.costEntries.push(cost("ce-pend", id, { status: "pending", team: "창호1팀" }));
+    expect(err(() => reviewCostEntry(db, { entryId: "ce-pend", decision: "approve", team: { a: 1 } as never }, ctx("u-manager"))).code).toBe("VALIDATION");
+    expect(err(() => editCostEntry(db, "ce-a", { amount: 3_000_000, category: "labor", note: "x", team: 5 as never }, ctx("u-manager"))).code).toBe("VALIDATION");
   });
 });
 
@@ -126,7 +150,7 @@ describe("D-81 팀별 추정 vs 입력", () => {
     db.costEntries.push(cost("ce-x", id, { amount: 500_000, team: " 창호1팀 " }), cost("ce-y", id, { amount: 700_000, team: "도장팀" }));
     const r = est(db, id);
     expect(r.teams.find((t) => t.team === "창호1팀")!.entered).toBe(500_000);
-    expect(r.otherTeams).toEqual([{ team: "도장팀", amount: 700_000 }]);
+    expect(r.otherTeams).toEqual([{ team: "도장팀", amount: 700_000, category: "labor" }]);
   });
 
   it("확인 대기 노무비는 팀 입력에 넣되 대기 금액을 따로 센다", () => {
@@ -232,36 +256,83 @@ describe("D-81 공무 확인 · 원가 고치기에서 팀", () => {
 });
 
 describe("D-81 팀별 노무 정산", () => {
-  it("월 마감의 팀별 기본값 = 추정 − 그 팀 입력 − 팀 미지정분을 추정 비율로 나눈 몫", () => {
+  it("월 마감의 팀별 기본값 = 남은 필요액(추정 − 그 팀 입력)에서 팀 미지정분을 필요액 비율로 나눈 몫을 뺀 값 · 합 = 모자람", () => {
     const { db, id } = teamSite();
     const tagged = setCostTeams(db, { items: [{ entryId: "ce-a", team: "창호1팀" }, { entryId: "ce-b", team: "직영" }] }, ctx("u-manager")).db;
     const row = monthClose(tagged, "2026-10", "2026-11-14").labor.find((l) => l.site.id === id)!;
-    // 팀 미지정 100만을 1,120 : 460 으로 나눔 → 약 70.9만 / 29.1만
+    // 필요액: 창호1팀 1,120 − 300 = 820만, 직영 460 − 200 = 260만 · 팀 미지정 100만을 820 : 260으로 나눔
     const a = row.teamPlan.find((t) => t.team === "창호1팀")!;
     const b = row.teamPlan.find((t) => t.team === "직영")!;
     expect(a.share + b.share).toBe(1_000_000);
-    expect(a.share).toBe(Math.round((1_000_000 * 11_200_000) / 15_800_000));
-    expect(a.suggest).toBe(11_200_000 - 3_000_000 - a.share);
-    expect(b.suggest).toBe(4_600_000 - 2_000_000 - b.share);
+    expect(a.share).toBe(Math.round((1_000_000 * 8_200_000) / 10_800_000));
+    expect(a.suggest).toBe(Math.round((8_200_000 - (1_000_000 * 8_200_000) / 10_800_000) / 1000) * 1000);
     expect(row.suggested).toBe(a.suggest + b.suggest);
-    // 팀별 기본값의 합 = 모자란 금액 (팀 미지정 외주비가 없을 때)
-    expect(row.suggested).toBe(row.shortfall);
+    // 천 원 단위로 맞춘 값 — 합은 모자람과 천 원 안쪽
+    expect(a.suggest % 1000).toBe(0);
+    expect(Math.abs(row.suggested - row.shortfall)).toBeLessThanOrEqual(1000);
+    expect(row.planOver).toBe(0);
   });
 
-  it("팀 미지정 외주비는 외주 팀 몫에서만 뺀다 · 팀이 붙은 외주비는 그 팀 입력으로", () => {
+  it("이미 다 찬 팀이 있어도 팀 미지정분이 버려지지 않는다 — 기본값 합이 모자람을 넘지 않음 (D-81 점검 M4)", () => {
+    const { db, id } = teamSite();
+    // 노무비를 모두 직영으로 → 직영 600만 입력(추정 460만, 140만 넘침) · 창호1팀 0
+    const t = setCostTeams(db, { items: ["ce-a", "ce-b", "ce-c"].map((entryId) => ({ entryId, team: "직영" })) }, ctx("u-manager")).db;
+    const row = monthClose(t, "2026-10", "2026-11-14").labor.find((l) => l.site.id === id)!;
+    expect(row.shortfall).toBe(15_800_000 - 6_000_000);
+    expect(row.teamPlan.find((x) => x.team === "직영")!.suggest).toBe(0);
+    expect(row.teamPlan.find((x) => x.team === "창호1팀")!.suggest).toBe(11_200_000);
+    // 팀별 합(1,120만)이 현장 모자람(980만)보다 140만 큼 → 확인하라고 알린다
+    expect(row.planOver).toBe(1_400_000);
+    // 팀 미지정 100만이 직영(이미 참)에 가지 않고 창호1팀에서 빠진다
+    const u = setCostTeams(db, { items: [{ entryId: "ce-a", team: "직영" }, { entryId: "ce-b", team: "직영" }] }, ctx("u-manager")).db;
+    const row2 = monthClose(u, "2026-10", "2026-11-14").labor.find((l) => l.site.id === id)!;
+    expect(row2.teamPlan.find((x) => x.team === "창호1팀")!.suggest).toBe(11_200_000 - 1_000_000);
+  });
+
+  it("출력에 없는 이름의 노무비도 팀별 기본값에서 뺀다 (D-81 점검 M2 — 두 번 넣던 문제)", () => {
+    const { db, id } = teamSite();
+    db.costEntries.push(cost("ce-o1", id, { amount: 1_100_000, team: "창호1 팀" }), cost("ce-o2", id, { amount: 1_200_000, team: "창호1팀(외주)" }));
+    const row = monthClose(db, "2026-10", "2026-11-14").labor.find((l) => l.site.id === id)!;
+    expect(row.otherTeams.map((o) => o.team).sort()).toEqual(["창호1 팀", "창호1팀(외주)"]);
+    expect(Math.abs(row.suggested - row.shortfall)).toBeLessThanOrEqual(1000);
+  });
+
+  it("외주비 — 외주 팀 이름이 붙으면 그 팀 입력, 팀이 없으면 외주 팀 남은 추정만큼, 직영·없는 이름이면 따로 보이고 비교에서 뺀다 · 모든 숫자가 같은 ‘입력’", () => {
     const { db, id } = teamSite();
     db.costEntries.push(cost("ce-sub", id, { category: "subcontract", amount: 4_000_000, note: "외주 기성" }));
+    const l0 = est(db, id);
+    expect(l0.subUntagged).toBe(4_000_000);
+    expect(l0.subCovered).toBe(4_000_000);
+    expect(l0.compared).toBe(6_000_000 + 4_000_000);
     const row = monthClose(db, "2026-10", "2026-11-14").labor.find((l) => l.site.id === id)!;
     expect(row.subcontractCovered).toBe(4_000_000);
-    const a = row.teamPlan.find((t) => t.team === "창호1팀")!;
-    const b = row.teamPlan.find((t) => t.team === "직영")!;
-    expect(a.share).toBe(Math.round((6_000_000 * 11_200_000) / 15_800_000) + 4_000_000);
-    expect(b.share).toBe(Math.round((6_000_000 * 4_600_000) / 15_800_000));
-    // 팀을 붙이면 ‘팀 미지정 외주비’에서 빠지고 그 팀 입력이 된다
+    expect(row.shortfall).toBe(15_800_000 - 10_000_000);
+    expect(Math.abs(row.suggested - row.shortfall)).toBeLessThanOrEqual(1000);
+    // 팀을 붙여도 입력·모자람은 그대로 (팀 행으로 옮겨 갈 뿐)
     const t = setCostTeams(db, { items: [{ entryId: "ce-sub", team: "창호1팀" }] }, ctx("u-manager")).db;
-    const row2 = monthClose(t, "2026-10", "2026-11-14").labor.find((l) => l.site.id === id)!;
-    expect(row2.subcontractCovered).toBe(0);
-    expect(row2.teamPlan.find((x) => x.team === "창호1팀")!.entered).toBe(4_000_000);
+    const l1 = est(t, id);
+    expect(l1.subTagged).toBe(4_000_000);
+    expect(l1.teams.find((x) => x.team === "창호1팀")!.entered).toBe(4_000_000);
+    expect(l1.compared).toBe(l0.compared);
+    const row1 = monthClose(t, "2026-10", "2026-11-14").labor.find((l) => l.site.id === id)!;
+    expect(row1.shortfall).toBe(row.shortfall);
+    // 직영 팀·없는 이름이 붙은 외주비는 사라지지 않고 따로 보인다 (비교에서는 뺌)
+    const d = setCostTeams(db, { items: [{ entryId: "ce-sub", team: "직영" }] }, ctx("u-manager")).db;
+    const l2 = est(d, id);
+    expect(l2.otherTeams).toEqual([{ team: "직영", amount: 4_000_000, category: "subcontract" }]);
+    expect(l2.compared).toBe(6_000_000);
+    expect(l2.teams.find((x) => x.team === "직영")!.entered).toBe(0);
+  });
+
+  it("외주비가 외주 팀 몫을 다 채우면 정산 항목·버튼이 사라진다 (D-80부터 남던 지울 수 없는 항목)", () => {
+    const { db, id } = teamSite();
+    db.costEntries.push(cost("ce-sub", id, { category: "subcontract", amount: 11_200_000, team: "창호1팀" }), cost("ce-d", id, { amount: 4_600_000 - 2_000_000, team: "직영" }));
+    const t = setCostTeams(db, { items: [{ entryId: "ce-b", team: "직영" }, { entryId: "ce-a", team: "창호1팀" }, { entryId: "ce-c", team: "창호1팀" }] }, ctx("u-manager")).db;
+    const c = monthClose(t, "2026-10", "2026-11-14");
+    const row = c.labor.find((l) => l.site.id === id)!;
+    expect(row.shortfall).toBeLessThanOrEqual(0);
+    expect(row.canSettle).toBe(false);
+    expect(c.items.some((i) => i.kind === "labor" && i.action?.siteId === id)).toBe(false);
   });
 
   it("팀별로 나눠 정산하면 팀마다 입력에 더해지고, 원가 목록·CSV에 팀이 남는다", () => {
@@ -319,11 +390,94 @@ describe("D-81 화면에 보이는 범위", () => {
     expect(field.every((e) => e.createdBy === "u-field")).toBe(true);
   });
 
-  it("회사 설정의 팀 단가에만 있는 팀도 원가에 붙일 수 있다", () => {
+  it("회사 설정의 팀 단가에만 있는 팀 이름도 붙일 수 있고, 출력에 없으면 따로 보인다", () => {
     const { db, id } = teamSite();
-    db.settings = { ...db.settings!, teamRates: [...db.settings!.teamRates!, { team: "도장팀", dayRate: 250_000 }] };
-    expect(siteTeams(db, id, db.settings.teamRates!.map((t) => t.team)).map((t) => t.team)).toContain("도장팀");
     const r = setCostTeams(db, { items: [{ entryId: "ce-c", team: "도장팀" }] }, ctx("u-manager")).db;
-    expect(est(r, id).otherTeams).toEqual([{ team: "도장팀", amount: 1_000_000 }]);
+    expect(est(r, id).otherTeams).toEqual([{ team: "도장팀", amount: 1_000_000, category: "labor" }]);
+  });
+});
+
+describe("D-81 점검 반영", () => {
+  it("메모 짐작 — ‘비직영’·‘직영 아님’은 세지 않고, 긴 이름 안의 짧은 이름은 따로 나올 때만", () => {
+    const teams = [{ team: "창호1팀" }, { team: "직영" }, { team: "창호1팀장" }, { team: "창호2팀" }];
+    expect(guessTeam("비직영 인력", teams)).toBeUndefined();
+    expect(guessTeam("직영 아님 — 창호2팀 노무", teams)).toBe("창호2팀");
+    expect(guessTeam("창호1팀장 지시로 창호1팀 투입", teams)).toBeUndefined();
+    expect(guessTeam("창호1팀장 수당", teams)).toBe("창호1팀장");
+  });
+
+  it("팀 붙이기 목록 — 팀 없는 건과 맞지 않는 이름(띄어쓰기·괄호)·외주비에 붙은 직영까지, 외주비는 외주 팀만 고른다", () => {
+    const { db, id } = teamSite();
+    db.costEntries.push(
+      cost("ce-o1", id, { amount: 1_100_000, team: "창호1 팀" }),
+      cost("ce-s1", id, { category: "subcontract", amount: 2_000_000, team: "직영", note: "직영 보조 외주" }),
+      cost("ce-s2", id, { category: "subcontract", amount: 500_000, note: "폐기물 반출" }),
+      cost("ce-ok", id, { amount: 300_000, team: "창호1팀" }),
+    );
+    const u = untaggedCosts(db, id, "2026-10-01", "2026-10-31");
+    const by = Object.fromEntries(u.map((x) => [x.entryId, x]));
+    expect(by["ce-ok"]).toBeUndefined();
+    expect(by["ce-o1"]).toMatchObject({ current: "창호1 팀", guess: "창호1팀" });
+    expect(by["ce-s1"]).toMatchObject({ current: "직영", options: ["창호1팀"] });
+    expect(by["ce-s1"].guess).toBeUndefined();
+    expect(by["ce-s2"]).toMatchObject({ options: ["창호1팀"] });
+    expect(by["ce-a"]).toMatchObject({ guess: "창호1팀", options: ["창호1팀", "직영"] });
+    // 메모로 짐작한 것(teamGuesses)은 팀이 없는 건만
+    expect(teamGuesses(db, id).map((g) => g.entryId).sort()).toEqual(["ce-a", "ce-b"]);
+  });
+
+  it("팀별 정산 — 음수·형식 오류 줄은 조용히 버리지 않고 막는다 · 출력에 없는 팀은 받지 않는다 · 0원 줄은 뺀다", () => {
+    const { db, id } = teamSite();
+    const base = { siteId: id, month: "2026-10", amount: 1_000_000, note: "명세 기준" };
+    expect(err(() => settleLabor(db, { ...base, teams: [{ team: "창호1팀", amount: 1_000_000 }, { team: "직영", amount: -5 }] }, ctx("u-manager"))).fieldErrors.teams).toBeTruthy();
+    expect(err(() => settleLabor(db, { ...base, teams: [null, 5, "x"] as never }, ctx("u-manager"))).fieldErrors.teams).toBeTruthy();
+    expect(err(() => settleLabor(db, { ...base, teams: [{ team: "유령팀", amount: 1_000_000 }] }, ctx("u-manager"))).message).toContain("유령팀");
+    expect(err(() => settleLabor(db, { ...base, teams: Array.from({ length: 31 }, (_, i) => ({ team: `팀${i}`, amount: 0 })) }, ctx("u-manager"))).fieldErrors.teams).toContain("30개");
+    const ok = settleLabor(db, { ...base, teams: [{ team: "창호1팀", amount: 1_000_000 }, { team: "직영", amount: 0 }] }, ctx("u-manager"));
+    expect(ok.db.costEntries.find((e) => e.id === ok.result.entryId)!.settle!.teams).toEqual([{ team: "창호1팀", amount: 1_000_000 }]);
+  });
+
+  it("정산 기준은 ‘노무비 + 외주 팀 외주비’ — 정산 메모·정산 전 입력에 같은 숫자", () => {
+    const { db, id } = teamSite();
+    db.costEntries.push(cost("ce-sub", id, { category: "subcontract", amount: 4_000_000, team: "창호1팀" }));
+    const r = settleLabor(db, { siteId: id, month: "2026-10", amount: 5_800_000, note: "명세 기준" }, ctx("u-manager"));
+    const e = r.db.costEntries.find((x) => x.id === r.result.entryId)!;
+    expect(e.settle!.actualBefore).toBe(10_000_000);
+    expect(e.note).toContain("외주비 400만 원 포함");
+    const row = monthClose(r.db, "2026-10", "2026-11-14").labor.find((l) => l.site.id === id)!;
+    expect(row.shortfall).toBe(0);
+    expect(row.reShort).toBe(0);
+  });
+
+  it("일부 팀만 정산하면 남은 팀 차이를 월 마감 줄에 남긴다", () => {
+    const { db, id } = teamSite();
+    const t = setCostTeams(db, { items: [{ entryId: "ce-a", team: "창호1팀" }, { entryId: "ce-b", team: "직영" }, { entryId: "ce-c", team: "직영" }] }, ctx("u-manager")).db;
+    const r = settleLabor(t, { siteId: id, month: "2026-10", amount: 1_600_000, teams: [{ team: "직영", amount: 1_600_000 }], note: "직영만 명세 옴" }, ctx("u-manager"));
+    const row = monthClose(r.db, "2026-10", "2026-11-14").labor.find((l) => l.site.id === id)!;
+    expect(row.teamLeft).toEqual([{ team: "창호1팀", amount: 8_200_000 }]);
+  });
+
+  it("팀을 바꾼 사실이 원가 이력·활동 이력에 남는다", () => {
+    const { db, id } = teamSite();
+    db.costEntries.push(cost("ce-r", id, { status: "pending", team: "창호1팀" }));
+    const r = reviewCostEntry(db, { entryId: "ce-r", decision: "approve", team: "직영" }, ctx("u-manager")).db;
+    const e = r.costEntries.find((x) => x.id === "ce-r")!;
+    expect(e.editHistory?.at(-1)?.before.team).toBe("창호1팀");
+    expect(r.activityLogs[0].summary).toContain("팀 창호1팀 → 직영");
+    const t = setCostTeams(r, { items: [{ entryId: "ce-r", team: "창호1팀" }] }, ctx("u-manager")).db;
+    expect(t.costEntries.find((x) => x.id === "ce-r")!.editHistory?.at(-1)?.before.team).toBe("직영");
+  });
+
+  it("이달 원가 CSV — 팀별로 나눈 정산은 팀마다 한 줄 (금액 합은 그 건과 같음)", () => {
+    const { db, id } = teamSite();
+    const r = settleLabor(db, { siteId: id, month: "2026-10", amount: 5_000_000, teams: [{ team: "창호1팀", amount: 3_000_000 }, { team: "직영", amount: 2_000_000 }], note: "명세 기준" }, ctx("u-manager"));
+    const rows = monthCostRows(r.db, "2026-10", "2026-11-14");
+    const teamCol = rows[0].indexOf("팀");
+    const amtCol = rows[0].indexOf("금액(원)");
+    const settleRows = rows.filter((x) => String(x[rows[0].indexOf("메모")]).includes("[팀별"));
+    expect(settleRows.map((x) => [x[teamCol], x[amtCol]])).toEqual([
+      ["창호1팀", 3_000_000],
+      ["직영", 2_000_000],
+    ]);
   });
 });

@@ -62,25 +62,50 @@ export interface CloseLabor extends LaborSite {
   settled?: CostEntry;
   /** 정산 뒤에 같은 달로 더 들어온 노무비 */
   afterSettle: { n: number; amount: number };
-  /** 출력 기준 추정 − 입력된 노무비 (+ 면 입력이 모자람) */
+  /** 출력 기준 추정 − 입력(노무비 + 외주 팀 몫 외주비) (+ 면 입력이 모자람) */
   shortfall: number;
   /** 정산 버튼을 보여 줄지 — 달이 끝났고, 추정보다 적게 들어왔고, 아직 정산 안 함 */
   canSettle: boolean;
-  /** 외주 팀 추정 중 이 기간 외주비로 이미 들어온 금액 — 정산 기본값에서 뺀다 (노무비·외주비 이중 계상 방지) */
+  /** 외주 팀 몫으로 센 외주비 (= subcontractCounted) — 입력에 들어 있다 (노무비·외주비 이중 계상 방지) */
   subcontractCovered: number;
-  /** 정산 기본값 = 모자람 − 외주비로 들어온 외주 팀 몫 */
+  /** 정산 기본값 = 팀별 기본값의 합 (팀이 없으면 모자람) */
   suggested: number;
+  /** 팀별 기본값의 합이 현장 전체 모자람보다 큰 만큼 — 어떤 팀은 추정보다 많이 들어왔다는 뜻 (팀 이름·단가 확인) */
+  planOver: number;
+  /** 정산한 뒤에도 팀별로 남은 차이 (일부 팀만 넣었거나 덜 넣은 경우) */
+  teamLeft: { team: string; amount: number }[];
   /** 정산한 뒤에 다시 생긴 모자람 (출력 추가·정산 때 셈한 확인 대기 노무비 반려 등) */
   reShort: number;
-  /** 팀별 정산 안 (D-81) — 팀 미지정 입력·외주비는 팀 추정 비율로 나눠 뺀 기본값 */
+  /**
+   * 팀별 정산 안 (D-81) — 팀마다 남은 필요액(추정 − 그 팀 입력)에서, 팀 미지정 외주비는 외주 팀끼리,
+   * 팀 미지정·출력에 없는 이름의 노무비는 모든 팀끼리 남은 필요액 비율로 나눠 뺀다 (이미 찬 팀 몫이 버려지지 않게).
+   */
   teamPlan: { team: string; kind: "direct" | "subcontract"; estimate: number; entered: number; share: number; suggest: number }[];
 }
 
 /** 추정과 입력의 차이를 ‘모자람’으로 볼 기준 — 투입·인건비 화면(labor.ts)과 같은 값 */
 export const LABOR_GAP_WON = 500_000;
 const LABOR_GAP_RATIO = 1.2;
-export function laborShort(l: Pick<LaborSite, "estimate" | "actual">): boolean {
-  return l.estimate > 0 && (l.actual === 0 || (l.estimate > l.actual * LABOR_GAP_RATIO && l.estimate - l.actual >= LABOR_GAP_WON));
+export function laborShort(l: Pick<LaborSite, "estimate" | "compared">): boolean {
+  return l.estimate > 0 && (l.compared === 0 || (l.estimate > l.compared * LABOR_GAP_RATIO && l.estimate - l.compared >= LABOR_GAP_WON));
+}
+
+/** 정산 기본값은 천 원 단위로 */
+const k1 = (n: number) => Math.round(n / 1000) * 1000;
+
+/** 팀별 정산 안 — CloseLabor.teamPlan 설명 참고 */
+export function teamPlanFor(l: LaborSite): CloseLabor["teamPlan"] {
+  const need = l.teams.map((t) => Math.max(0, t.estimate - t.entered));
+  // 1) 팀 미지정 외주비 중 외주 팀 몫으로 센 금액 → 외주 팀끼리 (subCovered ≤ 외주 팀 필요액 합)
+  const subIdx = l.teams.map((t, i) => (t.kind === "subcontract" ? i : -1)).filter((i) => i >= 0);
+  const subNeed = subIdx.reduce((a, i) => a + need[i], 0);
+  const subShare = l.teams.map((_, i) => (subIdx.includes(i) && subNeed > 0 ? (l.subCovered * need[i]) / subNeed : 0));
+  // 2) 팀 미지정 노무비 + 출력에 없는 이름의 노무비 → 모든 팀끼리, 남은 필요액 비율로 (필요액을 넘지 않게)
+  const pool = l.untagged + l.otherTeams.filter((o) => o.category === "labor").reduce((a, o) => a + o.amount, 0);
+  const rest = need.map((n, i) => Math.max(0, n - subShare[i]));
+  const restSum = rest.reduce((a, b) => a + b, 0);
+  const laborShare = rest.map((r) => (restSum > 0 ? Math.min(r, (pool * r) / restSum) : 0));
+  return l.teams.map((t, i) => ({ team: t.team, kind: t.kind, estimate: t.estimate, entered: t.entered, share: Math.round(subShare[i] + laborShare[i]), suggest: k1(Math.max(0, rest[i] - laborShare[i])) }));
 }
 
 export interface ClosePerson {
@@ -217,25 +242,16 @@ export function monthClose(db: DemoDB, month: string, today = todayIso()): Month
   // ── 노무 (준공 현장도 이 달에 일했으면) ──
   const labor: CloseLabor[] = sites
     .map((s) => laborEstimate(db, s, from, to))
-    .filter((r) => r.teams.length > 0 || r.actual > 0)
+    .filter((r) => r.teams.length > 0 || r.actual > 0 || r.subcontractCounted > 0)
     .map((l) => {
       const settled = db.costEntries.find((e) => e.siteId === l.site.id && e.settle?.month === month && (e.status === "active" || e.status === "pending"));
       const later = settled
         ? db.costEntries.filter((e) => e.siteId === l.site.id && e.category === "labor" && e.id !== settled.id && !e.settle && (e.status === "active" || e.status === "pending") && inRange(e.date, from, to) && e.createdAt > settled.createdAt)
         : [];
-      // 팀이 붙지 않은 외주비만 — 팀이 붙은 외주비는 이미 그 외주 팀 입력에 들어가 있다 (D-81)
-      const subRows = l.teams.filter((t) => t.kind === "subcontract");
-      const subEstimate = subRows.reduce((a, t) => a + Math.max(0, t.estimate - t.entered), 0);
-      const subCost = db.costEntries.filter((e) => e.siteId === l.site.id && e.category === "subcontract" && !e.team?.trim() && (e.status === "active" || e.status === "pending") && e.date >= l.compareFrom && e.date <= l.to).reduce((a, e) => a + e.amount, 0);
-      const subcontractCovered = Math.min(subEstimate, subCost);
-      // 팀별 기본값: 추정 − 그 팀 입력 − (팀 미지정 노무비를 추정 비율로 나눈 몫) − (외주 팀이면 팀 미지정 외주비를 외주 팀 비율로 나눈 몫)
-      const estAll = l.teams.reduce((a, t) => a + t.estimate, 0);
-      const estSub = subRows.reduce((a, t) => a + t.estimate, 0);
-      const teamPlan = l.teams.map((t) => {
-        const share = Math.round((estAll > 0 ? (l.untagged * t.estimate) / estAll : 0) + (t.kind === "subcontract" && estSub > 0 ? (subcontractCovered * t.estimate) / estSub : 0));
-        return { team: t.team, kind: t.kind, estimate: t.estimate, entered: t.entered, share, suggest: Math.max(0, t.estimate - t.entered - share) };
-      });
-      const shortfall = l.estimate - l.actual;
+      // 팀별 기본값 (D-81) — 입력·외주비 셈은 labor.ts 한 곳에서 (투입·인건비·정산 창·CSV와 같은 숫자)
+      const teamPlan = teamPlanFor(l);
+      const shortfall = l.estimate - l.compared;
+      const suggested = teamPlan.length ? teamPlan.reduce((a, t) => a + t.suggest, 0) : Math.max(0, shortfall);
       // 정산 때 남겨 둔 모자람(일부러 일부만 넣은 경우)보다 더 모자라졌을 때만 다시 알린다
       const leftAtSettle = settled?.settle ? Math.max(0, settled.settle.estimate - settled.settle.actualBefore - settled.amount) : 0;
       const reShort = settled ? Math.max(0, shortfall - leftAtSettle) : 0;
@@ -245,8 +261,10 @@ export function monthClose(db: DemoDB, month: string, today = todayIso()): Month
         afterSettle: { n: later.length, amount: later.reduce((a, e) => a + e.amount, 0) },
         shortfall,
         canSettle: ended && !settled && laborShort(l),
-        subcontractCovered,
-        suggested: teamPlan.length ? teamPlan.reduce((a, t) => a + t.suggest, 0) : Math.max(0, shortfall - subcontractCovered),
+        subcontractCovered: l.subcontractCounted,
+        suggested,
+        planOver: Math.max(0, suggested - Math.max(0, shortfall)) >= 10_000 ? suggested - Math.max(0, shortfall) : 0,
+        teamLeft: settled ? teamPlan.filter((t) => t.suggest >= LABOR_GAP_WON).map((t) => ({ team: t.team, amount: t.suggest })) : [],
         teamPlan,
         reShort: reShort >= LABOR_GAP_WON ? reShort : 0,
       };
@@ -302,9 +320,9 @@ export function monthClose(db: DemoDB, month: string, today = todayIso()): Month
   // 노무 — 달이 끝났는데 출력 기준 추정보다 노무비가 모자라면 (정산하면 빠진다) · 정산 뒤 같은 달 노무비가 더 들어오면 겹침 확인 (D-79)
   for (const l of labor) {
     if (ended && l.canSettle)
-      items.push({ kind: "labor", text: `${l.site.shortName} — 출력 기준 노무 추정 ${man(l.estimate)}보다 입력된 노무비가 ${man(l.shortfall)} 적습니다. 빠진 노무비를 넣거나 차액을 정산하세요`, href: `/close?month=${month}#close-labor`, action: { kind: "settleLabor", siteId: l.site.id } });
+      items.push({ kind: "labor", text: `${l.site.shortName} — 출력 기준 노무 추정 ${man(l.estimate)}보다 입력된 노무비${l.subcontractCovered > 0 ? `(외주 팀 외주비 ${man(l.subcontractCovered)} 포함)` : ""}가 ${man(l.shortfall)} 적습니다. 빠진 노무비를 넣거나 차액을 정산하세요`, href: `/close?month=${month}#close-labor`, action: { kind: "settleLabor", siteId: l.site.id } });
     if (ended && l.reShort > 0)
-      items.push({ kind: "labor", text: `${l.site.shortName} — 노무 정산 뒤에 다시 ${man(l.reShort)} 모자랍니다 (출력이 더 들어왔거나 정산 때 셈한 노무비가 반려됨). 정산 건을 고치거나 빠진 노무비를 넣으세요`, href: `/sites/${l.site.id}?tab=cost` });
+      items.push({ kind: "labor", text: `${l.site.shortName} — 노무 정산 뒤에 다시 ${man(l.reShort)} 모자랍니다 (출력이 더 들어왔거나, 정산 때 셈한 노무비가 반려됐거나, 팀 단가가 바뀜). 빠진 노무비를 넣거나 정산 건을 되돌린 뒤 다시 넣으세요`, href: `/sites/${l.site.id}?tab=cost` });
     if (l.settled && l.afterSettle.n > 0)
       items.push({ kind: "labor", text: `${l.site.shortName} — 노무 정산(${short(kst(l.settled.createdAt))}) 뒤에 같은 달 노무비 ${l.afterSettle.n}건(${man(l.afterSettle.amount)})이 더 들어왔습니다. 정산과 겹치지 않는지 확인하세요`, href: `/sites/${l.site.id}?tab=cost` });
   }
@@ -339,18 +357,28 @@ export function monthCostRows(db: DemoDB, month: string, today = todayIso()): (s
   const rows = db.costEntries
     .filter((e) => e.date >= b.from && e.date <= to)
     .sort((a, x) => a.date.localeCompare(x.date) || site(a.siteId).localeCompare(site(x.siteId)) || a.createdAt.localeCompare(x.createdAt))
-    .map((e) => {
+    // 팀별로 나눈 노무 정산은 팀마다 한 줄 (엑셀에서 팀별로 더할 수 있게 · 금액 합은 그 건과 같음 · D-81 점검)
+    .flatMap((e) => {
+      const parts: { team: string; amount: number; note: string }[] = e.settle?.teams?.length
+        ? (() => {
+            const rest = e.amount - e.settle!.teams!.reduce((a, t) => a + t.amount, 0);
+            return [...e.settle!.teams!.map((t, i) => ({ team: t.team, amount: t.amount, note: `${e.note} [팀별 ${i + 1}/${e.settle!.teams!.length}]` })), ...(rest > 0 ? [{ team: "", amount: rest, note: `${e.note} [팀 미지정분]` }] : [])];
+          })()
+        : [{ team: e.team ?? "", amount: e.amount, note: e.note }];
+      return parts.map((p) => ({ e, ...p }));
+    })
+    .map(({ e, team, amount, note }) => {
       const first = e.editHistory?.[0]?.before;
       return [
         e.date,
         kst(e.createdAt),
         site(e.siteId),
         CATEGORY_LABEL[e.category],
-        e.settle?.teams?.length ? e.settle.teams.map((t) => `${t.team} ${t.amount}`).join(" / ") : (e.team ?? ""),
-        e.amount,
+        team,
+        amount,
         IMPACT_LABEL[e.forecastImpact],
         REASON_LABEL[e.reason],
-        e.note,
+        note,
         e.settle ? "본사 입력 (노무 정산)" : SOURCE_LABEL[e.source],
         name(e.createdBy),
         STATUS_LABEL[e.status],

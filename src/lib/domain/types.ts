@@ -352,7 +352,7 @@ export interface CostEntry {
   voidedBy?: string;
   voidReason?: string;
   editedAt?: string;
-  editHistory?: { at: string; by: string; before: { amount: number; category: CostCategory; note: string } }[];
+  editHistory?: { at: string; by: string; before: { amount: number; category: CostCategory; note: string; team?: string } }[];
   /** 자료 가져오기 묶음 (가져오기 취소용) */
   importBatchId?: string;
   /** 월 마감 노무 정산 (D-79) — 출력 인원 × 팀 단가 추정과 입력된 노무비의 차액을 본사가 한 번에 넣은 것 · teams: 팀별로 나눈 금액 (D-81) */

@@ -10,9 +10,9 @@ import { CATEGORY_LABEL, COST_CATEGORIES } from "@/lib/domain/labels";
 import { fmtEok, fmtMan, todayIso } from "@/lib/domain/format";
 import { stagesWeightedPct, syncStageDone } from "@/lib/domain/schedule";
 import { uid } from "@/lib/domain/ids";
-import { laborEstimate } from "@/lib/domain/labor";
+import { laborEstimate, teamKey } from "@/lib/domain/labor";
 import { monthBounds } from "@/lib/domain/monthClose";
-import { CommandError, MAX_AMOUNT, MAX_CONTRACT, claimKey, cleanTeam, clone, log, nowIso, pastCalendarDate, requireSite, touch, validateAmount, type Ctx } from "./commands";
+import { CommandError, MAX_AMOUNT, MAX_CONTRACT, claimKey, cleanTeam, clone, teamError, log, nowIso, pastCalendarDate, requireSite, touch, validateAmount, type Ctx } from "./commands";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const STATUSES: SiteStatus[] = ["active", "hold", "completed"];
@@ -305,11 +305,17 @@ export function settleLabor(db0: DemoDB, input: SettleLaborInput, ctx: Ctx) {
   if ((input.note ?? "").length > 200) errors.note = "200자 이내";
   else if ((input.note ?? "").trim().length < 2) errors.note = "근거를 적어 주세요 (예: 10월 노무비 명세 기준 · 추정 계상, 명세 오면 고침)";
   // 팀별 금액 (D-81) — 팀 이름·금액·중복·합계를 본다
-  const teams = Array.isArray(input.teams) ? input.teams.filter((t) => t && Number(t.amount) > 0) : [];
-  if (input.teams !== undefined && !Array.isArray(input.teams)) errors.teams = "팀별 금액 형식을 확인해 주세요.";
+  // 거르기 전에 줄마다 본다 — 음수·형식 오류 줄을 조용히 버리던 문제 (D-81 점검). 0원 줄은 ‘넣지 않음’으로 뺀다
+  const rawTeams: unknown[] = Array.isArray(input.teams) ? input.teams : [];
+  const teams = rawTeams.filter((t): t is { team: string; amount: number } => !!t && typeof t === "object" && (t as { amount?: unknown }).amount !== 0);
+  if (input.teams !== undefined && input.teams !== null && !Array.isArray(input.teams)) errors.teams = "팀별 금액 형식을 확인해 주세요.";
+  else if (rawTeams.length > 30) errors.teams = "팀은 30개까지 나눠 넣을 수 있습니다.";
+  else if (rawTeams.some((t) => !t || typeof t !== "object" || typeof (t as { team?: unknown }).team !== "string" || !Number.isInteger((t as { amount?: unknown }).amount) || ((t as { amount: number }).amount ?? 0) < 0)) errors.teams = "팀별 금액은 팀 이름과 0 이상의 금액(원)으로 넣어 주세요.";
   else if (teams.length) {
     const names = teams.map((t) => cleanTeam("labor", t.team));
-    if (names.some((n) => !n) || teams.some((t) => !Number.isInteger(t.amount) || t.amount < 0) || teams.length > 30) errors.teams = "팀 이름·금액을 확인해 주세요.";
+    const te = teams.map((t) => teamError(t.team)).find(Boolean);
+    if (te) errors.teams = te;
+    else if (names.some((n) => !n)) errors.teams = "팀 이름을 넣어 주세요.";
     else if (new Set(names.map((n) => n!.toLowerCase())).size !== names.length) errors.teams = "같은 팀이 두 번 들어 있습니다.";
     else if (Number.isInteger(input.amount) && teams.reduce((a, t) => a + t.amount, 0) !== input.amount) errors.teams = "팀별 금액의 합이 넣을 노무비와 다릅니다.";
   }
@@ -321,14 +327,19 @@ export function settleLabor(db0: DemoDB, input: SettleLaborInput, ctx: Ctx) {
   if (dup) throw new CommandError(`${site0.shortName} ${Number(input.month.slice(5))}월 노무 정산은 이미 넣었습니다 (${fmtMan(dup.amount)}). 고치려면 원가 목록에서 그 건을 고치거나 되돌리세요.`, "STATE");
   const est = laborEstimate(db0, site0, b.from, to);
   if (est.estimate <= 0) throw new CommandError("그 달 작업 인원(출력) 기록이 없어 정산할 기준이 없습니다. 노무비는 현장 보고·원가 입력으로 넣어 주세요.", "STATE");
+  // 팀별 금액은 그 달 출력에 나온 팀에만 (없는 이름은 팀별 비교에 들어가지 않으므로)
+  const unknown = teams.map((t) => cleanTeam("labor", t.team)!).filter((n) => !est.teams.some((x) => teamKey(x.team) === teamKey(n)));
+  if (unknown.length) throw new CommandError(`그 달 작업 인원(출력)에 없는 팀입니다: ${unknown.join(", ")}`, "VALIDATION", { teams: "출력에 없는 팀" });
 
   const db = clone(db0);
   claimKey(db, input.idempotencyKey);
   const at = nowIso(ctx);
   const before = siteFinancials(db0, input.siteId);
   const m = Number(input.month.slice(5));
-  const short = est.estimate - est.actual;
-  const basis = `${m}월 출력 기준 노무 정산 (추정 ${fmtMan(est.estimate)} − 입력 ${fmtMan(est.actual)}${short > 0 && short !== input.amount ? ` = 모자람 ${fmtMan(short)} 중 ${fmtMan(input.amount)}` : ""})${teams.length ? ` · ${teams.map((t) => `${cleanTeam("labor", t.team)} ${fmtMan(t.amount)}`).join(", ")}` : ""}`;
+  // 입력 = 노무비 + 외주 팀 몫 외주비 (투입·인건비·월 마감과 같은 기준 · D-81 점검)
+  const short = est.estimate - est.compared;
+  const inputText = `입력 ${fmtMan(est.compared)}${est.subcontractCounted > 0 ? `(외주비 ${fmtMan(est.subcontractCounted)} 포함)` : ""}`;
+  const basis = `${m}월 출력 기준 노무 정산 (추정 ${fmtMan(est.estimate)} − ${inputText}${short > 0 && short !== input.amount ? ` = 모자람 ${fmtMan(short)} 중 ${fmtMan(input.amount)}` : ""})${teams.length ? ` · ${teams.map((t) => `${cleanTeam("labor", t.team)} ${fmtMan(t.amount)}`).join(", ")}` : ""}`;
   const entry: CostEntry = {
     id: uid("ce"),
     siteId: input.siteId,
@@ -344,11 +355,11 @@ export function settleLabor(db0: DemoDB, input: SettleLaborInput, ctx: Ctx) {
     status: "active",
     reviewedAt: at,
     reviewedBy: ctx.userId,
-    settle: { month: input.month, estimate: est.estimate, actualBefore: est.actual, ...(teams.length ? { teams: teams.map((t) => ({ team: cleanTeam("labor", t.team)!, amount: t.amount })) } : {}) },
+    settle: { month: input.month, estimate: est.estimate, actualBefore: est.compared, ...(teams.length ? { teams: teams.map((t) => ({ team: cleanTeam("labor", t.team)!, amount: t.amount })) } : {}) },
   };
   db.costEntries.push(entry);
   const after = siteFinancials(db, input.siteId);
-  log(db, ctx, "cost", `${site0.shortName} ${m}월 노무 정산 ${fmtMan(input.amount)} 입력 (출력 기준 추정 ${fmtMan(est.estimate)} · 그동안 입력 ${fmtMan(est.actual)})`, input.siteId, `/sites/${input.siteId}?tab=cost`);
+  log(db, ctx, "cost", `${site0.shortName} ${m}월 노무 정산 ${fmtMan(input.amount)} 입력 (출력 기준 추정 ${fmtMan(est.estimate)} · 그동안 ${inputText})`, input.siteId, `/sites/${input.siteId}?tab=cost`);
   touch(db, ctx);
   return { db, result: { entryId: entry.id, before, after } };
 }
@@ -368,7 +379,9 @@ export function setCostTeams(db0: DemoDB, input: SetCostTeamsInput, ctx: Ctx) {
   const items = Array.isArray(input?.items) ? input.items : [];
   if (!items.length) throw new CommandError("팀을 붙일 원가를 골라 주세요.", "VALIDATION", { items: "0건" });
   if (items.length > 300) throw new CommandError("한 번에 300건까지 붙일 수 있습니다.", "VALIDATION", { items: "너무 많음" });
-  if (items.some((x) => !x || typeof x.entryId !== "string")) throw new CommandError("형식을 확인해 주세요.", "VALIDATION", { items: "형식" });
+  if (items.some((x) => !x || typeof x.entryId !== "string")) throw new CommandError("팀을 붙일 원가 형식을 확인해 주세요.", "VALIDATION", { items: "형식" });
+  const te = items.map((x) => teamError(x.team)).find(Boolean);
+  if (te) throw new CommandError(te, "VALIDATION", { items: te });
   if (new Set(items.map((x) => x.entryId)).size !== items.length) throw new CommandError("같은 원가가 두 번 들어 있습니다.", "VALIDATION", { items: "중복" });
   if (input.idempotencyKey && db0.idempotencyKeys.includes(input.idempotencyKey)) throw new CommandError("이미 저장된 요청입니다. (중복 저장 방지)", "DUPLICATE");
   const db = clone(db0);
@@ -376,11 +389,12 @@ export function setCostTeams(db0: DemoDB, input: SetCostTeamsInput, ctx: Ctx) {
   const bySite = new Map<string, number>();
   for (const it of items) {
     const e = db.costEntries.find((x) => x.id === it.entryId);
-    if (!e) throw new CommandError("원가 이벤트를 찾을 수 없습니다.", "NOT_FOUND");
+    if (!e) throw new CommandError("고를 때 있던 원가가 지금은 없습니다. 화면을 새로 고친 뒤 다시 해 주세요.", "NOT_FOUND");
     if (e.category !== "labor" && e.category !== "subcontract") throw new CommandError("노무비·외주비에만 팀을 붙일 수 있습니다.", "VALIDATION", { items: "항목" });
     if (e.settle) throw new CommandError("노무 정산 건의 팀별 금액은 정산할 때 정합니다.", "STATE");
     if (e.status !== "active" && e.status !== "pending") throw new CommandError("취소·반려된 원가에는 팀을 붙이지 않습니다.", "STATE");
     const t = cleanTeam(e.category, it.team);
+    if ((t ?? "") !== (e.team ?? "")) e.editHistory = [...(e.editHistory ?? []), { at: nowIso(ctx), by: ctx.userId, before: { amount: e.amount, category: e.category, note: e.note, ...(e.team ? { team: e.team } : {}) } }];
     if (t) e.team = t;
     else delete e.team;
     bySite.set(e.siteId, (bySite.get(e.siteId) ?? 0) + 1);
@@ -492,8 +506,11 @@ export function reviewCostEntry(db0: DemoDB, input: ReviewCostEntryInput, ctx: C
   if (!e) throw new CommandError("원가 이벤트를 찾을 수 없습니다.", "NOT_FOUND");
   if (e.status !== "pending") throw new CommandError("확인 대기 중인 원가가 아닙니다.", "STATE");
   if (input.decision === "reject" && !input.note?.trim()) throw new CommandError("반려 사유를 입력해주세요.", "VALIDATION", { note: "필수" });
+  const te = teamError(input.team);
+  if (te) throw new CommandError(te, "VALIDATION", { team: te });
   const before = siteFinancials(db0, e.siteId);
   const at = nowIso(ctx);
+  let teamChange = "";
   if (input.decision === "approve") {
     if (input.amount !== undefined && input.amount !== e.amount) {
       validateAmount(input.amount);
@@ -503,6 +520,10 @@ export function reviewCostEntry(db0: DemoDB, input: ReviewCostEntryInput, ctx: C
     }
     if (input.team !== undefined) {
       const t = cleanTeam(e.category, input.team);
+      if ((t ?? "") !== (e.team ?? "")) {
+        teamChange = `${e.team ?? "팀 없음"} → ${t ?? "팀 없음"}`;
+        e.editHistory = [...(e.editHistory ?? []), { at, by: ctx.userId, before: { amount: e.amount, category: e.category, note: e.note, ...(e.team ? { team: e.team } : {}) } }];
+      }
       if (t) e.team = t;
       else delete e.team;
     }
@@ -520,7 +541,7 @@ export function reviewCostEntry(db0: DemoDB, input: ReviewCostEntryInput, ctx: C
     ctx,
     "cost_review",
     input.decision === "approve"
-      ? `${site.shortName} ${CATEGORY_LABEL[e.category]} ${fmtMan(e.amount)} 공무 확인 → 손익 반영 (예상 총원가 ${fmtEok(before.eac)} → ${fmtEok(after.eac)})`
+      ? `${site.shortName} ${CATEGORY_LABEL[e.category]} ${fmtMan(e.amount)} 공무 확인 → 손익 반영 (예상 총원가 ${fmtEok(before.eac)} → ${fmtEok(after.eac)})${teamChange ? ` · 팀 ${teamChange}` : ""}`
       : `${site.shortName} ${CATEGORY_LABEL[e.category]} ${fmtMan(e.amount)} 공무 반려 — ${e.reviewNote}`,
     e.siteId,
     `/sites/${e.siteId}`,

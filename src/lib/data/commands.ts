@@ -164,10 +164,30 @@ export interface CostLineInput {
 }
 
 /** 팀 이름 정리 (D-81) — 노무비·외주비에만, 40자까지. 비우면 없음 */
+/** 이름 다듬기 — 폭 없는 문자·짝 없는 서로게이트를 빼고 공백을 하나로, 글자(코드 포인트) 단위로 자른다 (이모지 반쪽이 저장 오류를 내던 문제 · D-81 점검) */
+export function tidyName(v: string, max: number): string {
+  const t = v
+    .replace(/[\u200B-\u200D\u2060\uFEFF]/g, "")
+    .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return Array.from(t).slice(0, max).join("");
+}
+
+export const TEAM_MAX = 40;
+
+/** 원가에 붙일 팀 — 노무비·외주비만 (그 밖의 항목이면 버림) */
 export function cleanTeam(category: CostCategory, team: unknown): string | undefined {
   if (category !== "labor" && category !== "subcontract") return undefined;
-  const t = typeof team === "string" ? team.replace(/\s+/g, " ").trim().slice(0, 40) : "";
-  return t || undefined;
+  return typeof team === "string" ? tidyName(team, TEAM_MAX) || undefined : undefined;
+}
+
+/** 팀 값 검사 — 글자·null·없음만, 40자까지. 문제가 없으면 undefined */
+export function teamError(team: unknown): string | undefined {
+  if (team === undefined || team === null) return undefined;
+  if (typeof team !== "string") return "팀 이름 형식을 확인해 주세요.";
+  if (Array.from(tidyName(team, 1000)).length > TEAM_MAX) return `팀 이름은 ${TEAM_MAX}자까지예요.`;
+  return undefined;
 }
 
 /** 현장 보고에 쓸 수 있는 날짜 범위 (오늘부터 며칠 전까지) */
@@ -226,6 +246,8 @@ export function submitFieldReport(db0: DemoDB, input: FieldReportInput, ctx: Ctx
     if (!Number.isInteger(c.amount) || c.amount <= 0) errors[`costs.${i}.amount`] = "0보다 큰 금액(원)을 입력해주세요.";
     else if (c.amount > MAX_AMOUNT) errors[`costs.${i}.amount`] = `${fmtEok(MAX_AMOUNT)} 이하로 입력해주세요.`;
     if (c.forecastImpact !== "additional" && c.forecastImpact !== "within_forecast") errors[`costs.${i}.impact`] = "비용 성격을 선택해주세요.";
+    const te = teamError(c.team);
+    if (te) errors[`costs.${i}.team`] = te;
     if (c.qty) {
       const { manDays, dayRate } = c.qty;
       if (!(manDays > 0) || manDays > 10_000 || !(dayRate > 0) || !Number.isInteger(dayRate)) errors[`costs.${i}.amount`] = "공수와 일당을 확인해주세요.";
@@ -473,10 +495,12 @@ export function editCostEntry(
   if (!COST_CATEGORIES.includes(patch.category)) throw new CommandError("비용 항목을 선택해주세요.");
   // 노무 정산 건은 노무비로만 — 항목을 바꾸면 ‘정산함’으로 남아 그 달 노무가 잠겼다 (D-79 버그 배시 m-2)
   if (e.settle && patch.category !== "labor") throw new CommandError("노무 정산 건은 항목을 바꿀 수 없습니다. 되돌린 뒤 다시 넣어 주세요.", "VALIDATION", { category: "노무 정산" });
+  const te = teamError(patch.team);
+  if (te) throw new CommandError(te, "VALIDATION", { team: te });
   // 팀별로 나눠 넣은 정산은 금액을 바꾸면 팀별 합이 어긋난다 (D-81)
   if (e.settle?.teams?.length && patch.amount !== e.amount) throw new CommandError("팀별로 나눠 넣은 노무 정산은 금액을 바꿀 수 없습니다. 되돌린 뒤 다시 넣어 주세요.", "VALIDATION", { amount: "팀별 정산" });
   const before = siteFinancials(db0, e.siteId);
-  e.editHistory = [...(e.editHistory ?? []), { at: nowIso(ctx), by: ctx.userId, before: { amount: e.amount, category: e.category, note: e.note } }];
+  e.editHistory = [...(e.editHistory ?? []), { at: nowIso(ctx), by: ctx.userId, before: { amount: e.amount, category: e.category, note: e.note, ...(e.team ? { team: e.team } : {}) } }];
   e.amount = patch.amount;
   e.category = patch.category;
   e.note = patch.note.trim() || e.note;

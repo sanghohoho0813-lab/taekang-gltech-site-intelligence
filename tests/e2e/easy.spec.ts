@@ -398,12 +398,16 @@ test("작업 인원(출력): 팀 고르기 → 인원 → 단체 사진 → 보�
   await page.goto("/field/report?mode=cost");
   await page.getByTestId("easy-site-site-a").click();
   await page.getByTestId("cost-cat-labor").click();
+  // 어느 팀 몫인지 (D-81) — 출력 기록이 있는 현장은 팀을 따로 한 화면에서 묻는다
+  await expect(page.getByTestId("easy-cost-team")).toBeVisible();
+  await page.getByTestId("cost-team-chip").first().click();
   for (let i = 0; i < 9; i++) await page.getByTestId("labor-people-plus").click();
   for (let i = 0; i < 4; i++) await page.getByTestId("labor-days-plus").click();
   await expect(page.getByTestId("cost-readback")).toContainText("900만 원");
   await page.getByTestId("easy-next").click();
   await page.getByTestId("impact-additional").click();
   await page.getByTestId("reason-quantity_increase").click();
+  await expect(page.getByTestId("confirm-costs")).toContainText("유리 설치팀");
   await page.getByTestId("submit-report").click();
   await expect(page.getByTestId("report-done")).toBeVisible();
 

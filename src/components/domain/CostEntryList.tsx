@@ -60,8 +60,15 @@ export function CostEntryList({ db, entries, showSite = false, emptyText = "입�
                     고친 이력:{" "}
                     {(e.editHistory ?? [])
                       .map((h, i, all) => {
-                        const next = all[i + 1]?.before ?? { amount: e.amount, category: e.category };
-                        const what = [h.before.amount !== next.amount ? `${fmtMan(h.before.amount)} → ${fmtMan(next.amount)}` : "", h.before.category !== next.category ? `${CATEGORY_LABEL[h.before.category]} → ${CATEGORY_LABEL[next.category]}` : ""].filter(Boolean).join(" · ") || "메모";
+                        const next = all[i + 1]?.before ?? { amount: e.amount, category: e.category, team: e.team };
+                        const what =
+                          [
+                            h.before.amount !== next.amount ? `${fmtMan(h.before.amount)} → ${fmtMan(next.amount)}` : "",
+                            h.before.category !== next.category ? `${CATEGORY_LABEL[h.before.category]} → ${CATEGORY_LABEL[next.category]}` : "",
+                            (h.before.team ?? "") !== (next.team ?? "") ? `팀 ${h.before.team ?? "없음"} → ${next.team ?? "없음"}` : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" · ") || "메모";
                         return `${what} (${userLabel(db, h.by)} · ${fmtDate(h.at)})`;
                       })
                       .join(" / ")}
@@ -183,7 +190,7 @@ function EditCostModal({ entry, onClose, canSeeMoney }: { entry: CostEntry; onCl
     >
       <div className="space-y-3">
         <Field label="항목" htmlFor="e-cat">
-          <select id="e-cat" className={inputCls} value={category} onChange={(e) => setCategory(e.target.value as CostCategory)}>
+          <select id="e-cat" className={cx(inputCls, entry.settle && "bg-surface-2 text-ink-3")} value={category} disabled={!!entry.settle} onChange={(e) => setCategory(e.target.value as CostCategory)}>
             {COST_CATEGORIES.map((c) => (
               <option key={c} value={c}>
                 {CATEGORY_LABEL[c]}
@@ -203,7 +210,7 @@ function EditCostModal({ entry, onClose, canSeeMoney }: { entry: CostEntry; onCl
         <Field label="메모" htmlFor="e-note">
           <input id="e-note" className={inputCls} value={note} onChange={(e) => setNote(e.target.value)} maxLength={160} />
         </Field>
-        {db && (category === "labor" || category === "subcontract") && !entry.settle && <TeamInput db={db} siteId={entry.siteId} id="e-team" value={team} onChange={setTeam} />}
+        {db && (category === "labor" || category === "subcontract") && !entry.settle && <TeamInput db={db} siteId={entry.siteId} id="e-team" value={team} onChange={setTeam} category={category} />}
       </div>
     </Modal>
   );

@@ -86,7 +86,7 @@ interface Draft {
   reason: CostReason | "";
 }
 
-type StepId = "site" | "work" | "progress" | "photo" | "issue" | "cost" | "cost-cat" | "cost-amt" | "cost-kind" | "cost-list" | "cost-reason" | "confirm";
+type StepId = "site" | "work" | "progress" | "photo" | "issue" | "cost" | "cost-cat" | "cost-team" | "cost-amt" | "cost-kind" | "cost-list" | "cost-reason" | "confirm";
 
 const SECTION_OF: Record<StepId, string> = {
   site: "현장",
@@ -96,6 +96,7 @@ const SECTION_OF: Record<StepId, string> = {
   issue: "문제",
   cost: "비용",
   "cost-cat": "비용",
+  "cost-team": "비용",
   "cost-amt": "비용",
   "cost-kind": "비용",
   "cost-list": "비용",
@@ -241,10 +242,11 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
   const settings = db.settings;
   const review = (settings?.costApproval ?? "immediate") === "review";
   const editing = d.costs.find((c) => c.key === editingKey) ?? null;
-  // 이 현장 작업 인원(출력)에 나온 팀 — 노무비·외주비를 어느 팀 몫인지 고를 때 (D-81)
+  // 이 현장 작업 인원(출력)에 나온 팀 — 노무비·외주비를 어느 팀 몫인지 고를 때 (D-81). 외주비는 외주 팀만 (직영에 붙은 외주비가 사라지던 문제 · D-81 점검)
   const teamsHere = site ? siteTeams(db, site.id) : [];
+  const teamsFor = (cat: CostCategory) => (cat === "labor" ? teamsHere : cat === "subcontract" ? teamsHere.filter((t) => t.kind === "subcontract") : []);
   // 고치던 비용을 뺀 뒤 '이전'으로 돌아온 경우 → 비용 목록을 보여준다
-  const step: StepId = (rawStep === "cost-amt" || rawStep === "cost-kind") && !editing ? "cost-list" : rawStep;
+  const step: StepId = (rawStep === "cost-team" || rawStep === "cost-amt" || rawStep === "cost-kind") && !editing ? "cost-list" : rawStep;
   const set = (patch: Partial<Draft>) => setD((x) => ({ ...x, ...patch }));
   const setCost = (patch: Partial<EasyCost>) => setD((x) => ({ ...x, costs: x.costs.map((c) => (c.key === editingKey ? { ...c, ...patch } : c)) }));
 
@@ -262,7 +264,7 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
   };
   /** 확인 화면에서 고치러 왔으면 바로 확인 화면으로 */
   const proceed = (next: StepId) => {
-    if (returnToConfirm && next !== "cost-cat" && next !== "cost-amt" && next !== "cost-kind") {
+    if (returnToConfirm && next !== "cost-cat" && next !== "cost-team" && next !== "cost-amt" && next !== "cost-kind") {
       setReturnToConfirm(false);
       setStack((s) => [...s.slice(0, s.lastIndexOf("confirm") + 1)]);
       return;
@@ -815,13 +817,15 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
                 sub={EASY_CATEGORY[cat].sub}
                 selected={editing?.category === cat}
                 onClick={() => {
-                  if (editing) setCost({ category: cat, byPeople: cat === "labor" ? editing.byPeople : false });
+                  // 분류를 바꾸면 그 분류에 맞지 않는 팀은 지운다 (자재비에 ‘직영’이 남아 보이던 문제 · D-81 점검)
+                  if (editing) setCost({ category: cat, byPeople: cat === "labor" ? editing.byPeople : false, team: editing.team && teamsFor(cat).some((t) => t.team === editing.team) ? editing.team : undefined });
                   else {
                     const c: EasyCost = { key: uid("c"), category: cat, amountMan: 0, byPeople: cat === "labor", people: 1, days: 1, dayRate: settings?.laborDayRate ?? 300_000, impact: "" };
                     setD((x) => ({ ...x, costYes: true, costs: [...x.costs, c] }));
                     setEditingKey(c.key);
                   }
-                  go("cost-amt");
+                  // 팀은 따로 한 화면에서 묻는다 — 금액 칸이 아래로 밀려 가려지던 문제 (D-81 점검)
+                  go(teamsFor(cat).length ? "cost-team" : "cost-amt");
                 }}
                 testId={`cost-cat-${cat}`}
               />
@@ -832,6 +836,27 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
       footer = bar({ onBack: back });
       break;
 
+    case "cost-team": {
+      if (!editing) break;
+      const opts = teamsFor(editing.category);
+      const pickTeam = (team: string | undefined) => {
+        setCost({ team });
+        go("cost-amt");
+      };
+      body = (
+        <EasyQuestion kicker={EASY_CATEGORY[editing.category].label} title="어느 팀 몫이에요?" help={editing.category === "labor" ? "모르거나 여러 팀이면 맨 아래를 누르세요. 일당은 본사가 팀 단가로 맞춰요." : "외주 팀만 나와요. 모르면 맨 아래를 누르세요."} testId="easy-cost-team">
+          <div className="space-y-2.5" data-testid="cost-team" role="group" aria-label="어느 팀 몫인지">
+            {opts.map((t) => (
+              <Choice key={t.team} label={<span className="break-words [overflow-wrap:anywhere]">{t.team}</span>} sub={t.kind === "subcontract" ? "외주" : "직영"} selected={editing.team === t.team} onClick={() => pickTeam(t.team)} testId="cost-team-chip" />
+            ))}
+            <Choice label="모름 · 여러 팀" sub="본사가 나중에 팀을 붙여요" selected={!editing.team} onClick={() => pickTeam(undefined)} testId="cost-team-none" />
+          </div>
+        </EasyQuestion>
+      );
+      footer = bar({ onBack: back });
+      break;
+    }
+
     case "cost-amt": {
       if (!editing) break;
       const won = costWon(editing);
@@ -840,22 +865,6 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
       const bigAmount = overCap || (!(labor && editing.byPeople) && won >= 10_000_000 && bigOk !== editing.key + ":" + editing.amountMan);
       body = (
         <EasyQuestion kicker={EASY_CATEGORY[editing.category].label} title={labor && editing.byPeople ? "몇 명이 며칠 일했나요?" : "대략 얼마 들었나요?"} help={labor && editing.byPeople ? "추가로 투입된 인원만 넣으세요." : "만 원 단위로 넣어요. 아래 버튼을 눌러 더해도 돼요."} testId="easy-cost-amt">
-          {/* 어느 팀 몫인지 (D-81) — 이 현장 작업 인원(출력)에 나온 팀만, 모르면 안 골라도 된다 */}
-          {(labor || editing.category === "subcontract") && teamsHere.length > 0 && (
-            <div className="space-y-2" data-testid="cost-team">
-              <p className="text-[1.1rem] font-bold">어느 팀이에요?</p>
-              <div className="grid grid-cols-2 gap-2">
-                {teamsHere.slice(0, 5).map((t) => (
-                  <Chip key={t.team} selected={editing.team === t.team} onClick={() => setCost({ team: editing.team === t.team ? undefined : t.team })} testId="cost-team-chip">
-                    {t.team}
-                  </Chip>
-                ))}
-                <Chip selected={!editing.team} onClick={() => setCost({ team: undefined })} testId="cost-team-none">
-                  모름 · 여러 팀
-                </Chip>
-              </div>
-            </div>
-          )}
           {labor && (
             <div className="grid grid-cols-2 gap-2">
               <Chip selected={editing.byPeople} onClick={() => setCost({ byPeople: true })} testId="labor-by-people">
@@ -1010,7 +1019,7 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
                 <span className="min-w-0 flex-1">
                   <span className="block text-[1.15rem] font-bold">
                     {EASY_CATEGORY[c.category].label} <span className="num">{easyWon(costWon(c))}</span>
-                    {c.team && <span className="ml-1.5 text-[1rem] font-semibold text-ink-2">· {c.team}</span>}
+                    {c.team ? <span className="ml-1.5 text-[1rem] font-semibold text-ink-2">· {c.team}</span> : teamsFor(c.category).length ? <span className="ml-1.5 text-[1rem] font-semibold text-ink-3">· 팀 모름</span> : null}
                   </span>
                   <span className="block text-[0.98rem] text-ink-2">{c.impact === "within_forecast" ? "예산 안에서 쓴 돈" : c.impact === "unknown" ? "예산 여부 모름 (본사 확인)" : "예산에 없던 돈"}</span>
                 </span>
@@ -1178,7 +1187,7 @@ export function EasyReport({ siteId: fixedSiteId, mode = "full", embedded = fals
                     {d.costs.map((c) => (
                       <span key={c.key} className="block">
                         {EASY_CATEGORY[c.category].label} <b className="num">{easyWon(costWon(c))}</b>
-                        {c.team && <span className="text-[0.98rem] text-ink-2"> · {c.team}</span>}
+                        {c.team ? <span className="text-[0.98rem] text-ink-2"> · {c.team}</span> : teamsFor(c.category).length ? <span className="text-[0.98rem] text-ink-3"> · 팀 모름</span> : null}
                         <span className="text-[0.98rem] text-ink-2"> · {c.impact === "within_forecast" ? "예산 안" : c.impact === "unknown" ? "예산 여부 모름" : "예산에 없던 돈"}</span>
                       </span>
                     ))}
@@ -1285,6 +1294,6 @@ function firstStep(mode: EasyMode, needSite: boolean): StepId {
 function flowOrder(mode: EasyMode, needSite: boolean, withCost: boolean, withProgress = true): StepId[] {
   const head: StepId[] = needSite ? ["site"] : [];
   if (mode === "photo") return [...head, "photo", "confirm"];
-  if (mode === "cost") return [...head, "cost-cat", "cost-amt", "cost-kind", "cost-list", "cost-reason", "confirm"];
-  return [...head, "work", ...(withProgress ? (["progress"] as StepId[]) : []), "photo", "issue", "cost", ...(withCost ? (["cost-cat", "cost-amt", "cost-kind", "cost-list", "cost-reason"] as StepId[]) : []), "confirm"];
+  if (mode === "cost") return [...head, "cost-cat", "cost-team", "cost-amt", "cost-kind", "cost-list", "cost-reason", "confirm"];
+  return [...head, "work", ...(withProgress ? (["progress"] as StepId[]) : []), "photo", "issue", "cost", ...(withCost ? (["cost-cat", "cost-team", "cost-amt", "cost-kind", "cost-list", "cost-reason"] as StepId[]) : []), "confirm"];
 }
