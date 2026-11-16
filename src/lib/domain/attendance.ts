@@ -196,8 +196,10 @@ export function shiftDate(iso: string, days: number): string {
 }
 
 /** 한국 시간 "07:42" */
+let hmFmt: Intl.DateTimeFormat | null = null;
 export function hhmm(iso: string): string {
-  return new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(iso));
+  hmFmt ??= new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", hour12: false });
+  return hmFmt.format(new Date(iso));
 }
 
 /**

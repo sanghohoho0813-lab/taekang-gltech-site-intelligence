@@ -132,6 +132,7 @@ export const COLLECTION_SPEC: Record<CollectionName, CollectionSpec> = {
   budgets: { label: "실행예산", holds: "공종(자재·노무·외주·장비·경비)별 실행예산", field: DATA_NONE, partner: DATA_NONE, keep: "보관" },
   forecasts: { label: "잔여 예상 원가", holds: "공종별 앞으로 더 들 비용 (본사 추정)", field: DATA_NONE, partner: DATA_NONE, keep: "보관" },
   forecastChanges: { label: "잔여 예상 원가 재추정 이력", holds: "언제·누가·왜 다시 잡았는지·예상 총원가 전후·준공 원가 마감 여부 (월 마감 ‘이익을 바꾼 일’)", field: DATA_NONE, partner: DATA_NONE, keep: "최근 1,000건" },
+  profitAdjustments: { label: "예상이익 조정 기록", holds: "원가 고침·취소·보고 되돌림·가져오기 취소·원 계약 변경으로 바뀐 예상이익(그때 금액·이유·누가) — ‘이익을 바꾼 일’ 합이 예상이익 변화와 맞도록", field: DATA_NONE, partner: DATA_NONE, keep: "지우지 않음" },
   monthCloses: { label: "월 마감 기록", holds: "언제·누가 마감·확인·다시 열었는지·이유, 마감 때 숫자(이달 기성·입금·월말 미수·원가·노무·사람별 근무시간)와 원가·기성·입금 지문 (마감 뒤 바뀐 것 비교용)", field: DATA_NONE, partner: DATA_NONE, keep: "최근 240건 (다시 연 기록 포함)" },
   costEntries: { label: "원가·추가 비용", holds: "현장·공종·금액·내용·확인 상태·수정 이력", field: "본인이 올린 것 (최근 60일·확인 대기)", partner: DATA_NONE, keep: "보관 (무효 처리는 이력으로 남음)" },
   reports: { label: "현장 보고", holds: "작업 내용·사진·문제·공정 진척·본사 확인·보완", field: "담당 현장 최근 60일 (동료의 위치 좌표는 빼고)", partner: DATA_NONE, keep: "보관" },

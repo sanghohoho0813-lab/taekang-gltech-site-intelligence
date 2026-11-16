@@ -10,8 +10,9 @@ import { defectTodoCount } from "./defects";
 import { warrantyStatus, WARRANTY_SOON_DAYS } from "./warranty";
 import { closeStatuses } from "./closeRecord";
 import { coAttentionCount } from "./changeOrders";
+import { moneyIntegrity } from "./integrity";
 
-export type PendingKey = "fix" | "report" | "wo-done" | "wo-late" | "partner" | "defect" | "warranty" | "labor" | "feedback" | "ready" | "cost" | "close" | "close-confirm" | "close-change" | "co";
+export type PendingKey = "fix" | "report" | "wo-done" | "wo-late" | "partner" | "defect" | "warranty" | "labor" | "feedback" | "ready" | "cost" | "close" | "close-confirm" | "close-change" | "co" | "integrity";
 export interface PendingItem {
   key: PendingKey;
   label: string;
@@ -33,7 +34,10 @@ export function pendingItems(db: DemoDB, today: string, live: boolean, role?: st
     ...(waiting.length && role !== "manager" && role !== "field" ? [{ key: "close-confirm" as const, label: `${ml(waiting)} 마감 대표 확인 대기`, n: waiting.length, href: `/close?month=${waiting[0].month}` }] : []),
     ...(changed.length ? [{ key: "close-change" as const, label: `${ml(changed)} 마감 뒤 바뀐 것`, n: changed.reduce((a, c) => a + c.changes, 0), href: `/close?month=${changed[0].month}#close-changes` }] : []),
   ];
+  // 숫자 맞추기 점검의 빨간 줄 (D-85) — 화면끼리 숫자가 다르면 생기면 안 되는 일이라 맨 위에
+  const integrityErr = moneyIntegrity(db, today).filter((c) => c.level === "err").length;
   return [
+    ...(integrityErr ? [{ key: "integrity" as const, label: "숫자 맞추기 점검 — 화면끼리 다른 숫자 (개발 담당에게 알림)", n: integrityErr, href: "/data#integrity" }] : []),
     ...closeRows,
     { key: "fix", label: "근태 수정 요청", n: (db.attendanceRequests ?? []).filter((q) => q.status === "pending").length, href: "/orders?tab=fixes" },
     // 엑셀로 옮긴 지난 기록은 이미 확인된 것 (D-71)

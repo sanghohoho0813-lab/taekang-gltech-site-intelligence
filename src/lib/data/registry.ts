@@ -5,6 +5,9 @@
 import type { ActionStatus, ChangeOrderStatus, CostCategory, DemoDB, PartnerRequest, RiskThresholds } from "@/lib/domain/types";
 import type { RiskSignal } from "@/lib/domain/types";
 import * as C from "./commands";
+import { reconcileProfit } from "./profitLedger";
+import { CATEGORY_LABEL } from "@/lib/domain/labels";
+import { fmtMan } from "@/lib/domain/format";
 import * as A from "./adminCommands";
 import * as T from "./attendanceCommands";
 import * as O from "./opsCommands";
@@ -21,11 +24,23 @@ import * as CO from "./changeOrderCommands";
 
 type Ctx = C.Ctx;
 
+const R = reconcileProfit;
+const entrySite = (db: DemoDB, id: unknown) => db.costEntries.find((x) => x.id === id)?.siteId;
+const entryLabel = (db: DemoDB, id: string) => {
+  const e = db.costEntries.find((x) => x.id === id);
+  return e ? `${CATEGORY_LABEL[e.category]} ${fmtMan(e.amount)}${e.note ? ` ${e.note.slice(0, 30)}` : ""}` : "원가";
+};
+const contractLabel = (db: DemoDB, siteId: string, a: A.SaveSiteInput) => {
+  const before = db.contracts.find((c) => c.siteId === siteId)?.contractAmount;
+  return before !== undefined && a.id === siteId && before !== a.contractAmount ? `원 계약 변경 ${fmtMan(before)} → ${fmtMan(a.contractAmount)}` : "현장 정보 수정";
+};
+
 export const COMMANDS = {
-  submitFieldReport: (db: DemoDB, a: C.FieldReportInput, ctx: Ctx) => C.submitFieldReport(db, a, ctx),
-  voidReport: (db: DemoDB, a: { reportId: string }, ctx: Ctx) => C.voidReport(db, a.reportId, ctx),
-  voidCostEntry: (db: DemoDB, a: { entryId: string; reason: string }, ctx: Ctx) => C.voidCostEntry(db, a.entryId, a.reason, ctx),
-  editCostEntry: (db: DemoDB, a: { entryId: string; patch: Parameters<typeof C.editCostEntry>[2] }, ctx: Ctx) => C.editCostEntry(db, a.entryId, a.patch, ctx),
+  // 돈이 움직이는 명령은 실행 뒤 ‘이익을 바꾼 일’로 설명되지 않는 이익 변화를 그때 기록한다 (D-85 · profitLedger)
+  submitFieldReport: (db: DemoDB, a: C.FieldReportInput, ctx: Ctx) => R(db, C.submitFieldReport(db, a, ctx), ctx, "현장 보고 원가 반영 차이", undefined, [a?.siteId]),
+  voidReport: (db: DemoDB, a: { reportId: string }, ctx: Ctx) => R(db, C.voidReport(db, a.reportId, ctx), ctx, "현장 보고 되돌림 — 그 보고의 원가 취소", undefined, [db.reports.find((r) => r.id === a?.reportId)?.siteId]),
+  voidCostEntry: (db: DemoDB, a: { entryId: string; reason: string }, ctx: Ctx) => R(db, C.voidCostEntry(db, a.entryId, a.reason, ctx), ctx, `원가 취소 — ${entryLabel(db, a.entryId)}${typeof a.reason === "string" && a.reason.trim() ? ` (${a.reason.trim().slice(0, 40)})` : ""}`, a.entryId, [entrySite(db, a?.entryId)]),
+  editCostEntry: (db: DemoDB, a: { entryId: string; patch: Parameters<typeof C.editCostEntry>[2] }, ctx: Ctx) => R(db, C.editCostEntry(db, a.entryId, a.patch, ctx), ctx, `원가 고침 — ${entryLabel(db, a.entryId)}`, a.entryId, [entrySite(db, a?.entryId)]),
   createAction: (db: DemoDB, a: { signal: RiskSignal; title: string; description: string; assigneeUserId: string; dueDate: string; idempotencyKey?: string }, ctx: Ctx) =>
     C.createAction(db, a, ctx),
   assignAction: (db: DemoDB, a: { actionId: string; assigneeUserId: string; dueDate?: string }, ctx: Ctx) => C.assignAction(db, a.actionId, a.assigneeUserId, a.dueDate, ctx),
@@ -37,7 +52,7 @@ export const COMMANDS = {
   updatePartnerRequest: (db: DemoDB, a: { requestId: string; patch: Parameters<typeof C.updatePartnerRequest>[2] }, ctx: Ctx) => C.updatePartnerRequest(db, a.requestId, a.patch, ctx),
   confirmPartnerRequest: (db: DemoDB, a: { requestId: string; note?: string }, ctx: Ctx) => C.confirmPartnerRequest(db, a, ctx),
   setChangeOrderStatus: (db: DemoDB, a: { coId: string; status: ChangeOrderStatus; approvedAmount?: number; addedCost?: { category: CostCategory; amount: number }; note?: string; followUp?: string; date?: string; basis?: "contract" | "letter" | "verbal" }, ctx: Ctx) =>
-    C.setChangeOrderStatus(db, a.coId, a.status, a.approvedAmount, ctx, a.addedCost, { note: a.note, followUp: a.followUp, date: a.date, basis: a.basis }),
+    R(db, C.setChangeOrderStatus(db, a.coId, a.status, a.approvedAmount, ctx, a.addedCost, { note: a.note, followUp: a.followUp, date: a.date, basis: a.basis }), ctx, "변경공사 반영 차이", undefined, [db.changeOrders.find((c) => c.id === a?.coId)?.siteId]),
   // 변경공사 회수 관리 (D-84) — 본사만
   createChangeOrder: (db: DemoDB, a: CO.CreateChangeOrderInput, ctx: Ctx) => CO.createChangeOrder(db, a, ctx),
   logChangeOrder: (db: DemoDB, a: CO.LogChangeOrderInput, ctx: Ctx) => CO.logChangeOrder(db, a, ctx),
@@ -45,14 +60,14 @@ export const COMMANDS = {
   addBilling: (db: DemoDB, a: Parameters<typeof C.addBilling>[1], ctx: Ctx) => C.addBilling(db, a, ctx),
   addPayment: (db: DemoDB, a: Parameters<typeof C.addPayment>[1], ctx: Ctx) => C.addPayment(db, a, ctx),
   setThresholds: (db: DemoDB, a: RiskThresholds, ctx: Ctx) => C.setThresholds(db, a, ctx),
-  importCostRows: (db: DemoDB, a: { rows: C.CsvCostRow[]; idempotencyKey: string }, ctx: Ctx) => C.importCostRows(db, a.rows, a.idempotencyKey, ctx),
-  importData: (db: DemoDB, a: I.ImportDataInput, ctx: Ctx) => I.importData(db, a, ctx),
-  undoImport: (db: DemoDB, a: { batchId: string }, ctx: Ctx) => I.undoImport(db, a, ctx),
+  importCostRows: (db: DemoDB, a: { rows: C.CsvCostRow[]; idempotencyKey: string }, ctx: Ctx) => R(db, C.importCostRows(db, a.rows, a.idempotencyKey, ctx), ctx, "원가 가져오기"),
+  importData: (db: DemoDB, a: I.ImportDataInput, ctx: Ctx) => R(db, I.importData(db, a, ctx), ctx, "자료 가져오기"),
+  undoImport: (db: DemoDB, a: { batchId: string }, ctx: Ctx) => R(db, I.undoImport(db, a, ctx), ctx, "가져오기 취소"),
   // 운영 관리 (현장·실행예산·설정·공무 확인)
-  saveSite: (db: DemoDB, a: A.SaveSiteInput, ctx: Ctx) => A.saveSite(db, a, ctx),
-  updateForecast: (db: DemoDB, a: A.UpdateForecastInput, ctx: Ctx) => A.updateForecast(db, a, ctx),
+  saveSite: (db: DemoDB, a: A.SaveSiteInput, ctx: Ctx) => R(db, A.saveSite(db, a, ctx), ctx, (siteId) => contractLabel(db, siteId, a), undefined, [a?.id]),
+  updateForecast: (db: DemoDB, a: A.UpdateForecastInput, ctx: Ctx) => R(db, A.updateForecast(db, a, ctx), ctx, "잔여예상 재추정 차이", undefined, [a?.siteId]),
   // 월 마감 노무 정산 (D-79) — 본사만 (현장·발주처는 목록 밖이라 거절)
-  settleLabor: (db: DemoDB, a: A.SettleLaborInput, ctx: Ctx) => A.settleLabor(db, a, ctx),
+  settleLabor: (db: DemoDB, a: A.SettleLaborInput, ctx: Ctx) => R(db, A.settleLabor(db, a, ctx), ctx, "노무 정산 차이", undefined, [a?.siteId]),
   // 노무비·외주비에 팀 붙이기 (D-81) — 본사만
   setCostTeams: (db: DemoDB, a: A.SetCostTeamsInput, ctx: Ctx) => A.setCostTeams(db, a, ctx),
   // 월 마감 기록 (D-82) — 마감·다시 열기는 본사, 확인은 대표만
@@ -61,7 +76,7 @@ export const COMMANDS = {
   reopenMonthClose: (db: DemoDB, a: MC.ReopenMonthCloseInput, ctx: Ctx) => MC.reopenMonthClose(db, a, ctx),
   updateProgress: (db: DemoDB, a: A.UpdateProgressInput, ctx: Ctx) => A.updateProgress(db, a, ctx),
   setCompanySettings: (db: DemoDB, a: A.CompanySettingsInput, ctx: Ctx) => A.setCompanySettings(db, a, ctx),
-  reviewCostEntry: (db: DemoDB, a: A.ReviewCostEntryInput, ctx: Ctx) => A.reviewCostEntry(db, a, ctx),
+  reviewCostEntry: (db: DemoDB, a: A.ReviewCostEntryInput, ctx: Ctx) => R(db, A.reviewCostEntry(db, a, ctx), ctx, `공무 확인 — ${entryLabel(db, a.entryId)}`, a.entryId, [entrySite(db, a?.entryId)]),
   // 출퇴근 (GPS)
   checkIn: (db: DemoDB, a: T.CheckInput, ctx: Ctx) => T.checkIn(db, a, ctx),
   checkOut: (db: DemoDB, a: T.CheckInput, ctx: Ctx) => T.checkOut(db, a, ctx),

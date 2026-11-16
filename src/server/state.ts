@@ -26,6 +26,8 @@ export const COLLECTIONS = {
   forecastChanges: byId,
   // 월 마감 기록 (D-82)
   monthCloses: byId,
+  // 예상이익 조정 기록 (D-85) — 빠뜨리면 30초 뒤 사라져 ‘이익을 바꾼 일’ 합이 다시 어긋난다
+  profitAdjustments: byId,
   costEntries: byId,
   reports: byId,
   photos: byId,

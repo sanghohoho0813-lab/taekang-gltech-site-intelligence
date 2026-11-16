@@ -77,27 +77,37 @@ export function fmtPp(v: number, digits = 1): string {
 
 const tz = "Asia/Seoul";
 
+// 포맷터는 한 번만 만든다 (D-85 — 목록·월 마감에서 매번 만들던 비용)
+const fmtCache = new Map<string, Intl.DateTimeFormat>();
+function cached(key: string, make: () => Intl.DateTimeFormat): Intl.DateTimeFormat {
+  let f = fmtCache.get(key);
+  if (!f) fmtCache.set(key, (f = make()));
+  return f;
+}
+
 export function fmtDate(iso: string): string {
   const d = new Date(iso);
-  const p = new Intl.DateTimeFormat("ko-KR", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(d);
+  const p = cached("date", () => new Intl.DateTimeFormat("ko-KR", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" })).formatToParts(d);
   const g = (t: string) => p.find((x) => x.type === t)?.value ?? "";
   return `${g("year")}.${g("month")}.${g("day")}`;
 }
 
 export function fmtDateTime(iso: string): string {
   const d = new Date(iso);
-  const time = new Intl.DateTimeFormat("ko-KR", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false }).format(d);
+  const time = cached("hm", () => new Intl.DateTimeFormat("ko-KR", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false })).format(d);
   return `${fmtDate(iso)} ${time}`;
 }
 
 export function fmtTime(iso: string, seconds = false): string {
-  return new Intl.DateTimeFormat("ko-KR", {
-    timeZone: tz,
-    hour: "2-digit",
-    minute: "2-digit",
-    second: seconds ? "2-digit" : undefined,
-    hour12: false,
-  }).format(new Date(iso));
+  return cached(seconds ? "hms" : "hm", () =>
+    new Intl.DateTimeFormat("ko-KR", {
+      timeZone: tz,
+      hour: "2-digit",
+      minute: "2-digit",
+      second: seconds ? "2-digit" : undefined,
+      hour12: false,
+    }),
+  ).format(new Date(iso));
 }
 
 export function fmtRelative(iso: string, now = Date.now()): string {
@@ -111,9 +121,11 @@ export function fmtRelative(iso: string, now = Date.now()): string {
 }
 
 /** Asia/Seoul 기준 YYYY-MM-DD */
+// 날짜 포맷터는 한 번만 만든다 — 매번 만들면 1년치 자료에서 월 마감·손익 계산이 수백 ms 느려졌다 (D-85 측정)
+let dayFmt: Intl.DateTimeFormat | null = null;
 export function todayIso(now = new Date()): string {
-  const p = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
-  return p;
+  dayFmt ??= new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" });
+  return dayFmt.format(now);
 }
 
 export function daysBetween(fromIso: string, to = new Date()): number {

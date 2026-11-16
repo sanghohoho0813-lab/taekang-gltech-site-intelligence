@@ -18,6 +18,7 @@ import { IS_LIVE } from "@/lib/mode";
 import { PageBody, PageHeader } from "@/components/shell/AppShell";
 import { Badge, Button, Card, CardHeader, Notice, PageSkeleton, Segmented, cx, inputCls } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/Toast";
+import { IntegrityCard } from "./IntegrityCard";
 
 const KINDS: ImportKind[] = ["billing", "change", "crew", "rates", "cost", "material", "progress"];
 const IMPORT_FIX: Partial<Record<ReadyFix, ImportKind>> = { billing: "billing", change: "change", crew: "crew", rates: "rates", cost: "cost" };
@@ -50,6 +51,7 @@ export function DataBoard() {
         title="자료 이관·점검"
         desc="진행 중 현장의 지난 기성·변경공사·출력·원가·공정 진행을 엑셀(CSV)로 한 번에 넣고, 현장별로 운영에 필요한 자료가 빠짐없이 들어왔는지 확인합니다."
       />
+      <IntegrityCard db={db} />
       <Card data-testid="ready-board">
         <CardHeader
           title={r.missing ? `빠진 자료 ${r.missing}건` : "필수 자료가 모두 들어왔습니다"}

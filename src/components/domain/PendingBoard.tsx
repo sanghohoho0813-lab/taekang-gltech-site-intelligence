@@ -2,6 +2,7 @@
 
 /** 대표·관리자 — 처리 대기 (계약 모듈 05: 보고 미처리·근태 예외·작업지시 지연·인건비 불일치·고객 요청) */
 import Link from "next/link";
+import { useMemo } from "react";
 import { ChevronRight } from "lucide-react";
 import type { DemoDB } from "@/lib/domain/types";
 import { todayIso } from "@/lib/domain/format";
@@ -13,7 +14,9 @@ import { Card, CardHeader, cx } from "@/components/ui/primitives";
 export function PendingBoard({ db }: { db: DemoDB }) {
   // 목록 계산은 lib/domain/pending.ts — 아침 알림도 같은 계산을 쓴다 (D-72)
   const { role } = useMe();
-  const items = pendingItems(db, todayIso(), IS_LIVE, role);
+  // 자료가 바뀔 때만 다시 센다 (5초 동기화마다 숫자 맞추기 점검까지 다시 돌지 않게 · D-85)
+  const today = todayIso();
+  const items = useMemo(() => pendingItems(db, today, IS_LIVE, role), [db, today, role]);
   const total = items.reduce((a, b) => a + b.n, 0);
   return (
     <Card data-testid="pending-board">

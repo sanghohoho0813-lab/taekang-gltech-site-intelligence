@@ -381,6 +381,24 @@ export interface ForecastChange {
   closeout?: true;
 }
 
+/**
+ * 예상이익 조정 기록 (D-85) — 원가 고침·취소, 보고 되돌림, 가져오기 취소, 원 계약 변경처럼
+ * 지금 자료로 다시 계산한 ‘이익을 바꾼 일’로는 설명되지 않는 이익 변화를 그 명령을 실행한 때에 남긴다.
+ * (예: 재추정 전에 들어온 원가를 재추정 뒤에 고치면 예상 총원가는 바뀌는데 그 원가의 ‘잔여예상을 넘은 집행’은 0이라 사라지던 문제)
+ * 그래서 ‘이익을 바꾼 일’의 합 = 현장 등록 기준 대비 예상이익 변화가 언제나 맞는다. 지우지 않는다.
+ */
+export interface ProfitAdjustment {
+  id: string;
+  siteId: string;
+  at: string;
+  by: string;
+  /** 예상이익에 미친 금액 (+ 늘어남 · − 줄어듦) */
+  amount: number;
+  text: string;
+  /** 원가 때문이면 그 원가 */
+  entryId?: string;
+}
+
 /** 월 마감 기록 (D-82) — 공무가 닫을 때의 숫자를 남기고, 대표가 확인한다. 데이터를 잠그지는 않는다 (마감 뒤 바뀐 것은 따로 보여 줌) */
 export interface MonthCloseSnapshot {
   totals: { billed: number; received: number; outstandingAtEnd: number; costTotal: number; pending: number };
@@ -910,6 +928,8 @@ export interface DemoDB {
   forecasts: CostForecast[];
   /** 잔여예상 재추정 이력 (D-79 · 최근 1,000건) */
   forecastChanges?: ForecastChange[];
+  /** 예상이익 조정 기록 (D-85) */
+  profitAdjustments?: ProfitAdjustment[];
   /** 월 마감 기록 (D-82) */
   monthCloses?: MonthCloseRecord[];
   costEntries: CostEntry[];

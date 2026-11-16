@@ -5,7 +5,7 @@
  */
 import type { CostCategory, CostEntry, DemoDB, Site } from "./types";
 import { CATEGORY_LABEL, CO_STATUS_LABEL, COST_CATEGORIES, IMPACT_LABEL, REASON_LABEL } from "./labels";
-import { activeAt, entryEacImpact, siteFinancials } from "./calc";
+import { activeAt, entryEacImpact, siteEacImpacts, siteFinancials } from "./calc";
 import { laborEstimate, type LaborSite } from "./labor";
 import { isOpenShift, minutesOf, overlapPairs, periodSummary, type MonthRow } from "./attendance";
 import { todayIso } from "./format";
@@ -178,7 +178,8 @@ export function closeSites(db: DemoDB, from: string, to: string): Site[] {
     db.costEntries.some((e) => e.siteId === id && e.status !== "voided" && (inRange(e.date, from, to) || inRange(kst(activeAt(e)), from, to))) ||
     (db.forecastChanges ?? []).some((c) => c.siteId === id && inRange(kst(c.at), from, to)) ||
     db.changeOrders.some((c) => c.siteId === id && !!c.decidedAt && inRange(kst(c.decidedAt), from, to));
-  return db.sites.filter((s) => s.startDate <= to && (s.status === "active" || (s.endDate >= from && s.startDate <= to) || touched(s.id)));
+  // 착공 전 달이라도 그 달 날짜로 돈·원가가 있으면 넣는다 — 자재 선발주처럼 착공 전 발생일 원가가 어느 달에도 안 잡혀 월 합 ≠ 누계가 되던 문제 (D-85)
+  return db.sites.filter((s) => touched(s.id) || (s.startDate <= to && (s.status === "active" || s.endDate >= from)));
 }
 
 /**
@@ -189,11 +190,15 @@ export function closeSites(db: DemoDB, from: string, to: string): Site[] {
  */
 export function profitEvents(db: DemoDB, siteId: string, from: string, to: string): CloseProfitEvent[] {
   const events: CloseProfitEvent[] = [];
-  for (const e of db.costEntries.filter((x) => x.siteId === siteId && x.status === "active")) {
+  const impacts = siteEacImpacts(db, siteId);
+  // 기준선에 넣은(지난 자료로 가져온) 묶음의 원가·변경공사는 ‘앱을 쓰기 전’ 일이라 이익을 바꾼 일로 세지 않는다 — 기준선과 두 번 세던 문제 (D-85)
+  const historyBatches = new Set((db.importBatches ?? []).filter((b) => !b.undoneAt && (b.baselineDelta?.[siteId] || b.prevBaseline?.[siteId])).map((b) => b.id));
+  const history = (x: { importBatchId?: string }) => !!x.importBatchId && historyBatches.has(x.importBatchId);
+  for (const e of db.costEntries.filter((x) => x.siteId === siteId && x.status === "active" && !history(x))) {
     const when = kst(activeAt(e));
     if (!inRange(when, from, to)) continue;
     // 재추정 전에 넘었던 금액(frozenOver)은 그대로 — 재추정 뒤 지금 기준으로 다시 넘은 금액은 더한다 (D-83 버그 배시 M1)
-    const impact = entryEacImpact(db, e) + (e.frozenOver ?? 0);
+    const impact = (impacts.get(e.id) ?? 0) + (e.frozenOver ?? 0);
     if (impact <= 0) continue;
     const occurred = e.date !== when ? ` (발생 ${short(e.date)})` : "";
     events.push(
@@ -202,7 +207,7 @@ export function profitEvents(db: DemoDB, siteId: string, from: string, to: strin
         : { date: when, amount: -impact, text: `잔여예상을 넘은 집행 — ${CATEGORY_LABEL[e.category]} ${e.note || ""}${occurred}`.replace(/\s+/g, " ").trim(), entryId: e.id },
     );
   }
-  for (const c of db.changeOrders.filter((x) => x.siteId === siteId && x.status === "approved" && x.decidedAt && inRange(kst(x.decidedAt), from, to))) {
+  for (const c of db.changeOrders.filter((x) => x.siteId === siteId && x.status === "approved" && x.decidedAt && !history(x) && inRange(kst(x.decidedAt), from, to))) {
     const amt = c.approvedAmount ?? c.amount;
     events.push({ date: kst(c.decidedAt!), amount: amt, text: `변경공사 승인 — ${c.title}${amt < 0 ? " (감액)" : ""}` });
     if (c.addedCost) events.push({ date: kst(c.decidedAt!), amount: -c.addedCost.amount, text: `변경공사 원가 — ${c.title}` });
@@ -210,6 +215,9 @@ export function profitEvents(db: DemoDB, siteId: string, from: string, to: strin
   // 잔여예상을 다시 잡아 예상 총원가가 바뀐 일 (준공 원가 마감 포함 · D-79)
   for (const c of (db.forecastChanges ?? []).filter((x) => x.siteId === siteId && inRange(kst(x.at), from, to) && x.eacBefore !== x.eacAfter))
     events.push({ date: kst(c.at), amount: c.eacBefore - c.eacAfter, text: `${c.closeout ? "준공 원가 마감" : "잔여예상 재추정"} — ${c.note}` });
+  // 원가 고침·취소·보고 되돌림·가져오기 취소·원 계약 변경 등 — 그때 남긴 조정 (D-85)
+  for (const a of (db.profitAdjustments ?? []).filter((x) => x.siteId === siteId && inRange(kst(x.at), from, to)))
+    events.push({ date: kst(a.at), amount: a.amount, text: a.text, ...(a.entryId ? { entryId: a.entryId } : {}) });
   return events.sort((a, x) => a.date.localeCompare(x.date));
 }
 

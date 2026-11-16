@@ -196,6 +196,27 @@ export function entryEacImpact(db: DemoDB, entry: CostEntry): number {
   return 0;
 }
 
+/**
+ * 현장 원가 전부의 EAC 영향을 한 번에 (D-85 — 원가마다 같은 항목을 다시 정렬하던 O(n²)를 O(n log n)으로).
+ * entryEacImpact와 같은 규칙: 추가 원가는 전액, 계획 안 집행은 잔여예상 기준 시각 뒤에 들어온 순서대로 잔여예상을 넘은 만큼.
+ */
+export function siteEacImpacts(db: DemoDB, siteId: string): Map<string, number> {
+  const out = new Map<string, number>();
+  const active = activeEntries(db.costEntries, siteId);
+  for (const e of active) if (e.forecastImpact === "additional") out.set(e.id, e.amount);
+  for (const c of COST_CATEGORIES) {
+    const fc = db.forecasts.find((f) => f.siteId === siteId && f.category === c);
+    const within = active.filter((e) => e.category === c && e.forecastImpact === "within_forecast" && afterBasis(e, fc?.basisAt)).sort((a, b) => activeAt(a).localeCompare(activeAt(b)));
+    let left = fc?.remaining ?? 0;
+    for (const e of within) {
+      const used = Math.min(left, e.amount);
+      left -= used;
+      out.set(e.id, e.amount - used);
+    }
+  }
+  return out;
+}
+
 /** 변경공사가 모두 승인된다고 가정한 시뮬레이션 (화면에서 '미반영 시뮬레이션'으로만 표시) */
 export function simulateApprovedClaims(f: SiteFinancials): { adjustedContract: number; expectedProfit: number; marginPct: number } {
   const adjustedContract = f.adjustedContract + f.pendingChangeAmount;
