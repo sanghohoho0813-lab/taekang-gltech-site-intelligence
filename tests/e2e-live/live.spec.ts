@@ -1452,7 +1452,10 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     expect(db.receivableAdjustments[0].voidReason).toBe("입금 취소와 함께 — 입금일 잘못 — 다시 넣음");
     expect(db.profitAdjustments.some((a: { text: string; amount: number }) => a.text.startsWith("공제 취소") && a.text.endsWith("(입금 취소와 함께)") && a.amount === 3_000_000)).toBe(true);
     await expect(page.getByTestId("withheld-deductions")).toHaveCount(0);
-    // 현장소장·발주처: 명령 403 · 데이터에 없음
+    // 현장소장·발주처: 명령 403 · 데이터에 없음 — 앞 시험(비활성화)에서 끈 현장소장을 다시 켠다
+    const members = (await (await page.request.get("/api/admin/members")).json()).members as { id: string; email: string; active: boolean }[];
+    const park = members.find((m) => m.email === FIELD.email)!;
+    if (!park.active) expect((await page.request.patch(`/api/admin/members/${encodeURIComponent(park.id)}`, { data: { active: true } })).status()).toBe(200);
     const field = await login(browser, FIELD.email, FIELD.password, { width: 390, height: 844 });
     const partner = await login(browser, PARTNER.email, PARTNER.password, { width: 390, height: 844 });
     for (const who of [field, partner]) {
