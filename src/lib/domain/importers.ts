@@ -9,6 +9,7 @@
  */
 import type { ChangeOrderStatus, CostCategory, CostReason, CrewCheck, DemoDB, ForecastImpact, ImportKind, MaterialMoveKind, Site } from "./types";
 import { COST_CATEGORIES } from "./labels";
+import { deductedTotal, retentionOpen } from "./receivables";
 import { parseCsvRecords } from "./csv";
 import { writeXlsx } from "./xlsx";
 
@@ -492,9 +493,16 @@ export function planImport(db: DemoDB, kind: ImportKind, text: string, today: st
       if (!rows.length) continue;
       const billed = db.billings.filter((b) => b.siteId === s.id && b.status === "confirmed").reduce((a, b) => a + b.amount, 0) + rows.filter((r) => r.kind === "billing").reduce((a, r) => a + r.amount, 0);
       const paid = db.payments.filter((p) => p.siteId === s.id).reduce((a, p) => a + p.amount, 0) + rows.filter((r) => r.kind === "payment").reduce((a, r) => a + r.amount, 0);
-      if (paid > billed) {
+      // 발주처 공제·받을 유보금(D-89)도 미수 안에서 셈 — 공제를 넣은 뒤 가져온 입금으로 미수가 음수가 되던 문제
+      const deducted = deductedTotal(db, s.id);
+      const held = retentionOpen(db, s.id);
+      if (paid + deducted + held > billed) {
         const last = rows.filter((r) => r.kind === "payment").at(-1);
-        plan.errors.push({ line: last?.line ?? 1, field: "금액", message: `${s.shortName}: 입금 합계(${won(paid)})가 기성 합계(${won(billed)})보다 많습니다 — 선급금은 기성으로 먼저 넣어주세요` });
+        plan.errors.push({
+          line: last?.line ?? 1,
+          field: "금액",
+          message: deducted || held ? `${s.shortName}: 입금 합계(${won(paid)})와 공제(${won(deducted)})·받을 유보금(${won(held)})을 더하면 기성 합계(${won(billed)})보다 많습니다 — 유보금을 받은 것이면 ‘유보금 · 공제’의 ‘받음’으로 넣어주세요` : `${s.shortName}: 입금 합계(${won(paid)})가 기성 합계(${won(billed)})보다 많습니다 — 선급금은 기성으로 먼저 넣어주세요`,
+        });
       }
     }
   }

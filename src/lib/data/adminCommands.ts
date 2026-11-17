@@ -195,7 +195,12 @@ export function saveSite(db0: DemoDB, input: SaveSiteInput, ctx: Ctx) {
   let rebased = false;
   const budgetsChanged = !isNew && COST_CATEGORIES.some((c) => prevBudgets[c] !== input.budgets[c]);
   if (!isNew && (prevAmount !== input.contractAmount || budgetsChanged)) {
-    const live = db.costEntries.some((e) => e.siteId === id && (e.source === "FIELD" || e.source === "PC")) || db.reports.some((r) => r.siteId === id && !r.importBatchId);
+    // 이익을 바꾼 일이 이미 있으면(발주처 공제 · 앱에서 승인한 변경공사) 기준을 다시 잡지 않는다 — 그 변화가 기준에 섞여 ‘이익을 바꾼 일’ 합이 어긋나던 문제 (D-89 점검)
+    const historyBatches = new Set((db.importBatches ?? []).filter((b) => !b.undoneAt && (b.baselineDelta?.[id] || b.prevBaseline?.[id])).map((b) => b.id));
+    const moneyEvents =
+      (db.receivableAdjustments ?? []).some((a) => a.siteId === id && a.kind === "deduction" && !a.voidedAt) ||
+      db.changeOrders.some((c) => c.siteId === id && c.status === "approved" && !(c.importBatchId && historyBatches.has(c.importBatchId)));
+    const live = moneyEvents || db.costEntries.some((e) => e.siteId === id && (e.source === "FIELD" || e.source === "PC")) || db.reports.some((r) => r.siteId === id && !r.importBatchId);
     if (!live) {
       if (budgetsChanged) {
         db.forecasts = db.forecasts.filter((f) => f.siteId !== id);

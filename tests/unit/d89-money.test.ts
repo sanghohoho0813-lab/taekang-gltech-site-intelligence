@@ -93,7 +93,7 @@ describe("D-89 유보금 — 미수에는 남지만 오래된 미수로 세지 �
     expect(errs(db)).toEqual([]);
   });
 
-  it("유보금 받음(나눠서) → 입금이 생기고 남은 유보금이 줄어든다 · 그 입금을 취소하면 다시 열림", () => {
+  it("유보금 받음(나눠서) → 입금이 생기고 남은 유보금이 줄어든다 · 그 입금을 취소하면 다시 열림 · ‘남은 금액 정리’", () => {
     let db = base();
     db = COMMANDS.addReceivableAdjustment(db, { siteId: "site-a", kind: "retention", amount: 10_000_000, date: "2026-11-12", note: "준공 후 지급" }, ctx()).db;
     const r = db.receivableAdjustments![0];
@@ -104,14 +104,61 @@ describe("D-89 유보금 — 미수에는 남지만 오래된 미수로 세지 �
     expect(pay.amount).toBe(4_000_000);
     expect(siteFinancials(db, "site-a").outstanding).toBe(o0 - 4_000_000);
     expect(siteFinancials(db, "site-a").retention).toBe(6_000_000);
-    // 받은 기록이 있으면 유보금 자체는 취소 불가 → 입금을 먼저 취소
-    expect(() => COMMANDS.voidReceivableAdjustment(db, { id: r.id, reason: "잘못" }, ctx())).toThrow(/입금을 먼저 취소/);
+    // 받은 입금을 취소하면 유보금이 다시 열린다
     db = COMMANDS.voidMoneyRecord(db, { kind: "payment", id: pay.id, reason: "다른 유보금이었음" }, ctx()).db;
     expect(siteFinancials(db, "site-a").retention).toBe(10_000_000);
     expect(db.receivableAdjustments![0].released).toEqual([]);
-    db = COMMANDS.voidReceivableAdjustment(db, { id: r.id, reason: "유보 없음으로 확인" }, ctx()).db;
+    // 다시 400만 받고, 남은 600만은 ‘남은 금액 정리’(발주처가 지체상금으로 뗌) → 일반 미수 → 공제로
+    db = COMMANDS.releaseRetention(db, { id: r.id, date: "2026-11-16", amount: 4_000_000 }, ctx()).db;
+    db = COMMANDS.voidReceivableAdjustment(db, { id: r.id, reason: "남은 유보금에서 지체상금 공제" }, ctx()).db;
     expect(siteFinancials(db, "site-a").retention).toBe(0);
+    expect(db.payments.some((p) => p.retentionId === r.id)).toBe(true);
+    db = COMMANDS.addReceivableAdjustment(db, { siteId: "site-a", kind: "deduction", deductionType: "delay_penalty", amount: 6_000_000, date: "2026-11-16", note: "유보금에서 지체상금" }, ctx()).db;
+    expect(siteFinancials(db, "site-a").outstanding).toBe(o0 - 4_000_000 - 6_000_000);
     expect(errs(db)).toEqual([]);
+  });
+
+  it("받을 유보금은 미수보다 커질 수 없다 — 일반 입금·공제·기성 취소·가져오기가 유보금을 먹지 못함 (점검 반영)", () => {
+    let db = base();
+    const o = siteFinancials(db, "site-a").outstanding;
+    db = COMMANDS.addReceivableAdjustment(db, { siteId: "site-a", kind: "retention", amount: 10_000_000, date: "2026-11-12", note: "유보" }, ctx()).db;
+    // 유보금까지 다 받은 일반 입금 → ‘받음’으로 안내
+    expect(() => COMMANDS.addPayment(db, { siteId: "site-a", amount: o, receivedDate: "2026-11-14" }, ctx())).toThrow(/받음/);
+    expect(COMMANDS.addPayment(db, { siteId: "site-a", amount: o - 10_000_000, receivedDate: "2026-11-14" }, ctx()).db).toBeTruthy();
+    // 유보금이 아닌 미수보다 큰 공제
+    expect(() => COMMANDS.addReceivableAdjustment(db, { siteId: "site-a", kind: "deduction", deductionType: "other", amount: o - 5_000_000, date: "2026-11-14", note: "큰 공제" }, ctx())).toThrow(/유보금이 아닌 미수/);
+    // 기성을 취소해 미수가 유보금보다 작아지면 막음 (미수 8,500만 · 유보금 1천만 → 8천만 기성 취소하면 미수 500만)
+    let paid = COMMANDS.addPayment(db, { siteId: "site-a", amount: o - 85_000_000, receivedDate: "2026-11-14" }, ctx()).db;
+    const nov = paid.billings.find((b) => b.billedDate === "2026-11-05")!;
+    expect(() => COMMANDS.voidMoneyRecord(paid, { kind: "billing", id: nov.id, reason: "중복" }, ctx())).toThrow(/유보금을 먼저 정리/);
+    // 가져온 입금도 공제·유보금을 같이 셈 (미수 7,500만 중 유보금 1천만 → 7천만 입금은 유보금을 먹음)
+    paid = COMMANDS.addReceivableAdjustment(paid, { siteId: "site-a", kind: "deduction", deductionType: "other", amount: 10_000_000, date: "2026-11-14", note: "공제" }, ctx()).db;
+    const site = paid.sites.find((s) => s.id === "site-a")!;
+    expect(() => COMMANDS.importData(paid, { kind: "billing", text: `현장,구분,날짜,금액\n${site.shortName},입금,2026-11-14,70000000`, idempotencyKey: "idem-89-imp2" } as never, ctx())).toThrow(/유보금/);
+    expect(errs(paid).length).toBe(0);
+  });
+
+  it("기성보다 앞선 날짜로 뗀 공제는 거부 (지난달 월말 미수가 음수가 되지 않게)", () => {
+    const db = base();
+    // 10/10 기성 전인 10/05로 1억 넘게 떼려 하면 그날 미수보다 큼
+    const a = siteFinancials(db, "site-a").outstanding;
+    expect(() => COMMANDS.addReceivableAdjustment(db, { siteId: "site-a", kind: "deduction", deductionType: "other", amount: a, date: "2026-10-05", note: "날짜 잘못" }, ctx())).toThrow(/날짜/);
+  });
+
+  it("뗀 기성 회차를 적은 유보금은 그 기성의 경과일에서 먼저 뺀다 (오래된 미수가 사라지지 않게)", () => {
+    let db = createSeed(new Date("2026-10-01T01:00:00Z"));
+    const pay0 = siteFinancials(db, "site-a").outstanding;
+    if (pay0 > 0) db = COMMANDS.addPayment(db, { siteId: "site-a", amount: pay0, receivedDate: "2026-10-02" }, ctx("u-manager", new Date("2026-10-02T03:00:00Z"))).db;
+    db = COMMANDS.addBilling(db, { siteId: "site-a", amount: 100_000_000, billedDate: "2026-09-01" }, ctx()).db;
+    db = COMMANDS.addBilling(db, { siteId: "site-a", amount: 100_000_000, billedDate: "2026-11-05" }, ctx()).db;
+    const nov = db.billings.find((b) => b.billedDate === "2026-11-05")!;
+    db = COMMANDS.addPayment(db, { siteId: "site-a", amount: 90_000_000, receivedDate: "2026-11-12", withheld: { kind: "retention", amount: 10_000_000, note: "11월 기성 유보", billingId: nov.id } }, ctx()).db;
+    // 입금 9천만은 오래된 9/1 기성부터 갚고(남은 1천만), 유보금 1천만은 적어 둔 11/5 기성에서 뺀다
+    // → 9/1의 1천만이 ‘오래된 미수’로 그대로 보인다 (예전엔 오래된 기성에서 빠져 사라졌음)
+    const aging = receivableAging(db, "site-a", NOW);
+    expect(aging.find((x) => x.billedDate === "2026-09-01")?.unpaid).toBe(10_000_000);
+    expect(aging.find((x) => x.billedDate === "2026-11-05")?.unpaid).toBe(90_000_000);
+    expect(siteFinancials(db, "site-a").retention).toBe(10_000_000);
   });
 });
 
@@ -220,6 +267,21 @@ describe("D-89 엑셀 · 월 마감 기록 · 권한", () => {
     const hq = viewFor(member("u-manager", "manager"), db, NOW);
     expect(hq.receivableAdjustments).toHaveLength(1);
     expect(hq.voidedMoney).toHaveLength(1);
+  });
+
+  it("공제가 있는 현장은 계약금액을 고쳐도 기준을 다시 잡지 않는다 — 공제가 기준에 섞여 ‘이익을 바꾼 일’ 합이 어긋나지 않게 (점검 반영)", () => {
+    let db = createSeed(new Date("2026-10-01T01:00:00Z"));
+    const budgets = { material: 20_000_000, labor: 15_000_000, subcontract: 10_000_000, equipment: 3_000_000, overhead: 2_000_000 };
+    const input = { name: "신규 물류창고", shortName: "물류", workType: "커튼월", region: "경기", clientName: "원청", status: "active" as const, startDate: "2026-11-01", endDate: "2027-03-31", contractAmount: 60_000_000, budgets };
+    db = COMMANDS.saveSite(db, input, ctx()).db;
+    const id = db.sites.find((s) => s.shortName === "물류")!.id;
+    db = COMMANDS.addBilling(db, { siteId: id, amount: 20_000_000, billedDate: "2026-11-15" }, ctx()).db;
+    db = COMMANDS.addReceivableAdjustment(db, { siteId: id, kind: "deduction", deductionType: "other", amount: 3_000_000, date: "2026-11-15", note: "공제" }, ctx()).db;
+    db = COMMANDS.saveSite(db, { ...input, id, contractAmount: 65_000_000 }, ctx()).db;
+    expect(errs(db)).toEqual([]);
+    // 공제 −300만과 원 계약 변경 +500만이 모두 ‘이익을 바꾼 일’에 남는다
+    const ev = profitEvents(db, id, "2026-11-01", "2026-11-30").map((e) => e.amount).sort((a, b) => a - b);
+    expect(ev).toEqual([-3_000_000, 5_000_000]);
   });
 
   it("가져온 기성을 취소(가져오기 취소)할 때 공제까지 더해 입금이 기성보다 많아지면 막는다", () => {

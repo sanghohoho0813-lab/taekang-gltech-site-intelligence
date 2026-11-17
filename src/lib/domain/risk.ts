@@ -8,7 +8,7 @@ import { CATEGORY_LABEL, RULE_VERSION } from "./labels";
 import { daysBetween, fmtEok, fmtMan, fmtPct, fmtPp, todayIso } from "./format";
 import { coDays } from "./changeOrders";
 import { siteInstallPct } from "./material";
-import { deductedTotal, retentionNotDue } from "./receivables";
+import { activeAdjustments, deductedTotal, retentionLeft } from "./receivables";
 
 const SEV_ORDER: Record<Severity, number> = { high: 0, medium: 1, low: 2 };
 
@@ -34,16 +34,30 @@ export function receivableAging(db: DemoDB, siteId: string, now = new Date()): R
     .filter((b) => b.siteId === siteId && b.status === "confirmed")
     .sort((a, b) => a.billedDate.localeCompare(b.billedDate));
   let paid = db.payments.filter((p) => p.siteId === siteId).reduce((s, p) => s + p.amount, 0) + deductedTotal(db, siteId);
-  let hold = retentionNotDue(db, siteId, todayIso(now));
-  const out: ReceivableAging[] = [];
-  for (const b of bills) {
+  const rows = bills.map((b) => {
     const applied = Math.min(paid, b.amount);
     paid -= applied;
-    let unpaid = b.amount - applied;
-    const held = Math.min(hold, unpaid);
+    return { b, unpaid: b.amount - applied };
+  });
+  // 받을 날이 안 된 유보금 — 어느 기성에서 뗐는지 적었으면 그 기성에서 먼저, 나머지는 오래된 미수부터 (D-89 점검)
+  const today = todayIso(now);
+  let hold = 0;
+  for (const a of activeAdjustments(db, siteId).filter((x) => x.kind === "retention" && (!x.dueDate || x.dueDate > today))) {
+    let left = retentionLeft(a);
+    const row = a.billingId ? rows.find((r) => r.b.id === a.billingId) : undefined;
+    if (row) {
+      const take = Math.min(left, row.unpaid);
+      row.unpaid -= take;
+      left -= take;
+    }
+    hold += left;
+  }
+  const out: ReceivableAging[] = [];
+  for (const r of rows) {
+    const held = Math.min(hold, r.unpaid);
     hold -= held;
-    unpaid -= held;
-    if (unpaid > 0) out.push({ billingId: b.id, round: b.round, billedDate: b.billedDate, unpaid, ageDays: daysBetween(b.billedDate, now) });
+    const unpaid = r.unpaid - held;
+    if (unpaid > 0) out.push({ billingId: r.b.id, round: r.b.round, billedDate: r.b.billedDate, unpaid, ageDays: daysBetween(r.b.billedDate, now) });
   }
   return out;
 }

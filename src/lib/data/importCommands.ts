@@ -8,7 +8,7 @@ import { siteFinancials, snapshotOf } from "@/lib/domain/calc";
 import { fmtMan, todayIso } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
 import { IMPORT_SPECS, planImport, type BillingRow, type ChangeRow, type CostRow, type CrewRow, type ImportKind, type MaterialRow, type ProgressRow, type RateRow } from "@/lib/domain/importers";
-import { deductedTotal } from "@/lib/domain/receivables";
+import { deductedTotal, retentionOpen } from "@/lib/domain/receivables";
 import { CommandError, claimKey, clone, log, nowIso, touch, unlinkImportedProgress, type Ctx } from "./commands";
 
 export interface ImportDataInput {
@@ -25,7 +25,9 @@ const SNAP_KEYS = ["contractAmount", "approvedChange", "adjustedContract", "incu
 function shiftSnap(b: FinancialSnapshot, d: Partial<FinancialSnapshot>, sign: 1 | -1): FinancialSnapshot {
   const out = { ...b };
   for (const k of SNAP_KEYS) out[k] = b[k] + sign * (d[k] ?? 0);
-  out.marginPct = out.adjustedContract > 0 ? (out.expectedProfit / out.adjustedContract) * 100 : 0;
+  // 이익률은 공제를 뺀 매출 기준 — 현장 숫자(calc)와 같게 (D-89)
+  const revenue = out.adjustedContract - (out.deducted ?? 0);
+  out.marginPct = revenue > 0 ? (out.expectedProfit / revenue) * 100 : 0;
   return out;
 }
 
@@ -239,6 +241,7 @@ export function undoImport(db0: DemoDB, input: { batchId: string }, ctx: Ctx) {
       // 발주처 공제(D-89)도 미수를 줄이므로 함께 본다
       const deducted = deductedTotal(db, id);
       if (paid + deducted > billed) throw new CommandError("가져온 뒤에 입금·공제가 더 등록되어 취소하면 미수금이 음수가 됩니다 — 해당 입금·공제를 먼저 정리해주세요.", "STATE");
+      if (retentionOpen(db, id) > billed - paid - deducted) throw new CommandError("취소하면 받을 유보금이 남은 미수보다 많아집니다 — 유보금을 먼저 정리해주세요.", "STATE");
     }
     renumberRounds(db, b0.siteIds);
   } else if (b0.kind === "change") {

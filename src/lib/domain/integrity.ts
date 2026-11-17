@@ -19,6 +19,7 @@ import { monthWorkbook } from "./monthWorkbook";
 import { coByEntry } from "./changeOrders";
 import { CATEGORY_LABEL } from "./labels";
 import { fmtMan } from "./format";
+import { retentionOpen } from "./receivables";
 
 export interface IntegrityCheck {
   key: string;
@@ -197,12 +198,14 @@ export function moneyIntegrity(db: DemoDB, today: string): IntegrityCheck[] {
   );
 
   // ── warn: 금액 관계 ──
+  // 받을 유보금이 미수보다 많으면 받을 수 없는 유보금 (D-89 점검)
+  const heldOver = db.sites.filter((s) => retentionOpen(db, s.id) > Math.max(0, siteFinancials(db, s.id).outstanding)).map((s) => `${s.shortName} 받을 유보금 ${fmtMan(retentionOpen(db, s.id))} > 미수 ${fmtMan(siteFinancials(db, s.id).outstanding)}`);
   const over = fs.filter((f) => f.received + f.deducted > f.billed).map((f) => `${site(f.siteId)} 입금${f.deducted ? `·공제 ${fmtMan(f.received + f.deducted)}` : ` ${fmtMan(f.received)}`} > 기성 ${fmtMan(f.billed)}`);
   const overContract = fs.filter((f) => f.adjustedContract > 0 && f.billed > f.adjustedContract).map((f) => `${site(f.siteId)} 기성 ${fmtMan(f.billed)} > 계약 ${fmtMan(f.adjustedContract)}`);
   out.push(
-    over.length + overContract.length
-      ? { key: "money-over", level: "warn", title: "입금이 기성보다 많거나 기성이 계약보다 많은 현장", detail: [...over, ...overContract].join(" · "), href: "/finance" }
-      : { key: "money-over", level: "ok", title: "입금(+공제) ≤ 기성 ≤ 계약(승인 변경 포함)" },
+    over.length + overContract.length + heldOver.length
+      ? { key: "money-over", level: "warn", title: "입금이 기성보다 많거나 기성이 계약보다 많거나 유보금이 미수보다 많은 현장", detail: [...over, ...overContract, ...heldOver].join(" · "), href: "/finance" }
+      : { key: "money-over", level: "ok", title: "입금(+공제) ≤ 기성 ≤ 계약(승인 변경 포함) · 받을 유보금 ≤ 미수" },
   );
 
   // ── warn: 날짜 ──

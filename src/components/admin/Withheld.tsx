@@ -268,11 +268,9 @@ export function WithheldCard({ db }: { db: DemoDB }) {
                     <Button size="sm" variant="soft" onClick={() => setRelease(a)} data-testid="withheld-release">
                       받음
                     </Button>
-                    {!(a.released ?? []).length && (
-                      <Button size="sm" variant="ghost" icon={<Undo2 size={14} />} onClick={() => setVoiding(a)} data-testid="withheld-void">
-                        취소
-                      </Button>
-                    )}
+                    <Button size="sm" variant="ghost" icon={<Undo2 size={14} />} onClick={() => setVoiding(a)} data-testid="withheld-void">
+                      {(a.released ?? []).length ? "남은 금액 정리" : "취소"}
+                    </Button>
                   </span>
                 </li>
               );
@@ -463,7 +461,7 @@ function ReleaseModal({ db, a, onClose }: { db: DemoDB; a: ReceivableAdjustment;
         <Field label="받은 날" htmlFor="rel-date">
           <input id="rel-date" type="date" className={cx(inputCls, "w-auto")} value={date} max={todayIso()} onChange={(e) => setDate(e.target.value)} data-testid="release-date" />
         </Field>
-        <p className="text-[0.78rem] text-ink-3">발주처가 유보금에서도 떼고 줬으면(지체상금 등) 받은 만큼만 등록하고, 남은 유보금을 취소한 뒤 공제로 등록하세요.</p>
+        <p className="text-[0.78rem] text-ink-3">발주처가 유보금에서 지체상금 등을 떼고 줬으면 받은 만큼만 등록한 뒤, 이 유보금의 ‘남은 금액 정리’를 누르고 뗀 금액을 공제로 등록하세요.</p>
         {err && <Notice tone="err">{err}</Notice>}
       </div>
     </Modal>
@@ -480,7 +478,7 @@ function VoidAdjustmentModal({ db, a, onClose }: { db: DemoDB; a: ReceivableAdju
     <Modal
       open
       onClose={onClose}
-      title={`${a.kind === "retention" ? "유보금" : "공제"} 취소`}
+      title={a.kind === "retention" && (a.released ?? []).length ? "남은 유보금 정리" : `${a.kind === "retention" ? "유보금" : "공제"} 취소`}
       description={`${siteName(db, a.siteId)} ${adjustmentLabel(a)} ${fmtMan(a.amount)} (${fmtDate(a.date)})`}
       size="sm"
       testId="withheld-void-modal"
@@ -510,6 +508,7 @@ function VoidAdjustmentModal({ db, a, onClose }: { db: DemoDB; a: ReceivableAdju
       }
     >
       <div className="space-y-3 text-[0.88rem]">
+        {a.kind === "retention" && (a.released ?? []).length > 0 && <p>이미 받은 {fmtMan((a.released ?? []).reduce((s, r) => s + r.amount, 0))}은 입금으로 그대로 남고, 남은 {fmtMan(retentionLeft(a))}은 일반 미수가 됩니다(오래된 미수 알림에 다시 셈). 발주처가 뗀 것이면 이어서 공제로 등록하세요.</p>}
         <Field label="취소하는 이유" htmlFor="wh-void-reason" required error={err?.fields?.reason} counter={`${Array.from(reason).length}/200`}>
           <input id="wh-void-reason" className={inputCls} value={reason} maxLength={200} onChange={(e) => setReason(e.target.value)} placeholder="예: 발주처가 지체상금을 면제함" data-testid="withheld-void-reason" />
         </Field>
