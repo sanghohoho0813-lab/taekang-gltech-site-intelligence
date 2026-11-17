@@ -207,10 +207,23 @@ export function profitEvents(db: DemoDB, siteId: string, from: string, to: strin
         : { date: when, amount: -impact, text: `잔여예상을 넘은 집행 — ${CATEGORY_LABEL[e.category]} ${e.note || ""}${occurred}`.replace(/\s+/g, " ").trim(), entryId: e.id },
     );
   }
-  for (const c of db.changeOrders.filter((x) => x.siteId === siteId && x.status === "approved" && x.decidedAt && !history(x) && inRange(kst(x.decidedAt), from, to))) {
+  // 변경공사는 받은 날(결정일) 기준 (D-84). 다만 현장 등록(기준) 뒤에 넣은 승인의 받은 날이 등록 전이면 등록한 날로 센다 —
+  // 기준에 들어 있지 않은 이익 변화가 ‘이익을 바꾼 일’에서 빠지던 문제 (D-87 무작위 점검). 등록 전에 넣은 승인은 기준에 들어 있다
+  const site = db.sites.find((s) => s.id === siteId);
+  // 기준 시각 — 숫자 맞추기 점검(integrity)과 같은 규칙 (등록 시각이 없으면 자료 시작 시각)
+  const baseAt = site?.baselineAt ?? db.seededAt;
+  const baseDay = baseAt ? kst(baseAt) : null;
+  const coDay = (c: { decidedAt?: string; statusChangedAt?: string }) => {
+    const d = kst(c.decidedAt!);
+    return baseDay && baseAt && d < baseDay && c.statusChangedAt && c.statusChangedAt > baseAt ? baseDay : d;
+  };
+  for (const c of db.changeOrders.filter((x) => x.siteId === siteId && x.status === "approved" && x.decidedAt && !history(x) && inRange(coDay(x), from, to))) {
     const amt = c.approvedAmount ?? c.amount;
-    events.push({ date: kst(c.decidedAt!), amount: amt, text: `변경공사 승인 — ${c.title}${amt < 0 ? " (감액)" : ""}` });
-    if (c.addedCost) events.push({ date: kst(c.decidedAt!), amount: -c.addedCost.amount, text: `변경공사 원가 — ${c.title}` });
+    const when = coDay(c);
+    const decided = kst(c.decidedAt!);
+    const occurred = decided !== when ? ` (받은 날 ${short(decided)} · 현장 등록 전)` : "";
+    events.push({ date: when, amount: amt, text: `변경공사 승인 — ${c.title}${amt < 0 ? " (감액)" : ""}${occurred}` });
+    if (c.addedCost) events.push({ date: when, amount: -c.addedCost.amount, text: `변경공사 원가 — ${c.title}${occurred}` });
   }
   // 잔여예상을 다시 잡아 예상 총원가가 바뀐 일 (준공 원가 마감 포함 · D-79)
   for (const c of (db.forecastChanges ?? []).filter((x) => x.siteId === siteId && inRange(kst(x.at), from, to) && x.eacBefore !== x.eacAfter))

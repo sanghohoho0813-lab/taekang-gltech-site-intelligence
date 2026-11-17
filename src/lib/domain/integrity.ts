@@ -15,6 +15,7 @@
 import type { DemoDB } from "./types";
 import { portfolioTotals, siteFinancials } from "./calc";
 import { monthClose, monthCostRows, previousMonth, profitEvents } from "./monthClose";
+import { monthWorkbook } from "./monthWorkbook";
 import { coByEntry } from "./changeOrders";
 import { CATEGORY_LABEL } from "./labels";
 import { fmtMan } from "./format";
@@ -94,6 +95,18 @@ export function moneyIntegrity(db: DemoDB, today: string): IntegrityCheck[] {
     csvBad.length
       ? { key: "csv", level: "err", title: "이달 원가 CSV 합이 월 마감 원가와 다릅니다", detail: csvBad.join(" · "), href: "/close" }
       : { key: "csv", level: "ok", title: "이달 원가 CSV(확정 줄) 합 = 월 마감 원가 (모든 달)" },
+  );
+
+  // ── err: 월 마감 엑셀(세무·회계용)의 합계 = 월 마감 화면 (D-87) — 시트에 적힌 숫자를 다시 읽어 맞춘다 ──
+  const xlsxBad: string[] = [];
+  months.forEach((m, i) => {
+    const w = monthWorkbook(db, m, today, { report: reports[i] });
+    for (const c of w.checks.filter((x) => !x.ok)) xlsxBad.push(`${m} ${c.label}: 엑셀 ${fmtMan(c.sheet)} · 화면 ${fmtMan(c.screen)}`);
+  });
+  out.push(
+    xlsxBad.length
+      ? { key: "xlsx", level: "err", title: "월 마감 엑셀 합계가 화면과 다릅니다", detail: xlsxBad.slice(0, 6).join(" · "), href: "/close" }
+      : { key: "xlsx", level: "ok", title: "월 마감 엑셀(기성·입금·미수·원가·변경공사·이익 변화) 합계 = 월 마감 화면 (모든 달)" },
   );
 
   // ── err: 이익을 바꾼 일 합 = 기준 대비 예상이익 변화 ──

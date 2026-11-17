@@ -363,7 +363,7 @@ test("자료 이관·점검: 준비 점검 → 기성·입금 붙여넣기(오�
   await page.goto("/data");
   // 숫자 맞추기 점검 (D-85) — 시연 자료는 화면끼리 다른 숫자 0건
   await expect(page.getByTestId("integrity")).toHaveAttribute("data-err", "0");
-  await expect(page.getByTestId("integrity").getByTestId("integrity-row")).toHaveCount(9);
+  await expect(page.getByTestId("integrity").getByTestId("integrity-row")).toHaveCount(10); // D-87 월 마감 엑셀 대조 추가
   // 준비 점검: B현장은 작업 인원 보고 없음 → ‘가져오기’ 누르면 작업 인원 양식으로
   const b = page.locator('[data-testid="ready-site"][data-site="site-b"]');
   await expect(b.locator('[data-key="crew"]')).toHaveAttribute("data-status", "warn");
@@ -731,8 +731,15 @@ test("대표 보고서 달별 보기 (D-83): 누계 ↔ 지난달 · 마감 상�
   if ((await page.getByTestId("rm-site-cards").locator("li").count()) > 0) await expect(page.getByTestId("rm-site-cards")).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
   await page.setViewportSize({ width: 1440, height: 900 });
-  // 월 마감에서 그 달 대표 보고서로
+  // 월 마감 엑셀 (세무·회계용 · D-87) — 엑셀 파일이고, 합계가 화면과 같다고 알린다
   await page.goto(`/close?month=${prev}`);
+  const dlx = page.waitForEvent("download");
+  await page.getByTestId("close-xlsx").click();
+  const book = readFileSync((await (await dlx).path())!);
+  expect(book.subarray(0, 2).toString("latin1")).toBe("PK");
+  expect(book.toString("latin1")).toContain("xl/worksheets/sheet9.xml");
+  await expect(page.getByText(/월 마감 엑셀을 내려받았습니다 — 합계 13개가 화면과 같음/)).toBeVisible();
+  // 월 마감에서 그 달 대표 보고서로
   await page.getByTestId("close-doc-ceo-month").click();
   await expect(page).toHaveURL(new RegExp(`/report\\?month=${prev}$`));
   await expect(page.getByTestId("report-month-summary")).toBeVisible();

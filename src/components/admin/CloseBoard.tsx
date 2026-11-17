@@ -7,7 +7,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, CircleCheck, Download, Printer } from "lucide-react";
+import { ArrowRight, CircleCheck, Download, FileSpreadsheet, Printer } from "lucide-react";
 import { useMe } from "@/lib/data/hooks";
 import { run } from "@/lib/data/store";
 import { CommandError } from "@/lib/data/commands";
@@ -22,7 +22,9 @@ import { toCsv } from "@/lib/domain/csv";
 import { siteFinancials } from "@/lib/domain/calc";
 import type { DemoDB } from "@/lib/domain/types";
 import { uid } from "@/lib/domain/ids";
-import { downloadCsv } from "@/lib/browser/download";
+import { XLSX_MIME, downloadBytes, downloadCsv } from "@/lib/browser/download";
+import { monthWorkbook } from "@/lib/domain/monthWorkbook";
+import { writeXlsx } from "@/lib/domain/xlsx";
 import { ForecastModal } from "./SitesAdmin";
 import { OverlapFixModal } from "./OverlapFix";
 import { MoneyField, toWon, wonText } from "./inputs";
@@ -48,7 +50,8 @@ const won = (v: number) => (v === 0 ? "—" : fmtMan(v, { unit: false }));
 const signed = (v: number) => (v === 0 ? "0" : `${v > 0 ? "+" : "−"}${fmtMan(Math.abs(v))}`);
 
 export function CloseBoard() {
-  const { db, role } = useMe();
+  const { db, role, userId } = useMe();
+  const toast = useToast();
   const today = todayIso();
   const months = useMemo(() => {
     if (!db?.sites.length) return [today.slice(0, 7)];
@@ -91,6 +94,20 @@ export function CloseBoard() {
                 ))}
               </select>
             </label>
+            <Button
+              variant="cta"
+              icon={<FileSpreadsheet size={17} />}
+              onClick={() => {
+                // 세무·회계에 넘기는 한 달 자료 (D-87) — 만든 뒤 시트 숫자를 화면 숫자와 다시 맞춰 본다
+                const w = monthWorkbook(db, chosen, today, { by: userId, report: r });
+                downloadBytes(w.filename, writeXlsx(w.sheets), XLSX_MIME);
+                if (w.ok) toast.push({ tone: "ok", title: `${label} 월 마감 엑셀을 내려받았습니다 — 합계 ${w.checks.length}개가 화면과 같음` });
+                else toast.push({ tone: "err", title: `엑셀 숫자 ${w.checks.filter((c) => !c.ok).length}개가 화면과 다릅니다 — 개발 담당에게 알려 주세요` });
+              }}
+              data-testid="close-xlsx"
+            >
+              월 마감 엑셀 (세무·회계용)
+            </Button>
             <Button icon={<Download size={17} />} onClick={() => downloadCsv(`월마감_원가_${chosen}.csv`, toCsv(monthCostRows(db, chosen, today)))} data-testid="close-csv">
               이달 원가 CSV
             </Button>
