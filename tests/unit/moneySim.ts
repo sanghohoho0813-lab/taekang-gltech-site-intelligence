@@ -27,7 +27,7 @@ function rng(seed: number) {
 
 type Run = (name: string, args: unknown, userId: string) => void;
 
-export function simulate(seed: number, days = 45, opts: { contractEdits?: boolean; eachOp?: boolean; imports?: boolean; close?: boolean } = {}) {
+export function simulate(seed: number, days = 45, opts: { contractEdits?: boolean; eachOp?: boolean; imports?: boolean; close?: boolean; receivables?: boolean } = {}) {
   const r = rng(seed);
   const pick = <T,>(xs: T[]): T | undefined => (xs.length ? xs[Math.floor(r() * xs.length)] : undefined);
   const int = (lo: number, hi: number) => lo + Math.floor(r() * (hi - lo + 1));
@@ -85,6 +85,49 @@ export function simulate(seed: number, days = 45, opts: { contractEdits?: boolea
       if (db !== before && after && (after.closedAt === now.toISOString() || after.confirmedAt === now.toISOString())) {
         const c = changesAfterClose(db, after, today);
         if (c.count) failures.push({ day: today, trail: trail.slice(-6), errs: [`마감·확인 바로 뒤 바뀐 것 ${c.count}건 — ${JSON.stringify(c.diffs.slice(0, 3))} ${JSON.stringify(c.events.slice(0, 3))}`] });
+      }
+    }
+    // D-89: 발주처가 뗀 금액(유보금·공제) · 유보금 받음 · 취소(기성·입금·유보금·공제)
+    if (opts.receivables && r() < 0.8) {
+      const site = pick(sites);
+      const x = r();
+      const back = () => todayIso(new Date(now.getTime() - int(0, 12) * 86_400_000));
+      if (site) {
+        const f = siteFinancials(db, site.id);
+        if (x < 0.3 && f.outstanding > 0) {
+          const pay = Math.max(10_000, Math.round((f.outstanding * (0.3 + r() * 0.6)) / 10_000) * 10_000);
+          const left = f.outstanding - pay;
+          const kind = r() < 0.5 ? "retention" : "deduction";
+          run(
+            "addPayment",
+            {
+              siteId: site.id,
+              amount: pay,
+              receivedDate: back(),
+              ...(left >= 20_000 ? { withheld: { kind, amount: Math.max(10_000, Math.round((left * (0.05 + r() * 0.3)) / 10_000) * 10_000), note: kind === "deduction" ? "지체상금" : "유보", ...(kind === "deduction" ? { deductionType: pick(["delay_penalty", "setoff", "other"] as const) } : r() < 0.5 ? { dueDate: todayIso(new Date(now.getTime() + int(-20, 200) * 86_400_000)) } : {}) } } : {}),
+              idempotencyKey: `idem-fz-pw-${seed}-${k++}`,
+            },
+            "u-manager",
+          );
+        } else if (x < 0.45 && f.outstanding > 0) {
+          const kind = r() < 0.5 ? "retention" : "deduction";
+          run("addReceivableAdjustment", { siteId: site.id, kind, ...(kind === "deduction" ? { deductionType: "other" } : {}), amount: Math.max(10_000, Math.round((f.outstanding * r() * 0.2) / 10_000) * 10_000), date: back(), note: "공문" }, "u-manager");
+        } else if (x < 0.6) {
+          const a = pick((db.receivableAdjustments ?? []).filter((y) => !y.voidedAt && y.kind === "retention"));
+          if (a) {
+            const left = a.amount - (a.released ?? []).reduce((s2, y) => s2 + y.amount, 0);
+            if (left > 0) run("releaseRetention", { id: a.id, date: todayIso(now), amount: r() < 0.5 ? left : Math.max(10_000, Math.round((left * r()) / 10_000) * 10_000), idempotencyKey: `idem-fz-rr-${seed}-${k++}` }, "u-manager");
+          }
+        } else if (x < 0.72) {
+          const a = pick((db.receivableAdjustments ?? []).filter((y) => !y.voidedAt));
+          if (a) run("voidReceivableAdjustment", { id: a.id, reason: "잘못 넣음" }, "u-manager");
+        } else if (x < 0.86) {
+          const p = pick(db.payments.filter((y) => y.siteId === site.id));
+          if (p) run("voidMoneyRecord", { kind: "payment", id: p.id, reason: "입금 잘못 넣음" }, "u-manager");
+        } else {
+          const b = pick(db.billings.filter((y) => y.siteId === site.id));
+          if (b) run("voidMoneyRecord", { kind: "billing", id: b.id, reason: "기성 두 번 넣음" }, "u-manager");
+        }
       }
     }
     for (let n = int(1, 5); n > 0; n--) {

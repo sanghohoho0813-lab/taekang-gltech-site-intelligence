@@ -2,21 +2,8 @@ import { describe, expect, it } from "vitest";
 import { createSeed, DEMO_SCENARIO } from "@/lib/data/seed";
 import { siteFinancials, portfolioTotals, simulateApprovedClaims, entryEacImpact } from "@/lib/domain/calc";
 import { THEMES, themeTokens, contrast } from "@/lib/theme/themes";
-import {
-  submitFieldReport,
-  voidReport,
-  voidCostEntry,
-  editCostEntry,
-  createAction,
-  setActionStatus,
-  completeAction,
-  confirmProofEvent,
-  createPartnerRequest,
-  updatePartnerRequest,
-  setChangeOrderStatus,
-  addPayment,
-  CommandError,
-} from "@/lib/data/commands";
+import { submitFieldReport, voidReport, voidCostEntry, editCostEntry, createAction, setActionStatus, completeAction, confirmProofEvent, createPartnerRequest, updatePartnerRequest, setChangeOrderStatus, CommandError } from "@/lib/data/commands";
+import { addPayment } from "@/lib/data/moneyCommands";
 import { computeSignals } from "@/lib/domain/risk";
 import { fmtEok, fmtMan, fmtPct } from "@/lib/domain/format";
 

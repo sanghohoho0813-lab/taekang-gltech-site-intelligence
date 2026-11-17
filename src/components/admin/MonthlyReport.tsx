@@ -85,8 +85,8 @@ export function MonthlyReport({ db, month, months, today, onMonth, focusSelect }
   const beforeApp = !!started && r.to < started;
   // 월 마감과 같은 기준 — 달이 끝났고, 많이 모자라고(20%·50만 원), 아직 정산 전 (D-83 버그 배시)
   const laborDue = r.labor.filter((l) => r.ended && laborShort(l) && !l.settled);
-  // 지난달 말 미수 + 이달 기성 − 이달 입금 = 월말 미수 (대시보드 ‘지금 미수’와 다른 이유)
-  const prevOut = r.money.reduce((a, m) => a + (m.outstandingAtEnd - m.billed + m.received), 0);
+  // 지난달 말 미수 + 이달 기성 − 이달 입금 − 이달 발주처 공제(D-89) = 월말 미수 (대시보드 ‘지금 미수’와 다른 이유)
+  const prevOut = r.money.reduce((a, m) => a + (m.outstandingAtEnd - m.billed + m.received + m.deducted), 0);
   const nowOut = r.money.reduce((a, m) => a + siteFinancials(db, m.site.id).outstanding, 0);
   const todos = ceoTodos(db, r, ch, today);
   // 원가 → 그 원가로 청구한 변경공사 (D-84 — 같은 현장의 아무 변경공사가 아니라 그 원가의 것)
@@ -216,7 +216,9 @@ export function MonthlyReport({ db, month, months, today, onMonth, focusSelect }
         </div>
         <p className="num px-5 pt-2 text-[0.8rem] text-ink-2" data-testid="rm-outstanding-why">
           {running ? "오늘 미수" : "월말 미수"} = 지난달 말 미수 {man(prevOut)} + 이달 기성 {man(r.totals.billed)} − 이달 입금 {man(r.totals.received)}
-          {!running && !zero(nowOut - r.totals.outstandingAtEnd) ? ` · 지금 미수는 ${man(nowOut)} (그 뒤 기성·입금 반영)` : ""}
+          {r.totals.deducted ? ` − 이달 발주처 공제 ${man(r.totals.deducted)}` : ""}
+          {r.totals.retentionAtEnd ? ` · 그중 유보금 ${man(r.totals.retentionAtEnd)} (나중에 받을 돈)` : ""}
+          {!running && !zero(nowOut - r.totals.outstandingAtEnd) ? ` · 지금 미수는 ${man(nowOut)} (그 뒤 기성·입금·공제 반영)` : ""}
         </p>
         <ul className="space-y-1.5 px-5 py-4" data-testid="report-month-bullets">
           {bullets.map((b, i) => (

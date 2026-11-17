@@ -38,6 +38,9 @@ export const COLLECTIONS = {
   coEvidence: byId,
   billings: byId,
   payments: byId,
+  // 유보금·공제 · 취소한 기성·입금 (D-89) — 빠뜨리면 30초 뒤 사라진다
+  receivableAdjustments: byId,
+  voidedMoney: byId,
   partnerRequests: byId,
   actions: byId,
   proofEvents: (x: Item) => String(x.proof_event_id),

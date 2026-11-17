@@ -356,8 +356,9 @@ export function ForecastModal({ db, site, onClose, closeout = false }: { db: Dem
   const nums = Object.fromEntries(COST_CATEGORIES.map((c) => [c, Number.isFinite(toWon(vals[c])) ? toWon(vals[c]) : 0])) as Record<CostCategory, number>;
   const newRemaining = COST_CATEGORIES.reduce((s, c) => s + nums[c], 0);
   const newEac = f.incurred + newRemaining;
-  const newProfit = f.adjustedContract - newEac;
-  const newMargin = f.adjustedContract > 0 ? (newProfit / f.adjustedContract) * 100 : 0;
+  // 발주처 공제(D-89)는 받지 못하는 돈 — 예상이익 계산과 같게
+  const newProfit = f.adjustedContract - f.deducted - newEac;
+  const newMargin = f.adjustedContract - f.deducted > 0 ? (newProfit / (f.adjustedContract - f.deducted)) * 100 : 0;
   const preview = useMemo(() => ({ newEac, newProfit, newMargin }), [newEac, newProfit, newMargin]);
 
   const save = async () => {

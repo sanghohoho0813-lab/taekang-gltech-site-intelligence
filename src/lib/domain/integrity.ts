@@ -39,6 +39,8 @@ export function moneyMonths(db: DemoDB, today: string): string[] {
     ...db.costEntries.filter((e) => e.status === "active").map((e) => kst(e.reviewedAt && e.reviewedAt > e.createdAt ? e.reviewedAt : e.createdAt)),
     ...db.billings.filter((b) => b.status === "confirmed").map((b) => b.billedDate),
     ...db.payments.map((p) => p.receivedDate),
+    // 유보금·공제 (D-89)
+    ...(db.receivableAdjustments ?? []).filter((a) => !a.voidedAt).map((a) => a.date),
     ...db.changeOrders.filter((c) => c.decidedAt).map((c) => kst(c.decidedAt!)),
     ...(db.forecastChanges ?? []).map((c) => kst(c.at)),
     // 이익을 바꾼 일이 생긴 달도 빠짐없이 (D-87 점검)
@@ -61,17 +63,19 @@ export function moneyIntegrity(db: DemoDB, today: string): IntegrityCheck[] {
   const bad: string[] = [];
   for (const site of db.sites) {
     const f = siteFinancials(db, site.id);
-    const sum = { billed: 0, received: 0, cost: 0 };
+    const sum = { billed: 0, received: 0, cost: 0, deducted: 0 };
     for (const r of reports)
       for (const m of r.money.filter((x) => x.site.id === site.id)) {
         sum.billed += m.billed;
         sum.received += m.received;
         sum.cost += m.costTotal;
+        sum.deducted += m.deducted;
       }
     const diffs = [
       sum.billed !== f.billed ? `기성 달별 합 ${fmtMan(sum.billed)} · 누계 ${fmtMan(f.billed)}` : "",
       sum.received !== f.received ? `입금 달별 합 ${fmtMan(sum.received)} · 누계 ${fmtMan(f.received)}` : "",
       sum.cost !== f.incurred ? `원가 달별 합 ${fmtMan(sum.cost)} · 발생원가 ${fmtMan(f.incurred)}` : "",
+      sum.deducted !== f.deducted ? `공제 달별 합 ${fmtMan(sum.deducted)} · 누계 ${fmtMan(f.deducted)}` : "",
     ].filter(Boolean);
     const now = thisMonth?.money.find((x) => x.site.id === site.id);
     if (now && now.outstandingAtEnd !== f.outstanding) diffs.push(`이번 달 월말 미수 ${fmtMan(now.outstandingAtEnd)} · 지금 미수 ${fmtMan(f.outstanding)}`);
@@ -80,7 +84,7 @@ export function moneyIntegrity(db: DemoDB, today: string): IntegrityCheck[] {
   out.push(
     bad.length
       ? { key: "month-sum", level: "err", title: "월 마감을 모두 더한 숫자가 현장 누계와 다릅니다", detail: bad.join(" · "), href: "/close" }
-      : { key: "month-sum", level: "ok", title: `월 마감 ${months.length}개월을 더한 기성·입금·원가·미수 = 현장 누계` },
+      : { key: "month-sum", level: "ok", title: `월 마감 ${months.length}개월을 더한 기성·입금·공제·원가·미수 = 현장 누계` },
   );
 
   // ── err: 이달 원가 CSV(엑셀)의 ‘확정’ 줄 합 = 그 달 월 마감 원가 ──
@@ -185,7 +189,7 @@ export function moneyIntegrity(db: DemoDB, today: string): IntegrityCheck[] {
       ? {
           key: "money-dup",
           level: "warn",
-          title: `같은 날 같은 금액 기성 ${billDup.length}묶음 · 입금 ${payDup.length}묶음 — 두 번 넣었는지 확인`,
+          title: `같은 날 같은 금액 기성 ${billDup.length}묶음 · 입금 ${payDup.length}묶음 — 두 번 넣었으면 기성·수금에서 하나를 ‘취소’`,
           detail: [...billDup.map((g) => `${site(g[0].siteId)} 기성 ${md(g[0].billedDate)} ${fmtMan(g[0].amount)} × ${g.length}`), ...payDup.map((g) => `${site(g[0].siteId)} 입금 ${md(g[0].receivedDate)} ${fmtMan(g[0].amount)} × ${g.length}`)].slice(0, 6).join(" · "),
           href: "/finance",
         }
@@ -193,12 +197,12 @@ export function moneyIntegrity(db: DemoDB, today: string): IntegrityCheck[] {
   );
 
   // ── warn: 금액 관계 ──
-  const over = fs.filter((f) => f.received > f.billed).map((f) => `${site(f.siteId)} 입금 ${fmtMan(f.received)} > 기성 ${fmtMan(f.billed)}`);
+  const over = fs.filter((f) => f.received + f.deducted > f.billed).map((f) => `${site(f.siteId)} 입금${f.deducted ? `·공제 ${fmtMan(f.received + f.deducted)}` : ` ${fmtMan(f.received)}`} > 기성 ${fmtMan(f.billed)}`);
   const overContract = fs.filter((f) => f.adjustedContract > 0 && f.billed > f.adjustedContract).map((f) => `${site(f.siteId)} 기성 ${fmtMan(f.billed)} > 계약 ${fmtMan(f.adjustedContract)}`);
   out.push(
     over.length + overContract.length
       ? { key: "money-over", level: "warn", title: "입금이 기성보다 많거나 기성이 계약보다 많은 현장", detail: [...over, ...overContract].join(" · "), href: "/finance" }
-      : { key: "money-over", level: "ok", title: "입금 ≤ 기성 ≤ 계약(승인 변경 포함)" },
+      : { key: "money-over", level: "ok", title: "입금(+공제) ≤ 기성 ≤ 계약(승인 변경 포함)" },
   );
 
   // ── warn: 날짜 ──

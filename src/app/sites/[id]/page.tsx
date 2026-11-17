@@ -418,7 +418,9 @@ function OverviewTab({ db, site, f, canSeeMoney }: { db: DemoDB; site: Site; f: 
         )}
         {canSeeMoney && (
           <div className="border-t border-line px-5 py-3 text-[0.8rem] text-ink-3">
-            미수금 <b className="text-ink num">{fmtEok(f.outstanding)}</b> · 승인 대기 변경공사 <b className="text-ink num">{f.pendingChangeAmount ? fmtMan(f.pendingChangeAmount) : "없음"}</b>
+            미수금 <b className="text-ink num">{fmtEok(f.outstanding)}</b>
+            {f.retention > 0 && <> (그중 유보금 <b className="text-ink num">{fmtMan(f.retention)}</b>)</>}
+            {f.deducted > 0 && <> · 발주처 공제 <b className="text-ink num">{fmtMan(f.deducted)}</b>(받지 못함 · 예상이익에서 뺌)</>} · 승인 대기 변경공사 <b className="text-ink num">{f.pendingChangeAmount ? fmtMan(f.pendingChangeAmount) : "없음"}</b>
           </div>
         )}
       </Card>

@@ -18,6 +18,7 @@ import type { DemoDB } from "@/lib/domain/types";
 import { IS_LIVE } from "@/lib/mode";
 import { ClosedMonthHint } from "@/components/domain/ClosedMonthHint";
 import { ChangeOrderBoard } from "@/components/admin/ChangeOrderBoard";
+import { EMPTY_WITHHELD, VoidMoneyButton, VoidedList, WithheldCard, WithheldFields, withheldArgs, type WithheldValue } from "@/components/admin/Withheld";
 
 export default function FinancePage() {
   const { db } = useMe();
@@ -45,7 +46,19 @@ export default function FinancePage() {
         <StatCard testId="fin-total-contract" label="변경 반영 계약금액" value={fmtEok(sum((f) => f.adjustedContract))} sub="원 계약 + 원청·발주처가 승인한 변경계약. 청구 검토·승인 대기는 제외." icon={<FileSignature size={20} />} group="growth" />
         <StatCard testId="fin-total-profit" label="예상이익" value={fmtEok(sum((f) => f.expectedProfit))} sub="변경 반영 계약금액 − 예상 총원가. 매출·입금과 다른 ‘준공 시 예상’ 개념." icon={<TrendingUp size={20} />} group="ax" />
         <StatCard testId="fin-total-billed" label="기성청구액 (확정)" value={fmtEok(sum((f) => f.billed))} sub="공정 진행에 따라 발주처에 청구해 확정된 금액. 받은 돈이 아님." icon={<FilePlus2 size={20} />} group="growth" />
-        <StatCard testId="fin-total-outstanding" label="미수금" value={fmtEok(sum((f) => f.outstanding))} sub={<>입금 누계 <b className="num text-ink-2">{fmtEok(sum((f) => f.received))}</b> (실제 통장에 들어온 돈). 미수금 = 확정 기성청구 − 입금.</>} icon={<Wallet size={20} />} group="growth" />
+        <StatCard
+          testId="fin-total-outstanding"
+          label="미수금"
+          value={fmtEok(sum((f) => f.outstanding))}
+          sub={
+            <>
+              입금 누계 <b className="num text-ink-2">{fmtEok(sum((f) => f.received))}</b> (실제 통장에 들어온 돈). 미수금 = 확정 기성청구 − 입금{sum((f) => f.deducted) ? <> − 발주처 공제 <b className="num text-ink-2">{fmtEok(sum((f) => f.deducted))}</b></> : null}.
+              {sum((f) => f.retention) ? <> 그중 유보금 <b className="num text-ink-2">{fmtEok(sum((f) => f.retention))}</b>(나중에 받을 돈).</> : null}
+            </>
+          }
+          icon={<Wallet size={20} />}
+          group="growth"
+        />
       </div>
 
       {/* 표/카드 전환은 카드 폭 기준 — 1280px 화면(150% 배율)에서 표 오른쪽 열이 잘리던 문제 (D-67 점검 반영) */}
@@ -72,6 +85,13 @@ export default function FinancePage() {
                   </p>
                 </div>
                 {longOver > 0 && <p className="text-[0.76rem] font-semibold text-err">{db.thresholds.receivableDays}일 넘은 미수 {fmtMan(longOver)}</p>}
+                {(f.retention > 0 || f.deducted > 0) && (
+                  <p className="text-[0.76rem] text-ink-3">
+                    {f.retention > 0 ? `그중 유보금 ${fmtMan(f.retention)}` : ""}
+                    {f.retention > 0 && f.deducted > 0 ? " · " : ""}
+                    {f.deducted > 0 ? `발주처 공제 ${fmtMan(f.deducted)}` : ""}
+                  </p>
+                )}
                 <dl className="grid grid-cols-2 gap-x-4 gap-y-1">
                   {kv("계약금액", fmtEok(f.adjustedContract, { unit: false, fixed: true }), true)}
                   {kv("예상이익", <span className={cx(f.expectedProfit < 0 && "font-bold text-err")}>{fmtEok(f.expectedProfit, { unit: false, fixed: true })}</span>)}
@@ -117,6 +137,8 @@ export default function FinancePage() {
                     <td className={cx("px-5 py-2.5 text-right num font-bold", longOver ? "text-err" : "text-ink")}>
                       {fmtEok(f.outstanding, { unit: false, fixed: true })}
                       {longOver > 0 && <span className="block text-[0.7rem]">{db.thresholds.receivableDays}일 초과 {fmtMan(longOver)}</span>}
+                      {f.retention > 0 && <span className="block text-[0.7rem] font-normal text-ink-3">그중 유보금 {fmtMan(f.retention)}</span>}
+                      {f.deducted > 0 && <span className="block text-[0.7rem] font-normal text-ink-3">공제 {fmtMan(f.deducted)} 뺌</span>}
                     </td>
                   </tr>
                 );
@@ -135,32 +157,48 @@ export default function FinancePage() {
           {db.billings.length === 0 && <p className="px-5 pb-4 text-[0.84rem] text-ink-3">아직 확정 기성이 없습니다. 위 ‘기성청구 등록’으로 넣거나, 지난 기록은 ‘자료 이관·점검’에서 엑셀로 가져옵니다.</p>}
           <ul className="divide-y divide-line px-5 pb-3 text-[0.84rem]">
             {[...db.billings].sort((a, b) => b.billedDate.localeCompare(a.billedDate)).map((b) => (
-              <li key={b.id} className="flex justify-between py-2">
+              <li key={b.id} className="flex items-start justify-between gap-2 py-2" data-testid="billing-row">
                 <span>
                   <b>{db.sites.find((s) => s.id === b.siteId)?.shortName}</b> {b.round ? `${b.round}차` : "이관"} <span className="text-ink-3">{fmtDate(b.billedDate)}</span>
                   {b.createdAt && <span className="block text-[0.72rem] text-ink-3">입력 {fmtDateTime(b.createdAt)} {userLabel(db, b.createdBy)}</span>}
                 </span>
-                <b className="num">{fmtMan(b.amount)}</b>
+                <span className="flex shrink-0 items-center gap-1">
+                  <b className="num">{fmtMan(b.amount)}</b>
+                  <VoidMoneyButton db={db} kind="billing" rec={b} />
+                </span>
               </li>
             ))}
           </ul>
+          <VoidedList db={db} kind="billing" />
         </Card>
         <Card>
           <CardHeader title="입금 이력" />
           {db.payments.length === 0 && <p className="px-5 pb-4 text-[0.84rem] text-ink-3">아직 입금 기록이 없습니다.</p>}
           <ul className="divide-y divide-line px-5 pb-3 text-[0.84rem]">
             {[...db.payments].sort((a, b) => b.receivedDate.localeCompare(a.receivedDate)).map((p) => (
-              <li key={p.id} className="flex justify-between py-2">
+              <li key={p.id} className="flex items-start justify-between gap-2 py-2" data-testid="payment-row">
                 <span>
                   <b>{db.sites.find((s) => s.id === p.siteId)?.shortName}</b> <span className="text-ink-3">{fmtDate(p.receivedDate)}</span>
+                  {p.retentionId && <span className="text-ink-3"> · 유보금 받음</span>}
+                  {(() => {
+                    const w = (db.receivableAdjustments ?? []).find((a) => a.paymentId === p.id && !a.voidedAt);
+                    return w ? <span className="text-ink-3"> · {w.kind === "retention" ? "유보금" : "공제"} {fmtMan(w.amount)} 떼고 받음</span> : null;
+                  })()}
                   {p.createdAt && <span className="block text-[0.72rem] text-ink-3">입력 {fmtDateTime(p.createdAt)} {userLabel(db, p.createdBy)}</span>}
                 </span>
-                <b className="num">{fmtMan(p.amount)}</b>
+                <span className="flex shrink-0 items-center gap-1">
+                  <b className="num">{fmtMan(p.amount)}</b>
+                  <VoidMoneyButton db={db} kind="payment" rec={p} />
+                </span>
               </li>
             ))}
           </ul>
+          <VoidedList db={db} kind="payment" />
         </Card>
       </div>
+
+      {/* 유보금·공제 (D-89) */}
+      <WithheldCard db={db} />
 
       {form && <MoneyFormModal db={db} kind={form} onClose={() => setForm(null)} />}
     </PageBody>
@@ -175,6 +213,8 @@ function MoneyFormModal({ db, kind, onClose }: { db: DemoDB; kind: "billing" | "
   const [date, setDate] = useState(todayIso());
   const [key] = useState(() => uid("idem"));
   const [err, setErr] = useState("");
+  const [fields, setFields] = useState<Record<string, string>>({});
+  const [withheld, setWithheld] = useState<WithheldValue>(EMPTY_WITHHELD);
   const amount = Number(amountText.replace(/[^\d]/g, ""));
   const f = siteFinancials(db, siteId);
   return (
@@ -190,12 +230,14 @@ function MoneyFormModal({ db, kind, onClose }: { db: DemoDB; kind: "billing" | "
             variant="cta"
             onClick={async () => {
               try {
+                const w = kind === "payment" ? withheldArgs(withheld) : undefined;
                 if (kind === "billing") await run("addBilling", { siteId, amount, billedDate: date, idempotencyKey: key });
-                else await run("addPayment", { siteId, amount, receivedDate: date, idempotencyKey: key });
-                toast.push({ tone: "ok", title: kind === "billing" ? "기성청구를 등록했습니다" : "입금을 등록했습니다", desc: `${db.sites.find((s) => s.id === siteId)?.shortName} ${fmtMan(amount)}` });
+                else await run("addPayment", { siteId, amount, receivedDate: date, ...(w ? { withheld: w } : {}), idempotencyKey: key });
+                toast.push({ tone: "ok", title: kind === "billing" ? "기성청구를 등록했습니다" : "입금을 등록했습니다", desc: `${db.sites.find((s) => s.id === siteId)?.shortName} ${fmtMan(amount)}${w ? ` · ${w.kind === "retention" ? "유보금" : "공제"} ${fmtMan(w.amount)}` : ""}` });
                 onClose();
               } catch (e) {
                 setErr(e instanceof CommandError ? e.message : "실패");
+                setFields(e instanceof CommandError ? e.fieldErrors : {});
               }
             }}
           >
@@ -214,7 +256,7 @@ function MoneyFormModal({ db, kind, onClose }: { db: DemoDB; kind: "billing" | "
             ))}
           </select>
         </Field>
-        <Field label={kind === "payment" ? "입금액 (원, 부가세 제외 환산)" : "기성 청구액 (원, 공급가액)"} htmlFor="m-amt" error={err} hint={kind === "payment" ? `현재 미수금 ${fmtMan(f.outstanding)}` : amount ? `= ${fmtMan(amount)}` : undefined}>
+        <Field label={kind === "payment" ? "입금액 (원, 부가세 제외 환산)" : "기성 청구액 (원, 공급가액)"} htmlFor="m-amt" error={["withheldAmount", "note", "deductionType", "dueDate"].some((k) => fields[k]) ? undefined : err} hint={kind === "payment" ? `현재 미수금 ${fmtMan(f.outstanding)}${f.retention ? ` (그중 유보금 ${fmtMan(f.retention)})` : ""}` : amount ? `= ${fmtMan(amount)}` : undefined}>
           <input id="m-amt" inputMode="numeric" className={cx(inputCls, "num text-right")} value={amountText} onChange={(e) => setAmountText(e.target.value.replace(/[^\d]/g, "") ? Number(e.target.value.replace(/[^\d]/g, "")).toLocaleString("ko-KR") : "")} />
         </Field>
         <Field label={kind === "billing" ? "청구일" : "입금일"} htmlFor="m-date">
@@ -229,6 +271,7 @@ function MoneyFormModal({ db, kind, onClose }: { db: DemoDB; kind: "billing" | "
             </p>
           ) : null;
         })()}
+        {kind === "payment" && <WithheldFields value={withheld} onChange={setWithheld} outstanding={f.outstanding} pay={amount} errors={fields} />}
         <ClosedMonthHint db={db} date={date} action="넣으면" what={kind === "billing" ? "기성" : "입금"} />
         <p className="text-[0.74rem] text-ink-3">{IS_LIVE ? "로그인한 사용자 이름으로 활동 이력에 기록됩니다." : "현재 Demo 역할 사용자로 활동 이력에 기록됩니다 (DEMO 저장소)."}</p>
       </div>

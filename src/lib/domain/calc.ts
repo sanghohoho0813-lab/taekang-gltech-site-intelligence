@@ -5,12 +5,13 @@
  *   발생원가_c   = Σ 유효 원가이벤트 (category = c)
  *   잔여예상_c   = max(0, 기준 잔여예상_c − Σ 유효 '계획 내 집행' 이벤트_c)
  * 변경 반영 계약금액 = 계약금액 + Σ 승인(approved) 변경공사
- * 예상이익     = 변경 반영 계약금액 − 예상 총원가
- * 예상이익률   = 예상이익 / 변경 반영 계약금액 × 100
- * 미수금       = Σ 확정 기성청구 − Σ 실제 수금
+ * 예상이익     = 변경 반영 계약금액 − Σ 발주처 공제(지체상금·상계 · D-89) − 예상 총원가
+ * 예상이익률   = 예상이익 / (변경 반영 계약금액 − 공제) × 100
+ * 미수금       = Σ 확정 기성청구 − Σ 실제 수금 − Σ 공제   (그중 유보금은 받을 돈 · D-89)
  */
 import type { CostCategory, CostEntry, DemoDB, FinancialSnapshot } from "./types";
 import { COST_CATEGORIES } from "./labels";
+import { deductedTotal, retentionOpen } from "./receivables";
 
 export interface CategoryBreakdown {
   category: CostCategory;
@@ -33,6 +34,10 @@ export interface SiteFinancials extends FinancialSnapshot {
   billed: number;
   received: number;
   outstanding: number;
+  /** 발주처 공제 누계 (받지 못하는 돈 · 예상이익에서 뺌 · D-89) */
+  deducted: number;
+  /** 미수 중 아직 안 받은 유보금 (D-89) */
+  retention: number;
 }
 
 export function activeEntries(entries: CostEntry[], siteId: string): CostEntry[] {
@@ -94,13 +99,17 @@ export function siteFinancials(db: DemoDB, siteId: string): SiteFinancials {
     .reduce((s, co) => s + co.amount, 0);
 
   const adjustedContract = contract.contractAmount + approvedChange;
-  const expectedProfit = adjustedContract - eac;
-  const marginPct = adjustedContract > 0 ? (expectedProfit / adjustedContract) * 100 : 0;
+  // 발주처가 떼고 주는 공제(지체상금·상계)는 받지 못하는 돈 — 예상이익에서 뺀다 (D-89). 계약금액(기성률·계약 초과 기준)은 그대로
+  const deducted = deductedTotal(db, siteId);
+  const revenue = adjustedContract - deducted;
+  const expectedProfit = revenue - eac;
+  const marginPct = revenue > 0 ? (expectedProfit / revenue) * 100 : 0;
   const plannedMarginPct =
     contract.contractAmount > 0 ? ((contract.contractAmount - contract.plannedCostTotal) / contract.contractAmount) * 100 : 0;
 
   const billed = db.billings.filter((b) => b.siteId === siteId && b.status === "confirmed").reduce((s, b) => s + b.amount, 0);
   const received = db.payments.filter((p) => p.siteId === siteId).reduce((s, p) => s + p.amount, 0);
+  const outstanding = billed - received - deducted;
 
   return {
     siteId,
@@ -120,7 +129,9 @@ export function siteFinancials(db: DemoDB, siteId: string): SiteFinancials {
     categories,
     billed,
     received,
-    outstanding: billed - received,
+    outstanding,
+    deducted,
+    retention: Math.min(Math.max(0, outstanding), retentionOpen(db, siteId)),
   };
 }
 
@@ -134,6 +145,7 @@ export function snapshotOf(f: SiteFinancials): FinancialSnapshot {
     eac: f.eac,
     expectedProfit: f.expectedProfit,
     marginPct: f.marginPct,
+    ...(f.deducted ? { deducted: f.deducted } : {}),
   };
 }
 
@@ -148,6 +160,8 @@ export interface PortfolioTotals {
   billed: number;
   received: number;
   outstanding: number;
+  deducted: number;
+  retention: number;
   pendingChangeAmount: number;
 }
 
@@ -156,6 +170,7 @@ export function portfolioTotals(db: DemoDB): PortfolioTotals {
   const sum = (k: keyof SiteFinancials) => fs.reduce((s, f) => s + (f[k] as number), 0);
   const adjustedContract = sum("adjustedContract");
   const expectedProfit = sum("expectedProfit");
+  const deducted = sum("deducted");
   return {
     siteCount: db.sites.length,
     activeCount: db.sites.filter((s) => s.status === "active").length,
@@ -163,10 +178,12 @@ export function portfolioTotals(db: DemoDB): PortfolioTotals {
     adjustedContract,
     eac: sum("eac"),
     expectedProfit,
-    marginPct: adjustedContract > 0 ? (expectedProfit / adjustedContract) * 100 : 0,
+    marginPct: adjustedContract - deducted > 0 ? (expectedProfit / (adjustedContract - deducted)) * 100 : 0,
     billed: sum("billed"),
     received: sum("received"),
     outstanding: sum("outstanding"),
+    deducted,
+    retention: sum("retention"),
     pendingChangeAmount: sum("pendingChangeAmount"),
   };
 }

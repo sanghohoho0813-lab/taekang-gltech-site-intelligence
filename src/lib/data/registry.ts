@@ -21,6 +21,8 @@ import * as SH from "./shareCommands";
 import * as IN from "./intakeCommands";
 import * as MC from "./closeCommands";
 import * as CO from "./changeOrderCommands";
+import * as MN from "./moneyCommands";
+import { DEDUCTION_LABEL } from "@/lib/domain/receivables";
 
 type Ctx = C.Ctx;
 
@@ -29,6 +31,15 @@ const entrySite = (db: DemoDB, id: unknown) => db.costEntries.find((x) => x.id =
 const entryLabel = (db: DemoDB, id: string) => {
   const e = db.costEntries.find((x) => x.id === id);
   return e ? `${CATEGORY_LABEL[e.category]} ${fmtMan(e.amount)}${e.note ? ` ${e.note.slice(0, 30)}` : ""}` : "원가";
+};
+/** 발주처 공제가 ‘이익을 바꾼 일’에 남는 글 (D-89) */
+const adjText = (w: { kind?: string; deductionType?: string; amount?: number; note?: string }, date?: string) =>
+  `발주처 공제 — ${DEDUCTION_LABEL[(w.deductionType ?? "other") as keyof typeof DEDUCTION_LABEL] ?? "공제"} ${typeof w.amount === "number" ? fmtMan(w.amount) : ""}${date ? ` (${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))})` : ""}${w.note ? ` · ${String(w.note).slice(0, 40)}` : ""}`.replace(/\s+/g, " ").trim();
+const withheldLabel = (_db: DemoDB, a: MN.PaymentInput, _siteId: string) => (a?.withheld ? adjText(a.withheld, a.receivedDate) : "입금 등록");
+const adjLabel = (a: MN.AdjustmentInput) => adjText(a ?? {}, a?.date);
+const voidAdjLabel = (db: DemoDB, a: { id: string; reason: string }) => {
+  const x = (db.receivableAdjustments ?? []).find((r) => r.id === a?.id);
+  return x ? `공제 취소 — ${adjText(x, x.date).replace(/^발주처 공제 — /, "")}${typeof a.reason === "string" && a.reason.trim() ? ` (${a.reason.trim().slice(0, 40)})` : ""}` : "공제 취소";
 };
 const contractLabel = (db: DemoDB, siteId: string, a: A.SaveSiteInput) => {
   const before = db.contracts.find((c) => c.siteId === siteId)?.contractAmount;
@@ -62,7 +73,12 @@ export const COMMANDS = {
   removeChangeOrderEvidence: (db: DemoDB, a: CO.RemoveEvidenceInput, ctx: Ctx) => CO.removeChangeOrderEvidence(db, a, ctx),
   updateChangeOrderEvidence: (db: DemoDB, a: CO.UpdateEvidenceInput, ctx: Ctx) => CO.updateChangeOrderEvidence(db, a, ctx),
   addBilling: (db: DemoDB, a: Parameters<typeof C.addBilling>[1], ctx: Ctx) => C.addBilling(db, a, ctx),
-  addPayment: (db: DemoDB, a: Parameters<typeof C.addPayment>[1], ctx: Ctx) => C.addPayment(db, a, ctx),
+  // 입금 + 발주처가 뗀 금액(유보금·공제) · 기성·입금 취소 · 유보금 받음 (D-89) — 공제는 예상이익을 줄이므로 ‘이익을 바꾼 일’에 남긴다
+  addPayment: (db: DemoDB, a: MN.PaymentInput, ctx: Ctx) => R(db, MN.addPayment(db, a, ctx), ctx, (siteId) => withheldLabel(db, a, siteId), undefined, [a?.siteId]),
+  addReceivableAdjustment: (db: DemoDB, a: MN.AdjustmentInput, ctx: Ctx) => R(db, MN.addReceivableAdjustment(db, a, ctx), ctx, () => adjLabel(a), undefined, [a?.siteId]),
+  voidReceivableAdjustment: (db: DemoDB, a: { id: string; reason: string; idempotencyKey?: string }, ctx: Ctx) => R(db, MN.voidReceivableAdjustment(db, a, ctx), ctx, () => voidAdjLabel(db, a), undefined, [(db.receivableAdjustments ?? []).find((x) => x.id === a?.id)?.siteId]),
+  releaseRetention: (db: DemoDB, a: { id: string; date: string; amount: number; idempotencyKey?: string }, ctx: Ctx) => MN.releaseRetention(db, a, ctx),
+  voidMoneyRecord: (db: DemoDB, a: MN.VoidMoneyInput, ctx: Ctx) => MN.voidMoneyRecord(db, a, ctx),
   setThresholds: (db: DemoDB, a: RiskThresholds, ctx: Ctx) => C.setThresholds(db, a, ctx),
   importCostRows: (db: DemoDB, a: { rows: C.CsvCostRow[]; idempotencyKey: string }, ctx: Ctx) => R(db, C.importCostRows(db, a.rows, a.idempotencyKey, ctx), ctx, "원가 가져오기"),
   importData: (db: DemoDB, a: I.ImportDataInput, ctx: Ctx) => R(db, I.importData(db, a, ctx), ctx, "자료 가져오기"),

@@ -587,7 +587,7 @@ function StatusModal({ db, c, to, onClose }: { db: DemoDB; c: ChangeOrder; to: S
   const f = siteFinancials(db, c.siteId);
   const afterAdj = f.adjustedContract + (to === "approved" ? amount : 0);
   const afterEac = f.eac + (to === "approved" ? addedCost : 0);
-  const afterMargin = afterAdj ? ((afterAdj - afterEac) / afterAdj) * 100 : 0;
+  const afterMargin = afterAdj - f.deducted ? ((afterAdj - f.deducted - afterEac) / (afterAdj - f.deducted)) * 100 : 0;
   const linked = c.sourceEntryIds.some((id) => db.costEntries.some((e) => e.id === id && e.status === "active"));
   const title = { submitted: "발주처에 청구", approved: "변경공사 승인 반영", rejected: "변경공사 반려" }[to];
   const noteLabel = to === "rejected" ? "반려 사유" : to === "approved" ? (partial ? "요청과 다른 금액으로 승인한 사유" : "메모 (선택)") : "메모 (선택)";

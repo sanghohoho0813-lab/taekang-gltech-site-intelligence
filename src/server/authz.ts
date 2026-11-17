@@ -242,6 +242,9 @@ export function viewFor(m: Member, db: DemoDB, now = new Date()): DemoDB {
     coEvidence: [],
     billings: [],
     payments: [],
+    // 유보금·공제 · 취소한 기성·입금 (D-89) — 본사만
+    receivableAdjustments: [],
+    voidedMoney: [],
     partnerRequests: [],
     actions: [],
     proofEvents: [],

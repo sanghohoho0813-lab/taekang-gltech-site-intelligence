@@ -11,6 +11,7 @@ import { currentClose, changesAfterClose } from "./closeRecord";
 import { siteFinancials } from "./calc";
 import { CATEGORY_LABEL, CO_STATUS_LABEL } from "./labels";
 import { approvalBasisText, coEvidenceOf } from "./changeOrders";
+import { activeAdjustments, adjustmentLabel, deductedTotal, retentionOpen } from "./receivables";
 import { fmtDateTime, todayIso } from "./format";
 import type { SheetSpec } from "./xlsx";
 
@@ -47,6 +48,8 @@ export interface WorkbookExpect {
   pending: number;
   changeApproved: number;
   profitNet: number;
+  /** 이달 발주처 공제 (D-89) */
+  deducted: number;
 }
 
 export interface MonthWorkbook {
@@ -114,17 +117,32 @@ export function monthWorkbook(db: DemoDB, month: string, today = todayIso(), opt
   const paySum = pays.reduce((a, x) => a + x.amount, 0);
   const payment: string[][] = [["입금일", "현장", "연결 기성", "입금액(부가세 제외 환산)", "부가세 포함 환산(×1.1·계산)", "발주처", "넣은 시각", "넣은 사람", "비고"], ...payRows, ["합계", "", "", n(paySum), n(pays.reduce((a, x) => a + x.amount + vat(x.amount), 0)), "", "", "", ""]];
 
-  // ── 월말 미수 (월말까지 확정 기성 누계 − 월말까지 입금 누계) ──
+  // ── 월말 미수 (월말까지 확정 기성 누계 − 월말까지 입금 누계 − 월말까지 발주처 공제 · D-89) ──
+  //    열 순서는 그대로(파일 다시 읽기 대조가 4번째 열을 본다) — 공제·유보금은 뒤에 붙인다
   const arRows = r.money.map((m) => {
     const billed = db.billings.filter((x) => x.siteId === m.site.id && x.status === "confirmed" && x.billedDate <= to).reduce((a, x) => a + x.amount, 0);
     const recv = db.payments.filter((x) => x.siteId === m.site.id && x.receivedDate <= to).reduce((a, x) => a + x.amount, 0);
+    const ded = deductedTotal(db, m.site.id, to);
+    const ar = billed - recv - ded;
     const lastPay = db.payments.filter((x) => x.siteId === m.site.id && x.receivedDate <= to).map((x) => x.receivedDate).sort().pop() ?? "";
-    return [m.site.shortName || m.site.name, n(billed), n(recv), n(billed - recv), n(billed - recv + vat(billed - recv)), lastPay, m.site.clientName ?? ""];
+    return [m.site.shortName || m.site.name, n(billed), n(recv), n(ar), n(ar + vat(ar)), lastPay, m.site.clientName ?? "", n(ded), n(retentionOpen(db, m.site.id, to))];
   });
   const receivable: string[][] = [
-    ["현장", `${asOf}까지 확정 기성 누계(공급가액)`, `${asOf}까지 입금 누계(부가세 제외)`, `${asOf} 미수(공급가액)`, "미수 부가세 포함(×1.1·계산)", "마지막 입금일", "발주처"],
+    ["현장", `${asOf}까지 확정 기성 누계(공급가액)`, `${asOf}까지 입금 누계(부가세 제외)`, `${asOf} 미수(공급가액 · 기성 − 입금 − 공제)`, "미수 부가세 포함(×1.1·계산)", "마지막 입금일", "발주처", `${asOf}까지 발주처 공제 누계(받지 못함)`, `미수 중 유보금(${asOf} · 나중에 받을 돈)`],
     ...arRows,
-    ["합계", n(colSum([[], ...arRows], 1)), n(colSum([[], ...arRows], 2)), n(colSum([[], ...arRows], 3)), n(colSum([[], ...arRows], 4)), "", ""],
+    ["합계", n(colSum([[], ...arRows], 1)), n(colSum([[], ...arRows], 2)), n(colSum([[], ...arRows], 3)), n(colSum([[], ...arRows], 4)), "", "", n(colSum([[], ...arRows], 7)), n(colSum([[], ...arRows], 8))],
+  ];
+
+  // ── 유보·공제 (D-89) — 이달 발주처가 뗀 금액(뗀 날 기준) · 이달 받은 유보금 ──
+  const adjs = activeAdjustments(db).filter((a) => siteIds.has(a.siteId));
+  const wRows = [
+    ...adjs.filter((a) => inMonth(a.date)).map((a) => ({ d: a.date, row: [a.date, siteName(a.siteId), adjustmentLabel(a), n(a.kind === "deduction" ? a.amount : 0), n(a.kind === "retention" ? a.amount : 0), "", roundOf(a.billingId), a.dueDate ?? "", a.note, userName(a.createdBy)] })),
+    ...adjs.flatMap((a) => (a.released ?? []).filter((x) => inMonth(x.date)).map((x) => ({ d: x.date, row: [x.date, siteName(a.siteId), "유보금 받음 (입금으로 등록)", "", "", n(x.amount), roundOf(a.billingId), "", a.note, userName(x.by)] }))),
+  ].sort((a, x) => a.d.localeCompare(x.d) || String(a.row[1]).localeCompare(String(x.row[1])));
+  const withheld: string[][] = [
+    ["날짜", "현장", "구분", "공제(받지 못함 · 원)", "유보금 뗌(나중에 받음 · 원)", "유보금 받음(원 · 입금 시트에도 있음)", "연결 기성", "유보금 받을 예정일", "사유·메모", "넣은 사람"],
+    ...wRows.map((x) => x.row),
+    ["합계", "", "", n(colSum([[], ...wRows.map((x) => x.row)], 3)), n(colSum([[], ...wRows.map((x) => x.row)], 4)), n(colSum([[], ...wRows.map((x) => x.row)], 5)), "", "", "", ""],
   ];
 
   // ── 원가 (발생일 기준 · 모든 상태 — 합계는 ‘확정’만) ──
@@ -232,6 +250,7 @@ export function monthWorkbook(db: DemoDB, month: string, today = todayIso(), opt
   const billSheet = colSum(billing, 3, billing.length - 1);
   const paySheet = colSum(payment, 3, payment.length - 1);
   const arSheet = last(receivable, 3);
+  const dedSheet = last(withheld, 3);
   const coSheet = last(change, 11);
   const evSheet = last(events, 2);
   const checks: WorkbookCheck[] = [
@@ -241,6 +260,7 @@ export function monthWorkbook(db: DemoDB, month: string, today = todayIso(), opt
     { label: "이달 입금: 현장별 요약 = 입금 시트", sheet: last(summary, 6), screen: paySheet },
     { label: "미수: 미수 시트 = 화면", sheet: arSheet, screen: r.totals.outstandingAtEnd },
     { label: "미수: 현장별 요약 = 미수 시트", sheet: last(summary, 7), screen: arSheet },
+    { label: "이달 발주처 공제: 유보·공제 시트 = 화면", sheet: dedSheet, screen: r.totals.deducted },
     { label: "이달 원가: 원가 시트 ‘확정’ 줄 = 화면", sheet: confirmedSheet, screen: r.totals.costTotal },
     { label: "이달 원가: 현장별 요약 = 원가 시트", sheet: last(summary, 8), screen: confirmedSheet },
     { label: "원가 항목별 시트 = 원가 시트(항목마다 더한 값) — 차이 합", sheet: catGap, screen: 0 },
@@ -278,12 +298,12 @@ export function monthWorkbook(db: DemoDB, month: string, today = todayIso(), opt
     ["", ""],
     ["금액 기준", "모든 금액은 공급가액(부가세 별도)입니다. 입금은 받은 돈을 부가세 제외로 환산해 넣은 금액이라 통장 입금액은 대개 ‘부가세 포함 환산’ 칸(×1.1)과 비슷합니다. 부가세 칸은 10%로 계산한 참고값입니다 — 세금계산서·통장 금액과 맞춰 보세요."],
     ["날짜 기준", "기성은 확정 기성의 청구일 · 입금은 입금일 · 원가는 발생일 기준이고, 원가 합계는 공무 확인이 끝난 ‘확정’만 셉니다(대기·반려·취소 줄은 원가 시트 아래에 따로)."],
-    ["", `미수 = ${asOf}까지 확정 기성 누계 − ${asOf}까지 입금 누계. 계약·변경공사·예상이익은 ${asOf} 기준(지금 숫자는 ‘참고’ 칸). 변경공사는 승인 전에는 계약·이익에 들어가지 않습니다.`],
+    ["", `미수 = ${asOf}까지 확정 기성 누계 − ${asOf}까지 입금 누계 − ${asOf}까지 발주처 공제(지체상금·상계 등 받지 못하는 돈). 미수 중 유보금은 나중에 받을 돈입니다. 계약·변경공사·예상이익은 ${asOf} 기준(지금 숫자는 ‘참고’ 칸). 변경공사는 승인 전에는 계약·이익에 들어가지 않습니다.`],
     ["관리용 숫자", "예상이익 · 이익을 바꾼 일 · 노무 추정 인건비는 경영 관리용 숫자이고 장부 숫자가 아닙니다. 노무 추정은 출퇴근·작업 인원 기준 추정이라 급여·원천세·지급명세서에 쓰지 마세요."],
     ["변경공사 증빙", "변경공사 시트의 ‘증빙 파일’ 칸은 시스템에 올려 둔 변경계약서·공문·견적서 파일 수입니다. 파일 자체는 회사에 요청하시면 보내 드립니다."],
     ["", "숫자가 장부와 다르면 회사(공무 담당)에 알려 주시면 고쳐서 다시 보내 드립니다."],
     ["", ""],
-    ["시트", "현장별 요약 · 기성 · 입금 · 미수 · 원가 · 원가 항목별 · 변경공사 · 노무 · 이익을 바꾼 일"],
+    ["시트", "현장별 요약 · 기성 · 입금 · 미수 · 유보·공제 · 원가 · 원가 항목별 · 변경공사 · 노무 · 이익을 바꾼 일"],
   ];
 
   const sheets: SheetSpec[] = [
@@ -292,7 +312,8 @@ export function monthWorkbook(db: DemoDB, month: string, today = todayIso(), opt
     { name: "현장별 요약", rows: summary, widths: [16, 9, 15, 17, 18, 14, 14, 14, 15, 15, 15, 15, 15, 16], header: true, textCols: [0, 1] },
     { name: "기성", rows: billing, widths: [12, 16, 7, 15, 15, 17, 20, 17, 10, 18], header: true, textCols: [1, 2, 6, 7, 8, 9] },
     { name: "입금", rows: payment, widths: [12, 16, 9, 20, 22, 20, 17, 10, 18], header: true, textCols: [1, 2, 5, 6, 7, 8] },
-    { name: r.ended ? "월말 미수" : "미수(오늘)", rows: receivable, widths: [16, 24, 24, 18, 22, 13, 20], header: true, textCols: [0, 6] },
+    { name: r.ended ? "월말 미수" : "미수(오늘)", rows: receivable, widths: [16, 24, 24, 26, 22, 13, 20, 24, 24], header: true, textCols: [0, 6] },
+    { name: "유보·공제", rows: withheld, widths: [12, 16, 26, 18, 20, 22, 10, 14, 34, 10], header: true, textCols: [1, 2, 6, 8, 9] },
     { name: "원가", rows: cost, widths: [26, 17, 14, 10, 10, 14, 12, 12, 30, 16, 10, 12, 20, 14, 24], header: true, textCols: costRaw[0].map((h, i) => (["발생일", "입력일", "금액(원)", "처음 금액(고치기 전)"].includes(h) ? -1 : i)).filter((i) => i >= 0) },
     { name: "원가 항목별", rows: byCategory, widths: [16, ...cats.map(() => 14), 16], header: true, textCols: [0] },
     { name: "변경공사", rows: change, widths: [16, 26, 14, 14, 16, 16, 12, 16, 14, 14, 30, 14, 24], header: true, textCols: [0, 1, 4, 5, 9, 10, 12] },
@@ -300,7 +321,7 @@ export function monthWorkbook(db: DemoDB, month: string, today = todayIso(), opt
     { name: "이익을 바꾼 일", rows: events, widths: [14, 16, 18, 60], header: true, textCols: [1, 3] },
   ];
   const company = (db.company.name || "회사").replace(/[^\w가-힣]/g, "");
-  const expect: WorkbookExpect = { billed: r.totals.billed, received: r.totals.received, outstanding: r.totals.outstandingAtEnd, cost: r.totals.costTotal, pending: r.totals.pending, changeApproved: r.totals.changeApproved, profitNet };
+  const expect: WorkbookExpect = { billed: r.totals.billed, received: r.totals.received, outstanding: r.totals.outstandingAtEnd, cost: r.totals.costTotal, pending: r.totals.pending, changeApproved: r.totals.changeApproved, profitNet, deducted: r.totals.deducted };
   return { sheets, checks, ok, stage, expect, filename: `월마감_${month}_${stage}_${company}.xlsx` };
 }
 
@@ -327,6 +348,7 @@ export async function verifyWorkbookFile(bytes: Uint8Array, w: MonthWorkbook): P
     { label: "파일: 기성", sheet: lastNum("기성", 3), screen: w.expect.billed },
     { label: "파일: 입금", sheet: lastNum("입금", 3), screen: w.expect.received },
     { label: "파일: 미수", sheet: lastNum(ar, 3), screen: w.expect.outstanding },
+    { label: "파일: 이달 발주처 공제", sheet: lastNum("유보·공제", 3), screen: w.expect.deducted },
     { label: "파일: 원가(확정)", sheet: Number(total?.[amt] ?? NaN), screen: w.expect.cost },
     { label: "파일: 공무 확인 대기", sheet: pending, screen: w.expect.pending },
     { label: "파일: 이달 승인 변경공사", sheet: lastNum("변경공사", 11), screen: w.expect.changeApproved },

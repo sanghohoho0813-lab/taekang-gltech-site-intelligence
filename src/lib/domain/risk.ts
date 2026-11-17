@@ -8,6 +8,7 @@ import { CATEGORY_LABEL, RULE_VERSION } from "./labels";
 import { daysBetween, fmtEok, fmtMan, fmtPct, fmtPp, todayIso } from "./format";
 import { coDays } from "./changeOrders";
 import { siteInstallPct } from "./material";
+import { deductedTotal, retentionNotDue } from "./receivables";
 
 const SEV_ORDER: Record<Severity, number> = { high: 0, medium: 1, low: 2 };
 
@@ -23,17 +24,25 @@ export interface ReceivableAging {
   ageDays: number;
 }
 
-/** 수금액을 오래된 기성부터 차감(FIFO)해 미수 잔액별 경과일 계산 */
+/**
+ * 수금액을 오래된 기성부터 차감(FIFO)해 미수 잔액별 경과일 계산.
+ * 발주처 공제(받지 못하는 돈)는 받은 돈처럼 먼저 갚은 것으로 보고, 받을 날이 안 된 유보금은 오래된 미수부터 빼서 경과일로 세지 않는다 (D-89 —
+ * 유보금 때문에 ‘90일 넘은 미수’ 경고가 계속 뜨던 문제). 유보금을 뺀 금액은 held에 남긴다.
+ */
 export function receivableAging(db: DemoDB, siteId: string, now = new Date()): ReceivableAging[] {
   const bills = db.billings
     .filter((b) => b.siteId === siteId && b.status === "confirmed")
     .sort((a, b) => a.billedDate.localeCompare(b.billedDate));
-  let paid = db.payments.filter((p) => p.siteId === siteId).reduce((s, p) => s + p.amount, 0);
+  let paid = db.payments.filter((p) => p.siteId === siteId).reduce((s, p) => s + p.amount, 0) + deductedTotal(db, siteId);
+  let hold = retentionNotDue(db, siteId, todayIso(now));
   const out: ReceivableAging[] = [];
   for (const b of bills) {
     const applied = Math.min(paid, b.amount);
     paid -= applied;
-    const unpaid = b.amount - applied;
+    let unpaid = b.amount - applied;
+    const held = Math.min(hold, unpaid);
+    hold -= held;
+    unpaid -= held;
     if (unpaid > 0) out.push({ billingId: b.id, round: b.round, billedDate: b.billedDate, unpaid, ageDays: daysBetween(b.billedDate, now) });
   }
   return out;
@@ -212,8 +221,8 @@ export function computeSignals(db: DemoDB, now = new Date()): RiskSignal[] {
         title: `${name} ${oldest.round}차 기성 미수 ${fmtMan(sum)} · ${oldest.ageDays}일 경과`,
         summary: "확정된 기성청구액 중 기준일을 넘긴 미수 잔액이 있습니다.",
         why: [
-          `확정 기성 ${fmtEok(f.billed)} − 수금 ${fmtEok(f.received)} = 미수 ${fmtEok(f.outstanding)}`,
-          `수금은 오래된 기성부터 먼저 갚은 것으로 보고 경과일 계산`,
+          f.deducted ? `확정 기성 ${fmtEok(f.billed)} − 수금 ${fmtEok(f.received)} − 발주처 공제 ${fmtEok(f.deducted)} = 미수 ${fmtEok(f.outstanding)}` : `확정 기성 ${fmtEok(f.billed)} − 수금 ${fmtEok(f.received)} = 미수 ${fmtEok(f.outstanding)}`,
+          `수금은 오래된 기성부터 먼저 갚은 것으로 보고 경과일 계산${f.retention ? ` · 받을 날이 안 된 유보금(최대 ${fmtEok(f.retention)})은 빼고 셈` : ""}`,
           `${oldest.round}차 잔액 ${fmtMan(oldest.unpaid)} · ${oldest.ageDays}일 > 기준 ${t.receivableDays}일`,
         ],
         dataUsed: ["progress_billings", "payments_received"],

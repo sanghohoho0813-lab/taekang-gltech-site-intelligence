@@ -1,7 +1,8 @@
 /** D-83 대표 보고서 달별 보기 · 기성·입금 입력 시각·사람 */
 import { describe, expect, it } from "vitest";
 import { createSeed } from "@/lib/data/seed";
-import { addBilling, addPayment } from "@/lib/data/commands";
+import { addBilling } from "@/lib/data/commands";
+import { addPayment } from "@/lib/data/moneyCommands";
 import { importData } from "@/lib/data/importCommands";
 import { closeMonth } from "@/lib/data/closeCommands";
 import { changesAfterClose, currentClose } from "@/lib/domain/closeRecord";

@@ -407,7 +407,8 @@ export interface MonthCloseSnapshot {
   /** 마감할 때 남겨 둔 ‘닫기 전에 볼 것’ */
   openItems: string[];
   /** 그 달 원가·기성·입금의 지문 — 마감 뒤에 무엇이 들어오고 바뀌었는지 찾는다 (id|현장|상태|금액|항목|날짜) */
-  keys: { costs: string[]; billings: string[]; payments: string[] };
+  /** adjustments: 유보금·공제 (D-89 · 그 전 마감에는 없음) */
+  keys: { costs: string[]; billings: string[]; payments: string[]; adjustments?: string[] };
 }
 
 export interface MonthCloseRecord {
@@ -673,11 +674,66 @@ export interface PaymentReceived {
   billingId?: string;
   amount: number;
   receivedDate: string;
+  /** 유보금을 받은 입금이면 그 유보금 (D-89 · 이 입금을 취소하면 유보금이 다시 열린다) */
+  retentionId?: string;
   /** 자료 가져오기 묶음 (가져오기 취소용) */
   importBatchId?: string;
   /** 넣은 시각·사람 (D-83) · 그 전 기록에는 없음 */
   createdAt?: string;
   createdBy?: string;
+}
+
+/**
+ * 입금 차액 정리 (D-89) — 발주처가 기성에서 떼고 준 돈.
+ * - retention 유보금: 나중에 받을 돈(준공 뒤·하자 기간 뒤). 미수에는 남지만 ‘오래된 미수’(경과일)로 세지 않는다 — 받을 날이 지나면 다시 센다.
+ * - deduction 공제: 받지 못하는 돈(지체상금·상계·기타). 미수에서 빼고 예상이익도 그만큼 줄인다(‘이익을 바꾼 일’에 남음).
+ * 취소는 지우지 않고 표시한다(이유·누가·언제).
+ */
+export type DeductionType = "delay_penalty" | "setoff" | "other";
+export interface RetentionRelease {
+  /** 받은 날 (YYYY-MM-DD) */
+  date: string;
+  amount: number;
+  /** 이 받음으로 만든 입금 */
+  paymentId: string;
+  at: string;
+  by: string;
+}
+export interface ReceivableAdjustment {
+  id: string;
+  siteId: string;
+  kind: "retention" | "deduction";
+  /** 공제 종류 (kind = deduction) */
+  deductionType?: DeductionType;
+  amount: number;
+  /** 발주처가 떼고 준 날 (YYYY-MM-DD) */
+  date: string;
+  note: string;
+  /** 어느 기성 회차에서 뗐는지 (선택) */
+  billingId?: string;
+  /** 유보금을 받을 예정일 (선택 · 지나면 다시 ‘오래된 미수’로 셈) */
+  dueDate?: string;
+  /** 유보금 받음 기록 (나눠 받을 수 있음) */
+  released?: RetentionRelease[];
+  /** 입금 등록과 함께 넣은 것 */
+  paymentId?: string;
+  createdAt: string;
+  createdBy: string;
+  voidedAt?: string;
+  voidedBy?: string;
+  voidReason?: string;
+}
+
+/** 취소한 기성·입금 (D-89) — 숫자에서는 빠지고, 무엇을 왜 취소했는지 남긴다 */
+export interface VoidedMoney {
+  id: string;
+  kind: "billing" | "payment";
+  siteId: string;
+  /** 취소한 기록 그대로 */
+  record: ProgressBilling | PaymentReceived;
+  voidedAt: string;
+  voidedBy: string;
+  reason: string;
 }
 
 export type PartnerRequestStatus = "received" | "reviewing" | "answered";
@@ -906,6 +962,8 @@ export interface FinancialSnapshot {
   eac: number;
   expectedProfit: number;
   marginPct: number;
+  /** 발주처 공제 누계 (D-89 · 그 전 기준선에는 없음 = 0) */
+  deducted?: number;
 }
 
 export interface RiskThresholds {
@@ -976,6 +1034,10 @@ export interface DemoDB {
   coEvidence?: ChangeOrderEvidence[];
   billings: ProgressBilling[];
   payments: PaymentReceived[];
+  /** 유보금·공제 (D-89) — 본사만 */
+  receivableAdjustments?: ReceivableAdjustment[];
+  /** 취소한 기성·입금 (D-89) — 본사만 */
+  voidedMoney?: VoidedMoney[];
   partnerRequests: PartnerRequest[];
   signalStates: Record<string, SignalState>;
   actions: ActionItem[];

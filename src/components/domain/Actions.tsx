@@ -206,7 +206,7 @@ export function CompleteModal({ db, action, open, onClose }: { db: DemoDB; actio
                 </Field>
                 {amount > 0 && (
                   <p className="mt-1.5 text-[0.75rem] text-ink-3 num">
-                    참고: 승인되면 이익률 {fmtPct(f.marginPct)} → {fmtPct(((f.adjustedContract + f.pendingChangeAmount + amount - f.eac) / (f.adjustedContract + f.pendingChangeAmount + amount)) * 100)} (시뮬레이션 · 미반영)
+                    참고: 승인되면 이익률 {fmtPct(f.marginPct)} → {fmtPct(((f.adjustedContract - f.deducted + f.pendingChangeAmount + amount - f.eac) / (f.adjustedContract - f.deducted + f.pendingChangeAmount + amount)) * 100)} (시뮬레이션 · 미반영)
                   </p>
                 )}
               </div>

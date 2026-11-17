@@ -193,6 +193,9 @@ export function prepareRestore(backup: Record<string, unknown>, ownerEmail: stri
   shape("costEntries", (x) => Number.isFinite(x.amount) && typeof x.date === "string" && DATE.test(x.date));
   shape("billings", (x) => Number.isFinite(x.amount) && typeof x.billedDate === "string" && DATE.test(x.billedDate));
   shape("payments", (x) => Number.isFinite(x.amount) && typeof x.receivedDate === "string" && DATE.test(x.receivedDate));
+  // 유보금·공제 · 취소한 기성·입금 (D-89) — 미수·예상이익 계산이 쓰는 값
+  shape("receivableAdjustments", (x) => typeof x.siteId === "string" && (x.kind === "retention" || x.kind === "deduction") && Number.isFinite(x.amount) && (x.amount as number) > 0 && typeof x.date === "string" && DATE.test(x.date) && (x.released === undefined || (Array.isArray(x.released) && (x.released as Record<string, unknown>[]).every((r) => isObj(r) && Number.isFinite(r.amount) && typeof r.date === "string" && DATE.test(r.date as string)))));
+  shape("voidedMoney", (x) => (x.kind === "billing" || x.kind === "payment") && typeof x.siteId === "string" && isObj(x.record));
   shape("photos", (x) => typeof x.siteId === "string" && okTime(x.createdAt));
   // 변경공사 증빙 파일 (D-88) — 어느 변경공사의 무슨 파일인지 (화면이 종류·이름을 쓴다)
   shape("coEvidence", (x) => typeof x.changeOrderId === "string" && typeof x.siteId === "string" && okTime(x.createdAt) && (x.kind === "image" || x.kind === "pdf") && ["contract", "letter", "estimate", "other"].includes(x.docType as string) && typeof x.fileName === "string" && x.fileName.length <= 100);

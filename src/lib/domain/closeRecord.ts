@@ -29,6 +29,10 @@ export function monthKeys(db: DemoDB, month: string): MonthCloseSnapshot["keys"]
     // 기성·입금은 달 마지막 날까지 전부 — 지난 달 날짜로 들어온 것도 ‘월말 미수’를 바꾸므로 (D-82 점검: 9/25 기성이 0건으로 셈)
     billings: db.billings.filter((x) => !!x.billedDate && x.billedDate <= to).map((x) => [x.id, x.siteId, x.status, x.amount, "", x.billedDate].join("|")),
     payments: db.payments.filter((x) => !!x.receivedDate && x.receivedDate <= to).map((x) => [x.id, x.siteId, "received", x.amount, "", x.receivedDate].join("|")),
+    // 유보금·공제 (D-89) — 월말 미수를 바꾸므로 달 마지막 날까지 전부. 유보금은 받은 금액까지 지문에 (받으면 바뀜)
+    adjustments: (db.receivableAdjustments ?? [])
+      .filter((a) => a.date <= to)
+      .map((a) => [a.id, a.siteId, a.voidedAt ? "voided" : a.kind, a.amount - (a.released ?? []).filter((r) => r.date <= to).reduce((x, r) => x + r.amount, 0), "", a.date].join("|")),
   };
 }
 
@@ -88,7 +92,7 @@ const parse = (k: string): Key => {
   const [id, siteId, status, amount, category, date] = k.split("|");
   return { id, siteId, status, amount: Number(amount), category, date };
 };
-const STATUS = { active: "반영", pending: "공무 확인 대기", rejected: "반려", voided: "취소", confirmed: "확정", draft: "초안", received: "입금" } as Record<string, string>;
+const STATUS = { active: "반영", pending: "공무 확인 대기", rejected: "반려", voided: "취소", confirmed: "확정", draft: "초안", received: "입금", retention: "유보금", deduction: "공제" } as Record<string, string>;
 const md = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
 
 /**
@@ -131,15 +135,23 @@ export function compareSnapshots(db: DemoDB, month: string, before: MonthCloseSn
     ["costs", "원가"],
     ["billings", "기성"],
     ["payments", "입금"],
+    ["adjustments", "유보금·공제"],
   ];
   // 지난 기록(다시 연 마감)은 지문을 비워 둔다 — 지문이 없으면 이벤트는 숫자 변화로만 찾는다
   const hasKeys = before.keys.costs.length + before.keys.billings.length + before.keys.payments.length > 0 || now.keys.costs.length + now.keys.billings.length + now.keys.payments.length === 0;
   for (const [k, word] of hasKeys ? kinds : []) {
-    const was = new Map(before.keys[k].map((x) => [parse(x).id, parse(x)]));
-    const is = new Map(now.keys[k].map((x) => [parse(x).id, parse(x)]));
+    // 유보금·공제 지문이 없는 예전 마감은 비교하지 않는다 (숫자 변화로 찾음 · D-89)
+    if (k === "adjustments" && !before.keys.adjustments) continue;
+    const was = new Map((before.keys[k] ?? []).map((x) => [parse(x).id, parse(x)]));
+    const is = new Map((now.keys[k] ?? []).map((x) => [parse(x).id, parse(x)]));
     const href = (x: Key) => (k === "costs" ? `/sites/${x.siteId}?tab=cost` : "/finance");
     const what = (x: Key) => `${site(x.siteId)} ${k === "costs" ? (CATEGORY_LABEL[x.category as keyof typeof CATEGORY_LABEL] ?? "원가") : word} ${fmtMan(x.amount)} (${md(x.date)}${k !== "costs" && x.date < from ? " · 월말 미수에 영향" : ""})`;
     const at = (id: string) => {
+      // 유보금·공제: 넣은·받은·취소한 시각 (D-89)
+      if (k === "adjustments") {
+        const a = (db.receivableAdjustments ?? []).find((x) => x.id === id);
+        return a ? [a.createdAt, a.voidedAt, ...(a.released ?? []).map((r) => r.at)].filter((t): t is string => !!t && t > since).sort().at(-1) : undefined;
+      }
       // 기성·입금은 넣은 시각 (D-83 · 그 전 기록에는 없음)
       if (k !== "costs") {
         const x = k === "billings" ? db.billings.find((b) => b.id === id) : db.payments.find((p) => p.id === id);
@@ -172,7 +184,14 @@ export function compareSnapshots(db: DemoDB, month: string, before: MonthCloseSn
       if (!is.has(id)) {
         // 다른 달로 옮긴 원가 (발생일 고침)
         const moved = k === "costs" ? db.costEntries.find((c) => c.id === id) : undefined;
-        events.push({ at: moved ? at(id) : undefined, siteId: y.siteId, text: moved ? `원가 다른 달로 옮김 · ${what(y)} → ${md(moved.date)}` : `${word} 빠짐 · ${what(y)} (가져오기 취소 등)`, href: href(y) });
+        // 취소한 기성·입금 (D-89) — 누가·왜
+        const v = k === "billings" || k === "payments" ? (db.voidedMoney ?? []).find((x) => x.id === id) : undefined;
+        events.push({
+          at: moved ? at(id) : v && v.voidedAt > since ? v.voidedAt : undefined,
+          siteId: y.siteId,
+          text: moved ? `원가 다른 달로 옮김 · ${what(y)} → ${md(moved.date)}` : v ? `${word} 취소함 · ${what(y)} — ${v.reason}` : `${word} 빠짐 · ${what(y)} (가져오기 취소 등)`,
+          href: href(y),
+        });
       }
   }
   // 출력 추정이 바뀌었으면 (늦게 들어온 작업 인원·팀 단가 변경)

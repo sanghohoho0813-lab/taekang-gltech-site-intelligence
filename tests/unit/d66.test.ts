@@ -1,7 +1,8 @@
 /** D-66 안정화 2차 점검에서 재현된 버그들의 재발 방지 테스트 */
 import { describe, expect, it } from "vitest";
 import { createSeed } from "@/lib/data/seed";
-import { addBilling, addPayment, assignAction, createAction, CommandError, errorMessage, submitFieldReport, updatePartnerRequest, createPartnerRequest } from "@/lib/data/commands";
+import { addPayment } from "@/lib/data/moneyCommands";
+import { addBilling, assignAction, createAction, CommandError, errorMessage, submitFieldReport, updatePartnerRequest, createPartnerRequest } from "@/lib/data/commands";
 import { requestAttendanceFix, reviewAttendanceFix, reviewReport, supplementReport, createWorkOrder } from "@/lib/data/opsCommands";
 import { importData, undoImport } from "@/lib/data/importCommands";
 import { planImport, parseQtyCell, parseWonCell, normDate } from "@/lib/domain/importers";

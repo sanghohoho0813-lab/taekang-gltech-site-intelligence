@@ -1109,20 +1109,7 @@ export function addBilling(db0: DemoDB, input: { siteId: string; amount: number;
   return { db, result: {} };
 }
 
-export function addPayment(db0: DemoDB, input: { siteId: string; amount: number; receivedDate: string; idempotencyKey?: string }, ctx: Ctx) {
-  requireSite(db0, input.siteId);
-  const f = siteFinancials(db0, input.siteId);
-  validateAmount(input.amount);
-  if (input.amount > f.outstanding) throw new CommandError(`수금액이 미수금(${fmtMan(f.outstanding)})보다 클 수 없습니다.`, "VALIDATION", { amount: "미수금 초과" });
-  if (!pastCalendarDate(input.receivedDate, ctx)) throw new CommandError("입금일을 확인해주세요 (오늘 이후 날짜는 안 됩니다).", "VALIDATION", { receivedDate: "날짜 확인" });
-  const db = clone(db0);
-  claimKey(db, input.idempotencyKey);
-  db.payments.push({ id: uid("pay"), siteId: input.siteId, amount: input.amount, receivedDate: input.receivedDate, createdAt: nowIso(ctx), createdBy: ctx.userId });
-  const site = requireSite(db, input.siteId);
-  log(db, ctx, "payment", `${site.shortName} 입금 ${fmtMan(input.amount)} 등록 → 미수금 ${fmtMan(f.outstanding)} → ${fmtMan(f.outstanding - input.amount)}`, input.siteId, "/finance");
-  touch(db, ctx);
-  return { db, result: {} };
-}
+// 입금 등록은 moneyCommands.addPayment (D-89 — 발주처가 뗀 유보금·공제와 함께)
 
 export function setThresholds(db0: DemoDB, t: RiskThresholds, ctx: Ctx) {
   const vals = Object.values(t);

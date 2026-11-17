@@ -9,6 +9,7 @@ import { activeAt, entryEacImpact, siteEacImpacts, siteFinancials } from "./calc
 import { laborEstimate, type LaborSite } from "./labor";
 import { isOpenShift, minutesOf, overlapPairs, periodSummary, type MonthRow } from "./attendance";
 import { todayIso } from "./format";
+import { activeAdjustments, deductedTotal, retentionOpen } from "./receivables";
 
 export interface CloseSiteMoney {
   site: Site;
@@ -16,8 +17,12 @@ export interface CloseSiteMoney {
   billed: number;
   /** 이 달 입금 */
   received: number;
-  /** 달 마지막 날 기준 미수 (그날까지 확정 기성 − 그날까지 입금) */
+  /** 달 마지막 날 기준 미수 (그날까지 확정 기성 − 그날까지 입금 − 그날까지 발주처 공제 · D-89) */
   outstandingAtEnd: number;
+  /** 이 달 발주처 공제 (지체상금·상계 · 뗀 날 기준 · D-89) */
+  deducted: number;
+  /** 달 마지막 날 기준 아직 안 받은 유보금 (월말 미수 안에 있음 · D-89) */
+  retentionAtEnd: number;
   /** 이 달 원가 (공무 확인까지 끝난 것 · 발생일 기준) */
   cost: Record<CostCategory, number>;
   costTotal: number;
@@ -129,7 +134,7 @@ export interface MonthCloseReport {
   /** 달이 끝났나 (지난달) */
   ended: boolean;
   money: CloseSiteMoney[];
-  totals: { billed: number; received: number; outstandingAtEnd: number; costTotal: number; pending: number; changeApproved: number };
+  totals: { billed: number; received: number; outstandingAtEnd: number; costTotal: number; pending: number; changeApproved: number; deducted: number; retentionAtEnd: number };
   /** 달이 끝난 뒤에 손익에 들어온 이 달 날짜 원가 (D-79 — 인쇄해 둔 마감본과 숫자가 달라지는 이유) */
   late: { n: number; amount: number };
   /** 달이 끝난 뒤에 넣은 이 달 날짜 기성·입금 (넣은 시각이 남은 것만 · D-83) */
@@ -179,7 +184,9 @@ export function closeSites(db: DemoDB, from: string, to: string): Site[] {
     (db.forecastChanges ?? []).some((c) => c.siteId === id && inRange(kst(c.at), from, to)) ||
     db.changeOrders.some((c) => c.siteId === id && !!c.decidedAt && (inRange(kst(c.decidedAt), from, to) || (c.status === "approved" && inRange(coProfitDay(db, c), from, to)))) ||
     // 원가 고침·취소·원 계약 변경 등으로 남은 예상이익 조정 (D-85) — 그 달 이익을 바꾼 일이 있으면 그 현장도 넣는다
-    (db.profitAdjustments ?? []).some((a) => a.siteId === id && inRange(kst(a.at), from, to));
+    (db.profitAdjustments ?? []).some((a) => a.siteId === id && inRange(kst(a.at), from, to)) ||
+    // 유보금·공제·유보금 받음 (D-89) — 그 달 월말 미수가 바뀐 현장
+    activeAdjustments(db, id).some((a) => inRange(a.date, from, to) || (a.released ?? []).some((r) => inRange(r.date, from, to)));
   // 착공 전 달이라도 그 달 날짜로 돈·원가가 있으면 넣는다 — 자재 선발주처럼 착공 전 발생일 원가가 어느 달에도 안 잡혀 월 합 ≠ 누계가 되던 문제 (D-85)
   return db.sites.filter((s) => touched(s.id) || (s.startDate <= to && (s.status === "active" || s.endDate >= from)));
 }
@@ -264,7 +271,9 @@ export function monthClose(db: DemoDB, month: string, today = todayIso()): Month
       site,
       billed: bills.filter((x) => inRange(x.billedDate, from, to)).reduce((a, x) => a + x.amount, 0),
       received: pays.filter((x) => inRange(x.receivedDate, from, to)).reduce((a, x) => a + x.amount, 0),
-      outstandingAtEnd: bills.filter((x) => x.billedDate <= to).reduce((a, x) => a + x.amount, 0) - pays.filter((x) => x.receivedDate <= to).reduce((a, x) => a + x.amount, 0),
+      outstandingAtEnd: bills.filter((x) => x.billedDate <= to).reduce((a, x) => a + x.amount, 0) - pays.filter((x) => x.receivedDate <= to).reduce((a, x) => a + x.amount, 0) - deductedTotal(db, site.id, to),
+      deducted: activeAdjustments(db, site.id).filter((a) => a.kind === "deduction" && inRange(a.date, from, to)).reduce((x, a) => x + a.amount, 0),
+      retentionAtEnd: retentionOpen(db, site.id, to),
       cost,
       costTotal: COST_CATEGORIES.reduce((a, c) => a + cost[c], 0),
       pending: { n: pend.length, amount: pend.reduce((a, e) => a + e.amount, 0) },
@@ -278,7 +287,7 @@ export function monthClose(db: DemoDB, month: string, today = todayIso()): Month
   const lateBills = ended ? db.billings.filter((x) => x.status === "confirmed" && inRange(x.billedDate, from, to) && !!x.createdAt && kst(x.createdAt) > b.to) : [];
   const latePays = ended ? db.payments.filter((x) => inRange(x.receivedDate, from, to) && !!x.createdAt && kst(x.createdAt) > b.to) : [];
   const lateMoney = { n: lateBills.length + latePays.length, billed: lateBills.reduce((a, x) => a + x.amount, 0), received: latePays.reduce((a, x) => a + x.amount, 0) };
-  const totals = { billed: sum((m) => m.billed), received: sum((m) => m.received), outstandingAtEnd: sum((m) => m.outstandingAtEnd), costTotal: sum((m) => m.costTotal), pending: sum((m) => m.pending.amount), changeApproved: sum((m) => m.changeApproved) };
+  const totals = { billed: sum((m) => m.billed), received: sum((m) => m.received), outstandingAtEnd: sum((m) => m.outstandingAtEnd), costTotal: sum((m) => m.costTotal), pending: sum((m) => m.pending.amount), changeApproved: sum((m) => m.changeApproved), deducted: sum((m) => m.deducted), retentionAtEnd: sum((m) => m.retentionAtEnd) };
 
   // ── 이익 변화 이유 (이 달에 생긴 일만 · 더하면 맞도록) ──
   const profit: CloseSiteProfit[] = sites.map((site) => {

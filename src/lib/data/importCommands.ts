@@ -8,6 +8,7 @@ import { siteFinancials, snapshotOf } from "@/lib/domain/calc";
 import { fmtMan, todayIso } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
 import { IMPORT_SPECS, planImport, type BillingRow, type ChangeRow, type CostRow, type CrewRow, type ImportKind, type MaterialRow, type ProgressRow, type RateRow } from "@/lib/domain/importers";
+import { deductedTotal } from "@/lib/domain/receivables";
 import { CommandError, claimKey, clone, log, nowIso, touch, unlinkImportedProgress, type Ctx } from "./commands";
 
 export interface ImportDataInput {
@@ -235,7 +236,9 @@ export function undoImport(db0: DemoDB, input: { batchId: string }, ctx: Ctx) {
     for (const id of b0.siteIds) {
       const billed = db.billings.filter((x) => x.siteId === id && x.status === "confirmed").reduce((a, x) => a + x.amount, 0);
       const paid = db.payments.filter((x) => x.siteId === id).reduce((a, x) => a + x.amount, 0);
-      if (paid > billed) throw new CommandError("가져온 뒤에 입금이 더 등록되어 취소하면 미수금이 음수가 됩니다 — 해당 입금을 먼저 정리해주세요.", "STATE");
+      // 발주처 공제(D-89)도 미수를 줄이므로 함께 본다
+      const deducted = deductedTotal(db, id);
+      if (paid + deducted > billed) throw new CommandError("가져온 뒤에 입금·공제가 더 등록되어 취소하면 미수금이 음수가 됩니다 — 해당 입금·공제를 먼저 정리해주세요.", "STATE");
     }
     renumberRounds(db, b0.siteIds);
   } else if (b0.kind === "change") {

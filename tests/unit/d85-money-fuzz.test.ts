@@ -47,6 +47,23 @@ describe("D-85 돈 숫자 — 무작위 운영 45일", () => {
     expect(settles).toBeGreaterThan(3);
   }, 240_000);
 
+  it("D-89 발주처가 뗀 금액(유보금·공제)·유보금 받음·기성·입금 취소를 월 마감과 섞어도 모든 점검이 맞고, 마감 바로 뒤 ‘바뀐 것’은 0", () => {
+    let withheld = 0;
+    let voids = 0;
+    let releases = 0;
+    for (const seed of [41, 42, 43, 44, 45, 46]) {
+      const res = simulate(seed, 45, { receivables: true, close: true });
+      expect(res.failures, JSON.stringify(res.failures[0], null, 1)).toEqual([]);
+      withheld += (res.db.receivableAdjustments ?? []).length;
+      voids += (res.db.voidedMoney ?? []).length;
+      releases += res.db.payments.filter((p) => p.retentionId).length;
+    }
+    // 실제로 돌았는지
+    expect(withheld).toBeGreaterThan(5);
+    expect(voids).toBeGreaterThan(5);
+    expect(releases).toBeGreaterThan(1);
+  }, 300_000);
+
   it("계약금액을 고쳐도 이익을 바꾼 일 합이 맞는다", () => {
     for (const seed of [11, 12, 13]) {
       const res = simulate(seed, 45, { contractEdits: true });

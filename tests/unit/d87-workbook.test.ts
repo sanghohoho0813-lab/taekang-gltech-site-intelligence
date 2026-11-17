@@ -26,14 +26,14 @@ describe("D-87 월 마감 엑셀", () => {
       const r = monthClose(db, month, today);
       const w = monthWorkbook(db, month, today, { by: "u-manager", now: new Date("2026-11-14T03:00:00Z") });
       expect(w.ok, JSON.stringify(w.checks.filter((c) => !c.ok))).toBe(true);
-      expect(w.checks.length).toBe(13);
+      expect(w.checks.length).toBe(14);
       const bytes = writeXlsx(w.sheets);
       const file = await verifyWorkbookFile(bytes, w);
       expect(file.filter((c) => !c.ok), JSON.stringify(file)).toEqual([]);
       const sheets = await readXlsx(bytes);
       const by = (name: string) => sheets.find((s) => s.name === name)!.rows;
       const ended = monthBounds(month).to < today;
-      expect(sheets.map((s) => s.name)).toEqual(["안내", "현장별 요약", "기성", "입금", ended ? "월말 미수" : "미수(오늘)", "원가", "원가 항목별", "변경공사", "노무", "이익을 바꾼 일"]);
+      expect(sheets.map((s) => s.name)).toEqual(["안내", "현장별 요약", "기성", "입금", ended ? "월말 미수" : "미수(오늘)", "유보·공제", "원가", "원가 항목별", "변경공사", "노무", "이익을 바꾼 일"]);
       const lastRow = (rows: string[][]) => rows[rows.length - 1];
       // 요약 합계 줄
       const sum = lastRow(by("현장별 요약"));
