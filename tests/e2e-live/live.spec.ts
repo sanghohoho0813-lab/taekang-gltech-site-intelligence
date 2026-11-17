@@ -12,6 +12,8 @@ const PARTNER = { email: "client@wonchung.test", password: "Client2026x" };
 let fieldTemp = "";
 let partnerTemp = "";
 let siteId = "";
+/** D-88 증빙 파일 번호 — 발주처 첫 로그인 뒤 시험에서 주소로 못 받는지 다시 본다 */
+const evidenceIds: string[] = [];
 
 /** 시각적으로 숨긴 라디오·체크박스(sr-only)는 사람이 하듯 감싼 label을 눌러 고른다 */
 /** 주소의 한 글자만 다른 값으로 (끝 글자가 우연히 같아 시험이 흔들리지 않게) */
@@ -341,7 +343,7 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     expect((await field.request.post("/api/commands", { data: { name: "undoImport", args: { batchId: "x" } } })).status()).toBe(403);
   });
 
-  test("변경공사 증빙 파일(D-88): 본사가 날인본 PDF·사진 올림 → 서버 저장·PDF는 올린 이름으로 내려받기 → 현장소장·발주처는 주소를 알아도 404 · 명령 403 · 데이터에도 없음", async ({ browser }) => {
+  test("변경공사 증빙 파일(D-88): 본사가 날인본 PDF·사진 올림 → 서버 저장·PDF는 올린 이름으로 내려받기 → 현장소장은 주소를 알아도 404 · 명령 403 · 데이터에도 없음 (발주처는 첫 로그인 시험에서)", async ({ browser }) => {
     const JPG = Buffer.from("/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==", "base64");
     const PDF = Buffer.from("%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n", "latin1");
     const page = await login(browser, CEO.email, CEO.password);
@@ -376,8 +378,9 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     expect((await page.request.get(`/api/photos/${img.id}`)).headers()["content-type"]).toBe("image/jpeg");
     // 현장소장(이 현장 담당)·발주처: 주소를 알아도 못 받고, 데이터에도 없고, 올리기·지우기 명령은 거부
     const field = await login(browser, FIELD.email, FIELD.password, { width: 390, height: 844 });
-    const partner = await login(browser, PARTNER.email, PARTNER.password, { width: 390, height: 844 });
-    for (const who of [field, partner]) {
+    evidenceIds.push(pdf.id, img.id);
+    // 발주처는 아직 첫 로그인 전 — 발주처 첫 로그인 시험에서 같은 주소를 다시 본다
+    for (const who of [field]) {
       expect((await who.request.get(`/api/photos/${pdf.id}`)).status()).toBe(404);
       expect((await who.request.get(`/api/photos/${img.id}`)).status()).toBe(404);
       const st = await who.evaluate(async () => (await (await fetch("/api/state")).json()).db);
@@ -565,6 +568,12 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     expect(st.actions).toHaveLength(0);
     // 사진 원본·관리 API 차단
     expect((await page.request.get("/api/photos/anything")).status()).toBe(404);
+    // 변경공사 증빙 파일(D-88)은 주소를 알아도 못 받고 데이터에도 없다
+    expect(evidenceIds).toHaveLength(2);
+    for (const id of evidenceIds) expect((await page.request.get(`/api/photos/${id}`)).status()).toBe(404);
+    const pv = await page.evaluate(async () => (await (await fetch("/api/state")).json()).db);
+    expect(pv.coEvidence ?? []).toEqual([]);
+    expect((await page.request.post("/api/commands", { data: { name: "removeChangeOrderEvidence", args: { evidenceId: evidenceIds[0], reason: "x" } } })).status()).toBe(403);
     expect((await page.request.post("/api/commands", { data: { name: "submitFieldReport", args: { siteId } } })).status()).toBe(403);
     expect((await page.request.post("/api/commands", { data: { name: "setCompanySettings", args: { teamRates: [] } } })).status()).toBe(403);
     await ctx.close();
