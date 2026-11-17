@@ -23,7 +23,7 @@ const { authorize, viewFor, ForbiddenError } = await import("@/server/authz");
 const { CommandError } = await import("@/lib/data/commands");
 const { COMMANDS } = await import("@/lib/data/registry");
 const { createSeed } = await import("@/lib/data/seed");
-const { coBoard, coPaperState, EVIDENCE_MAX_PER_CO } = await import("@/lib/domain/changeOrders");
+const { approvalBasisText, coBoard, coPaperState, EVIDENCE_MAX_PER_CO } = await import("@/lib/domain/changeOrders");
 const { siteFinancials } = await import("@/lib/domain/calc");
 const { monthWorkbook, verifyWorkbookFile } = await import("@/lib/domain/monthWorkbook");
 const { readXlsx, writeXlsx } = await import("@/lib/domain/xlsx");
@@ -167,6 +167,57 @@ describe("D-88 승인 서면 상태 (표시용 — 처리 대기 수는 그대�
   });
 });
 
+describe("D-88 사용성 점검 반영 — 종이 보관 · 고치기 · 대표만", () => {
+  it("‘서면 원본 종이로 보관 중’(보관 위치)이면 경고가 꺼지고 엑셀에 위치가 남는다 · 승인 건만 · 서면 파일이 있으면 막음", async () => {
+    const { db: db0, co } = approved("contract");
+    const kept = COMMANDS.logChangeOrder(db0, { coId: co.id, kind: "paper_kept", date: "2026-11-17", note: "본사 캐비닛 2번 · 2026 변경계약 바인더" }, ctx()).db;
+    const c = kept.changeOrders.find((x) => x.id === co.id)!;
+    expect(c.paperKept?.note).toBe("본사 캐비닛 2번 · 2026 변경계약 바인더");
+    expect(coBoard(kept, "2026-11-17").decided[0].paper).toBe("kept");
+    expect(coBoard(kept, "2026-11-17").totals.paperMissing).toBe(0);
+    const rows = (await readXlsx(writeXlsx(monthWorkbook(kept, "2026-11", "2026-11-17").sheets))).find((s) => s.name === "변경공사")!.rows;
+    expect(rows.find((x) => x[1] === co.title)![12]).toBe("서면 원본 종이 보관: 본사 캐비닛 2번 · 2026 변경계약 바인더");
+    // 진행 중인 건에는 못 적음 · 이미 서면 파일이 있으면 막음
+    const open = createSeed(new Date("2026-11-10T03:00:00Z"));
+    expect(() => COMMANDS.logChangeOrder(open, { coId: open.changeOrders[0].id, kind: "paper_kept", date: "2026-11-17", note: "캐비닛" }, ctx())).toThrow(CommandError);
+    const withPdf = COMMANDS.addChangeOrderEvidence(db0, { coId: co.id, docType: "letter", dataUrl: PDF }, ctx()).db;
+    expect(() => COMMANDS.logChangeOrder(withPdf, { coId: co.id, kind: "paper_kept", date: "2026-11-17", note: "캐비닛" }, ctx())).toThrow(CommandError);
+  });
+
+  it("종류·설명 고치기 — 견적으로 잘못 올린 계약서를 변경계약서로 (지우지 않고) · 기록에 남음 · 바뀐 것 없으면 거부", () => {
+    const { db: db0, co } = approved("contract");
+    const db1 = COMMANDS.addChangeOrderEvidence(db0, { coId: co.id, docType: "estimate", dataUrl: JPG, fileName: "계약서.jpg" }, ctx()).db;
+    expect(coBoard(db1, "2026-11-17").decided[0].paper).toBe("missing");
+    const id = db1.coEvidence![0].id;
+    const db2 = COMMANDS.updateChangeOrderEvidence(db1, { evidenceId: id, docType: "contract", caption: "날인본 1쪽" }, ctx()).db;
+    expect(db2.coEvidence![0]).toMatchObject({ docType: "contract", caption: "날인본 1쪽" });
+    expect(coBoard(db2, "2026-11-17").decided[0].paper).toBe("ok");
+    expect(db2.changeOrders.find((c) => c.id === co.id)!.log!.at(-1)!.note).toBe("증빙 고침 — 계약서.jpg: 종류 견적·내역서 → 변경계약서 (날인본) · 설명 ‘날인본 1쪽’");
+    expect(() => COMMANDS.updateChangeOrderEvidence(db2, { evidenceId: id, docType: "contract", caption: "날인본 1쪽" }, ctx())).toThrow(/바뀐 것이 없/);
+  });
+
+  it("승인된 변경공사의 변경계약서·공문은 대표만 지우거나 종류를 바꾼다 (관리자는 설명만 · 견적서는 지울 수 있음)", () => {
+    const { db: db0, co } = approved("contract");
+    let db: DemoDB = COMMANDS.addChangeOrderEvidence(db0, { coId: co.id, docType: "contract", dataUrl: PDF }, ctx()).db;
+    db = COMMANDS.addChangeOrderEvidence(db, { coId: co.id, docType: "estimate", dataUrl: JPG }, ctx()).db;
+    const [contract, estimate] = db.coEvidence!;
+    const MANAGER = member("u-manager", "manager");
+    const CEO = member("u-ceo", "ceo");
+    expect(() => authorize(MANAGER, "removeChangeOrderEvidence", { evidenceId: contract.id, reason: "x" }, db, NOW)).toThrow(ForbiddenError);
+    expect(() => authorize(MANAGER, "updateChangeOrderEvidence", { evidenceId: contract.id, docType: "other" }, db, NOW)).toThrow(ForbiddenError);
+    expect(() => authorize(MANAGER, "updateChangeOrderEvidence", { evidenceId: contract.id, caption: "날인본" }, db, NOW)).not.toThrow();
+    expect(() => authorize(MANAGER, "removeChangeOrderEvidence", { evidenceId: estimate.id, reason: "x" }, db, NOW)).not.toThrow();
+    expect(() => authorize(CEO, "removeChangeOrderEvidence", { evidenceId: contract.id, reason: "x" }, db, NOW)).not.toThrow();
+  });
+
+  it("구두 승인 뒤 공문 파일을 붙이면 승인 근거가 ‘구두 → 서면 받음’으로 (엑셀도)", () => {
+    const { db: db0, co } = approved("verbal");
+    expect(approvalBasisText(co, [])).toBe("구두 승인 (서면 대기)");
+    const db = COMMANDS.addChangeOrderEvidence(db0, { coId: co.id, docType: "letter", dataUrl: PDF }, ctx()).db;
+    expect(approvalBasisText(co, db.coEvidence!)).toBe("구두 승인 → 서면 받음 (발주처 공문·메일 · 11/17 올림)");
+  });
+});
+
 describe("D-88 가져오기 취소 · 월 마감 엑셀", () => {
   it("가져온 변경공사에 증빙을 붙였으면 가져오기 통째 취소를 막는다 (파일까지 지워지지 않게)", () => {
     let db = createSeed(new Date("2026-11-10T03:00:00Z"));
@@ -189,10 +240,10 @@ describe("D-88 가져오기 취소 · 월 마감 엑셀", () => {
     expect((await verifyWorkbookFile(bytes, w)).filter((c) => !c.ok)).toEqual([]);
     const rows = (await readXlsx(bytes)).find((s) => s.name === "변경공사")!.rows;
     expect(rows[0][12]).toMatch(/^증빙 파일/);
-    expect(rows.find((x) => x[1] === co.title)![12]).toBe("견적·내역서 1 (승인 서면 없음)");
+    expect(rows.find((x) => x[1] === co.title)![12]).toBe("견적·내역서 1 — 증빙.jpg(11/17) (승인 서면 없음)");
     const db2 = COMMANDS.addChangeOrderEvidence(db, { coId: co.id, docType: "contract", dataUrl: PDF }, ctx()).db;
     const rows2 = (await readXlsx(writeXlsx(monthWorkbook(db2, "2026-11", "2026-11-17").sheets))).find((s) => s.name === "변경공사")!.rows;
-    expect(rows2.find((x) => x[1] === co.title)![12]).toBe("견적·내역서 1 · 변경계약서 1");
+    expect(rows2.find((x) => x[1] === co.title)![12]).toBe("견적·내역서 1 · 변경계약서 1 — 증빙.jpg(11/17), 증빙.pdf(11/17)");
   });
 });
 

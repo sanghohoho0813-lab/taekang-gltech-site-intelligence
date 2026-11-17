@@ -104,8 +104,8 @@ export function createChangeOrder(db0: DemoDB, input: CreateChangeOrderInput, ct
 
 export interface LogChangeOrderInput {
   coId: string;
-  /** no_reclaim: 반려된 건을 다시 청구하지 않기로 정함 (사유 필수 · 대표 점검) */
-  kind: "follow_up" | "client_reply" | "note" | "no_reclaim";
+  /** no_reclaim: 반려된 건을 다시 청구하지 않기로 정함 (사유 필수 · 대표 점검) · paper_kept: 승인 서면 원본을 종이로 보관 중 (보관 위치 · D-88) */
+  kind: "follow_up" | "client_reply" | "note" | "no_reclaim" | "paper_kept";
   /** 일어난 날 (YYYY-MM-DD) — 오늘 이전, 등록한 날 이후 */
   date: string;
   note: string;
@@ -114,7 +114,7 @@ export interface LogChangeOrderInput {
   idempotencyKey?: string;
 }
 
-const LOG_KINDS = new Set(["follow_up", "client_reply", "note", "no_reclaim"]);
+const LOG_KINDS = new Set(["follow_up", "client_reply", "note", "no_reclaim", "paper_kept"]);
 
 export function logChangeOrder(db0: DemoDB, input: LogChangeOrderInput, ctx: Ctx) {
   const c0 = db0.changeOrders.find((c) => c.id === input.coId);
@@ -132,6 +132,9 @@ export function logChangeOrder(db0: DemoDB, input: LogChangeOrderInput, ctx: Ctx
     if (c0.status !== "rejected") errors.kind = "반려된 변경공사만 ‘다시 청구 안 함’으로 정리합니다.";
     else if (db0.changeOrders.some((c) => c.reclaimOf === c0.id)) errors.kind = "이미 다시 청구한 변경공사입니다.";
     else if (c0.noReclaim) errors.kind = "이미 ‘다시 청구 안 함’으로 정리했습니다.";
+  } else if (input.kind === "paper_kept") {
+    if (c0.status !== "approved") errors.kind = "승인된 변경공사만 ‘서면 원본 보관’을 적습니다.";
+    else if ((db0.coEvidence ?? []).some((e) => e.changeOrderId === c0.id && (e.docType === "contract" || e.docType === "letter"))) errors.kind = "이미 변경계약서·공문 파일이 있습니다.";
   } else if (input.kind !== "note" && !coOpen(c0)) errors.kind = "결정된 변경공사에는 메모만 남깁니다.";
   if (input.nextFollowUp !== undefined && !coOpen(c0)) errors.nextFollowUp = "결정된 변경공사에는 다음 확인할 날을 정하지 않습니다.";
   // 발주처에 청구한 건은 다음 확인할 날을 지우지 않는다 — 날짜가 없으면 아무도 챙기지 않던 문제 (D-84 점검)
@@ -146,6 +149,7 @@ export function logChangeOrder(db0: DemoDB, input: LogChangeOrderInput, ctx: Ctx
   const co = db.changeOrders.find((c) => c.id === input.coId)!;
   pushCoLog(co, { at: nowIso(ctx), by: ctx.userId, date: input.date, kind: input.kind, note });
   if (input.kind === "no_reclaim") co.noReclaim = { at: nowIso(ctx), by: ctx.userId, note };
+  if (input.kind === "paper_kept") co.paperKept = { at: nowIso(ctx), by: ctx.userId, note };
   if (input.nextFollowUp === null) delete co.nextFollowUp;
   else if (typeof input.nextFollowUp === "string") co.nextFollowUp = input.nextFollowUp;
   const site = db.sites.find((s) => s.id === co.siteId);
@@ -309,4 +313,40 @@ export function removeChangeOrderEvidence(db0: DemoDB, input: RemoveEvidenceInpu
   log(db, ctx, "change_order", `${site?.shortName ?? ""} 변경공사 증빙 지움 — ${co?.title ?? ""}: ${ev0.fileName} (이유: ${reason})`, ev0.siteId, co ? `/finance#co-${co.id}` : "/finance#co-board");
   touch(db, ctx);
   return { db, result: { id: ev0.id } };
+}
+
+export interface UpdateEvidenceInput {
+  evidenceId: string;
+  /** 바꿀 종류 (없으면 그대로) */
+  docType?: EvidenceDocType;
+  /** 바꿀 설명 (없으면 그대로 · 빈 글이면 지움) */
+  caption?: string;
+  idempotencyKey?: string;
+}
+
+/** 증빙 파일의 종류·설명 고치기 (D-88 점검 — 잘못 고른 종류를 지우고 다시 올리지 않게). 바꾼 내용은 변경공사 기록에 남는다 */
+export function updateChangeOrderEvidence(db0: DemoDB, input: UpdateEvidenceInput, ctx: Ctx) {
+  alreadySaved(db0, input?.idempotencyKey);
+  const ev0 = (db0.coEvidence ?? []).find((e) => e.id === input?.evidenceId);
+  if (!ev0) throw new CommandError("증빙 파일을 찾을 수 없습니다 (지웠을 수 있습니다).", "NOT_FOUND");
+  const errors: Record<string, string> = {};
+  if (input.docType !== undefined && !DOC_TYPES.has(input.docType)) errors.docType = "무슨 자료인지 골라 주세요.";
+  if (input.caption !== undefined && typeof input.caption !== "string") errors.caption = "설명 형식을 확인해 주세요.";
+  const caption = typeof input.caption === "string" ? tidyName(input.caption, 1000) : ev0.caption;
+  if (len(caption) > CAPTION_MAX) errors.caption = `${CAPTION_MAX}자 이내`;
+  if (Object.keys(errors).length) throw new CommandError("입력값을 확인해주세요.", "VALIDATION", errors);
+  const docType = input.docType ?? ev0.docType;
+  if (docType === ev0.docType && caption === ev0.caption) throw new CommandError("바뀐 것이 없습니다.", "VALIDATION");
+  const db = clone(db0);
+  claimKey(db, input.idempotencyKey);
+  const ev = db.coEvidence!.find((e) => e.id === ev0.id)!;
+  ev.docType = docType;
+  ev.caption = caption;
+  const co = db.changeOrders.find((c) => c.id === ev.changeOrderId);
+  const what = [docType !== ev0.docType ? `종류 ${EVIDENCE_DOC_LABEL[ev0.docType]} → ${EVIDENCE_DOC_LABEL[docType]}` : "", caption !== ev0.caption ? `설명 ‘${caption || "없음"}’` : ""].filter(Boolean).join(" · ");
+  if (co) pushCoLog(co, { at: nowIso(ctx), by: ctx.userId, date: todayIso(ctx.now), kind: "evidence", note: `증빙 고침 — ${ev.fileName}: ${what}` });
+  const site = db.sites.find((s) => s.id === ev.siteId);
+  log(db, ctx, "change_order", `${site?.shortName ?? ""} 변경공사 증빙 고침 — ${co?.title ?? ""}: ${ev.fileName} (${what})`, ev.siteId, co ? `/finance#co-${co.id}` : "/finance#co-board");
+  touch(db, ctx);
+  return { db, result: { id: ev.id } };
 }

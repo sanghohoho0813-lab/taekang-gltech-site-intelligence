@@ -54,6 +54,14 @@ export function authorize(m: Member, name: CommandName, argsIn: unknown, db: Dem
   if (canSeeMoney(m)) {
     // 개인위치정보 규칙·좌표 삭제는 대표만 (관리자가 자기 열람 범위를 넓히거나 기록을 지우지 못하게 · D-43)
     if (CEO_ONLY.has(name) && m.role !== "ceo") throw new ForbiddenError("대표만 할 수 있습니다.");
+    // 승인된 변경공사의 변경계약서·공문 파일(계약금액을 바꾼 근거)은 대표만 지우거나 다른 종류로 바꾼다 (D-88 대표 점검)
+    if (m.role !== "ceo" && (name === "removeChangeOrderEvidence" || name === "updateChangeOrderEvidence")) {
+      const ev = (db.coEvidence ?? []).find((e) => e.id === args.evidenceId);
+      const co = ev && db.changeOrders.find((c) => c.id === ev.changeOrderId);
+      const written = !!ev && (ev.docType === "contract" || ev.docType === "letter");
+      const touchesType = name === "removeChangeOrderEvidence" || (typeof args.docType === "string" && args.docType !== ev?.docType);
+      if (co?.status === "approved" && written && touchesType) throw new ForbiddenError("승인된 변경공사의 변경계약서·공문 파일은 대표만 지우거나 종류를 바꿀 수 있습니다.");
+    }
     if (name === "submitFieldReport") args.source = args.source === "FIELD" ? "FIELD" : "PC";
     return args;
   }

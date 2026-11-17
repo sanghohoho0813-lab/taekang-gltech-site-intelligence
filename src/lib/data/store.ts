@@ -91,7 +91,7 @@ function safeSet(key: string, value: string) {
   } catch (e) {
     const quota = e instanceof DOMException && (e.name === "QuotaExceededError" || e.code === 22);
     throw new CommandError(
-      quota ? "브라우저 저장 공간이 부족합니다. 사진 수를 줄이거나 Demo Reset 후 다시 시도해주세요." : "브라우저 저장소에 쓸 수 없습니다 (사생활 보호 모드 확인).",
+      quota ? "브라우저 저장 공간이 부족합니다. 사진 수를 줄이거나 오른쪽 위 ‘데모 초기화’ 뒤 다시 시도해주세요." : "브라우저 저장소에 쓸 수 없습니다 (사생활 보호 모드 확인).",
       "STATE",
     );
   }

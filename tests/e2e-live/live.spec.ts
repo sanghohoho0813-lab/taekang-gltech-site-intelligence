@@ -353,7 +353,7 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     await expect(done.getByTestId("co-paper")).toHaveAttribute("data-paper", "missing");
     await done.getByTestId("co-evidence-add").click();
     const em = page.getByTestId("co-evidence-modal");
-    await expect(em.getByTestId("co-evidence-kind-contract")).toBeChecked();
+    await em.getByTestId("co-evidence-kind").getByText("변경계약서 (날인본)").click();
     await em.getByTestId("co-evidence-input").setInputFiles([
       { name: "자동문_변경계약서.pdf", mimeType: "application/pdf", buffer: PDF },
       { name: "날인면.jpg", mimeType: "image/jpeg", buffer: JPG },

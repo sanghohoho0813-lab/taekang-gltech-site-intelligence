@@ -168,15 +168,20 @@ test("D-88 변경공사 증빙 파일: 변경계약서로 승인 → 날인본 P
   const board = page.getByTestId("co-board");
   const row = board.getByTestId("co-open").getByTestId("change-order").first();
   const title = (await row.locator("b").first().innerText()).trim();
-  // 진행 중인 건에도 견적서를 붙일 수 있다 — 기본 종류는 견적·내역서
+  // 진행 중인 건에도 견적서를 붙일 수 있다 — 종류는 직접 고른다(미리 골라 두지 않음)
   await row.getByTestId("co-evidence-add").click();
   let em = page.getByTestId("co-evidence-modal");
-  await expect(em.getByTestId("co-evidence-kind-estimate")).toBeChecked();
+  await expect(em.getByTestId("co-evidence-kind-estimate")).not.toBeChecked();
   // 사진·PDF가 아닌 파일은 올리지 않는다
   await em.getByTestId("co-evidence-input").setInputFiles({ name: "memo.txt", mimeType: "text/plain", buffer: Buffer.from("hello") });
   await expect(em.getByTestId("co-evidence-picked")).toContainText("사진·PDF가 아님");
   await expect(em.getByTestId("co-evidence-upload")).toBeDisabled();
   await em.getByTestId("co-evidence-input").setInputFiles({ name: "견적서.jpg", mimeType: "image/jpeg", buffer: JPG });
+  // 종류를 안 고르면 막힘 → 고르면 올라감
+  await em.getByTestId("co-evidence-upload").click();
+  await expect(em).toContainText("파일마다 무슨 자료인지");
+  await em.getByTestId("co-evidence-kind").getByText("견적·내역서").click();
+  await expect(em.getByTestId("co-evidence-row-kind")).toHaveValue("estimate");
   await em.getByTestId("co-evidence-upload").click();
   await expect(em).toHaveCount(0);
   await expect(row.getByTestId("co-evidence")).toHaveAttribute("data-count", "1");
@@ -207,11 +212,13 @@ test("D-88 변경공사 증빙 파일: 변경계약서로 승인 → 날인본 P
   await expect(done.getByTestId("co-log-list")).toContainText("변경계약서 (날인본) 올림 — 변경계약서_날인.pdf");
 
   // 사진은 크게, PDF는 내려받기
-  await done.getByTestId("co-evidence-file").filter({ hasText: "유리 사양 변경계약서 날인본" }).nth(1).click();
+  await done.getByTestId("co-evidence-file").filter({ hasText: "날인면.jpg" }).click();
   const view = page.getByTestId("co-evidence-view");
   await expect(view.getByTestId("co-evidence-image")).toBeVisible();
+  await view.getByTestId("co-evidence-zoom").click();
+  await expect(view.getByTestId("co-evidence-zoom")).toContainText("화면에 맞추기");
   await view.getByRole("button", { name: "닫기" }).last().click();
-  await done.getByTestId("co-evidence-file").filter({ hasText: "유리 사양 변경계약서 날인본" }).first().click();
+  await done.getByTestId("co-evidence-file").filter({ hasText: "변경계약서_날인.pdf" }).click();
   await expect(view.getByTestId("co-evidence-download")).toHaveAttribute("download", "변경계약서_날인.pdf");
   // 지우기 — 이유 없으면 막힘
   await view.getByTestId("co-evidence-remove").click();
@@ -233,8 +240,82 @@ test("D-88 휴대폰 폭: 증빙 줄·올리기 창이 가로로 넘치지 않�
   const row = page.getByTestId("co-board").getByTestId("co-open").getByTestId("change-order").first();
   await row.getByTestId("co-evidence-add").click();
   await page.getByTestId("co-evidence-modal").getByTestId("co-evidence-input").setInputFiles({ name: "아주_긴_파일_이름_변경계약서_날인본_2026년_11월_원청_공문_첨부.pdf", mimeType: "application/pdf", buffer: PDF });
+  await page.getByTestId("co-evidence-row-kind").selectOption("letter");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
   await page.getByTestId("co-evidence-upload").click();
   await expect(page.getByTestId("co-evidence-modal")).toHaveCount(0);
   await expect(row.getByTestId("co-evidence-file")).toHaveCount(1);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+});
+
+test("D-88 사용성: 파일마다 종류 · 잘못 고른 종류 고치기 · 옛 승인은 ‘종이로 보관 중’ · 건수 눌러 그 건만 · 관리자는 승인 계약서 못 지움", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await freshStart(page, "manager");
+  await page.goto("/finance#co-board");
+  const board = page.getByTestId("co-board");
+  const row = board.getByTestId("co-open").getByTestId("change-order").first();
+  const title = (await row.locator("b").first().innerText()).trim();
+  // 공문으로 승인 → 첨부 창: 기본 종류 공문, 사진 한 장은 파일 줄에서 ‘견적’으로 따로
+  await row.getByTestId("co-approve").click();
+  const am = page.getByTestId("co-status-modal");
+  await am.getByTestId("co-basis").getByText("발주처 공문·메일로 승인").click();
+  await am.getByTestId("co-confirm").click();
+  const em = page.getByTestId("co-evidence-modal");
+  await em.getByTestId("co-evidence-input").setInputFiles([
+    { name: "원청공문.pdf", mimeType: "application/pdf", buffer: PDF },
+    { name: "견적서사진.jpg", mimeType: "image/jpeg", buffer: JPG },
+    { name: "IMG_0001.HEIC", mimeType: "image/heic", buffer: JPG },
+  ]);
+  const rows = em.getByTestId("co-evidence-picked-row");
+  await expect(rows.nth(2)).toContainText("HEIC");
+  await expect(rows.nth(0).getByTestId("co-evidence-row-kind")).toHaveValue("letter");
+  await rows.nth(1).getByTestId("co-evidence-row-kind").selectOption("estimate");
+  await expect(em.getByTestId("co-evidence-upload")).toContainText("2개 올리기");
+  await em.getByTestId("co-evidence-upload").click();
+  await expect(em).toHaveCount(0);
+  const done = board.getByTestId("co-decided").getByTestId("change-order").filter({ hasText: title }).first();
+  await expect(done.getByTestId("co-evidence-file").filter({ hasText: "원청공문.pdf" })).toContainText("공문·메일");
+  await expect(done.getByTestId("co-evidence-file").filter({ hasText: "견적서사진.jpg" })).toContainText("견적·내역서");
+  await expect(done.getByTestId("co-paper")).toHaveCount(0);
+  // 관리자: 승인 건의 공문은 지울 수 없고(대표만) 설명만 고칠 수 있다
+  await done.getByTestId("co-evidence-file").filter({ hasText: "원청공문.pdf" }).click();
+  const view = page.getByTestId("co-evidence-view");
+  await expect(view.getByTestId("co-evidence-remove")).toBeDisabled();
+  await view.getByTestId("co-evidence-edit").click();
+  await expect(view.getByTestId("co-evidence-edit-kind-other")).toBeDisabled();
+  await view.getByTestId("co-evidence-edit-caption").fill("원청 공문 11/14 수신");
+  await view.getByTestId("co-evidence-edit-confirm").click();
+  await expect(view).toContainText("원청 공문 11/14 수신");
+  await view.getByRole("button", { name: "닫기" }).last().click();
+  // 견적서 사진을 ‘변경계약서’로 잘못 올렸다 → 고치기 (관리자도 견적 → 다른 종류는 가능)
+  await done.getByTestId("co-evidence-file").filter({ hasText: "견적서사진.jpg" }).click();
+  await view.getByTestId("co-evidence-edit").click();
+  await view.getByTestId("co-evidence-edit-kind-other").check({ force: true });
+  await view.getByTestId("co-evidence-edit-confirm").click();
+  await expect(view).toContainText("그 밖의 자료");
+  await view.getByRole("button", { name: "닫기" }).last().click();
+  await done.getByTestId("co-log-toggle").click();
+  await expect(done.getByTestId("co-log-list")).toContainText("증빙 고침 — 견적서사진.jpg: 종류 견적·내역서 → 그 밖의 자료");
+
+  // 옛 승인(서면 파일 없음) 하나 더 — 건수를 누르면 그 건만, ‘종이로 보관 중’이면 알림이 꺼짐
+  await page.evaluate((k) => {
+    const d = JSON.parse(localStorage.getItem(k)!);
+    d.changeOrders.push({ id: "co-old-1", siteId: "site-a", title: "8월 옥상 방수 변경 (옛 승인)", amount: 12000000, status: "approved", requestedAt: "2026-08-01T00:00:00.000Z", decidedAt: "2026-08-20T00:00:00.000Z", sourceEntryIds: [], note: "" });
+    localStorage.setItem(k, JSON.stringify(d));
+  }, DB);
+  await page.reload();
+  await expect(board.getByTestId("co-paper-summary")).toContainText("1건");
+  await board.getByTestId("co-paper-filter").click();
+  await expect(board.getByTestId("co-decided").getByTestId("change-order")).toHaveCount(1);
+  const old = board.getByTestId("co-decided").getByTestId("change-order").first();
+  await old.getByTestId("co-paper-kept").click();
+  const pk = page.getByTestId("co-paper-kept-modal");
+  await pk.getByTestId("co-paper-note").fill("본사 캐비닛 2번 · 2026 변경계약 바인더");
+  await pk.getByTestId("co-paper-kept-confirm").click();
+  await expect(pk).toHaveCount(0);
+  await expect(board.getByTestId("co-paper-summary")).toHaveCount(0);
+  await board.getByTestId("co-paper-filter-off").click();
+  const oldRow = board.getByTestId("co-decided").getByTestId("change-order").filter({ hasText: "8월 옥상 방수" });
+  await expect(oldRow.getByTestId("co-paper")).toHaveAttribute("data-paper", "kept");
+  await expect(oldRow.getByTestId("co-paper")).toContainText("본사 캐비닛 2번");
 });

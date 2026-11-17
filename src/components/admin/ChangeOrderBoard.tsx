@@ -20,10 +20,10 @@ import { shiftDate } from "@/lib/domain/attendance";
 import { CATEGORY_LABEL, COST_CATEGORIES, CO_STATUS_LABEL, REASON_LABEL } from "@/lib/domain/labels";
 import { fmtDate, fmtEok, fmtMan, fmtPct, todayIso } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
-import { APPROVAL_BASIS_LABEL, CO_LOG_LABEL, CO_REVIEW_STALE_DAYS, coBoard, coStageText, type CoRow } from "@/lib/domain/changeOrders";
+import { APPROVAL_BASIS_LABEL, CO_LOG_LABEL, CO_REVIEW_STALE_DAYS, approvalBasisText, coBoard, coStageText, type CoRow } from "@/lib/domain/changeOrders";
 import type { ChangeOrder, ChangeOrderLog, CostCategory, CostEntry, DemoDB, EvidenceDocType } from "@/lib/domain/types";
 import { IS_LIVE } from "@/lib/mode";
-import { EvidenceRow, EvidenceUploadModal } from "./CoEvidence";
+import { EvidenceRow, EvidenceUploadModal, PaperKeptModal } from "./CoEvidence";
 
 const md = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
 const digits = (v: string) => v.replace(/[^\d]/g, "");
@@ -43,6 +43,10 @@ export function ChangeOrderBoard({ db }: { db: DemoDB }) {
   const [reason, setReason] = useState<{ kind: "decline"; entries: CostEntry[] } | { kind: "no_reclaim"; c: ChangeOrder } | null>(null);
   const [showDeclined, setShowDeclined] = useState(false);
   const [evidence, setEvidence] = useState<{ coId: string; docType?: EvidenceDocType; after?: boolean } | null>(null);
+  const [paperKept, setPaperKept] = useState<ChangeOrder | null>(null);
+  // ‘서면 파일 없음’만 보기 (D-88 점검 — 카드 위 건수를 누르면)
+  const [paperOnly, setPaperOnly] = useState(false);
+  const decidedShown = paperOnly ? b.decided.filter((r) => r.paper === "missing" || r.paper === "verbal") : b.decided;
   const pickedEntries = picked.map((id) => db.costEntries.find((e) => e.id === id)).filter((e): e is CostEntry => !!e);
   const pickedSites = new Set(pickedEntries.map((e) => e.siteId));
   const toggle = (id: string) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
@@ -103,7 +107,16 @@ export function ChangeOrderBoard({ db }: { db: DemoDB }) {
       </div>
       {t.paperMissing > 0 && (
         <p className="-mt-1.5 px-5 pb-3 text-[0.8rem] font-semibold text-warn" data-testid="co-paper-summary">
-          승인됐는데 서면(변경계약서·공문) 파일이 없는 변경공사 {t.paperMissing}건 — 아래 ‘결정됨’에서 ‘올리기’로 날인본·공문을 올려 두세요.
+          승인됐는데 서면(변경계약서·공문) 파일이 없는 변경공사 {t.paperMissing}건 —{" "}
+          <a
+            href="#co-decided"
+            className="underline underline-offset-2"
+            onClick={() => setPaperOnly(true)}
+            data-testid="co-paper-filter"
+          >
+            그 건만 보기
+          </a>{" "}
+          · 날인본·공문을 ‘증빙 첨부’로 올리거나, 시스템 전에 받아 종이로 보관 중이면 ‘종이로 보관 중’을 누르세요.
         </p>
       )}
 
@@ -168,7 +181,7 @@ export function ChangeOrderBoard({ db }: { db: DemoDB }) {
         {b.open.length ? (
           <ul className="divide-y divide-line" data-testid="change-orders">
             {b.open.map((r) => (
-              <CoItem key={r.co.id} db={db} r={r} today={today} onStatus={(to) => setStatus({ c: r.co, to })} onLog={() => setLogging(r.co)} onEvidence={() => setEvidence({ coId: r.co.id })} />
+              <CoItem key={r.co.id} db={db} r={r} today={today} onStatus={(to) => setStatus({ c: r.co, to })} onLog={() => setLogging(r.co)} onEvidence={() => setEvidence({ coId: r.co.id })} onPaperKept={() => setPaperKept(r.co)} />
             ))}
           </ul>
         ) : (
@@ -178,11 +191,18 @@ export function ChangeOrderBoard({ db }: { db: DemoDB }) {
 
       {/* 3. 결정됨 */}
       {b.decided.length > 0 && (
-        <section className="border-t border-line" data-testid="co-decided">
-          <h3 className="px-5 pt-3 pb-1 text-[0.92rem] font-bold">결정됨 {b.decided.length}건</h3>
+        <section id="co-decided" className="scroll-mt-24 border-t border-line" data-testid="co-decided">
+          <h3 className="flex flex-wrap items-center gap-2 px-5 pt-3 pb-1 text-[0.92rem] font-bold">
+            결정됨 {b.decided.length}건
+            {paperOnly && (
+              <button type="button" className="press rounded-lg border border-line px-2 py-0.5 text-[0.78rem] font-semibold text-ink-2 hover:bg-surface-2" onClick={() => setPaperOnly(false)} data-testid="co-paper-filter-off">
+                서면 파일 없는 {decidedShown.length}건만 보는 중 · 모두 보기
+              </button>
+            )}
+          </h3>
           <ul className="divide-y divide-line">
-            {b.decided.map((r) => (
-              <CoItem key={r.co.id} db={db} r={r} today={today} onReclaim={() => setCreate({ entries: r.linked.filter((e) => e.status === "active"), reclaim: r.co })} onNoReclaim={() => setReason({ kind: "no_reclaim", c: r.co })} onEvidence={() => setEvidence({ coId: r.co.id })} />
+            {decidedShown.map((r) => (
+              <CoItem key={r.co.id} db={db} r={r} today={today} onReclaim={() => setCreate({ entries: r.linked.filter((e) => e.status === "active"), reclaim: r.co })} onNoReclaim={() => setReason({ kind: "no_reclaim", c: r.co })} onEvidence={() => setEvidence({ coId: r.co.id })} onPaperKept={() => setPaperKept(r.co)} />
             ))}
           </ul>
         </section>
@@ -212,6 +232,7 @@ export function ChangeOrderBoard({ db }: { db: DemoDB }) {
           }}
         />
       )}
+      {paperKept && <PaperKeptModal db={db} c={paperKept} onClose={() => setPaperKept(null)} />}
       {evidence && <EvidenceUploadModal db={db} coId={evidence.coId} docType={evidence.docType} after={evidence.after} onClose={() => setEvidence(null)} />}
       {logging && <LogModal db={db} c={logging} onClose={() => setLogging(null)} />}
       {reason && (
@@ -238,7 +259,7 @@ function Mini({ label, value, sub, tone, testId }: { label: string; value: strin
   );
 }
 
-function CoItem({ db, r, today, onStatus, onLog, onReclaim, onNoReclaim, onEvidence }: { db: DemoDB; r: CoRow; today: string; onStatus?: (to: StatusTo) => void; onLog?: () => void; onReclaim?: () => void; onNoReclaim?: () => void; onEvidence: () => void }) {
+function CoItem({ db, r, today, onStatus, onLog, onReclaim, onNoReclaim, onEvidence, onPaperKept }: { db: DemoDB; r: CoRow; today: string; onStatus?: (to: StatusTo) => void; onLog?: () => void; onReclaim?: () => void; onNoReclaim?: () => void; onEvidence: () => void; onPaperKept: () => void }) {
   const c = r.co;
   const [open, setOpen] = useState(false);
   const decided = c.status === "approved" || c.status === "rejected";
@@ -283,16 +304,16 @@ function CoItem({ db, r, today, onStatus, onLog, onReclaim, onNoReclaim, onEvide
             {r.noFollow && <span className="font-semibold text-warn" data-testid="co-no-follow"> · 다음 확인할 날 없음 — ‘기록’에서 정하기</span>}
             {r.reviewStale && <span className="font-semibold text-warn"> · 아직 발주처에 안 보냄</span>}
           </p>
-          {c.status === "approved" && c.approvalBasis && <p className="text-[0.8rem] text-ink-2">승인 근거: {APPROVAL_BASIS_LABEL[c.approvalBasis]}</p>}
+          {c.status === "approved" && c.approvalBasis && <p className="text-[0.8rem] text-ink-2" data-testid="co-basis-text">승인 근거: {approvalBasisText(c, r.evidence)}</p>}
           {c.decisionNote && (
             <p className="text-[0.8rem] text-ink-2" data-testid="co-decision-note">
               {c.status === "rejected" ? "반려 사유" : "승인 메모"}: {c.decisionNote}
             </p>
           )}
-          {r.last && !["created", "approved", "rejected", "no_reclaim"].includes(r.last.kind) && !open && (
+          {r.lastWork && !open && (
             <p className="text-[0.78rem] text-ink-3">
-              마지막 기록 {md(r.last.date)} {CO_LOG_LABEL[r.last.kind]}
-              {r.last.note ? ` — ${r.last.note}` : ""} ({userLabel(db, r.last.by)})
+              마지막 기록 {md(r.lastWork.date)} {CO_LOG_LABEL[r.lastWork.kind]}
+              {r.lastWork.note ? ` — ${r.lastWork.note}` : ""} ({userLabel(db, r.lastWork.by)})
             </p>
           )}
           {r.reclaimUndecided && (
@@ -317,7 +338,7 @@ function CoItem({ db, r, today, onStatus, onLog, onReclaim, onNoReclaim, onEvide
                 기록 {c.log!.length}건
               </button>
             )}
-            <EvidenceRow db={db} c={c} paper={r.paper} onAdd={onEvidence} />
+            <EvidenceRow db={db} c={c} paper={r.paper} onAdd={onEvidence} onPaperKept={onPaperKept} />
           </div>
         </div>
         <div className="flex flex-wrap gap-1.5">

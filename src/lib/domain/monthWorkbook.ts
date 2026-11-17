@@ -10,7 +10,7 @@ import { monthBounds, monthClose, monthCostRows, profitEvents, type MonthCloseRe
 import { currentClose, changesAfterClose } from "./closeRecord";
 import { siteFinancials } from "./calc";
 import { CATEGORY_LABEL, CO_STATUS_LABEL } from "./labels";
-import { APPROVAL_BASIS_LABEL, coEvidenceOf } from "./changeOrders";
+import { approvalBasisText, coEvidenceOf } from "./changeOrders";
 import { fmtDateTime, todayIso } from "./format";
 import type { SheetSpec } from "./xlsx";
 
@@ -150,13 +150,18 @@ export function monthWorkbook(db: DemoDB, month: string, today = todayIso(), opt
   const byCategory: string[][] = [catHead, ...catRows, ["합계", ...cats.map((_, i) => n(catRows.reduce((a, x) => a + Number(x[i + 1]), 0))), n(catRows.reduce((a, x) => a + Number(x[x.length - 1]), 0))]];
 
   // 변경공사 증빙 파일 (D-88) — 종류별 개수 · 승인됐는데 서면이 없으면 ‘서면 없음’
-  const evidenceText = (coId: string, approved: boolean) => {
-    const ev = coEvidenceOf(db, coId);
+  // 파일 이름·올린 날도 (세무사가 종이 서류와 맞춰 보게 · D-88 점검) — 3개까지, 나머지는 ‘외 N개’
+  const evidenceText = (c: (typeof db.changeOrders)[number], approved: boolean) => {
+    const ev = coEvidenceOf(db, c.id);
     const by = new Map<string, number>();
     for (const e of ev) by.set(EVIDENCE_SHORT[e.docType] ?? "기타", (by.get(EVIDENCE_SHORT[e.docType] ?? "기타") ?? 0) + 1);
-    const list = [...by].map(([k, v]) => `${k} ${v}`).join(" · ");
+    const count = [...by].map(([k, v]) => `${k} ${v}`).join(" · ");
+    const names = ev.slice(0, 3).map((e) => `${e.fileName}(${kst(e.createdAt).slice(5).replace("-", "/")})`).join(", ") + (ev.length > 3 ? ` 외 ${ev.length - 3}개` : "");
+    const list = count ? `${count} — ${names}` : "";
     const written = ev.some((e) => e.docType === "contract" || e.docType === "letter");
-    return approved && !written ? (list ? `${list} (승인 서면 없음)` : "승인 서면 없음") : list;
+    if (!approved || written) return list;
+    const kept = c.paperKept ? `서면 원본 종이 보관: ${c.paperKept.note}` : "승인 서면 없음";
+    return list ? `${list} (${kept})` : kept;
   };
   // ── 변경공사 (월말까지 등록 · 이달 결정했거나 월말에 결정 전) — 상태는 그 달 말 기준 (점검 반영: 다음 달 승인이 지난달 파일에 ‘승인’으로 보이던 문제) ──
   const cos = db.changeOrders
@@ -184,10 +189,10 @@ export function monthWorkbook(db: DemoDB, month: string, today = todayIso(), opt
       kst(c.requestedAt),
       submittedByEnd ? kst(c.submittedAt!) : "",
       decidedByEnd ? decided! : "",
-      c.approvalBasis && decidedByEnd ? APPROVAL_BASIS_LABEL[c.approvalBasis] : "",
+      c.approvalBasis && decidedByEnd ? approvalBasisText(c, coEvidenceOf(db, c.id)) : "",
       [c.decisionNote, c.note].filter(Boolean).join(" · ") + later,
       approvedHere === null ? "" : n(approvedHere),
-      evidenceText(c.id, c.status === "approved"),
+      evidenceText(c, c.status === "approved"),
     ];
   });
   const change: string[][] = [["현장", "제목", "청구 금액", `승인 금액(${asOf})`, `${asOf} 상태`, "지금 상태", "등록일", `발주처 청구일(${asOf}까지)`, `결정일(${asOf}까지)`, "승인 근거", "사유·메모", "이달 승인 금액", "증빙 파일(지금 · 시스템에 보관)"], ...coRows, ["합계 (이달 승인)", "", "", "", "", "", "", "", "", "", "", n(coRows.reduce((a, x) => a + (Number(x[11]) || 0), 0)), ""]];

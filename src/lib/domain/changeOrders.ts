@@ -9,6 +9,7 @@
  */
 import type { ChangeOrder, ChangeOrderEvidence, ChangeOrderLog, CostEntry, DemoDB, EvidenceDocType, Site } from "./types";
 import { shiftDate } from "./attendance";
+import { todayIso } from "./format";
 import { uid } from "./ids";
 
 /** 변경공사로 청구를 검토할 추가 원가 사유 — 위험 신호 ‘설계변경 추가원가 — 변경공사 미등록’과 같은 기준 */
@@ -34,7 +35,7 @@ export function pushCoLog(co: ChangeOrder, entry: Omit<ChangeOrderLog, "id">) {
   const all = [...(co.log ?? []), { id: uid("col"), ...entry }];
   // 넘치면 확인·답변·메모부터 오래된 것을 지운다 — 등록·청구·승인·반려·증빙 파일 기록은 남긴다 (D-84 버그 배시 · D-88)
   // 증빙 파일 기록은 그다음으로 지우고(올리고 지우기를 되풀이해도 등록·승인 기록이 밀려나지 않게 · D-88 점검), 그래도 넘치면 가장 오래된 것
-  const key = new Set(["created", "submitted", "approved", "rejected", "no_reclaim", "evidence"]);
+  const key = new Set(["created", "submitted", "approved", "rejected", "no_reclaim", "paper_kept", "evidence"]);
   while (all.length > CO_LOG_MAX) {
     let i = all.findIndex((l) => !key.has(l.kind));
     if (i < 0) i = all.findIndex((l) => l.kind === "evidence");
@@ -114,18 +115,32 @@ export function coEvidenceOf(db: Pick<DemoDB, "coEvidence">, coId: string): Chan
  * - missing: 서면으로 승인받았다고 했거나(근거를 안 적은 옛 자료 포함) 파일이 없음
  * 승인 전·반려 건은 null
  */
-export type CoPaper = "ok" | "verbal" | "missing";
-export function coPaperState(c: Pick<ChangeOrder, "status" | "approvalBasis">, evidence: Pick<ChangeOrderEvidence, "docType">[]): CoPaper | null {
+export type CoPaper = "ok" | "kept" | "verbal" | "missing";
+export function coPaperState(c: Pick<ChangeOrder, "status" | "approvalBasis" | "paperKept">, evidence: Pick<ChangeOrderEvidence, "docType">[]): CoPaper | null {
   if (c.status !== "approved") return null;
   if (evidence.some((e) => WRITTEN_DOC_TYPES.has(e.docType))) return "ok";
+  // 시스템 전에 받은 서면을 종이로 보관 중이라고 적은 건 (D-88 점검 — 옛 승인마다 경고가 뜨던 문제)
+  if (c.paperKept) return "kept";
   return c.approvalBasis === "verbal" ? "verbal" : "missing";
 }
 
 export const CO_PAPER_LABEL: Record<CoPaper, string> = {
   ok: "서면 증빙 있음",
+  kept: "서면 원본 종이로 보관 (파일 없음)",
   verbal: "구두 승인 — 서면 대기",
   missing: "서면 증빙 파일 없음",
 };
+
+/** 승인 근거 한 줄 — 구두 승인 뒤 서면 파일을 붙였으면 그렇게 (D-88 점검: ‘구두(서면 대기)’와 ‘공문 1’이 함께 보이던 문제) */
+export function approvalBasisText(c: Pick<ChangeOrder, "approvalBasis">, evidence: Pick<ChangeOrderEvidence, "docType" | "createdAt">[]): string {
+  if (!c.approvalBasis) return "";
+  const written = evidence.filter((e) => WRITTEN_DOC_TYPES.has(e.docType)).sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
+  if (c.approvalBasis === "verbal" && written) {
+    const d = todayIso(new Date(written.createdAt));
+    return `구두 승인 → 서면 받음 (${EVIDENCE_DOC_LABEL[written.docType]} · ${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))} 올림)`;
+  }
+  return APPROVAL_BASIS_LABEL[c.approvalBasis];
+}
 
 export interface CoRow {
   co: ChangeOrder;
@@ -143,6 +158,8 @@ export interface CoRow {
   /** 반려됐는데 다시 청구할지·손실로 정리할지 아직 안 정함 */
   reclaimUndecided: boolean;
   last?: ChangeOrderLog;
+  /** 마지막 청구·확인·답변·메모 기록 — 등록·결정·증빙 파일 기록은 빼고 (증빙을 올리면 ‘원청 통화’가 가려지던 문제 · D-88 점검) */
+  lastWork?: ChangeOrderLog;
   /** 반려된 건을 다시 청구한 새 건 (있으면) */
   reclaimedBy?: ChangeOrder;
   /** 증빙 파일 (D-88) */
@@ -208,10 +225,17 @@ export function coRow(db: DemoDB, c: ChangeOrder, today: string): CoRow {
     reviewStale: c.status === "review" && coDays(c, today) > CO_REVIEW_STALE_DAYS,
     reclaimUndecided: c.status === "rejected" && !reclaimedBy && !c.noReclaim && c.amount > 0,
     last: c.log?.length ? c.log[c.log.length - 1] : undefined,
+    lastWork: lastWorkLog(c),
     reclaimedBy,
     evidence,
     paper: coPaperState(c, evidence),
   };
+}
+
+/** 증빙 파일·종이 보관 기록은 건너뛰고 본 마지막 기록 — 그것이 등록·결정 기록이면 없음 (예전 ‘마지막 기록’ 규칙 그대로) */
+function lastWorkLog(c: ChangeOrder): ChangeOrderLog | undefined {
+  const l = [...(c.log ?? [])].reverse().find((x) => x.kind !== "evidence" && x.kind !== "paper_kept");
+  return l && !["created", "approved", "rejected", "no_reclaim"].includes(l.kind) ? l : undefined;
 }
 
 const pct = (a: number, b: number) => (b > 0 ? Math.round((a / b) * 100) : null);
@@ -293,4 +317,5 @@ export const CO_LOG_LABEL: Record<ChangeOrderLog["kind"], string> = {
   rejected: "반려",
   no_reclaim: "다시 청구 안 함",
   evidence: "증빙 파일",
+  paper_kept: "서면 원본 보관",
 };

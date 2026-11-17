@@ -60,6 +60,7 @@ export const COMMANDS = {
   // 변경공사 증빙 파일 (D-88) — 금액은 바뀌지 않는다
   addChangeOrderEvidence: (db: DemoDB, a: CO.AddEvidenceInput, ctx: Ctx) => CO.addChangeOrderEvidence(db, a, ctx),
   removeChangeOrderEvidence: (db: DemoDB, a: CO.RemoveEvidenceInput, ctx: Ctx) => CO.removeChangeOrderEvidence(db, a, ctx),
+  updateChangeOrderEvidence: (db: DemoDB, a: CO.UpdateEvidenceInput, ctx: Ctx) => CO.updateChangeOrderEvidence(db, a, ctx),
   addBilling: (db: DemoDB, a: Parameters<typeof C.addBilling>[1], ctx: Ctx) => C.addBilling(db, a, ctx),
   addPayment: (db: DemoDB, a: Parameters<typeof C.addPayment>[1], ctx: Ctx) => C.addPayment(db, a, ctx),
   setThresholds: (db: DemoDB, a: RiskThresholds, ctx: Ctx) => C.setThresholds(db, a, ctx),

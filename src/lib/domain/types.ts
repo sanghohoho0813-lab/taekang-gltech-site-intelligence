@@ -609,6 +609,8 @@ export interface ChangeOrder {
   approvalBasis?: "contract" | "letter" | "verbal";
   /** 반려된 건을 다시 청구하지 않기로 정함 (D-84 대표 점검 — 손실로 정리) */
   noReclaim?: { at: string; by: string; note: string };
+  /** 서면(변경계약서·공문) 원본을 종이로 보관 중 — 파일은 없음 (D-88 점검: 시스템 전 승인 건) · note = 보관 위치 */
+  paperKept?: { at: string; by: string; note: string };
 }
 
 /** 변경공사 진행 기록 (D-84) */
@@ -619,7 +621,7 @@ export interface ChangeOrderLog {
   by: string;
   /** 일어난 날 (YYYY-MM-DD) */
   date: string;
-  kind: "created" | "submitted" | "follow_up" | "client_reply" | "note" | "approved" | "rejected" | "no_reclaim" | "evidence";
+  kind: "created" | "submitted" | "follow_up" | "client_reply" | "note" | "approved" | "rejected" | "no_reclaim" | "evidence" | "paper_kept";
   note: string;
 }
 
