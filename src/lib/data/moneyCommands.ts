@@ -1,6 +1,7 @@
 /**
  * 돈 기록 바로잡기 (D-89) — 본사만(권한은 server/authz).
  * - voidMoneyRecord: 잘못 넣은 기성·입금 취소 (이유 필수). 숫자에서 빠지고 ‘취소한 기성·입금’에 그대로 남는다.
+ *   입금과 함께 넣은 유보금·공제도 같이 취소할 수 있다(withLinked · 화면 기본값) — 다시 넣으면 두 번 잡히던 문제 (D-89 사용성 점검)
  * - addPayment: 입금 등록 + (선택) 발주처가 떼고 준 금액 — 유보금(나중에 받음) 또는 공제(지체상금·상계 · 받지 못함)를 한 번에
  * - addReceivableAdjustment: 유보금·공제만 따로 (입금 없이 공문으로 받은 지체상금 등)
  * - voidReceivableAdjustment: 유보금·공제 취소 (이유 필수 · 받은 기록이 있는 유보금은 그 입금을 먼저 취소)
@@ -53,6 +54,8 @@ export interface VoidMoneyInput {
   kind: "billing" | "payment";
   id: string;
   reason: string;
+  /** 입금 취소: 이 입금과 함께 넣은 유보금·공제도 같이 취소 */
+  withLinked?: boolean;
   idempotencyKey?: string;
 }
 
@@ -66,6 +69,8 @@ export function voidMoneyRecord(db0: DemoDB, input: VoidMoneyInput, ctx: Ctx) {
   const db = clone(db0);
   claimKey(db, input.idempotencyKey);
   const site = requireSite(db, rec.siteId);
+  const renumbered: string[] = [];
+  const linked: string[] = [];
   if (kind === "billing") {
     db.billings = db.billings.filter((b) => b.id !== rec.id);
     // 기성을 빼면 입금·공제가 기성보다 많아지는지 — 그러면 입금(또는 공제)을 먼저 정리
@@ -74,7 +79,13 @@ export function voidMoneyRecord(db0: DemoDB, input: VoidMoneyInput, ctx: Ctx) {
     // 유보금은 미수 안의 돈 — 미수보다 커지면 받을 수도 정리할 수도 없게 된다 (D-89 점검)
     const held = retentionOpen(db, rec.siteId);
     if (held > f.outstanding) throw new CommandError(`이 기성을 취소하면 남은 미수(${fmtMan(f.outstanding)})가 받을 유보금(${fmtMan(held)})보다 작아집니다 — 유보금을 먼저 정리해 주세요.`, "STATE");
+    // 회차를 날짜 순서로 다시 매긴다 — 바뀐 회차는 기록에 남긴다 (마감한 달 엑셀의 회차와 달라질 수 있어서 · D-89 사용성 점검)
+    const before = new Map(db.billings.filter((b) => b.siteId === rec.siteId).map((b) => [b.id, b.round]));
     renumberRounds(db, [rec.siteId]);
+    for (const b of db.billings.filter((x) => x.siteId === rec.siteId).sort((x, y) => x.billedDate.localeCompare(y.billedDate))) {
+      const was = before.get(b.id);
+      if (was && was !== b.round) renumbered.push(`${Number(b.billedDate.slice(5, 7))}/${Number(b.billedDate.slice(8, 10))} ${was}차→${b.round}차`);
+    }
   } else {
     db.payments = db.payments.filter((p) => p.id !== rec.id);
     // 유보금을 받은 입금이면 그 유보금이 다시 열린다
@@ -83,13 +94,21 @@ export function voidMoneyRecord(db0: DemoDB, input: VoidMoneyInput, ctx: Ctx) {
       const r = (db.receivableAdjustments ?? []).find((a) => a.id === pay.retentionId);
       if (r) r.released = (r.released ?? []).filter((x) => x.paymentId !== pay.id);
     }
-    // 입금과 함께 넣은 유보금·공제는 그대로 둔다 (발주처가 뗀 사실은 그대로) — 화면에서 따로 취소
+    // 입금과 함께 넣은 유보금·공제 — 같이 취소하면(화면 기본값) 다시 넣을 때 두 번 잡히지 않는다. 안 고르면 그대로 둔다(발주처가 뗀 사실은 맞을 때)
+    if (input.withLinked === true) {
+      for (const a of (db.receivableAdjustments ?? []).filter((x) => x.paymentId === pay.id && !x.voidedAt)) {
+        a.voidedAt = nowIso(ctx);
+        a.voidedBy = ctx.userId;
+        a.voidReason = `입금 취소와 함께 — ${reason}`;
+        linked.push(`${adjustmentLabel(a)} ${fmtMan(a.amount)}`);
+      }
+    }
   }
   (db.voidedMoney ??= []).push({ id: rec.id, kind, siteId: rec.siteId, record: { ...rec }, voidedAt: nowIso(ctx), voidedBy: ctx.userId, reason });
   const what = kind === "billing" ? `기성 ${(rec as { round?: number }).round ? `${(rec as { round: number }).round}차 ` : ""}${fmtMan(rec.amount)} (${(rec as { billedDate: string }).billedDate})` : `입금 ${fmtMan(rec.amount)} (${(rec as PaymentReceived).receivedDate})`;
-  log(db, ctx, kind, `${site.shortName} ${what} 취소 — ${reason}`, rec.siteId, "/finance");
+  log(db, ctx, kind, `${site.shortName} ${what} 취소 — ${reason}${linked.length ? ` · 함께 취소: ${linked.join(", ")}` : ""}${renumbered.length ? ` · 회차 다시 매김: ${renumbered.join(", ")}` : ""}`, rec.siteId, "/finance");
   touch(db, ctx);
-  return { db, result: { id: rec.id } };
+  return { db, result: { id: rec.id, renumbered, linked } };
 }
 
 // ───────────── 유보금·공제 ─────────────
@@ -139,8 +158,8 @@ function pushAdjustment(db: DemoDB, input: AdjustmentInput, ctx: Ctx, paymentId?
   if (amount > room)
     throw new CommandError(
       held > 0
-        ? `${input.kind === "retention" ? "유보금" : "공제"}이 유보금이 아닌 미수(${fmtMan(Math.max(0, room))} · 미수 ${fmtMan(f.outstanding)} 중 유보금 ${fmtMan(held)})보다 큽니다 — 유보금에서 떼는 것이면 ‘유보금 · 공제’에서 그 유보금을 먼저 정리해 주세요.`
-        : `${input.kind === "retention" ? "유보금" : "공제"}이 미수금(${fmtMan(f.outstanding)})보다 큽니다 — 기성을 먼저 넣었는지, 금액 단위를 확인해 주세요.`,
+        ? `${input.kind === "retention" ? "유보금이" : "공제가"} 유보금이 아닌 미수(${fmtMan(Math.max(0, room))} · 미수 ${fmtMan(f.outstanding)} 중 유보금 ${fmtMan(held)})보다 큽니다 — 유보금에서 떼는 것이면 ‘유보금 · 공제’에서 그 유보금을 먼저 정리해 주세요.`
+        : `${input.kind === "retention" ? "유보금이" : "공제가"} 미수금(${fmtMan(f.outstanding)})보다 큽니다 — 기성을 먼저 넣었는지, 금액 단위를 확인해 주세요.`,
       "VALIDATION",
       { withheldAmount: "미수 초과" },
     );

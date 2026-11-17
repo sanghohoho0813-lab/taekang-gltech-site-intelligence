@@ -51,3 +51,13 @@ export function retentionNotDue(db: Pick<DemoDB, "receivableAdjustments">, siteI
 export function adjustmentLabel(a: Pick<ReceivableAdjustment, "kind" | "deductionType">): string {
   return a.kind === "retention" ? "유보금" : `공제 · ${DEDUCTION_LABEL[a.deductionType ?? "other"]}`;
 }
+
+/**
+ * 통장 입금액(부가세 포함) → 입금액(부가세 제외 환산) (D-89 사용성 점검)
+ * 지체상금은 부가세가 붙지 않는 돈으로 본다(과세표준에서 빼지 않음 — 세무사 확인 권장):
+ *   통장 = 1.1 × (입금) + 0.1 × (지체상금)  →  입금 = (통장 − 0.1 × 지체상금) ÷ 1.1
+ * 예: 기성 1억(세금계산서 1.1억)에서 지체상금 300만을 떼고 1억 700만이 들어오면 입금 9,700만 + 공제 300만 = 기성 1억.
+ */
+export function vatExcludedPayment(bank: number, delayPenalty = 0): number {
+  return Math.max(0, Math.round((bank - delayPenalty * 0.1) / 1.1));
+}

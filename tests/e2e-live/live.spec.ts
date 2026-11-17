@@ -1436,11 +1436,12 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     await page.goto("/finance");
     await expect(page.getByTestId("fin-total-outstanding")).toContainText("발주처 공제");
     await expect(page.getByTestId("withheld-deductions")).toContainText("공기 지연 6일");
-    // 잘못 넣은 입금 취소 (화면에서) — 공제는 그대로 남는다고 알려 준다
+    // 잘못 넣은 입금 취소 (화면에서) — 함께 넣은 공제도 같이 취소(기본 체크) → 예상이익이 돌아오고 ‘공제 취소’가 서버에 남는다 (D-89 사용성 점검)
     const row = page.getByTestId("payment-row").filter({ hasText: "9,700만" }).first();
     await row.getByTestId("money-void").click();
     const vm = page.getByTestId("money-void-modal");
-    await expect(vm.getByTestId("money-void-linked")).toContainText("공제 300만");
+    await expect(vm.getByTestId("money-void-linked")).toContainText("공제 · 지체상금 300만");
+    await expect(vm.getByTestId("money-void-linked-check")).toBeChecked();
     await vm.getByTestId("money-void-reason").fill("입금일 잘못 — 다시 넣음");
     await vm.getByTestId("money-void-confirm").click();
     await expect(vm).toHaveCount(0);
@@ -1448,6 +1449,9 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     db = await st();
     expect(db.payments.length).toBe(before);
     expect(db.voidedMoney.map((v: { reason: string }) => v.reason)).toContain("입금일 잘못 — 다시 넣음");
+    expect(db.receivableAdjustments[0].voidReason).toBe("입금 취소와 함께 — 입금일 잘못 — 다시 넣음");
+    expect(db.profitAdjustments.some((a: { text: string; amount: number }) => a.text.startsWith("공제 취소") && a.text.endsWith("(입금 취소와 함께)") && a.amount === 3_000_000)).toBe(true);
+    await expect(page.getByTestId("withheld-deductions")).toHaveCount(0);
     // 현장소장·발주처: 명령 403 · 데이터에 없음
     const field = await login(browser, FIELD.email, FIELD.password, { width: 390, height: 844 });
     const partner = await login(browser, PARTNER.email, PARTNER.password, { width: 390, height: 844 });

@@ -123,7 +123,7 @@ export function simulate(seed: number, days = 45, opts: { contractEdits?: boolea
           if (a) run("voidReceivableAdjustment", { id: a.id, reason: "잘못 넣음" }, "u-manager");
         } else if (x < 0.86) {
           const p = pick(db.payments.filter((y) => y.siteId === site.id));
-          if (p) run("voidMoneyRecord", { kind: "payment", id: p.id, reason: "입금 잘못 넣음" }, "u-manager");
+          if (p) run("voidMoneyRecord", { kind: "payment", id: p.id, reason: "입금 잘못 넣음", withLinked: r() < 0.6 }, "u-manager");
         } else {
           const b = pick(db.billings.filter((y) => y.siteId === site.id));
           if (b) run("voidMoneyRecord", { kind: "billing", id: b.id, reason: "기성 두 번 넣음" }, "u-manager");

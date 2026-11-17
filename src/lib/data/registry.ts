@@ -41,6 +41,10 @@ const voidAdjLabel = (db: DemoDB, a: { id: string; reason: string }) => {
   const x = (db.receivableAdjustments ?? []).find((r) => r.id === a?.id);
   return x ? `공제 취소 — ${adjText(x, x.date).replace(/^발주처 공제 — /, "")}${typeof a.reason === "string" && a.reason.trim() ? ` (${a.reason.trim().slice(0, 40)})` : ""}` : "공제 취소";
 };
+const voidLinkedLabel = (db: DemoDB, a: MN.VoidMoneyInput) => {
+  const x = (db.receivableAdjustments ?? []).find((r) => r.paymentId === a?.id && !r.voidedAt && r.kind === "deduction");
+  return x ? `공제 취소 — ${adjText(x, x.date).replace(/^발주처 공제 — /, "")} (입금 취소와 함께)` : "입금 취소";
+};
 const contractLabel = (db: DemoDB, siteId: string, a: A.SaveSiteInput) => {
   const before = db.contracts.find((c) => c.siteId === siteId)?.contractAmount;
   return before !== undefined && a.id === siteId && before !== a.contractAmount ? `원 계약 변경 ${fmtMan(before)} → ${fmtMan(a.contractAmount)}` : "현장 정보 수정";
@@ -78,7 +82,8 @@ export const COMMANDS = {
   addReceivableAdjustment: (db: DemoDB, a: MN.AdjustmentInput, ctx: Ctx) => R(db, MN.addReceivableAdjustment(db, a, ctx), ctx, () => adjLabel(a), undefined, [a?.siteId]),
   voidReceivableAdjustment: (db: DemoDB, a: { id: string; reason: string; idempotencyKey?: string }, ctx: Ctx) => R(db, MN.voidReceivableAdjustment(db, a, ctx), ctx, () => voidAdjLabel(db, a), undefined, [(db.receivableAdjustments ?? []).find((x) => x.id === a?.id)?.siteId]),
   releaseRetention: (db: DemoDB, a: { id: string; date: string; amount: number; idempotencyKey?: string }, ctx: Ctx) => MN.releaseRetention(db, a, ctx),
-  voidMoneyRecord: (db: DemoDB, a: MN.VoidMoneyInput, ctx: Ctx) => MN.voidMoneyRecord(db, a, ctx),
+  // 입금과 함께 넣은 공제를 같이 취소하면 예상이익이 돌아온다 → ‘이익을 바꾼 일’에 남김 (그 밖의 취소는 이익이 그대로라 남는 것 없음)
+  voidMoneyRecord: (db: DemoDB, a: MN.VoidMoneyInput, ctx: Ctx) => R(db, MN.voidMoneyRecord(db, a, ctx), ctx, () => voidLinkedLabel(db, a), undefined, [(a?.kind === "billing" ? db.billings : db.payments).find((x) => x.id === a?.id)?.siteId]),
   setThresholds: (db: DemoDB, a: RiskThresholds, ctx: Ctx) => C.setThresholds(db, a, ctx),
   importCostRows: (db: DemoDB, a: { rows: C.CsvCostRow[]; idempotencyKey: string }, ctx: Ctx) => R(db, C.importCostRows(db, a.rows, a.idempotencyKey, ctx), ctx, "원가 가져오기"),
   importData: (db: DemoDB, a: I.ImportDataInput, ctx: Ctx) => R(db, I.importData(db, a, ctx), ctx, "자료 가져오기"),

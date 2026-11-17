@@ -11,6 +11,7 @@ import { createSeed } from "@/lib/data/seed";
 import { CommandError } from "@/lib/data/commands";
 import { siteFinancials, portfolioTotals } from "@/lib/domain/calc";
 import { receivableAging } from "@/lib/domain/risk";
+import { vatExcludedPayment } from "@/lib/domain/receivables";
 import { monthClose, profitEvents } from "@/lib/domain/monthClose";
 import { moneyIntegrity } from "@/lib/domain/integrity";
 import { monthWorkbook, verifyWorkbookFile } from "@/lib/domain/monthWorkbook";
@@ -59,7 +60,13 @@ describe("D-89 기성·입금 취소", () => {
     const bills = () => db.billings.filter((b) => b.siteId === "site-a").sort((a, b) => a.billedDate.localeCompare(b.billedDate));
     const before = bills().length;
     const first = bills().find((b) => b.billedDate === "2026-10-10")!;
-    db = COMMANDS.voidMoneyRecord(db, { kind: "billing", id: first.id, reason: "같은 기성을 두 번 넣음" }, ctx()).db;
+    const res = COMMANDS.voidMoneyRecord(db, { kind: "billing", id: first.id, reason: "같은 기성을 두 번 넣음" }, ctx());
+    db = res.db;
+    // 바뀐 회차를 알려 준다 (마감한 달 엑셀의 회차와 달라질 수 있어서 · 사용성 점검)
+    expect(res.result.renumbered.length).toBeGreaterThan(0);
+    expect(res.result.renumbered.at(-1)).toMatch(/^11\/5 \d+차→\d+차$/);
+    expect(db.activityLogs[0].summary).toContain("회차 다시 매김");
+    expect(db.voidedMoney![0].record).toMatchObject({ round: first.round });
     expect(bills().length).toBe(before - 1);
     expect(bills().map((b) => b.round)).toEqual(bills().map((_, i) => i + 1));
     // 남은 기성보다 많이 받은 상태가 되면 취소 불가
@@ -68,6 +75,42 @@ describe("D-89 기성·입금 취소", () => {
     const last = bills().at(-1)!;
     expect(() => COMMANDS.voidMoneyRecord(db, { kind: "billing", id: last.id, reason: "잘못" }, ctx())).toThrow(/입금을 먼저 취소/);
     expect(errs(db)).toEqual([]);
+  });
+});
+
+describe("D-89 입금 취소 — 함께 넣은 유보금·공제 (사용성 점검: 다시 넣으면 두 번 잡히던 문제)", () => {
+  it("입금+지체상금을 ‘함께 취소’ → 공제도 취소 · 예상이익이 돌아오고 ‘공제 취소 (입금 취소와 함께)’ · 다시 넣어도 한 번만", () => {
+    let db = base();
+    const p0 = siteFinancials(db, "site-a").expectedProfit;
+    db = COMMANDS.addPayment(db, { siteId: "site-a", amount: 97_000_000, receivedDate: "2026-11-12", withheld: { kind: "deduction", deductionType: "delay_penalty", amount: 3_000_000, note: "지체 6일" } }, ctx()).db;
+    const pay = db.payments.at(-1)!;
+    const r = COMMANDS.voidMoneyRecord(db, { kind: "payment", id: pay.id, reason: "입금일 잘못", withLinked: true }, ctx());
+    db = r.db;
+    expect(r.result.linked).toEqual(["공제 · 지체상금 300만 원"]);
+    expect(siteFinancials(db, "site-a").deducted).toBe(0);
+    expect(siteFinancials(db, "site-a").expectedProfit).toBe(p0);
+    expect(db.receivableAdjustments![0].voidReason).toBe("입금 취소와 함께 — 입금일 잘못");
+    expect(profitEvents(db, "site-a", "2026-11-01", "2026-11-30").map((e) => e.text)).toContain("공제 취소 — 지체상금 300만 원 (11/12) · 지체 6일 (입금 취소와 함께)");
+    db = COMMANDS.addPayment(db, { siteId: "site-a", amount: 97_000_000, receivedDate: "2026-11-13", withheld: { kind: "deduction", deductionType: "delay_penalty", amount: 3_000_000, note: "지체 6일" } }, ctx()).db;
+    expect(siteFinancials(db, "site-a").deducted).toBe(3_000_000);
+    expect(siteFinancials(db, "site-a").expectedProfit).toBe(p0 - 3_000_000);
+    expect(errs(db)).toEqual([]);
+  });
+
+  it("‘함께 취소’를 끄면 유보금은 그대로 (발주처가 뗀 것은 맞고 입금만 잘못 넣었을 때)", () => {
+    let db = base();
+    db = COMMANDS.addPayment(db, { siteId: "site-a", amount: 95_000_000, receivedDate: "2026-11-12", withheld: { kind: "retention", amount: 5_000_000, note: "유보" } }, ctx()).db;
+    const pay = db.payments.at(-1)!;
+    db = COMMANDS.voidMoneyRecord(db, { kind: "payment", id: pay.id, reason: "금액 잘못", withLinked: false }, ctx()).db;
+    expect(siteFinancials(db, "site-a").retention).toBe(5_000_000);
+    expect(errs(db)).toEqual([]);
+  });
+
+  it("통장 금액(부가세 포함) → 입금(부가세 제외): 지체상금은 부가세가 없어 따로 뺀다", () => {
+    // 기성 1억(세금계산서 1.1억) · 지체상금 300만 · 통장 1억 700만 → 입금 9,700만 + 공제 300만 = 1억
+    expect(vatExcludedPayment(107_000_000, 3_000_000)).toBe(97_000_000);
+    expect(vatExcludedPayment(110_000_000)).toBe(100_000_000);
+    expect(vatExcludedPayment(0, 3_000_000)).toBe(0);
   });
 });
 
@@ -226,6 +269,23 @@ describe("D-89 엑셀 · 월 마감 기록 · 권한", () => {
     expect(Number(total[8])).toBe(5_000_000);
     const wh = sheets.find((s) => s.name === "유보·공제")!.rows;
     expect(wh.slice(1, -1).map((r) => r[2])).toEqual(["유보금", "공제 · 지체상금"]);
+    // 남은 유보금(월말 · 회차·받을 날) · 취소한 기록 (사용성 점검: 회계 담당이 장단기 미수·취소분을 알 수 있게)
+    const ret = sheets.find((s) => s.name === "남은 유보금")!.rows;
+    expect(Number(ret.at(-1)![5])).toBe(5_000_000);
+    expect(ret[1][7]).toBe("받을 날 미정");
+    const nov = db.billings.find((b) => b.billedDate === "2026-11-05")!;
+    db = COMMANDS.voidMoneyRecord(db, { kind: "payment", id: db.payments.at(-1)!.id, reason: "다른 현장 입금", withLinked: true }, ctx()).db;
+    db = COMMANDS.addPayment(db, { siteId: "site-a", amount: 10_000_000, receivedDate: "2026-11-14", withheld: { kind: "retention", amount: 1_000_000, note: "유보", billingId: nov.id, dueDate: "2027-06-30" } }, ctx()).db;
+    const w2 = monthWorkbook(db, "2026-11", TODAY);
+    expect(w2.ok).toBe(true);
+    const voided = w2.sheets.find((s) => s.name === "취소한 기록")!.rows;
+    expect(voided.slice(1).map((r) => r[2])).toEqual(["입금", "유보금"]);
+    expect(voided[1][6]).toBe("다른 현장 입금");
+    const pays = w2.sheets.find((s) => s.name === "입금")!.rows;
+    expect(pays.find((r) => r[0] === "2026-11-14")![2]).toBe(`${nov.round}회`);
+    const ret2 = w2.sheets.find((s) => s.name === "남은 유보금")!.rows;
+    expect(ret2[1].slice(2, 8)).toEqual([`${nov.round}회`, "1000000", "0", "1000000", "2027-06-30", ""]);
+    expect(String(w2.sheets[0].rows.find((r) => r[0] === "취소한 기록")?.[1])).toContain("2건");
   });
 
   it("마감한 달에 늦게 넣은 공제·취소한 입금은 ‘마감 뒤 바뀐 것’에 무엇을 왜로 보인다", () => {

@@ -72,6 +72,7 @@ export function CloseBoard() {
   const [closing, setClosing] = useState<string | null>(null);
   const [overlapUser, setOverlapUser] = useState<string | null>(null);
   if (!db || !r) return <PageSkeleton />;
+  const hasDed = r.totals.deducted > 0;
   const label = `${chosen.slice(0, 4)}년 ${Number(chosen.slice(5))}월`;
   const settleRow = settling ? r.labor.find((l) => l.site.id === settling) : undefined;
   const closeSite = closing ? db.sites.find((x) => x.id === closing) : undefined;
@@ -161,14 +162,14 @@ export function CloseBoard() {
         )}
       </Card>
 
-      {/* 2. 금액 */}
+      {/* 2. 금액 — 발주처 공제가 있는 달은 열을 보여 준다: 기성·입금만으로 월말 미수가 설명되지 않던 문제 (D-89 사용성 점검) */}
       <Card data-testid="close-money">
         <CardHeader title={`${label} 금액`} sub="단위 만 원 · 부가세 별도 · 원가는 발생일 기준이며 공무 확인까지 끝난 것만 셉니다" />
         <div tabIndex={0} role="region" aria-label="이달 금액 표 (가로 스크롤)" className="overflow-x-auto border-t border-line">
           <table className="w-full min-w-[46rem] text-[0.84rem]">
             <thead>
               <tr className="text-left text-[0.74rem] text-ink-3">
-                {["현장", "확정 기성", "입금", "월말 미수", "원가 (확정)", "확인 대기 원가", "승인 변경공사"].map((h, i) => (
+                {["현장", "확정 기성", "입금", ...(hasDed ? ["발주처 공제"] : []), "월말 미수", "원가 (확정)", "확인 대기 원가", "승인 변경공사"].map((h, i) => (
                   <th key={h} className={cx("px-3 py-2 font-semibold first:pl-5", i > 0 && "text-right")}>
                     {h}
                   </th>
@@ -184,7 +185,11 @@ export function CloseBoard() {
                   </td>
                   <td className="px-3 py-2.5 text-right">{won(m.billed)}</td>
                   <td className="px-3 py-2.5 text-right">{won(m.received)}</td>
-                  <td className={cx("px-3 py-2.5 text-right", m.outstandingAtEnd > 0 && "font-bold")}>{won(m.outstandingAtEnd)}</td>
+                  {hasDed && <td className="px-3 py-2.5 text-right" data-testid="close-money-deducted">{m.deducted ? `−${won(m.deducted)}` : "—"}</td>}
+                  <td className={cx("px-3 py-2.5 text-right", m.outstandingAtEnd > 0 && "font-bold")}>
+                    {won(m.outstandingAtEnd)}
+                    {m.retentionAtEnd > 0 && <span className="block text-[0.7rem] font-normal text-ink-3" data-testid="close-money-retention">그중 유보금 {won(m.retentionAtEnd)}</span>}
+                  </td>
                   <td className="px-3 py-2.5 text-right" title={COST_CATEGORIES.filter((c) => m.cost[c]).map((c) => `${CATEGORY_LABEL[c]} ${fmtMan(m.cost[c])}`).join(" · ")}>
                     {won(m.costTotal)}
                   </td>
@@ -196,7 +201,11 @@ export function CloseBoard() {
                 <td className="px-3 py-2.5 pl-5">합계</td>
                 <td className="px-3 py-2.5 text-right">{won(r.totals.billed)}</td>
                 <td className="px-3 py-2.5 text-right">{won(r.totals.received)}</td>
-                <td className="px-3 py-2.5 text-right">{won(r.totals.outstandingAtEnd)}</td>
+                {hasDed && <td className="px-3 py-2.5 text-right">−{won(r.totals.deducted)}</td>}
+                <td className="px-3 py-2.5 text-right">
+                  {won(r.totals.outstandingAtEnd)}
+                  {r.totals.retentionAtEnd > 0 && <span className="block text-[0.7rem] font-normal text-ink-3">그중 유보금 {won(r.totals.retentionAtEnd)}</span>}
+                </td>
                 <td className="px-3 py-2.5 text-right">{won(r.totals.costTotal)}</td>
                 <td className="px-3 py-2.5 text-right">{won(r.totals.pending)}</td>
                 <td className="px-3 py-2.5 text-right">{r.totals.changeApproved ? `${r.totals.changeApproved > 0 ? "+" : "−"}${won(Math.abs(r.totals.changeApproved))}` : "—"}</td>

@@ -17,7 +17,9 @@ async function freshStart(page: Page, role = "ceo") {
 }
 
 /** ‘1억 2,345만’ 같은 금액 글을 원으로 */
-function wonOf(text: string): number {
+function wonOf(all: string): number {
+  // 카드의 큰 숫자 줄만 (아래 설명 글의 ‘그중 유보금 300만’ 등을 섞지 않게)
+  const text = all.split("\n").find((l) => /\d/.test(l)) ?? "";
   const eok = /([\d.,]+)\s*억/.exec(text);
   const man = /([\d,]+)\s*만/.exec(text.replace(/[\d.,]+\s*억/, ""));
   return Math.round((eok ? Number(eok[1].replace(/,/g, "")) * 100_000_000 : 0) + (man ? Number(man[1].replace(/,/g, "")) * 10_000 : 0));
@@ -59,11 +61,13 @@ test("D-89 입금 + 유보금 → 유보금 나눠 받음 → 잘못 넣은 입�
   await expect(card.getByTestId("withheld-row").filter({ hasText: "A현장" })).toContainText("300만");
   await expect(page.getByTestId("payment-row").filter({ hasText: "유보금 받음" })).toHaveCount(1);
 
-  // 잘못 넣은 입금 취소 — 이유 없으면 막힘 · 미수금이 돌아온다
+  // 잘못 넣은 입금 취소 — 이유 없으면 막힘 · 미수금이 돌아온다 · 함께 넣은 유보금도 같이 정리(기본 체크 · 사용성 점검)
   const before = wonOf(await page.getByTestId("fin-total-outstanding").innerText());
   const wrong = page.getByTestId("payment-row").filter({ hasText: "9,500만" }).first();
   await wrong.getByTestId("money-void").click();
   const vm = page.getByTestId("money-void-modal");
+  await expect(vm.getByTestId("money-void-linked")).toContainText("유보금 500만");
+  await expect(vm.getByTestId("money-void-linked-check")).toBeChecked();
   await vm.getByTestId("money-void-confirm").click();
   await expect(vm).toContainText("이유");
   await vm.getByTestId("money-void-reason").fill("다른 현장 입금을 잘못 넣음");
@@ -71,6 +75,8 @@ test("D-89 입금 + 유보금 → 유보금 나눠 받음 → 잘못 넣은 입�
   await expect(vm).toHaveCount(0);
   const after = wonOf(await page.getByTestId("fin-total-outstanding").innerText());
   expect(Math.abs(after - before - 95_000_000)).toBeLessThan(1_000_000);
+  await expect(card.getByTestId("withheld-row").filter({ hasText: "A현장" })).toHaveCount(0);
+  await expect(page.getByTestId("fin-total-outstanding")).not.toContainText("그중 유보금");
   await page.getByTestId("voided-toggle-payment").click();
   await expect(page.getByTestId("voided-list-payment")).toContainText("다른 현장 입금을 잘못 넣음");
 
@@ -96,6 +102,56 @@ test("D-89 입금 + 유보금 → 유보금 나눠 받음 → 잘못 넣은 입�
   await expect(wv).toHaveCount(0);
   await expect(card.getByTestId("withheld-deductions")).toHaveCount(0);
   await expect(page.getByTestId("fin-total-outstanding")).not.toContainText("발주처 공제");
+});
+
+test("D-89 사용성 점검: 통장 금액(부가세 포함)으로 입금 계산 · 지체상금 부가세 없음 · 미수 초과 미리 경고 · 상계는 원가에 있으면 입금으로 · 유보금 받을 날 ‘준공 후’ 버튼", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await freshStart(page, "manager");
+  await page.goto("/finance");
+  await page.getByRole("button", { name: "기성청구 등록" }).click();
+  await page.locator("#m-site").selectOption("site-a");
+  await page.locator("#m-amt").fill("100000000");
+  await page.getByRole("button", { name: "등록", exact: true }).click();
+  await expect(page.locator("#m-amt")).toHaveCount(0);
+  // 같은 날·같은 금액 기성을 다시 넣으려 하면 경고
+  await page.getByRole("button", { name: "기성청구 등록" }).click();
+  await page.locator("#m-site").selectOption("site-a");
+  await page.locator("#m-amt").fill("100000000");
+  await expect(page.getByTestId("billing-dup")).toBeVisible();
+  await page.getByRole("button", { name: "닫기", exact: true }).last().click();
+  await expect(page.locator("#m-amt")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "입금 등록" }).click();
+  await page.locator("#m-site").selectOption("site-a");
+  // 지체상금 300만을 먼저 적고, 통장 1억 700만 → 입금 9,700만
+  await page.getByTestId("pay-withheld").getByText("공제 (받지 못함)").click();
+  await expect(page.getByTestId("pay-withheld-not")).toContainText("선급금 정산");
+  await page.getByTestId("pay-withheld-type").selectOption("delay_penalty");
+  await page.getByTestId("pay-withheld-amount").fill("3000000");
+  await page.getByTestId("pay-bank-toggle").click();
+  await page.getByTestId("pay-bank-amount").fill("107000000");
+  await expect(page.getByTestId("pay-bank-result")).toContainText("97,000,000원");
+  await page.getByTestId("pay-bank-apply").click();
+  await expect(page.locator("#m-amt")).toHaveValue("97,000,000");
+  // 미수보다 많이 떼면 저장 전에 빨간 안내
+  await page.getByTestId("pay-withheld-amount").fill("900000000");
+  await expect(page.getByTestId("pay-withheld-over")).toBeVisible();
+  await page.getByTestId("pay-withheld-amount").fill("3000000");
+  await expect(page.getByTestId("pay-withheld-over")).toHaveCount(0);
+  // 상계 + ‘원가에 이미 넣음’ → 등록 막고 입금으로 안내
+  await page.getByTestId("pay-withheld-type").selectOption("setoff");
+  await expect(page.getByRole("button", { name: "등록", exact: true })).toBeDisabled();
+  await page.getByTestId("pay-withheld-incost").getByText("예, 이미 넣음").click();
+  await expect(page.getByTestId("pay-withheld-incost-msg")).toContainText("입금에 더해");
+  await expect(page.getByRole("button", { name: "등록", exact: true })).toBeDisabled();
+  await page.getByTestId("pay-withheld-incost").getByText("아니오 — 공제로 넣기").click();
+  await expect(page.getByRole("button", { name: "등록", exact: true })).toBeEnabled();
+  // 유보금: 받을 날 비우면 경고 · ‘준공 후 1년’ 버튼
+  await page.getByTestId("pay-withheld").getByText("유보금 (나중에 받음)").click();
+  await expect(page.getByTestId("pay-withheld-due-hint")).toContainText("계속 빠집니다");
+  await page.getByTestId("pay-withheld-due-12").click();
+  await expect(page.getByTestId("pay-withheld-due")).not.toHaveValue("");
+  await expect(page.getByTestId("pay-withheld-due-hint")).toContainText("이 날까지는");
 });
 
 test("D-89 휴대폰 폭: 기성·수금 화면(유보금·공제 카드·입금 창)이 가로로 넘치지 않음", async ({ page }) => {

@@ -1,6 +1,6 @@
 /**
  * 월 마감 엑셀 (D-87) — 세무사·회계 담당에게 넘기는 한 달 자료.
- * 시트: 안내 · 현장별 요약 · 기성 · 입금 · 월말 미수 · 원가 · 변경공사 · 노무 · 이익을 바꾼 일.
+ * 시트: 안내 · 현장별 요약 · 기성 · 입금 · 월말 미수 · 유보·공제 · 남은 유보금 · 취소한 기록 · 원가 · 변경공사 · 노무 · 이익을 바꾼 일.
  *
  * 숫자는 화면 ‘월 마감’과 같은 계산(monthClose)에서만 가져온다. 만든 뒤 시트에 적힌 숫자를 다시 읽어 더해
  * 월 마감 합계와 같은지 맞춰 보고(checks), 그 결과를 ‘안내’ 시트에 적는다 — 숫자 맞추기 점검(빨강)에도 같은 대조가 들어간다.
@@ -11,7 +11,7 @@ import { currentClose, changesAfterClose } from "./closeRecord";
 import { siteFinancials } from "./calc";
 import { CATEGORY_LABEL, CO_STATUS_LABEL } from "./labels";
 import { approvalBasisText, coEvidenceOf } from "./changeOrders";
-import { activeAdjustments, adjustmentLabel, deductedTotal } from "./receivables";
+import { activeAdjustments, adjustmentLabel, deductedTotal, retentionLeft } from "./receivables";
 import { fmtDateTime, todayIso } from "./format";
 import type { SheetSpec } from "./xlsx";
 
@@ -20,6 +20,8 @@ const EVIDENCE_SHORT: Record<string, string> = { contract: "변경계약서", le
 const SITE_STATUS: Record<string, string> = { active: "진행", completed: "준공", hold: "보류" };
 const kst = (iso: string) => todayIso(new Date(iso));
 const n = (v: number) => String(Math.round(v));
+/** 안내 글 속 금액은 쉼표로 (숫자 칸은 n — 엑셀이 숫자로 읽게) */
+const won = (v: number) => Math.round(v).toLocaleString("ko-KR");
 /** 부가세 10% (원 단위 반올림) — 계산값. 실제 세금계산서·통장과 맞춰 보는 참고 */
 const vat = (v: number) => Math.round(v / 10);
 const nextDay = (d: string) => new Date(Date.parse(`${d}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
@@ -113,7 +115,9 @@ export function monthWorkbook(db: DemoDB, month: string, today = todayIso(), opt
     const bill = id ? db.billings.find((x) => x.id === id) : undefined;
     return bill ? `${bill.round}회` : "";
   };
-  const payRows = pays.map((x) => [x.receivedDate, siteName(x.siteId), roundOf(x.billingId), n(x.amount), n(x.amount + vat(x.amount)), clientOf(x.siteId), x.createdAt ? isoMinute(x.createdAt) : "", userName(x.createdBy), lateMark(x.createdAt)]);
+  // 연결 기성: 입금에 적힌 회차, 없으면 함께 넣은 유보금·공제에 적은 회차 (D-89 사용성 점검: 화면에서 넣은 입금은 늘 비어 있었음)
+  const linkedBill = (payId: string) => (db.receivableAdjustments ?? []).find((a) => a.paymentId === payId && !a.voidedAt && a.billingId)?.billingId;
+  const payRows = pays.map((x) => [x.receivedDate, siteName(x.siteId), roundOf(x.billingId ?? linkedBill(x.id)), n(x.amount), n(x.amount + vat(x.amount)), clientOf(x.siteId), x.createdAt ? isoMinute(x.createdAt) : "", userName(x.createdBy), lateMark(x.createdAt)]);
   const paySum = pays.reduce((a, x) => a + x.amount, 0);
   const payment: string[][] = [["입금일", "현장", "연결 기성", "입금액(부가세 제외 환산)", "부가세 포함 환산(×1.1·계산)", "발주처", "넣은 시각", "넣은 사람", "비고"], ...payRows, ["합계", "", "", n(paySum), n(pays.reduce((a, x) => a + x.amount + vat(x.amount), 0)), "", "", "", ""]];
 
@@ -144,6 +148,39 @@ export function monthWorkbook(db: DemoDB, month: string, today = todayIso(), opt
     ...wRows.map((x) => x.row),
     ["합계", "", "", n(colSum([[], ...wRows.map((x) => x.row)], 3)), n(colSum([[], ...wRows.map((x) => x.row)], 4)), n(colSum([[], ...wRows.map((x) => x.row)], 5)), "", "", "", ""],
   ];
+
+  // ── 남은 유보금 (월말 기준 · 뗀 회차·받을 날) — 장단기 미수 구분용 (D-89 사용성 점검) ──
+  const openRet = activeAdjustments(db)
+    .filter((a) => siteIds.has(a.siteId) && a.kind === "retention" && retentionLeft(a, to) > 0)
+    .sort((a, x) => siteName(a.siteId).localeCompare(siteName(x.siteId)) || a.date.localeCompare(x.date));
+  const openRows = openRet.map((a) => {
+    const got = (a.released ?? []).filter((x) => x.date <= to).reduce((s2, x) => s2 + x.amount, 0);
+    const due = a.dueDate ?? "";
+    return [siteName(a.siteId), a.date, roundOf(a.billingId), n(a.amount), n(got), n(retentionLeft(a, to)), due, due ? (due < to ? "지남" : "") : "받을 날 미정", a.note];
+  });
+  const retention: string[][] = [
+    ["현장", "뗀 날", "연결 기성", "뗀 유보금(원)", `${asOf}까지 받은 금액(원)`, `${asOf} 남은 유보금(원)`, "받을 예정일", "비고", "메모"],
+    ...openRows,
+    ["합계", "", "", n(colSum([[], ...openRows], 3)), n(colSum([[], ...openRows], 4)), n(colSum([[], ...openRows], 5)), "", "", ""],
+  ];
+
+  // ── 취소한 기록 (이달 취소했거나 이달 날짜였던 기성·입금·유보금·공제) — 장부에 이미 넣었으면 빼야 함 (D-89 사용성 점검) ──
+  const inMonthIso = (iso?: string) => !!iso && inMonth(isoMinute(iso).slice(0, 10));
+  const voidRows = [
+    ...(db.voidedMoney ?? [])
+      .filter((v) => siteIds.has(v.siteId))
+      .map((v) => {
+        const date = v.kind === "billing" ? (v.record as { billedDate: string }).billedDate : (v.record as { receivedDate: string }).receivedDate;
+        const round = v.kind === "billing" ? (v.record as { round?: number }).round : undefined;
+        return { at: v.voidedAt, date, row: [isoMinute(v.voidedAt), siteName(v.siteId), v.kind === "billing" ? "기성" : "입금", date, round ? `${round}회` : "", n(v.record.amount), v.reason, userName(v.voidedBy)] };
+      }),
+    ...(db.receivableAdjustments ?? [])
+      .filter((a) => a.voidedAt && siteIds.has(a.siteId))
+      .map((a) => ({ at: a.voidedAt!, date: a.date, row: [isoMinute(a.voidedAt!), siteName(a.siteId), adjustmentLabel(a), a.date, roundOf(a.billingId), n(a.amount - (a.released ?? []).reduce((s2, x) => s2 + x.amount, 0)), a.voidReason ?? "", userName(a.voidedBy)] })),
+  ]
+    .filter((x) => inMonthIso(x.at) || inMonth(x.date))
+    .sort((a, x) => a.at.localeCompare(x.at));
+  const voided: string[][] = [["취소한 시각", "현장", "무엇", "원래 날짜", "회차(취소 때)", "금액(원 · 숫자에서 빠짐)", "취소 이유", "취소한 사람"], ...voidRows.map((x) => x.row)];
 
   // ── 원가 (발생일 기준 · 모든 상태 — 합계는 ‘확정’만) ──
   const costRaw = monthCostRows(db, month, today).map((row) => row.map((v) => (typeof v === "number" ? n(v) : String(v ?? ""))));
@@ -293,17 +330,19 @@ export function monthWorkbook(db: DemoDB, month: string, today = todayIso(), opt
     ["마감 상태", rec ? `${STAGE_NOTE[stage]} (${closeText})` : STAGE_NOTE[stage]],
     ...(items.length ? items : r.ended ? [["닫기 전에 볼 것", "없음"]] : []),
     ["숫자 대조", ok ? `이 파일의 합계 ${checks.length}개를 프로그램이 ‘월 마감’ 화면 숫자와 맞춰 봤습니다 — 모두 같음. (통장·홈택스·세금계산서와 맞춘 것은 아닙니다)` : `화면과 다른 숫자 ${checks.filter((c) => !c.ok).length}개 — 이 파일을 쓰지 말고 회사에 알려 주세요: ${checks.filter((c) => !c.ok).map((c) => c.label).join(", ")}`],
-    ...(r.late.n ? [["달이 끝난 뒤 들어온 원가", `이 달 날짜 원가 ${r.late.n}건 ${n(r.late.amount)}원 — 마감 뒤 들어와 인쇄해 둔 마감본과 다를 수 있음`]] : []),
-    ...(r.lateMoney.n ? [["달이 끝난 뒤 넣은 기성·입금", `${r.lateMoney.n}건 (기성 ${n(r.lateMoney.billed)}원 · 입금 ${n(r.lateMoney.received)}원)`]] : []),
+    ...(r.late.n ? [["달이 끝난 뒤 들어온 원가", `이 달 날짜 원가 ${r.late.n}건 ${won(r.late.amount)}원 — 마감 뒤 들어와 인쇄해 둔 마감본과 다를 수 있음`]] : []),
+    ...(r.lateMoney.n ? [["달이 끝난 뒤 넣은 기성·입금", `${r.lateMoney.n}건 (기성 ${won(r.lateMoney.billed)}원 · 입금 ${won(r.lateMoney.received)}원)`]] : []),
+    ...(voidRows.length ? [["취소한 기록", `${voidRows.length}건 — ‘취소한 기록’ 시트. 이미 장부에 넣은 것이면 빼 주세요.`]] : []),
     ["", ""],
     ["금액 기준", "모든 금액은 공급가액(부가세 별도)입니다. 입금은 받은 돈을 부가세 제외로 환산해 넣은 금액이라 통장 입금액은 대개 ‘부가세 포함 환산’ 칸(×1.1)과 비슷합니다. 부가세 칸은 10%로 계산한 참고값입니다 — 세금계산서·통장 금액과 맞춰 보세요."],
     ["날짜 기준", "기성은 확정 기성의 청구일 · 입금은 입금일 · 원가는 발생일 기준이고, 원가 합계는 공무 확인이 끝난 ‘확정’만 셉니다(대기·반려·취소 줄은 원가 시트 아래에 따로)."],
     ["", `미수 = ${asOf}까지 확정 기성 누계 − ${asOf}까지 입금 누계 − ${asOf}까지 발주처 공제(지체상금·상계 등 받지 못하는 돈). 미수 중 유보금은 나중에 받을 돈입니다. 계약·변경공사·예상이익은 ${asOf} 기준(지금 숫자는 ‘참고’ 칸). 변경공사는 승인 전에는 계약·이익에 들어가지 않습니다.`],
+    ["유보금·공제", `유보금은 미수 안에 남은 돈(‘남은 유보금’ 시트에 뗀 회차·받을 예정일 — 장단기 구분용). 공제 중 지체상금은 실제로 뗀 금액 그대로(부가세가 붙지 않는 돈으로 보고 넣음), 상계·그 밖의 공제는 부가세를 뺀 금액입니다 — 세금계산서 처리는 세무사 판단에 따라 주세요. 미수는 뗀 날 기준, 공제가 예상이익을 줄인 것(‘이익을 바꾼 일’)은 등록한 날 기준이라 지난달 날짜 공제의 이익 변화는 등록한 달 파일에 나옵니다.`],
     ["관리용 숫자", "예상이익 · 이익을 바꾼 일 · 노무 추정 인건비는 경영 관리용 숫자이고 장부 숫자가 아닙니다. 노무 추정은 출퇴근·작업 인원 기준 추정이라 급여·원천세·지급명세서에 쓰지 마세요."],
     ["변경공사 증빙", "변경공사 시트의 ‘증빙 파일’ 칸은 시스템에 올려 둔 변경계약서·공문·견적서 파일 수입니다. 파일 자체는 회사에 요청하시면 보내 드립니다."],
     ["", "숫자가 장부와 다르면 회사(공무 담당)에 알려 주시면 고쳐서 다시 보내 드립니다."],
     ["", ""],
-    ["시트", "현장별 요약 · 기성 · 입금 · 미수 · 유보·공제 · 원가 · 원가 항목별 · 변경공사 · 노무 · 이익을 바꾼 일"],
+    ["시트", "현장별 요약 · 기성 · 입금 · 미수 · 유보·공제 · 남은 유보금 · 취소한 기록 · 원가 · 원가 항목별 · 변경공사 · 노무 · 이익을 바꾼 일"],
   ];
 
   const sheets: SheetSpec[] = [
@@ -314,6 +353,8 @@ export function monthWorkbook(db: DemoDB, month: string, today = todayIso(), opt
     { name: "입금", rows: payment, widths: [12, 16, 9, 20, 22, 20, 17, 10, 18], header: true, textCols: [1, 2, 5, 6, 7, 8] },
     { name: r.ended ? "월말 미수" : "미수(오늘)", rows: receivable, widths: [16, 24, 24, 26, 22, 13, 20, 24, 24], header: true, textCols: [0, 6] },
     { name: "유보·공제", rows: withheld, widths: [12, 16, 26, 18, 20, 22, 10, 14, 34, 10], header: true, textCols: [1, 2, 6, 8, 9] },
+    { name: "남은 유보금", rows: retention, widths: [16, 12, 10, 16, 20, 20, 14, 12, 34], header: true, textCols: [0, 2, 7, 8] },
+    { name: "취소한 기록", rows: voided, widths: [17, 16, 22, 12, 12, 20, 34, 10], header: true, textCols: [0, 1, 2, 4, 6, 7] },
     { name: "원가", rows: cost, widths: [26, 17, 14, 10, 10, 14, 12, 12, 30, 16, 10, 12, 20, 14, 24], header: true, textCols: costRaw[0].map((h, i) => (["발생일", "입력일", "금액(원)", "처음 금액(고치기 전)"].includes(h) ? -1 : i)).filter((i) => i >= 0) },
     { name: "원가 항목별", rows: byCategory, widths: [16, ...cats.map(() => 14), 16], header: true, textCols: [0] },
     { name: "변경공사", rows: change, widths: [16, 26, 14, 14, 16, 16, 12, 16, 14, 14, 30, 14, 24], header: true, textCols: [0, 1, 4, 5, 9, 10, 12] },

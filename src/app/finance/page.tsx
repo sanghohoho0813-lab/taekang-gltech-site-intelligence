@@ -18,7 +18,7 @@ import type { DemoDB } from "@/lib/domain/types";
 import { IS_LIVE } from "@/lib/mode";
 import { ClosedMonthHint } from "@/components/domain/ClosedMonthHint";
 import { ChangeOrderBoard } from "@/components/admin/ChangeOrderBoard";
-import { EMPTY_WITHHELD, VoidMoneyButton, VoidedList, WithheldCard, WithheldFields, withheldArgs, type WithheldValue } from "@/components/admin/Withheld";
+import { EMPTY_WITHHELD, VoidMoneyButton, VoidedList, WithheldCard, WithheldFields, vatExcluded, withheldArgs, withheldBlocked, type WithheldValue } from "@/components/admin/Withheld";
 
 export default function FinancePage() {
   const { db } = useMe();
@@ -215,8 +215,16 @@ function MoneyFormModal({ db, kind, onClose }: { db: DemoDB; kind: "billing" | "
   const [err, setErr] = useState("");
   const [fields, setFields] = useState<Record<string, string>>({});
   const [withheld, setWithheld] = useState<WithheldValue>(EMPTY_WITHHELD);
+  // 통장에 들어온 금액(부가세 포함)으로 입금액 계산 (D-89 사용성 점검: 지체상금은 부가세가 없어 ÷1.1만 하면 틀림)
+  const [bankOpen, setBankOpen] = useState(false);
+  const [bankText, setBankText] = useState("");
   const amount = Number(amountText.replace(/[^\d]/g, ""));
+  const bank = Number(bankText.replace(/[^\d]/g, ""));
+  const toCommas = (v: string) => (v.replace(/[^\d]/g, "") ? Number(v.replace(/[^\d]/g, "")).toLocaleString("ko-KR") : "");
   const f = siteFinancials(db, siteId);
+  const withheldErr = ["withheldAmount", "note", "deductionType", "dueDate"].some((k) => fields[k]);
+  // 같은 현장·같은 날·같은 금액 기성이 이미 있으면 (두 번 넣기)
+  const dupBill = kind === "billing" && amount > 0 ? db.billings.find((b) => b.siteId === siteId && b.billedDate === date && b.amount === amount) : undefined;
   return (
     <Modal
       open
@@ -225,9 +233,10 @@ function MoneyFormModal({ db, kind, onClose }: { db: DemoDB; kind: "billing" | "
       size="sm"
       footer={
         <>
-          <Button onClick={onClose}>취소</Button>
+          <Button onClick={onClose}>닫기</Button>
           <Button
             variant="cta"
+            disabled={kind === "payment" && withheldBlocked(withheld)}
             onClick={async () => {
               try {
                 const w = kind === "payment" ? withheldArgs(withheld) : undefined;
@@ -248,7 +257,7 @@ function MoneyFormModal({ db, kind, onClose }: { db: DemoDB; kind: "billing" | "
     >
       <div className="space-y-3">
         <Field label="현장" htmlFor="m-site">
-          <select id="m-site" className={inputCls} value={siteId} onChange={(e) => setSiteId(e.target.value)}>
+          <select id="m-site" className={inputCls} value={siteId} onChange={(e) => (setSiteId(e.target.value), setWithheld((v) => ({ ...v, billingId: "" })))}>
             {db.sites.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.shortName}
@@ -256,9 +265,40 @@ function MoneyFormModal({ db, kind, onClose }: { db: DemoDB; kind: "billing" | "
             ))}
           </select>
         </Field>
-        <Field label={kind === "payment" ? "입금액 (원, 부가세 제외 환산)" : "기성 청구액 (원, 공급가액)"} htmlFor="m-amt" error={["withheldAmount", "note", "deductionType", "dueDate"].some((k) => fields[k]) ? undefined : err} hint={kind === "payment" ? `현재 미수금 ${fmtMan(f.outstanding)}${f.retention ? ` (그중 유보금 ${fmtMan(f.retention)})` : ""}` : amount ? `= ${fmtMan(amount)}` : undefined}>
-          <input id="m-amt" inputMode="numeric" className={cx(inputCls, "num text-right")} value={amountText} onChange={(e) => setAmountText(e.target.value.replace(/[^\d]/g, "") ? Number(e.target.value.replace(/[^\d]/g, "")).toLocaleString("ko-KR") : "")} />
+        <Field
+          label={kind === "payment" ? "입금액 (원, 부가세 제외 환산)" : "기성 청구액 (원, 공급가액)"}
+          htmlFor="m-amt"
+          error={withheldErr ? undefined : err}
+          hint={kind === "payment" ? `${amount ? `= ${fmtMan(amount)} · ` : ""}현재 미수금 ${fmtMan(f.outstanding)}${f.retention ? ` (그중 유보금 ${fmtMan(f.retention)})` : ""}` : amount ? `= ${fmtMan(amount)}` : undefined}
+        >
+          <input id="m-amt" inputMode="numeric" className={cx(inputCls, "num text-right")} value={amountText} onChange={(e) => setAmountText(toCommas(e.target.value))} />
         </Field>
+        {kind === "payment" && (
+          <div className="rounded-xl border border-line px-3.5 py-2.5" data-testid="pay-bank">
+            <button type="button" className="text-[0.82rem] font-semibold text-theme-ink underline-offset-2 hover:underline" onClick={() => setBankOpen((v) => !v)} aria-expanded={bankOpen} data-testid="pay-bank-toggle">
+              통장에 들어온 금액(부가세 포함)으로 계산
+            </button>
+            {bankOpen && (
+              <div className="mt-2 space-y-2">
+                <Field label="통장 입금액 (원, 부가세 포함)" htmlFor="m-bank" hint={bank ? `= ${fmtMan(bank)}` : "발주처가 보낸 그대로"}>
+                  <input id="m-bank" inputMode="numeric" className={cx(inputCls, "num text-right")} value={bankText} onChange={(e) => setBankText(toCommas(e.target.value))} data-testid="pay-bank-amount" />
+                </Field>
+                {bank > 0 && (
+                  <p className="text-[0.8rem]" data-testid="pay-bank-result">
+                    부가세 제외 입금액 <b className="num">{vatExcluded(bank, withheld).toLocaleString("ko-KR")}원</b>
+                    {withheld.kind === "deduction" && withheld.deductionType === "delay_penalty" && Number(withheld.amountText.replace(/[^\d]/g, "")) > 0
+                      ? ` — 지체상금 ${fmtMan(Number(withheld.amountText.replace(/[^\d]/g, "")))}은 부가세가 없어 따로 뺐습니다`
+                      : " = 통장 금액 ÷ 1.1"}
+                    <Button size="sm" variant="soft" className="ml-2" onClick={() => setAmountText(vatExcluded(bank, withheld).toLocaleString("ko-KR"))} data-testid="pay-bank-apply">
+                      입금액에 넣기
+                    </Button>
+                  </p>
+                )}
+                <p className="text-[0.74rem] text-ink-3">지체상금을 떼고 받았으면 아래 ‘공제 → 지체상금’ 금액을 먼저 적으세요 — 지체상금은 부가세가 붙지 않아 함께 계산합니다(세무사 확인 권장).</p>
+              </div>
+            )}
+          </div>
+        )}
         <Field label={kind === "billing" ? "청구일" : "입금일"} htmlFor="m-date">
           <input id="m-date" type="date" className={inputCls} value={date} onChange={(e) => setDate(e.target.value)} />
         </Field>
@@ -271,7 +311,12 @@ function MoneyFormModal({ db, kind, onClose }: { db: DemoDB; kind: "billing" | "
             </p>
           ) : null;
         })()}
-        {kind === "payment" && <WithheldFields value={withheld} onChange={setWithheld} outstanding={f.outstanding} pay={amount} errors={fields} />}
+        {dupBill && (
+          <p className="rounded-lg bg-warn-bg px-3 py-2 text-[0.8rem] font-semibold text-ink" data-testid="billing-dup">
+            같은 날·같은 금액 기성이 이미 있습니다 ({dupBill.round}차 {fmtDate(dupBill.billedDate)} {fmtMan(dupBill.amount)}). 두 번 넣는 것이 아닌지 확인하세요.
+          </p>
+        )}
+        {kind === "payment" && <WithheldFields db={db} siteId={siteId} value={withheld} onChange={(v) => setWithheld(v.billingId && !db.billings.some((b) => b.id === v.billingId && b.siteId === siteId) ? { ...v, billingId: "" } : v)} pay={amount} errors={fields.withheldAmount ? { ...fields, withheldAmount: err } : fields} />}
         <ClosedMonthHint db={db} date={date} action="넣으면" what={kind === "billing" ? "기성" : "입금"} />
         <p className="text-[0.74rem] text-ink-3">{IS_LIVE ? "로그인한 사용자 이름으로 활동 이력에 기록됩니다." : "현재 Demo 역할 사용자로 활동 이력에 기록됩니다 (DEMO 저장소)."}</p>
       </div>

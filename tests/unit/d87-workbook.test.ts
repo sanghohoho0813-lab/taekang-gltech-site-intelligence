@@ -33,7 +33,7 @@ describe("D-87 월 마감 엑셀", () => {
       const sheets = await readXlsx(bytes);
       const by = (name: string) => sheets.find((s) => s.name === name)!.rows;
       const ended = monthBounds(month).to < today;
-      expect(sheets.map((s) => s.name)).toEqual(["안내", "현장별 요약", "기성", "입금", ended ? "월말 미수" : "미수(오늘)", "유보·공제", "원가", "원가 항목별", "변경공사", "노무", "이익을 바꾼 일"]);
+      expect(sheets.map((s) => s.name)).toEqual(["안내", "현장별 요약", "기성", "입금", ended ? "월말 미수" : "미수(오늘)", "유보·공제", "남은 유보금", "취소한 기록", "원가", "원가 항목별", "변경공사", "노무", "이익을 바꾼 일"]);
       const lastRow = (rows: string[][]) => rows[rows.length - 1];
       // 요약 합계 줄
       const sum = lastRow(by("현장별 요약"));
