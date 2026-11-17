@@ -11,7 +11,7 @@ import { currentClose, changesAfterClose } from "./closeRecord";
 import { siteFinancials } from "./calc";
 import { CATEGORY_LABEL, CO_STATUS_LABEL } from "./labels";
 import { approvalBasisText, coEvidenceOf } from "./changeOrders";
-import { activeAdjustments, adjustmentLabel, deductedTotal, retentionOpen } from "./receivables";
+import { activeAdjustments, adjustmentLabel, deductedTotal } from "./receivables";
 import { fmtDateTime, todayIso } from "./format";
 import type { SheetSpec } from "./xlsx";
 
@@ -125,7 +125,7 @@ export function monthWorkbook(db: DemoDB, month: string, today = todayIso(), opt
     const ded = deductedTotal(db, m.site.id, to);
     const ar = billed - recv - ded;
     const lastPay = db.payments.filter((x) => x.siteId === m.site.id && x.receivedDate <= to).map((x) => x.receivedDate).sort().pop() ?? "";
-    return [m.site.shortName || m.site.name, n(billed), n(recv), n(ar), n(ar + vat(ar)), lastPay, m.site.clientName ?? "", n(ded), n(retentionOpen(db, m.site.id, to))];
+    return [m.site.shortName || m.site.name, n(billed), n(recv), n(ar), n(ar + vat(ar)), lastPay, m.site.clientName ?? "", n(ded), n(m.retentionAtEnd)];
   });
   const receivable: string[][] = [
     ["현장", `${asOf}까지 확정 기성 누계(공급가액)`, `${asOf}까지 입금 누계(부가세 제외)`, `${asOf} 미수(공급가액 · 기성 − 입금 − 공제)`, "미수 부가세 포함(×1.1·계산)", "마지막 입금일", "발주처", `${asOf}까지 발주처 공제 누계(받지 못함)`, `미수 중 유보금(${asOf} · 나중에 받을 돈)`],

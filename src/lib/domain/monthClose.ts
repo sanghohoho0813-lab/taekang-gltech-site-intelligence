@@ -261,6 +261,10 @@ export function monthClose(db: DemoDB, month: string, today = todayIso()): Month
   const name = (id: string) => db.users.find((u) => u.id === id)?.name ?? "알 수 없음";
 
   // ── 금액 ──
+  const endAr = (siteId: string) =>
+    db.billings.filter((x) => x.siteId === siteId && x.status === "confirmed" && x.billedDate <= to).reduce((a, x) => a + x.amount, 0) -
+    db.payments.filter((x) => x.siteId === siteId && x.receivedDate <= to).reduce((a, x) => a + x.amount, 0) -
+    deductedTotal(db, siteId, to);
   const money: CloseSiteMoney[] = sites.map((site) => {
     const bills = db.billings.filter((x) => x.siteId === site.id && x.status === "confirmed");
     const pays = db.payments.filter((x) => x.siteId === site.id);
@@ -271,9 +275,10 @@ export function monthClose(db: DemoDB, month: string, today = todayIso()): Month
       site,
       billed: bills.filter((x) => inRange(x.billedDate, from, to)).reduce((a, x) => a + x.amount, 0),
       received: pays.filter((x) => inRange(x.receivedDate, from, to)).reduce((a, x) => a + x.amount, 0),
-      outstandingAtEnd: bills.filter((x) => x.billedDate <= to).reduce((a, x) => a + x.amount, 0) - pays.filter((x) => x.receivedDate <= to).reduce((a, x) => a + x.amount, 0) - deductedTotal(db, site.id, to),
+      outstandingAtEnd: endAr(site.id),
       deducted: activeAdjustments(db, site.id).filter((a) => a.kind === "deduction" && inRange(a.date, from, to)).reduce((x, a) => x + a.amount, 0),
-      retentionAtEnd: retentionOpen(db, site.id, to),
+      // 유보금은 미수 안의 돈 — 월말 미수보다 클 수 없다 (그 뒤 공제가 유보금에서 떼어 간 경우)
+      retentionAtEnd: Math.min(Math.max(0, endAr(site.id)), retentionOpen(db, site.id, to)),
       cost,
       costTotal: COST_CATEGORIES.reduce((a, c) => a + cost[c], 0),
       pending: { n: pend.length, amount: pend.reduce((a, e) => a + e.amount, 0) },

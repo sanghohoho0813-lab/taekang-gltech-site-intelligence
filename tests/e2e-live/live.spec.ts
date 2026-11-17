@@ -1418,4 +1418,45 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     const pst = (await (await partner.request.get("/api/state")).json()).db;
     expect(JSON.stringify(pst.sites)).not.toContain("notices");
   });
+
+  test("돈 기록 바로잡기(D-89): 기성 → 입금 + 지체상금 공제 → 미수·예상이익 줄어듦(서버 저장) → 잘못 넣은 입금 취소(이유) · 현장소장·발주처는 403·데이터 없음", async ({ browser }) => {
+    const page = await login(browser, CEO.email, CEO.password);
+    const today = new Date(Date.now() + 9 * 3_600_000).toISOString().slice(0, 10);
+    const cmd = (name: string, args: unknown) => page.request.post("/api/commands", { data: { name, args } });
+    const st = async () => (await (await page.request.get("/api/state")).json()).db;
+    expect((await cmd("addBilling", { siteId, amount: 100_000_000, billedDate: today, idempotencyKey: "live-89-b" })).status()).toBe(200);
+    const before = (await st()).payments.length;
+    // 입금 9,700만 + 지체상금 300만 (한 번에)
+    const r = await cmd("addPayment", { siteId, amount: 97_000_000, receivedDate: today, withheld: { kind: "deduction", deductionType: "delay_penalty", amount: 3_000_000, note: "공기 지연 6일" }, idempotencyKey: "live-89-p" });
+    expect(r.status()).toBe(200);
+    let db = await st();
+    expect(db.payments.length).toBe(before + 1);
+    expect(db.receivableAdjustments).toHaveLength(1);
+    expect(db.profitAdjustments.some((a: { text: string; amount: number }) => a.text.startsWith("발주처 공제") && a.amount === -3_000_000)).toBe(true);
+    await page.goto("/finance");
+    await expect(page.getByTestId("fin-total-outstanding")).toContainText("발주처 공제");
+    await expect(page.getByTestId("withheld-deductions")).toContainText("공기 지연 6일");
+    // 잘못 넣은 입금 취소 (화면에서) — 공제는 그대로 남는다고 알려 준다
+    const row = page.getByTestId("payment-row").filter({ hasText: "9,700만" }).first();
+    await row.getByTestId("money-void").click();
+    const vm = page.getByTestId("money-void-modal");
+    await expect(vm.getByTestId("money-void-linked")).toContainText("공제 300만");
+    await vm.getByTestId("money-void-reason").fill("입금일 잘못 — 다시 넣음");
+    await vm.getByTestId("money-void-confirm").click();
+    await expect(vm).toHaveCount(0);
+    await page.reload();
+    db = await st();
+    expect(db.payments.length).toBe(before);
+    expect(db.voidedMoney.map((v: { reason: string }) => v.reason)).toContain("입금일 잘못 — 다시 넣음");
+    // 현장소장·발주처: 명령 403 · 데이터에 없음
+    const field = await login(browser, FIELD.email, FIELD.password, { width: 390, height: 844 });
+    const partner = await login(browser, PARTNER.email, PARTNER.password, { width: 390, height: 844 });
+    for (const who of [field, partner]) {
+      expect((await who.request.post("/api/commands", { data: { name: "voidMoneyRecord", args: { kind: "billing", id: db.billings[0].id, reason: "x" } } })).status()).toBe(403);
+      expect((await who.request.post("/api/commands", { data: { name: "addReceivableAdjustment", args: { siteId, kind: "deduction", deductionType: "other", amount: 1, date: today, note: "xx" } } })).status()).toBe(403);
+      const v = (await (await who.request.get("/api/state")).json()).db;
+      expect(v.receivableAdjustments ?? []).toEqual([]);
+      expect(v.voidedMoney ?? []).toEqual([]);
+    }
+  });
 });

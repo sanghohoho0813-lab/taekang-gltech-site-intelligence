@@ -51,6 +51,7 @@ function VoidMoneyModal({ db, kind, rec, onClose }: { db: DemoDB; kind: "billing
   const [err, setErr] = useState<{ msg: string; fields?: Record<string, string> } | null>(null);
   const date = kind === "billing" ? (rec as ProgressBilling).billedDate : (rec as PaymentReceived).receivedDate;
   const retentionPay = kind === "payment" && !!(rec as PaymentReceived).retentionId;
+  const linked = kind === "payment" ? (db.receivableAdjustments ?? []).find((a) => a.paymentId === rec.id && !a.voidedAt) : undefined;
   const what = kind === "billing" ? `${siteName(db, rec.siteId)} ${(rec as ProgressBilling).round ? `${(rec as ProgressBilling).round}차 ` : ""}기성 ${fmtMan(rec.amount)} (${fmtDate(date)})` : `${siteName(db, rec.siteId)} 입금 ${fmtMan(rec.amount)} (${fmtDate(date)})`;
   return (
     <Modal
@@ -89,6 +90,11 @@ function VoidMoneyModal({ db, kind, rec, onClose }: { db: DemoDB; kind: "billing
         <p>잘못 넣은 {kind === "billing" ? "기성" : "입금"}을 숫자에서 뺍니다. 기록은 지우지 않고 ‘취소한 기록’에 누가·언제·왜와 함께 남습니다. 금액이 틀렸으면 취소한 뒤 바른 금액으로 다시 넣으세요.</p>
         {kind === "billing" && <p className="text-[0.8rem] text-ink-3">뒤 기성의 차수는 날짜 순서로 다시 매겨집니다.</p>}
         {retentionPay && <p className="text-[0.8rem] font-semibold text-warn">유보금을 받아 만든 입금입니다 — 취소하면 그 유보금이 다시 ‘받을 돈’으로 돌아갑니다.</p>}
+        {linked && (
+          <p className="text-[0.8rem] font-semibold text-warn" data-testid="money-void-linked">
+            이 입금과 함께 넣은 {linked.kind === "retention" ? "유보금" : "공제"} {fmtMan(linked.amount)}은 그대로 남습니다 — 그것도 잘못 넣었으면 아래 ‘유보금 · 공제’에서 따로 취소하세요.
+          </p>
+        )}
         <ClosedMonthHint db={db} date={date} action="취소하면" what={kind === "billing" ? "기성" : "입금"} />
         <Field label="취소하는 이유" htmlFor="money-void-reason" required error={err?.fields?.reason} counter={`${Array.from(reason).length}/200`}>
           <input id="money-void-reason" className={inputCls} value={reason} maxLength={200} onChange={(e) => setReason(e.target.value)} placeholder={kind === "billing" ? "예: 같은 기성을 두 번 넣음" : "예: 금액 단위 잘못 (9천만 → 9억)"} data-testid="money-void-reason" />
