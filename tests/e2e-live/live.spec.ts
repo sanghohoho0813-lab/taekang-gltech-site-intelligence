@@ -341,6 +341,56 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     expect((await field.request.post("/api/commands", { data: { name: "undoImport", args: { batchId: "x" } } })).status()).toBe(403);
   });
 
+  test("변경공사 증빙 파일(D-88): 본사가 날인본 PDF·사진 올림 → 서버 저장·PDF는 올린 이름으로 내려받기 → 현장소장·발주처는 주소를 알아도 404 · 명령 403 · 데이터에도 없음", async ({ browser }) => {
+    const JPG = Buffer.from("/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==", "base64");
+    const PDF = Buffer.from("%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n", "latin1");
+    const page = await login(browser, CEO.email, CEO.password);
+    await page.goto("/finance#co-board");
+    // 가져온 승인 변경공사(근거 미기록) — 서면 파일이 없다고 보인다
+    const done = page.getByTestId("co-decided").getByTestId("change-order").filter({ hasText: "1층 출입구 자동문 추가" });
+    await expect(done.getByTestId("co-paper")).toHaveAttribute("data-paper", "missing");
+    await done.getByTestId("co-evidence-add").click();
+    const em = page.getByTestId("co-evidence-modal");
+    await expect(em.getByTestId("co-evidence-kind-contract")).toBeChecked();
+    await em.getByTestId("co-evidence-input").setInputFiles([
+      { name: "자동문_변경계약서.pdf", mimeType: "application/pdf", buffer: PDF },
+      { name: "날인면.jpg", mimeType: "image/jpeg", buffer: JPG },
+    ]);
+    await em.getByTestId("co-evidence-upload").click();
+    await expect(em).toHaveCount(0);
+    await expect(done.getByTestId("co-evidence")).toHaveAttribute("data-count", "2");
+    await expect(done.getByTestId("co-paper")).toHaveCount(0);
+    // 다시 읽어도 남아 있고(서버 저장), 기록에는 주소만
+    await page.reload();
+    await expect(done.getByTestId("co-evidence")).toHaveAttribute("data-count", "2");
+    const ev = await page.evaluate(async () => (await (await fetch("/api/state")).json()).db.coEvidence as { id: string; kind: string; dataUrl: string; sha256?: string }[]);
+    expect(ev.map((e) => e.dataUrl)).toEqual(ev.map((e) => `/api/photos/${e.id}`));
+    const pdf = ev.find((e) => e.kind === "pdf")!;
+    const img = ev.find((e) => e.kind === "image")!;
+    const r = await page.request.get(`/api/photos/${pdf.id}`);
+    expect(r.status()).toBe(200);
+    expect(r.headers()["content-type"]).toBe("application/pdf");
+    expect(r.headers()["content-disposition"]).toContain(`filename*=UTF-8''${encodeURIComponent("자동문_변경계약서.pdf")}`);
+    expect(r.headers()["content-disposition"]).toMatch(/^attachment;/);
+    expect((await r.body()).subarray(0, 5).toString("latin1")).toBe("%PDF-");
+    expect((await page.request.get(`/api/photos/${img.id}`)).headers()["content-type"]).toBe("image/jpeg");
+    // 현장소장(이 현장 담당)·발주처: 주소를 알아도 못 받고, 데이터에도 없고, 올리기·지우기 명령은 거부
+    const field = await login(browser, FIELD.email, FIELD.password, { width: 390, height: 844 });
+    const partner = await login(browser, PARTNER.email, PARTNER.password, { width: 390, height: 844 });
+    for (const who of [field, partner]) {
+      expect((await who.request.get(`/api/photos/${pdf.id}`)).status()).toBe(404);
+      expect((await who.request.get(`/api/photos/${img.id}`)).status()).toBe(404);
+      const st = await who.evaluate(async () => (await (await fetch("/api/state")).json()).db);
+      expect(st.coEvidence ?? []).toEqual([]);
+      expect(JSON.stringify(st)).not.toContain(pdf.id);
+      expect((await who.request.post("/api/commands", { data: { name: "removeChangeOrderEvidence", args: { evidenceId: pdf.id, reason: "x" } } })).status()).toBe(403);
+    }
+    // 가짜 PDF는 서버가 거부
+    const coId = await page.evaluate(async () => ((await (await fetch("/api/state")).json()).db.changeOrders as { id: string; title: string }[]).find((c) => c.title === "1층 출입구 자동문 추가")!.id);
+    const fake = await page.request.post("/api/commands", { data: { name: "addChangeOrderEvidence", args: { coId, docType: "letter", dataUrl: `data:application/pdf;base64,${Buffer.from("<html>x</html>").toString("base64")}` } } });
+    expect(fake.status()).toBe(400);
+  });
+
   test("현장 QR: 본사 단말기 등록 → 로그인 없는 태블릿 연결 → 현장소장 QR 확인 → 해제", async ({ browser }) => {
     const admin = await login(browser, CEO.email, CEO.password);
     await admin.goto("/attendance");
