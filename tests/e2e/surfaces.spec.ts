@@ -737,8 +737,8 @@ test("대표 보고서 달별 보기 (D-83): 누계 ↔ 지난달 · 마감 상�
   await page.getByTestId("close-xlsx").click();
   const book = readFileSync((await (await dlx).path())!);
   expect(book.subarray(0, 2).toString("latin1")).toBe("PK");
-  expect(book.toString("latin1")).toContain("xl/worksheets/sheet9.xml");
-  await expect(page.getByText(/월 마감 엑셀을 내려받았습니다 — 합계 13개가 화면과 같음/)).toBeVisible();
+  expect(book.toString("latin1")).toContain("xl/worksheets/sheet10.xml");
+  await expect(page.getByText(/월 마감 엑셀을 내려받았습니다 — 합계 \d+개가 화면과 같음/)).toBeVisible();
   // 월 마감에서 그 달 대표 보고서로
   await page.getByTestId("close-doc-ceo-month").click();
   await expect(page).toHaveURL(new RegExp(`/report\\?month=${prev}$`));

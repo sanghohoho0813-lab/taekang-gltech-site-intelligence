@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import { simulate } from "./moneySim";
 import { createSeed } from "@/lib/data/seed";
 import { COMMANDS } from "@/lib/data/registry";
-import { monthClose, profitEvents } from "@/lib/domain/monthClose";
+import { monthBounds, monthClose, profitEvents } from "@/lib/domain/monthClose";
 import { monthWorkbook } from "@/lib/domain/monthWorkbook";
 import { moneyIntegrity } from "@/lib/domain/integrity";
 import { readXlsx, writeXlsx } from "@/lib/domain/xlsx";
@@ -25,10 +25,11 @@ describe("D-87 월 마감 엑셀", () => {
       const r = monthClose(db, month, today);
       const w = monthWorkbook(db, month, today, { by: "u-manager", now: new Date("2026-11-14T03:00:00Z") });
       expect(w.ok, JSON.stringify(w.checks.filter((c) => !c.ok))).toBe(true);
-      expect(w.checks.length).toBe(13);
+      expect(w.checks.length).toBe(14);
       const sheets = await readXlsx(writeXlsx(w.sheets));
       const by = (name: string) => sheets.find((s) => s.name === name)!.rows;
-      expect(sheets.map((s) => s.name)).toEqual(["안내", "현장별 요약", "기성", "입금", "월말 미수", "원가", "변경공사", "노무", "이익을 바꾼 일"]);
+      const ended = monthBounds(month).to < today;
+      expect(sheets.map((s) => s.name)).toEqual(["안내", "현장별 요약", "기성", "입금", ended ? "월말 미수" : "미수(오늘)", "원가", "원가 항목별", "변경공사", "노무", "이익을 바꾼 일"]);
       const lastRow = (rows: string[][]) => rows[rows.length - 1];
       // 요약 합계 줄
       const sum = lastRow(by("현장별 요약"));
@@ -42,19 +43,36 @@ describe("D-87 월 마감 엑셀", () => {
       // 시트별 합계 줄 · 현장별 예상이익 = 현장 상세(대시보드) 숫자
       expect(num(lastRow(by("기성"))[3])).toBe(r.totals.billed);
       expect(num(lastRow(by("입금"))[3])).toBe(r.totals.received);
-      expect(num(lastRow(by("월말 미수"))[3])).toBe(r.totals.outstandingAtEnd);
-      expect(num(lastRow(by("원가"))[5])).toBe(r.totals.costTotal);
-      expect(num(lastRow(by("변경공사"))[10])).toBe(r.totals.changeApproved);
+      expect(num(lastRow(by(ended ? "월말 미수" : "미수(오늘)"))[3])).toBe(r.totals.outstandingAtEnd);
+      // 원가: 확정 줄 바로 아래 ‘확정 합계’ — 대기·반려·취소는 그 아래 따로
+      const costRows = by("원가");
+      const totalAt = costRows.findIndex((x) => x[0] === "확정 합계");
+      expect(num(costRows[totalAt][5])).toBe(r.totals.costTotal);
+      expect(costRows.slice(1, totalAt).every((x) => x[11] === "확정")).toBe(true);
+      expect(costRows.slice(totalAt + 1).filter((x) => /^\d{4}-/.test(x[0] ?? "")).every((x) => x[11] !== "확정")).toBe(true);
+      expect(num(lastRow(by("원가 항목별")).at(-1))).toBe(r.totals.costTotal);
+      expect(num(lastRow(by("변경공사"))[11])).toBe(r.totals.changeApproved);
+      // 현장별: ‘지금’은 현장 상세 숫자, 끝난 달의 ‘월말’은 대표 보고서 달별 보기와 같은 계산(지금 − 그 뒤 이익을 바꾼 일)
+      const next = new Date(Date.parse(`${r.to}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
       for (const row of by("현장별 요약").slice(1, -1)) {
         const site = db.sites.find((s) => s.shortName === row[0])!;
-        expect(num(row[11]), site.shortName).toBe(siteFinancials(db, site.id).expectedProfit);
+        const now = siteFinancials(db, site.id).expectedProfit;
+        const after = ended ? profitEvents(db, site.id, next, today).reduce((a, e) => a + e.amount, 0) : 0;
+        expect(num(row[13]), site.shortName).toBe(now);
+        expect(num(row[11]), site.shortName).toBe(now - after);
       }
+      // 기성: 공급가액 + 부가세 10% = 공급대가 (계산값)
+      const bl = lastRow(by("기성"));
+      expect(num(bl[5])).toBe(num(bl[3]) + num(bl[4]));
       // 금액은 엑셀 숫자 칸(더하기 가능) · 날짜는 날짜 칸으로 다시 읽힌다
       const bill = by("기성")[1];
       if (bill) expect(bill[0]).toMatch(/^\d{4}-\d{2}-\d{2}$/);
       const info = by("안내").map((x) => x.join(" ")).join("\n");
       expect(info).toContain("모두 같음");
+      expect(info).toContain("공급가액(부가세 별도)");
+      expect(info).toContain("급여·원천세·지급명세서에 쓰지 마세요");
       expect(info).toMatch(month === "2026-11" ? /진행 중/ : /공무 마감|마감 전/);
+      expect(w.filename).toMatch(month === "2026-11" ? /_진행중_/ : /_(마감전|대표확인전|확인뒤변경|대표확인)_/);
     });
   }
 
@@ -73,7 +91,7 @@ describe("D-87 월 마감 엑셀", () => {
     empty.payments = [];
     const w = monthWorkbook(empty, "2026-11", today);
     expect(w.ok).toBe(true);
-    expect(w.filename).toMatch(/^월마감_2026-11_.+\.xlsx$/);
+    expect(w.filename).toMatch(/^월마감_2026-11_진행중_.+\.xlsx$/);
   });
 });
 
