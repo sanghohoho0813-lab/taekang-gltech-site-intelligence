@@ -4,6 +4,7 @@
  * 변경공사 회수 관리 (D-84) — 기성·수금 화면의 변경공사 카드.
  * 청구 안 한 추가 원가 → 변경공사 만들기 → 발주처 청구(다음 확인할 날) → 확인·답변 기록 → 승인(일부 승인은 사유)·반려(사유) → 다시 청구.
  * 승인 전 금액은 계약·이익에 넣지 않는다(calc.ts). 본사 화면에서만 쓴다(현장·발주처에는 변경공사 자체가 내려가지 않음).
+ * 증빙 파일(변경계약서·공문·견적서 사진·PDF · D-88)은 CoEvidence.tsx.
  */
 import { useState } from "react";
 import Link from "next/link";
@@ -20,8 +21,9 @@ import { CATEGORY_LABEL, COST_CATEGORIES, CO_STATUS_LABEL, REASON_LABEL } from "
 import { fmtDate, fmtEok, fmtMan, fmtPct, todayIso } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
 import { APPROVAL_BASIS_LABEL, CO_LOG_LABEL, CO_REVIEW_STALE_DAYS, coBoard, coStageText, type CoRow } from "@/lib/domain/changeOrders";
-import type { ChangeOrder, ChangeOrderLog, CostCategory, CostEntry, DemoDB } from "@/lib/domain/types";
+import type { ChangeOrder, ChangeOrderLog, CostCategory, CostEntry, DemoDB, EvidenceDocType } from "@/lib/domain/types";
 import { IS_LIVE } from "@/lib/mode";
+import { EvidenceRow, EvidenceUploadModal } from "./CoEvidence";
 
 const md = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
 const digits = (v: string) => v.replace(/[^\d]/g, "");
@@ -40,6 +42,7 @@ export function ChangeOrderBoard({ db }: { db: DemoDB }) {
   const [logging, setLogging] = useState<ChangeOrder | null>(null);
   const [reason, setReason] = useState<{ kind: "decline"; entries: CostEntry[] } | { kind: "no_reclaim"; c: ChangeOrder } | null>(null);
   const [showDeclined, setShowDeclined] = useState(false);
+  const [evidence, setEvidence] = useState<{ coId: string; docType?: EvidenceDocType; after?: boolean } | null>(null);
   const pickedEntries = picked.map((id) => db.costEntries.find((e) => e.id === id)).filter((e): e is CostEntry => !!e);
   const pickedSites = new Set(pickedEntries.map((e) => e.siteId));
   const toggle = (id: string) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
@@ -98,6 +101,11 @@ export function ChangeOrderBoard({ db }: { db: DemoDB }) {
           testId="co-sum-recovery"
         />
       </div>
+      {t.paperMissing > 0 && (
+        <p className="-mt-1.5 px-5 pb-3 text-[0.8rem] font-semibold text-warn" data-testid="co-paper-summary">
+          승인됐는데 서면(변경계약서·공문) 파일이 없는 변경공사 {t.paperMissing}건 — 아래 ‘결정됨’에서 ‘올리기’로 날인본·공문을 올려 두세요.
+        </p>
+      )}
 
       {/* 1. 청구 안 한 추가 원가 */}
       <section id="co-unclaimed" className="scroll-mt-24 border-t border-line" data-testid="co-unclaimed">
@@ -160,7 +168,7 @@ export function ChangeOrderBoard({ db }: { db: DemoDB }) {
         {b.open.length ? (
           <ul className="divide-y divide-line" data-testid="change-orders">
             {b.open.map((r) => (
-              <CoItem key={r.co.id} db={db} r={r} today={today} onStatus={(to) => setStatus({ c: r.co, to })} onLog={() => setLogging(r.co)} />
+              <CoItem key={r.co.id} db={db} r={r} today={today} onStatus={(to) => setStatus({ c: r.co, to })} onLog={() => setLogging(r.co)} onEvidence={() => setEvidence({ coId: r.co.id })} />
             ))}
           </ul>
         ) : (
@@ -174,7 +182,7 @@ export function ChangeOrderBoard({ db }: { db: DemoDB }) {
           <h3 className="px-5 pt-3 pb-1 text-[0.92rem] font-bold">결정됨 {b.decided.length}건</h3>
           <ul className="divide-y divide-line">
             {b.decided.map((r) => (
-              <CoItem key={r.co.id} db={db} r={r} today={today} onReclaim={() => setCreate({ entries: r.linked.filter((e) => e.status === "active"), reclaim: r.co })} onNoReclaim={() => setReason({ kind: "no_reclaim", c: r.co })} />
+              <CoItem key={r.co.id} db={db} r={r} today={today} onReclaim={() => setCreate({ entries: r.linked.filter((e) => e.status === "active"), reclaim: r.co })} onNoReclaim={() => setReason({ kind: "no_reclaim", c: r.co })} onEvidence={() => setEvidence({ coId: r.co.id })} />
             ))}
           </ul>
         </section>
@@ -191,7 +199,20 @@ export function ChangeOrderBoard({ db }: { db: DemoDB }) {
           }}
         />
       )}
-      {status && <StatusModal db={db} c={status.c} to={status.to} onClose={() => setStatus(null)} />}
+      {status && (
+        <StatusModal
+          db={db}
+          c={status.c}
+          to={status.to}
+          onClose={(paper) => {
+            const coId = status.c.id;
+            setStatus(null);
+            // 변경계약서·공문으로 승인했으면 바로 그 파일을 올리는 창 (D-88 · ‘나중에’로 닫을 수 있음)
+            if (paper) setEvidence({ coId, docType: paper, after: true });
+          }}
+        />
+      )}
+      {evidence && <EvidenceUploadModal db={db} coId={evidence.coId} docType={evidence.docType} after={evidence.after} onClose={() => setEvidence(null)} />}
       {logging && <LogModal db={db} c={logging} onClose={() => setLogging(null)} />}
       {reason && (
         <ReasonModal
@@ -217,7 +238,7 @@ function Mini({ label, value, sub, tone, testId }: { label: string; value: strin
   );
 }
 
-function CoItem({ db, r, today, onStatus, onLog, onReclaim, onNoReclaim }: { db: DemoDB; r: CoRow; today: string; onStatus?: (to: StatusTo) => void; onLog?: () => void; onReclaim?: () => void; onNoReclaim?: () => void }) {
+function CoItem({ db, r, today, onStatus, onLog, onReclaim, onNoReclaim, onEvidence }: { db: DemoDB; r: CoRow; today: string; onStatus?: (to: StatusTo) => void; onLog?: () => void; onReclaim?: () => void; onNoReclaim?: () => void; onEvidence: () => void }) {
   const c = r.co;
   const [open, setOpen] = useState(false);
   const decided = c.status === "approved" || c.status === "rejected";
@@ -289,12 +310,15 @@ function CoItem({ db, r, today, onStatus, onLog, onReclaim, onNoReclaim }: { db:
               → 다시 청구함: {r.reclaimedBy.title} ({CO_STATUS_LABEL[r.reclaimedBy.status]})
             </Link>
           )}
-          {(c.log?.length ?? 0) > 0 && (
-            <button type="button" className="inline-flex items-center gap-1 text-[0.78rem] font-semibold text-theme-ink" onClick={() => setOpen((v) => !v)} aria-expanded={open} data-testid="co-log-toggle">
-              <ChevronDown size={14} className={cx("transition-transform", open && "rotate-180")} aria-hidden />
-              기록 {c.log!.length}건
-            </button>
-          )}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            {(c.log?.length ?? 0) > 0 && (
+              <button type="button" className="inline-flex items-center gap-1 text-[0.78rem] font-semibold text-theme-ink" onClick={() => setOpen((v) => !v)} aria-expanded={open} data-testid="co-log-toggle">
+                <ChevronDown size={14} className={cx("transition-transform", open && "rotate-180")} aria-hidden />
+                기록 {c.log!.length}건
+              </button>
+            )}
+            <EvidenceRow db={db} c={c} paper={r.paper} onAdd={onEvidence} />
+          </div>
         </div>
         <div className="flex flex-wrap gap-1.5">
           {!decided && onStatus && (
@@ -520,7 +544,7 @@ function LogModal({ db, c, onClose }: { db: DemoDB; c: ChangeOrder; onClose: () 
 }
 
 /** 발주처 청구 · 승인 반영 · 반려 */
-function StatusModal({ db, c, to, onClose }: { db: DemoDB; c: ChangeOrder; to: StatusTo; onClose: () => void }) {
+function StatusModal({ db, c, to, onClose }: { db: DemoDB; c: ChangeOrder; to: StatusTo; onClose: (paper?: "contract" | "letter") => void }) {
   const toast = useToast();
   const today = todayIso();
   const [amountText, setAmountText] = useState(Math.abs(c.amount).toLocaleString("ko-KR"));
@@ -549,14 +573,14 @@ function StatusModal({ db, c, to, onClose }: { db: DemoDB; c: ChangeOrder; to: S
   return (
     <Modal
       open
-      onClose={onClose}
+      onClose={() => onClose()}
       title={title}
       description={`${siteName(db, c.siteId)} ${c.title}`}
       size="sm"
       testId="co-status-modal"
       footer={
         <>
-          <Button onClick={onClose}>취소</Button>
+          <Button onClick={() => onClose()}>취소</Button>
           <Button
             variant={to === "rejected" ? "danger" : "cta"}
             loading={busy}
@@ -578,7 +602,7 @@ function StatusModal({ db, c, to, onClose }: { db: DemoDB; c: ChangeOrder; to: S
                   ...(to === "approved" && basis ? { basis } : {}),
                 });
                 toast.push({ tone: "ok", title: `${title} 완료`, desc: to === "approved" ? `이익률 ${fmtPct(r.before.marginPct)} → ${fmtPct(r.after.marginPct)}` : to === "submitted" ? `다음 확인 ${fmtDate(follow)}` : undefined });
-                onClose();
+                onClose(to === "approved" && (basis === "contract" || basis === "letter") ? basis : undefined);
               } catch (e) {
                 setErr(e instanceof CommandError ? { msg: e.message, fields: e.fieldErrors } : { msg: "실패했습니다. 다시 눌러 주세요." });
               } finally {
@@ -610,7 +634,8 @@ function StatusModal({ db, c, to, onClose }: { db: DemoDB; c: ChangeOrder; to: S
               ))}
             </div>
             {err?.fields?.basis && <p className="mt-1 text-[0.8rem] font-semibold text-err">승인 근거를 골라 주세요.</p>}
-            {basis === "verbal" && <p className="mt-1 text-[0.8rem] font-semibold text-warn">구두 승인도 계약·이익에 바로 들어갑니다. 서면을 받으면 ‘기록’으로 남기세요.</p>}
+            {basis === "verbal" && <p className="mt-1 text-[0.8rem] font-semibold text-warn">구두 승인도 계약·이익에 바로 들어갑니다. 서면을 받으면 이 변경공사의 ‘올리기’로 변경계약서·공문 파일을 올리세요.</p>}
+            {(basis === "contract" || basis === "letter") && <p className="mt-1 text-[0.8rem] text-ink-3">확인을 누르면 {basis === "contract" ? "날인한 변경계약서" : "공문·메일"}를 사진이나 PDF로 올리는 창이 열립니다 (나중에 올려도 됩니다).</p>}
           </fieldset>
         )}
         {to === "approved" && (

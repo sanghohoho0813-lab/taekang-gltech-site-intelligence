@@ -57,6 +57,9 @@ export const COMMANDS = {
   createChangeOrder: (db: DemoDB, a: CO.CreateChangeOrderInput, ctx: Ctx) => CO.createChangeOrder(db, a, ctx),
   logChangeOrder: (db: DemoDB, a: CO.LogChangeOrderInput, ctx: Ctx) => CO.logChangeOrder(db, a, ctx),
   declineClaim: (db: DemoDB, a: CO.DeclineClaimInput, ctx: Ctx) => CO.declineClaim(db, a, ctx),
+  // 변경공사 증빙 파일 (D-88) — 금액은 바뀌지 않는다
+  addChangeOrderEvidence: (db: DemoDB, a: CO.AddEvidenceInput, ctx: Ctx) => CO.addChangeOrderEvidence(db, a, ctx),
+  removeChangeOrderEvidence: (db: DemoDB, a: CO.RemoveEvidenceInput, ctx: Ctx) => CO.removeChangeOrderEvidence(db, a, ctx),
   addBilling: (db: DemoDB, a: Parameters<typeof C.addBilling>[1], ctx: Ctx) => C.addBilling(db, a, ctx),
   addPayment: (db: DemoDB, a: Parameters<typeof C.addPayment>[1], ctx: Ctx) => C.addPayment(db, a, ctx),
   setThresholds: (db: DemoDB, a: RiskThresholds, ctx: Ctx) => C.setThresholds(db, a, ctx),

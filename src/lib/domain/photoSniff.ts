@@ -16,3 +16,9 @@ export function photoLooksReal(dataUrl: string): boolean {
   // RIFF????WEBP
   return b.length >= 12 && [0x52, 0x49, 0x46, 0x46].every((x, i) => b[i] === x) && [0x57, 0x45, 0x42, 0x50].every((x, i) => b[i + 8] === x);
 }
+
+/** PDF 데이터가 정말 PDF인지 앞 바이트(‘%PDF-’)로 확인한다 — 변경공사 증빙 (D-88) */
+export function pdfLooksReal(dataUrl: string): boolean {
+  // ‘%PDF-’ 다섯 바이트를 base64로 쓰면 ‘JVBERi0’로 시작한다
+  return /^data:application\/pdf;base64,JVBERi0/.test(dataUrl);
+}

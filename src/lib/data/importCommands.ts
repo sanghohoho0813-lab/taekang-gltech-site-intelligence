@@ -242,6 +242,8 @@ export function undoImport(db0: DemoDB, input: { batchId: string }, ctx: Ctx) {
     const cos = db.changeOrders.filter(mine);
     // 가져온 뒤 본사가 승인·반려를 바꿨는지는 ‘가져온 그대로인지’로 본다 (결정일을 그날 9시로 넣어 오늘 날짜면 바로 취소가 막히던 문제 · D-66)
     if (cos.some((c) => c.statusChangedAt)) throw new CommandError("가져온 뒤 승인·반려가 바뀐 변경공사가 있어 통째로 취소할 수 없습니다.", "STATE");
+    // 가져온 뒤 증빙 파일을 붙인 건 — 취소하면 파일까지 지워지므로 막는다 (D-88)
+    if (cos.some((c) => (db.coEvidence ?? []).some((e) => e.changeOrderId === c.id))) throw new CommandError("가져온 뒤 증빙 파일을 붙인 변경공사가 있어 통째로 취소할 수 없습니다 — 해당 건에서 한 건씩 정리해 주세요.", "STATE");
     removed = cos.length;
     db.changeOrders = db.changeOrders.filter((x) => !mine(x));
   } else if (b0.kind === "crew") {

@@ -619,8 +619,36 @@ export interface ChangeOrderLog {
   by: string;
   /** 일어난 날 (YYYY-MM-DD) */
   date: string;
-  kind: "created" | "submitted" | "follow_up" | "client_reply" | "note" | "approved" | "rejected" | "no_reclaim";
+  kind: "created" | "submitted" | "follow_up" | "client_reply" | "note" | "approved" | "rejected" | "no_reclaim" | "evidence";
   note: string;
+}
+
+/** 변경공사 증빙 종류 (D-88) — 변경계약서 날인본 · 발주처 공문·메일 · 견적·내역서 · 그 밖 */
+export type EvidenceDocType = "contract" | "letter" | "estimate" | "other";
+
+/**
+ * 변경공사 증빙 파일 (D-88) — 날인한 변경계약서·공문·견적서를 사진(JPEG·PNG·WEBP) 또는 PDF로.
+ * 돈(계약금액)을 바꾼 근거라 본사만 보고 올린다. 현장 사진(photos)과 따로 두어 공사사진대장·발주처 공개·현장 휴대폰에 섞이지 않게.
+ * 원본은 사진과 같은 저장소(photo_blobs)에 두고, 기록에는 주소(/api/photos/{id})만 남긴다.
+ */
+export interface ChangeOrderEvidence {
+  id: string;
+  changeOrderId: string;
+  siteId: string;
+  kind: "image" | "pdf";
+  docType: EvidenceDocType;
+  /** 올릴 때는 data: 주소 → 서버가 저장하면 /api/photos/{id} */
+  dataUrl: string;
+  /** 올린 파일 이름 (PDF 내려받기·목록 표시) */
+  fileName: string;
+  /** 설명 (예: 3층 방수 변경계약서 날인본) */
+  caption: string;
+  /** 원본 크기 (바이트) */
+  size: number;
+  createdAt: string;
+  createdBy: string;
+  /** 원본의 SHA-256 (서버가 저장할 때) — 사진 백업을 다시 올릴 때 같은 파일인지 확인 */
+  sha256?: string;
 }
 
 export interface ProgressBilling {
@@ -942,6 +970,8 @@ export interface DemoDB {
   /** 발주처 화면 전용(서버가 만들어 보냄): 요청별 하자보수 진행 (D-68) */
   partnerRepairs?: Record<string, PartnerRepairView>;
   changeOrders: ChangeOrder[];
+  /** 변경공사 증빙 파일 (D-88) — 본사만 */
+  coEvidence?: ChangeOrderEvidence[];
   billings: ProgressBilling[];
   payments: PaymentReceived[];
   partnerRequests: PartnerRequest[];

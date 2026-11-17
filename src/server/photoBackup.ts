@@ -3,12 +3,14 @@
  * 이 파일은 그 현황(달마다 몇 장, 원본이 없는 사진 몇 장)과, 복원한 시스템에 사진 원본을 다시 올리는 일을 맡는다.
  * - 올리기는 ‘기록은 있는데 원본이 없는’ 사진만 채운다. 이미 있는 원본은 바꾸지 않는다(덮어쓰기 불가).
  * - 대표만. 한 번에 4MB 이하(서버 요청 한도 4.5MB) — 브라우저가 나눠 보낸다.
+ * - 변경공사 증빙 파일(사진·PDF · D-88)도 같은 ZIP·같은 방식으로 (같은 원본 저장소).
  */
 import { createHash } from "node:crypto";
 import type { DemoDB } from "@/lib/domain/types";
 import { uid } from "@/lib/domain/ids";
 import { CommandError, PHOTO_DATA_URL } from "@/lib/data/commands";
 import { photoLooksReal } from "@/lib/domain/photoSniff";
+import { EVIDENCE_PDF_MAX_BYTES } from "@/lib/domain/changeOrders";
 import { photoMonth } from "@/lib/domain/photoBackup";
 import { getDb } from "./sql";
 import { ForbiddenError } from "./authz";
@@ -43,6 +45,11 @@ async function stateOf(m: Member): Promise<DemoDB> {
   return cachedState(m.companyId, rev) ?? (await db.transaction((tx) => loadState(tx, m.companyId)));
 }
 
+/** 원본이 따로 저장되는 기록 — 사진 + 변경공사 증빙 파일 (D-88) */
+function blobRecords(state: DemoDB): { id: string; siteId: string; createdAt: string; sha256?: string; pdf: boolean }[] {
+  return [...state.photos.map((p) => ({ id: p.id, siteId: p.siteId, createdAt: p.createdAt, sha256: p.sha256, pdf: false })), ...(state.coEvidence ?? []).map((e) => ({ id: e.id, siteId: e.siteId, createdAt: e.createdAt, sha256: e.sha256, pdf: e.kind === "pdf" }))];
+}
+
 export async function photoBackupStatus(m: Member): Promise<PhotoBackupStatus> {
   requireCeo(m);
   const state = await stateOf(m);
@@ -51,7 +58,8 @@ export async function photoBackupStatus(m: Member): Promise<PhotoBackupStatus> {
   const stored = new Set(rows.map((r) => r.id));
   const byMonth = new Map<string, PhotoMonth>();
   let missing = 0;
-  for (const p of state.photos) {
+  const all = blobRecords(state);
+  for (const p of all) {
     const month = photoMonth(p.createdAt);
     const row = byMonth.get(month) ?? { month, count: 0, missing: 0 };
     row.count += 1;
@@ -61,7 +69,7 @@ export async function photoBackupStatus(m: Member): Promise<PhotoBackupStatus> {
     }
     byMonth.set(month, row);
   }
-  return { total: state.photos.length, missing, months: [...byMonth.values()].sort((a, b) => b.month.localeCompare(a.month)) };
+  return { total: all.length, missing, months: [...byMonth.values()].sort((a, b) => b.month.localeCompare(a.month)) };
 }
 
 export interface PhotoUpload {
@@ -76,7 +84,7 @@ export async function restorePhotos(m: Member, items: unknown): Promise<{ saved:
   requireCeo(m);
   if (!Array.isArray(items) || items.length > MAX_ITEMS) throw new CommandError("요청 형식이 올바르지 않습니다.");
   const state = await stateOf(m);
-  const known = new Map(state.photos.map((p) => [p.id, p]));
+  const known = new Map(blobRecords(state).map((p) => [p.id, p]));
   const db = await getDb();
   let saved = 0;
   let existed = 0;
@@ -89,13 +97,19 @@ export async function restorePhotos(m: Member, items: unknown): Promise<{ saved:
       unknown += 1;
       continue;
     }
+    if (typeof it.data !== "string" || typeof it.mime !== "string") {
+      invalid += 1;
+      continue;
+    }
+    // 증빙 PDF는 PDF로만, 사진·사진 증빙은 사진으로만 (종류를 바꿔 넣지 못하게)
+    const isPdf = it.mime === "application/pdf";
     const url = `data:${it.mime};base64,${it.data}`;
-    if (typeof it.data !== "string" || !PHOTO_DATA_URL.test(url) || !photoLooksReal(url)) {
+    if (isPdf ? !p.pdf || !/^[A-Za-z0-9+/=]+$/.test(it.data) : p.pdf || !PHOTO_DATA_URL.test(url) || !photoLooksReal(url)) {
       invalid += 1;
       continue;
     }
     const bytes = Buffer.from(it.data, "base64");
-    if (bytes.length > MAX_PHOTO_BYTES) {
+    if (bytes.length > (isPdf ? EVIDENCE_PDF_MAX_BYTES : MAX_PHOTO_BYTES) || (isPdf && bytes.subarray(0, 5).toString("latin1") !== "%PDF-")) {
       invalid += 1;
       continue;
     }

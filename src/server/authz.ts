@@ -230,6 +230,8 @@ export function viewFor(m: Member, db: DemoDB, now = new Date()): DemoDB {
     reports: [],
     photos: [],
     changeOrders: [],
+    // 변경공사 증빙 파일 (D-88) — 본사만
+    coEvidence: [],
     billings: [],
     payments: [],
     partnerRequests: [],

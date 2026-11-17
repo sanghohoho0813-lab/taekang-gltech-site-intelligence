@@ -194,6 +194,8 @@ export function prepareRestore(backup: Record<string, unknown>, ownerEmail: stri
   shape("billings", (x) => Number.isFinite(x.amount) && typeof x.billedDate === "string" && DATE.test(x.billedDate));
   shape("payments", (x) => Number.isFinite(x.amount) && typeof x.receivedDate === "string" && DATE.test(x.receivedDate));
   shape("photos", (x) => typeof x.siteId === "string" && okTime(x.createdAt));
+  // 변경공사 증빙 파일 (D-88) — 어느 변경공사의 무슨 파일인지 (화면이 종류·이름을 쓴다)
+  shape("coEvidence", (x) => typeof x.changeOrderId === "string" && typeof x.siteId === "string" && okTime(x.createdAt) && (x.kind === "image" || x.kind === "pdf") && typeof x.docType === "string" && typeof x.fileName === "string");
   shape("activityLogs", (x) => okTime(x.at) && typeof x.summary === "string");
   // 이력의 바로 가기는 이 앱 안 주소만 (다른 사이트 주소로 보내는 줄이 들어오지 않게)
   collections.activityLogs = collections.activityLogs.map((l) => (typeof l.link === "string" && !/^\/(?![/\\])/.test(l.link) ? { ...l, link: undefined } : l));

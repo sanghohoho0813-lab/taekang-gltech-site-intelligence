@@ -3,7 +3,7 @@
  * 모든 쓰기 경로는 여기를 거친다 (검증·중복저장 방지·활동로그·Proof Event).
  * 저장소(Repository)는 결과 db를 영속화만 한다.
  */
-import { photoLooksReal } from "@/lib/domain/photoSniff";
+import { pdfLooksReal, photoLooksReal } from "@/lib/domain/photoSniff";
 import { judgeGeo, validSample, type GeoSample } from "@/lib/domain/geo";
 import { hasConsent, stampTerms } from "@/lib/domain/privacy";
 import { siteProgressDelta, stagesWeightedPct, syncStageDone } from "@/lib/domain/schedule";
@@ -70,6 +70,16 @@ export const PHOTO_DATA_URL = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=
 export const MAX_PHOTO_CHARS = 3_500_000; // 약 2.5MB
 /** 형식과 크기, 그리고 앞 바이트가 정말 그 사진 형식인지 (사진이라 적고 다른 파일을 올리지 못하게 · D-74 점검 10차) */
 export const validPhoto = (v: unknown): v is string => typeof v === "string" && v.length <= MAX_PHOTO_CHARS && PHOTO_DATA_URL.test(v) && photoLooksReal(v);
+/** PDF (변경공사 증빙 · D-88) — 3MB(base64 4MB) 이하, 앞 바이트가 ‘%PDF-’ */
+export const PDF_DATA_URL = /^data:application\/pdf;base64,[A-Za-z0-9+/=]+$/;
+export const MAX_PDF_CHARS = 4_000_100;
+export const validPdf = (v: unknown): v is string => typeof v === "string" && v.length <= MAX_PDF_CHARS && pdfLooksReal(v) && PDF_DATA_URL.test(v);
+/** base64 data: 주소의 원본 바이트 수 */
+export function dataUrlBytes(v: string): number {
+  const b64 = v.slice(v.indexOf(",") + 1);
+  const pad = b64.endsWith("==") ? 2 : b64.endsWith("=") ? 1 : 0;
+  return Math.floor((b64.length * 3) / 4) - pad;
+}
 
 /** DB(jsonb)가 받지 못하는 글자를 뺀다 — NUL은 지우고 짝 없는 서로게이트는 대체 문자로 (그대로 두면 저장할 때 서버 오류) */
 export function cleanText(s: string): string {

@@ -4,6 +4,7 @@
  * - persistState: 명령 실행 전(prev)·후(next)를 비교해 바뀐 엔터티만 upsert/delete
  *   (activityLogs는 추가만 — 감사 이력은 지우지 않는다)
  * - 사진: data URL은 photo_blobs에 원본 저장, 엔터티에는 /api/photos/{id} 주소만 남김
+ *   (변경공사 증빙 파일(coEvidence · D-88)도 같은 방식 — PDF도 받는다)
  */
 import type { DemoDB, DemoUser, RiskThresholds } from "@/lib/domain/types";
 import { DEFAULT_SETTINGS } from "@/lib/domain/types";
@@ -33,6 +34,8 @@ export const COLLECTIONS = {
   reports: byId,
   photos: byId,
   changeOrders: byId,
+  // 변경공사 증빙 파일 (D-88) — 원본은 사진처럼 photo_blobs에
+  coEvidence: byId,
   billings: byId,
   payments: byId,
   partnerRequests: byId,
@@ -166,7 +169,7 @@ export async function bulkInsertState(tx: Tx, companyId: string, state: DemoDB):
     // 최신이 앞에 오는 컬렉션은 오래된 것부터 넣어 seq 순서를 persistState와 같게
     const ordered = NEWEST_FIRST.has(name) ? [...items].reverse() : items;
     for (const item of ordered) {
-      if (name === "photos" && !(typeof item.dataUrl === "string" && /^\/api\/photos\/[\w%-]+$/.test(item.dataUrl))) {
+      if (BLOB_COLLECTIONS.has(name) && !(typeof item.dataUrl === "string" && /^\/api\/photos\/[\w%-]+$/.test(item.dataUrl))) {
         throw new CommandError("백업 파일의 사진 기록 형식이 올바르지 않습니다.", "VALIDATION");
       }
       const row = JSON.stringify({ c: name, i: keyOf(item), s: siteIdOf(name, item), d: item });
@@ -184,8 +187,11 @@ export async function bulkInsertState(tx: Tx, companyId: string, state: DemoDB):
   return written;
 }
 
-/** data:image/...;base64 → photo_blobs, 엔터티에는 주소만 */
-async function extractPhoto(tx: Tx, companyId: string, item: Item, key: "dataUrl"): Promise<void> {
+/** 원본 파일을 photo_blobs에 두는 컬렉션 — 사진 · 변경공사 증빙 (D-88) */
+export const BLOB_COLLECTIONS: ReadonlySet<CollectionName> = new Set<CollectionName>(["photos", "coEvidence"]);
+
+/** data:image/...;base64 (증빙은 data:application/pdf도) → photo_blobs, 엔터티에는 주소만 */
+async function extractPhoto(tx: Tx, companyId: string, item: Item, key: "dataUrl", allowPdf = false): Promise<void> {
   const v = item[key];
   // 이미 저장된 사진(주소)은 그대로, 그 밖의 값(다른 주소·스크립트)은 받지 않는다 (D-41)
   if (typeof v === "string" && /^\/api\/photos\/[\w%-]+$/.test(v)) return;
@@ -193,9 +199,12 @@ async function extractPhoto(tx: Tx, companyId: string, item: Item, key: "dataUrl
   const m = /^data:([\w/+.-]+);base64,(.*)$/s.exec(v);
   if (!m) throw new CommandError("사진 형식을 읽을 수 없습니다.", "VALIDATION");
   const mime = m[1];
-  if (!/^image\/(jpeg|png|webp)$/.test(mime)) throw new CommandError("JPEG·PNG·WEBP 사진만 저장할 수 있습니다.", "VALIDATION");
+  const pdf = allowPdf && mime === "application/pdf";
+  if (!pdf && !/^image\/(jpeg|png|webp)$/.test(mime)) throw new CommandError(allowPdf ? "사진(JPEG·PNG·WEBP)이나 PDF만 저장할 수 있습니다." : "JPEG·PNG·WEBP 사진만 저장할 수 있습니다.", "VALIDATION");
   const bytes = Buffer.from(m[2], "base64");
-  if (bytes.length > 2_500_000) throw new CommandError("사진 1장이 너무 큽니다 (2.5MB 이하).", "VALIDATION");
+  if (pdf ? bytes.length > 3_000_000 : bytes.length > 2_500_000) throw new CommandError(pdf ? "PDF 1개가 너무 큽니다 (3MB 이하)." : "사진 1장이 너무 큽니다 (2.5MB 이하).", "VALIDATION");
+  // 앞 바이트가 정말 PDF인지 (PDF라 적고 다른 파일을 두지 못하게)
+  if (pdf && bytes.subarray(0, 5).toString("latin1") !== "%PDF-") throw new CommandError("PDF 파일이 아닙니다.", "VALIDATION");
   const id = String(item.id);
   await tx.query(
     `insert into photo_blobs (id, company_id, site_id, mime, data) values ($1, $2, $3, $4, $5)
@@ -227,7 +236,7 @@ export async function persistState(tx: Tx, companyId: string, prev: DemoDB | nul
     for (const item of ordered) {
       const key = keyOf(item);
       seen.add(key);
-      if (name === "photos") await extractPhoto(tx, companyId, item, "dataUrl");
+      if (BLOB_COLLECTIONS.has(name)) await extractPhoto(tx, companyId, item, "dataUrl", name === "coEvidence");
       const json = JSON.stringify(item);
       JSON_MEMO.set(item, json);
       if (before.get(key) === json) continue;
@@ -244,8 +253,8 @@ export async function persistState(tx: Tx, companyId: string, prev: DemoDB | nul
     for (const key of before.keys()) {
       if (seen.has(key)) continue;
       await tx.query(`delete from records where company_id = $1 and collection = $2 and id = $3`, [companyId, name, key]);
-      // 사진 기록을 지우면 원본도 지운다 (버린 접수의 사진이 저장소에 남지 않게 · D-74 점검 10차)
-      if (name === "photos") await tx.query(`delete from photo_blobs where company_id = $1 and id = $2`, [companyId, key]);
+      // 사진 기록을 지우면 원본도 지운다 (버린 접수의 사진이 저장소에 남지 않게 · D-74 점검 10차) — 지운 증빙 파일도 (D-88)
+      if (BLOB_COLLECTIONS.has(name)) await tx.query(`delete from photo_blobs where company_id = $1 and id = $2`, [companyId, key]);
       deleted++;
     }
   }

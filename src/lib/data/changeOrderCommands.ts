@@ -3,13 +3,14 @@
  * - createChangeOrder: 추가 원가를 근거로(또는 근거 없이) 변경공사 청구 검토 건을 만든다. 반려된 건 다시 청구도 이것으로.
  * - logChangeOrder: 발주처 확인·독촉·답변·메모를 날짜와 함께 남기고 다음 확인할 날을 정한다.
  * 상태 바꾸기(발주처 청구·승인·반려)는 commands.setChangeOrderStatus (사유·다음 확인할 날 포함).
+ * - addChangeOrderEvidence / removeChangeOrderEvidence (D-88): 날인한 변경계약서·공문·견적서를 사진·PDF로 붙이고 지운다 (지울 때는 이유).
  */
-import type { ChangeOrder, DemoDB } from "@/lib/domain/types";
-import { coByEntry, coOpen, followUpError, pushCoLog } from "@/lib/domain/changeOrders";
+import type { ChangeOrder, ChangeOrderEvidence, DemoDB, EvidenceDocType } from "@/lib/domain/types";
+import { EVIDENCE_DOC_LABEL, EVIDENCE_MAX_PER_CO, coByEntry, coOpen, followUpError, pushCoLog } from "@/lib/domain/changeOrders";
 import { fmtEok, fmtMan, todayIso } from "@/lib/domain/format";
 import { siteFinancials } from "@/lib/domain/calc";
 import { uid } from "@/lib/domain/ids";
-import { CommandError, claimKey, clone, log, nowIso, pastCalendarDate, requireSite, tidyName, touch, validateAmount, type Ctx } from "./commands";
+import { CommandError, claimKey, clone, dataUrlBytes, log, nowIso, pastCalendarDate, requireSite, tidyName, touch, validPdf, validPhoto, validateAmount, type Ctx } from "./commands";
 
 const TITLE_MAX = 80;
 const NOTE_MAX = 200;
@@ -194,4 +195,107 @@ export function declineClaim(db0: DemoDB, input: DeclineClaimInput, ctx: Ctx) {
   log(db, ctx, "change_order", `${site?.shortName ?? ""} 추가 원가 ${ids.length}건 ${fmtMan(sum)} ${undo ? "‘청구 안 함’ 되돌림" : `변경공사로 청구 안 함 — ${note}`}`, first.siteId, "/finance#co-board");
   touch(db, ctx);
   return { db, result: { n: ids.length } };
+}
+
+// ───────────── 증빙 파일 (D-88) ─────────────
+
+const DOC_TYPES = new Set<EvidenceDocType>(["contract", "letter", "estimate", "other"]);
+const CAPTION_MAX = 80;
+const FILE_NAME_MAX = 100;
+
+export interface AddEvidenceInput {
+  coId: string;
+  docType: EvidenceDocType;
+  /** data:image/jpeg|png|webp;base64,… (사진 2.5MB) 또는 data:application/pdf;base64,… (PDF 3MB) */
+  dataUrl: string;
+  /** 올린 파일 이름 */
+  fileName?: string;
+  /** 설명 (예: 3층 방수 변경계약서 날인본) */
+  caption?: string;
+  idempotencyKey?: string;
+}
+
+/** 파일 이름 — 경로·제어 글자는 빼고 100자까지. 확장자가 종류와 맞지 않으면 붙인다 */
+function cleanFileName(v: unknown, kind: ChangeOrderEvidence["kind"]): string {
+  const base = typeof v === "string" ? tidyName(v.replace(/^.*[\\/]/, "").replace(/[\u0000-\u001f\u007f<>:"|?*]+/g, " "), FILE_NAME_MAX) : "";
+  const ext = kind === "pdf" ? ".pdf" : ".jpg";
+  if (!base) return kind === "pdf" ? "증빙.pdf" : "증빙.jpg";
+  if (kind === "pdf") return /\.pdf$/i.test(base) ? base : `${base}${ext}`;
+  return base;
+}
+
+/** 변경공사에 증빙 파일(사진·PDF)을 붙인다 — 상태와 관계없이 (구두 승인 뒤 받은 서면도). 금액·이익은 바뀌지 않는다 */
+export function addChangeOrderEvidence(db0: DemoDB, input: AddEvidenceInput, ctx: Ctx) {
+  const c0 = db0.changeOrders.find((c) => c.id === input?.coId);
+  if (!c0) throw new CommandError("변경공사를 찾을 수 없습니다.", "NOT_FOUND");
+  const errors: Record<string, string> = {};
+  if (!DOC_TYPES.has(input.docType)) errors.docType = "무슨 자료인지 골라 주세요.";
+  const pdf = validPdf(input.dataUrl);
+  const photo = !pdf && validPhoto(input.dataUrl);
+  if (!pdf && !photo) {
+    const looksPdf = typeof input.dataUrl === "string" && input.dataUrl.startsWith("data:application/pdf");
+    errors.dataUrl =
+      looksPdf && input.dataUrl.length > 4_000_100
+        ? "PDF가 3MB보다 큽니다. 스캔 해상도를 낮추거나 쪽을 나눠 올리거나, 종이를 사진으로 찍어 올려 주세요."
+        : "사진(JPEG·PNG·WEBP)이나 PDF 파일만 올릴 수 있습니다.";
+  }
+  const caption = typeof input.caption === "string" ? tidyName(input.caption, 1000) : "";
+  if (input.caption !== undefined && input.caption !== null && typeof input.caption !== "string") errors.caption = "설명 형식을 확인해 주세요.";
+  else if (len(caption) > CAPTION_MAX) errors.caption = `${CAPTION_MAX}자 이내`;
+  if (coEvidenceCount(db0, c0.id) >= EVIDENCE_MAX_PER_CO) errors.dataUrl = `변경공사 하나에 파일은 ${EVIDENCE_MAX_PER_CO}개까지입니다. 필요 없는 파일을 지우고 올려 주세요.`;
+  if (Object.keys(errors).length) throw new CommandError(errors.dataUrl ?? "입력값을 확인해주세요.", "VALIDATION", errors);
+  const kind: ChangeOrderEvidence["kind"] = pdf ? "pdf" : "image";
+  const db = clone(db0);
+  claimKey(db, input.idempotencyKey);
+  const at = nowIso(ctx);
+  const co = db.changeOrders.find((c) => c.id === c0.id)!;
+  const ev: ChangeOrderEvidence = {
+    id: uid("cev"),
+    changeOrderId: co.id,
+    siteId: co.siteId,
+    kind,
+    docType: input.docType,
+    dataUrl: input.dataUrl,
+    fileName: cleanFileName(input.fileName, kind),
+    caption,
+    size: dataUrlBytes(input.dataUrl),
+    createdAt: at,
+    createdBy: ctx.userId,
+  };
+  (db.coEvidence ??= []).push(ev);
+  pushCoLog(co, { at, by: ctx.userId, date: todayIso(ctx.now), kind: "evidence", note: `${EVIDENCE_DOC_LABEL[ev.docType]} 올림 — ${ev.fileName}${caption ? ` (${caption})` : ""}` });
+  const site = db.sites.find((s) => s.id === co.siteId);
+  log(db, ctx, "change_order", `${site?.shortName ?? ""} 변경공사 증빙 올림 — ${co.title}: ${EVIDENCE_DOC_LABEL[ev.docType]} ${ev.fileName}`, co.siteId, `/finance#co-${co.id}`);
+  touch(db, ctx);
+  return { db, result: { id: ev.id } };
+}
+
+function coEvidenceCount(db: DemoDB, coId: string) {
+  return (db.coEvidence ?? []).filter((e) => e.changeOrderId === coId).length;
+}
+
+export interface RemoveEvidenceInput {
+  evidenceId: string;
+  /** 왜 지우는지 (잘못 올림 · 다른 현장 파일 등) — 변경공사 기록에 남는다 */
+  reason: string;
+  idempotencyKey?: string;
+}
+
+/** 증빙 파일을 지운다 — 원본도 지운다(다른 회사 서류를 잘못 올린 경우). 누가·왜 지웠는지는 변경공사 기록·활동 이력에 남는다 */
+export function removeChangeOrderEvidence(db0: DemoDB, input: RemoveEvidenceInput, ctx: Ctx) {
+  const ev0 = (db0.coEvidence ?? []).find((e) => e.id === input?.evidenceId);
+  if (!ev0) throw new CommandError("증빙 파일을 찾을 수 없습니다 (이미 지웠을 수 있습니다).", "NOT_FOUND");
+  const reason = text(input.reason);
+  if (len(reason) < 2) throw new CommandError("지우는 이유를 적어 주세요 (예: 다른 현장 서류를 잘못 올림).", "VALIDATION", { reason: "이유 필수" });
+  if (len(reason) > NOTE_MAX) throw new CommandError(`${NOTE_MAX}자 이내`, "VALIDATION", { reason: `${NOTE_MAX}자 이내` });
+  const db = clone(db0);
+  claimKey(db, input.idempotencyKey);
+  db.coEvidence = (db.coEvidence ?? []).filter((e) => e.id !== ev0.id);
+  const co = db.changeOrders.find((c) => c.id === ev0.changeOrderId);
+  const at = nowIso(ctx);
+  if (co) pushCoLog(co, { at, by: ctx.userId, date: todayIso(ctx.now), kind: "evidence", note: `${EVIDENCE_DOC_LABEL[ev0.docType] ?? "파일"} 지움 — ${ev0.fileName} (이유: ${reason})` });
+  const site = db.sites.find((s) => s.id === ev0.siteId);
+  log(db, ctx, "change_order", `${site?.shortName ?? ""} 변경공사 증빙 지움 — ${co?.title ?? ""}: ${ev0.fileName} (이유: ${reason})`, ev0.siteId, co ? `/finance#co-${co.id}` : "/finance#co-board");
+  touch(db, ctx);
+  return { db, result: { id: ev0.id } };
 }

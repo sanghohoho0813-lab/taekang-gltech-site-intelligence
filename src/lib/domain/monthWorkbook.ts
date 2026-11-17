@@ -10,9 +10,11 @@ import { monthBounds, monthClose, monthCostRows, profitEvents, type MonthCloseRe
 import { currentClose, changesAfterClose } from "./closeRecord";
 import { siteFinancials } from "./calc";
 import { CATEGORY_LABEL, CO_STATUS_LABEL } from "./labels";
-import { APPROVAL_BASIS_LABEL } from "./changeOrders";
+import { APPROVAL_BASIS_LABEL, coEvidenceOf } from "./changeOrders";
 import { fmtDateTime, todayIso } from "./format";
 import type { SheetSpec } from "./xlsx";
+
+const EVIDENCE_SHORT: Record<string, string> = { contract: "변경계약서", letter: "공문·메일", estimate: "견적·내역서", other: "기타" };
 
 const SITE_STATUS: Record<string, string> = { active: "진행", completed: "준공", hold: "보류" };
 const kst = (iso: string) => todayIso(new Date(iso));
@@ -147,6 +149,15 @@ export function monthWorkbook(db: DemoDB, month: string, today = todayIso(), opt
   const catRows = r.money.map((m) => [m.site.shortName || m.site.name, ...cats.map((c) => n(m.cost[c])), n(m.costTotal)]);
   const byCategory: string[][] = [catHead, ...catRows, ["합계", ...cats.map((_, i) => n(catRows.reduce((a, x) => a + Number(x[i + 1]), 0))), n(catRows.reduce((a, x) => a + Number(x[x.length - 1]), 0))]];
 
+  // 변경공사 증빙 파일 (D-88) — 종류별 개수 · 승인됐는데 서면이 없으면 ‘서면 없음’
+  const evidenceText = (coId: string, approved: boolean) => {
+    const ev = coEvidenceOf(db, coId);
+    const by = new Map<string, number>();
+    for (const e of ev) by.set(EVIDENCE_SHORT[e.docType] ?? "기타", (by.get(EVIDENCE_SHORT[e.docType] ?? "기타") ?? 0) + 1);
+    const list = [...by].map(([k, v]) => `${k} ${v}`).join(" · ");
+    const written = ev.some((e) => e.docType === "contract" || e.docType === "letter");
+    return approved && !written ? (list ? `${list} (승인 서면 없음)` : "승인 서면 없음") : list;
+  };
   // ── 변경공사 (월말까지 등록 · 이달 결정했거나 월말에 결정 전) — 상태는 그 달 말 기준 (점검 반영: 다음 달 승인이 지난달 파일에 ‘승인’으로 보이던 문제) ──
   const cos = db.changeOrders
     .filter((c) => {
@@ -176,9 +187,10 @@ export function monthWorkbook(db: DemoDB, month: string, today = todayIso(), opt
       c.approvalBasis && decidedByEnd ? APPROVAL_BASIS_LABEL[c.approvalBasis] : "",
       [c.decisionNote, c.note].filter(Boolean).join(" · ") + later,
       approvedHere === null ? "" : n(approvedHere),
+      evidenceText(c.id, c.status === "approved"),
     ];
   });
-  const change: string[][] = [["현장", "제목", "청구 금액", `승인 금액(${asOf})`, `${asOf} 상태`, "지금 상태", "등록일", `발주처 청구일(${asOf}까지)`, `결정일(${asOf}까지)`, "승인 근거", "사유·메모", "이달 승인 금액"], ...coRows, ["합계 (이달 승인)", "", "", "", "", "", "", "", "", "", "", n(coRows.reduce((a, x) => a + (Number(x[11]) || 0), 0))]];
+  const change: string[][] = [["현장", "제목", "청구 금액", `승인 금액(${asOf})`, `${asOf} 상태`, "지금 상태", "등록일", `발주처 청구일(${asOf}까지)`, `결정일(${asOf}까지)`, "승인 근거", "사유·메모", "이달 승인 금액", "증빙 파일(지금 · 시스템에 보관)"], ...coRows, ["합계 (이달 승인)", "", "", "", "", "", "", "", "", "", "", n(coRows.reduce((a, x) => a + (Number(x[11]) || 0), 0)), ""]];
 
   // ── 노무 — 근무 기록 기준 추정은 관리용 참고 숫자 (확정 노무비·급여가 아님 · 점검 반영) ──
   const laborRows = r.labor.map((l) => [
@@ -263,6 +275,7 @@ export function monthWorkbook(db: DemoDB, month: string, today = todayIso(), opt
     ["날짜 기준", "기성은 확정 기성의 청구일 · 입금은 입금일 · 원가는 발생일 기준이고, 원가 합계는 공무 확인이 끝난 ‘확정’만 셉니다(대기·반려·취소 줄은 원가 시트 아래에 따로)."],
     ["", `미수 = ${asOf}까지 확정 기성 누계 − ${asOf}까지 입금 누계. 계약·변경공사·예상이익은 ${asOf} 기준(지금 숫자는 ‘참고’ 칸). 변경공사는 승인 전에는 계약·이익에 들어가지 않습니다.`],
     ["관리용 숫자", "예상이익 · 이익을 바꾼 일 · 노무 추정 인건비는 경영 관리용 숫자이고 장부 숫자가 아닙니다. 노무 추정은 출퇴근·작업 인원 기준 추정이라 급여·원천세·지급명세서에 쓰지 마세요."],
+    ["변경공사 증빙", "변경공사 시트의 ‘증빙 파일’ 칸은 시스템에 올려 둔 변경계약서·공문·견적서 파일 수입니다. 파일 자체는 회사에 요청하시면 보내 드립니다."],
     ["", "숫자가 장부와 다르면 회사(공무 담당)에 알려 주시면 고쳐서 다시 보내 드립니다."],
     ["", ""],
     ["시트", "현장별 요약 · 기성 · 입금 · 미수 · 원가 · 원가 항목별 · 변경공사 · 노무 · 이익을 바꾼 일"],
@@ -277,7 +290,7 @@ export function monthWorkbook(db: DemoDB, month: string, today = todayIso(), opt
     { name: r.ended ? "월말 미수" : "미수(오늘)", rows: receivable, widths: [16, 24, 24, 18, 22, 13, 20], header: true, textCols: [0, 6] },
     { name: "원가", rows: cost, widths: [26, 17, 14, 10, 10, 14, 12, 12, 30, 16, 10, 12, 20, 14, 24], header: true, textCols: costRaw[0].map((h, i) => (["발생일", "입력일", "금액(원)", "처음 금액(고치기 전)"].includes(h) ? -1 : i)).filter((i) => i >= 0) },
     { name: "원가 항목별", rows: byCategory, widths: [16, ...cats.map(() => 14), 16], header: true, textCols: [0] },
-    { name: "변경공사", rows: change, widths: [16, 26, 14, 14, 16, 16, 12, 16, 14, 14, 30, 14], header: true, textCols: [0, 1, 4, 5, 9, 10] },
+    { name: "변경공사", rows: change, widths: [16, 26, 14, 14, 16, 16, 12, 16, 14, 14, 30, 14, 24], header: true, textCols: [0, 1, 4, 5, 9, 10, 12] },
     { name: "노무", rows: labor, widths: [16, 26, 22, 18, 16, 18, 12, 12], header: true, textCols: [0, 4, 7] },
     { name: "이익을 바꾼 일", rows: events, widths: [14, 16, 18, 60], header: true, textCols: [1, 3] },
   ];

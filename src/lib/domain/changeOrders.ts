@@ -7,7 +7,7 @@
  *
  * 금액은 화면 계산용이며 계약·이익 반영은 calc.ts(승인된 금액만)를 따른다.
  */
-import type { ChangeOrder, ChangeOrderLog, CostEntry, DemoDB, Site } from "./types";
+import type { ChangeOrder, ChangeOrderEvidence, ChangeOrderLog, CostEntry, DemoDB, EvidenceDocType, Site } from "./types";
 import { shiftDate } from "./attendance";
 import { uid } from "./ids";
 
@@ -32,8 +32,8 @@ export function followUpError(v: unknown, today: string): string | undefined {
 /** 기록 하나 더하기 — 최근 50개만 남긴다 */
 export function pushCoLog(co: ChangeOrder, entry: Omit<ChangeOrderLog, "id">) {
   const all = [...(co.log ?? []), { id: uid("col"), ...entry }];
-  // 넘치면 확인·답변·메모부터 오래된 것을 지운다 — 등록·청구·승인·반려 기록은 남긴다 (D-84 버그 배시)
-  const key = new Set(["created", "submitted", "approved", "rejected", "no_reclaim"]);
+  // 넘치면 확인·답변·메모부터 오래된 것을 지운다 — 등록·청구·승인·반려·증빙 파일 기록은 남긴다 (D-84 버그 배시 · D-88)
+  const key = new Set(["created", "submitted", "approved", "rejected", "no_reclaim", "evidence"]);
   while (all.length > CO_LOG_MAX) {
     const i = all.findIndex((l) => !key.has(l.kind));
     all.splice(i >= 0 ? i : 0, 1);
@@ -85,6 +85,46 @@ export const APPROVAL_BASIS_LABEL: Record<NonNullable<ChangeOrder["approvalBasis
   verbal: "구두 승인 (서면 대기)",
 };
 
+// ───────────── 증빙 파일 (D-88) ─────────────
+
+export const EVIDENCE_DOC_LABEL: Record<EvidenceDocType, string> = {
+  contract: "변경계약서 (날인본)",
+  letter: "발주처 공문·메일",
+  estimate: "견적·내역서",
+  other: "그 밖의 자료",
+};
+/** 승인을 증명하는 서면 — 견적·내역서는 우리가 낸 것이라 승인 증빙이 아니다 */
+export const WRITTEN_DOC_TYPES: ReadonlySet<EvidenceDocType> = new Set(["contract", "letter"]);
+/** 변경공사 하나에 붙이는 파일 수 */
+export const EVIDENCE_MAX_PER_CO = 20;
+/** PDF 1개 크기 (서버 요청 한도 4.5MB 안 — base64로 4MB) */
+export const EVIDENCE_PDF_MAX_BYTES = 3_000_000;
+
+/** 이 변경공사의 증빙 파일 (올린 순서) */
+export function coEvidenceOf(db: Pick<DemoDB, "coEvidence">, coId: string): ChangeOrderEvidence[] {
+  return (db.coEvidence ?? []).filter((e) => e.changeOrderId === coId).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+}
+
+/**
+ * 승인된 변경공사의 서면 증빙 상태 — 화면 표시용 (처리 대기 수에는 넣지 않는다).
+ * - ok: 변경계약서·공문 파일이 있음
+ * - verbal: 구두 승인 — 서면을 아직 안 받음(파일 없음)
+ * - missing: 서면으로 승인받았다고 했거나(근거를 안 적은 옛 자료 포함) 파일이 없음
+ * 승인 전·반려 건은 null
+ */
+export type CoPaper = "ok" | "verbal" | "missing";
+export function coPaperState(c: Pick<ChangeOrder, "status" | "approvalBasis">, evidence: Pick<ChangeOrderEvidence, "docType">[]): CoPaper | null {
+  if (c.status !== "approved") return null;
+  if (evidence.some((e) => WRITTEN_DOC_TYPES.has(e.docType))) return "ok";
+  return c.approvalBasis === "verbal" ? "verbal" : "missing";
+}
+
+export const CO_PAPER_LABEL: Record<CoPaper, string> = {
+  ok: "서면 증빙 있음",
+  verbal: "구두 승인 — 서면 대기",
+  missing: "서면 증빙 파일 없음",
+};
+
 export interface CoRow {
   co: ChangeOrder;
   site?: Site;
@@ -103,6 +143,10 @@ export interface CoRow {
   last?: ChangeOrderLog;
   /** 반려된 건을 다시 청구한 새 건 (있으면) */
   reclaimedBy?: ChangeOrder;
+  /** 증빙 파일 (D-88) */
+  evidence: ChangeOrderEvidence[];
+  /** 승인 건의 서면 증빙 상태 (D-88) — 승인 전·반려는 null */
+  paper: CoPaper | null;
 }
 
 export interface CoBoard {
@@ -131,6 +175,8 @@ export interface CoBoard {
     reclaimUndecided: number;
     /** 챙길 것 합 */
     attention: number;
+    /** 승인됐는데 서면(변경계약서·공문) 파일이 없는 건 (구두 승인 포함 · D-88) — 챙길 것 합에는 넣지 않는다 */
+    paperMissing: number;
     /** 결정된 청구 (다시 청구한 반려 건·감액 건 제외) — 청구 금액 합 · 승인 금액 합 · 청구 대비 승인 % */
     claimed: number;
     approved: number;
@@ -148,6 +194,7 @@ export function coRow(db: DemoDB, c: ChangeOrder, today: string): CoRow {
   const live = linked;
   const open = coOpen(c);
   const reclaimedBy = c.status === "rejected" ? db.changeOrders.find((x) => x.reclaimOf === c.id) : undefined;
+  const evidence = coEvidenceOf(db, c.id);
   return {
     co: c,
     site: db.sites.find((s) => s.id === c.siteId),
@@ -160,6 +207,8 @@ export function coRow(db: DemoDB, c: ChangeOrder, today: string): CoRow {
     reclaimUndecided: c.status === "rejected" && !reclaimedBy && !c.noReclaim && c.amount > 0,
     last: c.log?.length ? c.log[c.log.length - 1] : undefined,
     reclaimedBy,
+    evidence,
+    paper: coPaperState(c, evidence),
   };
 }
 
@@ -216,6 +265,7 @@ export function coBoard(db: DemoDB, today: string, siteId?: string): CoBoard {
       reviewStale: all.filter((r) => r.reviewStale).length,
       reclaimUndecided: all.filter((r) => r.reclaimUndecided).length,
       attention: all.filter(attentionOf).length,
+      paperMissing: all.filter((r) => r.paper === "verbal" || r.paper === "missing").length,
       claimed,
       approved,
       claimPct: pct(approved, claimed),
@@ -240,4 +290,5 @@ export const CO_LOG_LABEL: Record<ChangeOrderLog["kind"], string> = {
   approved: "승인",
   rejected: "반려",
   no_reclaim: "다시 청구 안 함",
+  evidence: "증빙 파일",
 };

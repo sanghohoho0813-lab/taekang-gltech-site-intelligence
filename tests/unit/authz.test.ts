@@ -32,7 +32,7 @@ function sample(db: DemoDB, name: CommandName): Record<string, unknown> {
 }
 
 describe("권한 매트릭스 — 모든 명령 × 역할", () => {
-  it("명령 목록이 바뀌면 이 표를 먼저 갱신한다 (70개)", () => {
+  it("명령 목록이 바뀌면 이 표를 먼저 갱신한다 (72개)", () => {
     expect(ALL).toEqual(
       [
         "addActionNote", "addBilling", "addPayment", "assignAction", "checkIn", "checkOut", "completeAction", "confirmPartnerRequest", "confirmProofEvent", "confirmQr", "correctAttendance", "createAction", "createKiosk", "createPartnerRequest", "createWorkOrder", "editCostEntry", "importCostRows", "importData", "purgeLocationsNow", "purgeMemberLocations", "recordMaterial", "reportCrew", "reportDeviceCheck", "reviewFeedback", "requestAttendanceFix", "reviewAttendanceFix", "reviewCostEntry", "reviewReport", "reviewWorkOrder", "revokeKiosk", "saveSite", "setActionStatus", "setChangeOrderStatus", "setCompanySettings", "setLocationPolicy", "setPhotoShare", "setSiteGeo", "setSiteMaterials", "setSiteWarranty", "sendFeedback", "setThresholds", "submitFieldReport", "supplementReport", "undoImport", "updateForecast", "updatePartnerRequest", "updateProgress", "voidCostEntry", "voidMaterialMove", "voidReport", "withdrawLocationConsent", "workOrderStep",
@@ -50,6 +50,8 @@ describe("권한 매트릭스 — 모든 명령 × 역할", () => {
         "closeMonth", "confirmMonthClose", "reopenMonthClose",
         // 변경공사 청구·회수 (D-84) — 본사만
         "createChangeOrder", "logChangeOrder", "declineClaim",
+        // 변경공사 증빙 파일 (D-88) — 본사만
+        "addChangeOrderEvidence", "removeChangeOrderEvidence",
       ].sort(),
     );
     // QR 태블릿 연결은 로그인 없는 전용 API로만 (명령 목록에 없어야 함)

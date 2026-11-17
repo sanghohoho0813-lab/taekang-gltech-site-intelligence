@@ -101,7 +101,7 @@ export function PhotoBackup() {
     <div className="mx-5 mb-5 space-y-3 rounded-xl border border-line bg-surface-2 p-4" data-testid="photo-backup" data-total={status.total} data-missing={status.missing}>
       <div>
         <p className="text-[0.92rem] font-bold">사진 백업 (달마다 .zip)</p>
-        <p className="text-[0.8rem] text-ink-3">사진 원본은 위 파일에 들어가지 않아 달마다 따로 받습니다. ZIP을 풀면 날짜·현장 이름이 붙은 사진 파일이 나옵니다(PC 권장 · 한 달 수백 장이면 몇 분 걸릴 수 있음).</p>
+        <p className="text-[0.8rem] text-ink-3">사진 원본은 위 파일에 들어가지 않아 달마다 따로 받습니다. ZIP을 풀면 날짜·현장 이름이 붙은 사진 파일이 나옵니다 — 변경공사 증빙 파일(변경계약서·공문 사진·PDF)도 ‘변경공사증빙_…’ 이름으로 함께 들어갑니다(PC 권장 · 한 달 수백 장이면 몇 분 걸릴 수 있음).</p>
       </div>
       {status.missing > 0 && (
         <Notice tone="warn" title={`사진 원본 없음 ${status.missing}장 — 백업으로 옮겨 온 자료입니다`}>

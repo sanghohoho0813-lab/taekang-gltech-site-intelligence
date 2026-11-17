@@ -7,6 +7,7 @@ import type { DemoDB } from "@/lib/domain/types";
 import { PHOTO_BACKUP_FORMAT, photoFileName, photoIdSuffix, photoMonth, type PhotoManifest } from "@/lib/domain/photoBackup";
 import { readZip, unzipEntry, zipStore, type ZipEntry } from "@/lib/domain/zip";
 import { todayIso } from "@/lib/domain/format";
+import { EVIDENCE_DOC_LABEL } from "@/lib/domain/changeOrders";
 
 /** 한 번에 보내는 크기 — 서버 요청 한도(4.5MB) 안 (base64로 ×4/3). 넘으면 3MB 조각으로 나눠 올린다 */
 export const RESTORE_PART_BYTES = 3_000_000;
@@ -112,7 +113,9 @@ export interface PhotoZipResult {
 
 /** 한 달 사진을 ZIP으로 — 사진마다 기존 주소(/api/photos/…)로 받는다(권한 확인 그대로). 4장씩 동시에 */
 export async function buildPhotoZip(db: DemoDB, month: string, onProgress: (done: number, total: number) => void): Promise<PhotoZipResult> {
-  const list = db.photos.filter((p) => photoMonth(p.createdAt) === month).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  // 사진 + 변경공사 증빙 파일(D-88) — 증빙은 설명 앞에 ‘변경공사증빙’과 종류를 붙여 사진과 구분한다
+  const evidence = (db.coEvidence ?? []).map((e) => ({ id: e.id, siteId: e.siteId, createdAt: e.createdAt, caption: `변경공사증빙 ${EVIDENCE_DOC_LABEL[e.docType] ?? ""} ${e.caption || e.fileName.replace(/\.[A-Za-z0-9]{1,5}$/, "")}`.trim(), pdf: e.kind === "pdf" }));
+  const list = [...db.photos.map((p) => ({ id: p.id, siteId: p.siteId, createdAt: p.createdAt, caption: p.caption, pdf: false })), ...evidence].filter((p) => photoMonth(p.createdAt) === month).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   const siteName = new Map(db.sites.map((s) => [s.id, s.shortName || s.name]));
   const got: (ZipEntry & { meta: PhotoManifest["photos"][number] })[] = [];
   let missing = 0;
@@ -126,7 +129,7 @@ export async function buildPhotoZip(db: DemoDB, month: string, onProgress: (done
         const r = await fetch(`/api/photos/${encodeURIComponent(p.id)}`, { credentials: "same-origin", cache: "no-store" });
         const mime = (r.headers.get("content-type") ?? "").split(";")[0];
         if (r.ok && mime === "image/svg+xml") missing += 1;
-        else if (!r.ok || !/^image\/(jpeg|png|webp)$/.test(mime)) failed += 1;
+        else if (!r.ok || !(p.pdf ? mime === "application/pdf" : /^image\/(jpeg|png|webp)$/.test(mime))) failed += 1;
         else {
           const site = siteName.get(p.siteId) ?? "현장";
           const name = photoFileName(p, site, mime);

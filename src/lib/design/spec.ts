@@ -77,6 +77,8 @@ export const COMMAND_SPEC: Record<CommandName, { label: string; group: CmdGroup;
   createChangeOrder: { label: "변경공사 청구 건 만들기 (추가 원가 근거 · 다시 청구)", group: "money", allow: HQ },
   logChangeOrder: { label: "변경공사 발주처 확인·답변 기록 · 다음 확인할 날 · 반려 뒤 다시 청구 안 함", group: "money", allow: HQ },
   declineClaim: { label: "추가 원가를 변경공사로 청구 안 함 (이유 · 되돌리기)", group: "money", allow: HQ },
+  addChangeOrderEvidence: { label: "변경공사 증빙 파일 올리기 (변경계약서·공문·견적서 사진·PDF)", group: "money", allow: HQ },
+  removeChangeOrderEvidence: { label: "변경공사 증빙 파일 지우기 (이유 · 기록에 남음)", group: "money", allow: HQ },
   addBilling: { label: "기성 청구 등록", group: "money", allow: HQ },
   addPayment: { label: "입금 등록", group: "money", allow: HQ },
   importCostRows: { label: "원가 엑셀 가져오기", group: "money", allow: HQ },
@@ -138,6 +140,7 @@ export const COLLECTION_SPEC: Record<CollectionName, CollectionSpec> = {
   reports: { label: "현장 보고", holds: "작업 내용·사진·문제·공정 진척·본사 확인·보완", field: "담당 현장 최근 60일 (동료의 위치 좌표는 빼고)", partner: DATA_NONE, keep: "보관" },
   photos: { label: "사진", holds: "현장 보고·작업 인원·자재 반입·설치·작업지시·조치 사진·발주처 하자 사진 (원본은 별도 저장)", field: "담당 현장 관련 사진", partner: "본사가 공개한 공정 사진 · 본인이 보낸 하자 사진 · 본인 요청의 보수 완료 사진", keep: "보관" },
   changeOrders: { label: "변경공사", holds: "변경 내용·요청 금액·승인 금액·상태", field: DATA_NONE, partner: DATA_NONE, keep: "보관" },
+  coEvidence: { label: "변경공사 증빙 파일", holds: "날인한 변경계약서·발주처 공문·견적서의 사진·PDF (원본은 별도 저장)·종류·설명·올린 사람", field: DATA_NONE, partner: DATA_NONE, keep: "보관 (지우면 이유가 변경공사 기록에 남음)" },
   billings: { label: "기성 청구", holds: "회차·청구일·금액", field: DATA_NONE, partner: DATA_NONE, keep: "보관" },
   payments: { label: "입금", holds: "입금일·금액", field: DATA_NONE, partner: DATA_NONE, keep: "보관" },
   partnerRequests: { label: "발주처 요청·하자 접수", holds: "견적 문의·주문 요청(품목·수량·희망일)·하자보수(위치·사진·보수 작업지시)·회신·확인 · 링크·전화 접수는 접수자 이름·전화(본사만)", field: "없음 (접수자 연락처는 본사가 고른 작업지시에만)", partner: "본인이 보낸 것만 (작업지시 번호 없이 보수 단계·기한만)", keep: "보관 · 접수자 이름·전화는 처리 끝난 뒤 90일(미처리 180일)에 삭제" },
@@ -163,7 +166,7 @@ export const SERVER_TABLES: { name: string; holds: string }[] = [
   { name: "회사", holds: "회사명·데이터 버전 (여러 서버가 같은 데이터를 보도록)" },
   { name: "사용자 계정", holds: "이메일·이름·역할·담당 현장. 비밀번호는 되돌릴 수 없는 방식(scrypt)으로만 저장" },
   { name: "로그인 세션", holds: "기기별 로그인 (쓰는 동안 30일 연장, 처음 로그인 후 180일 상한)" },
-  { name: "사진 원본", holds: "사진 파일 (로그인하고 권한이 있는 사람만 열람)" },
+  { name: "사진 원본", holds: "사진 파일·변경공사 증빙 PDF (로그인하고 권한이 있는 사람만 열람 · 증빙은 본사만)" },
   { name: "휴대폰 알림 구독·앱 오류 기록", holds: "알림을 켠 기기 주소, 개인정보를 지운 오류 기록 (본사만 열람)" },
 ];
 
