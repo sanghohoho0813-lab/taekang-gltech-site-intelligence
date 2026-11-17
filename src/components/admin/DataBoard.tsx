@@ -19,6 +19,7 @@ import { PageBody, PageHeader } from "@/components/shell/AppShell";
 import { Badge, Button, Card, CardHeader, Notice, PageSkeleton, Segmented, cx, inputCls } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/Toast";
 import { IntegrityCard } from "./IntegrityCard";
+import { PhotoBackup } from "./PhotoBackup";
 
 const KINDS: ImportKind[] = ["billing", "change", "crew", "rates", "cost", "material", "progress"];
 const IMPORT_FIX: Partial<Record<ReadyFix, ImportKind>> = { billing: "billing", change: "change", crew: "crew", rates: "rates", cost: "cost" };
@@ -471,12 +472,12 @@ function BackupCard() {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
   return (
-    <Card data-testid="backup-card">
+    <Card id="backup" className="scroll-mt-24" data-testid="backup-card">
       <CardHeader title="전체 자료 백업" sub="회사 자료는 태강지엘텍 소유입니다 — 월 1회 내려받아 회사 PC·클라우드에 보관하세요 (대표만)" />
       <div className="flex flex-wrap items-center gap-3 px-5 pb-5">
         {IS_LIVE ? (
           <a href="/api/export" download className="press inline-flex h-10 items-center gap-2 rounded-xl bg-solid px-4 text-[0.9rem] font-bold text-white" data-testid="backup-download">
-            <Download size={16} aria-hidden /> 전체 자료 내려받기 (JSON)
+            <Download size={16} aria-hidden /> 전체 자료 내려받기 (.json.gz)
           </a>
         ) : (
           <Button icon={<Download size={16} />} onClick={demoDownload} data-testid="backup-download">
@@ -484,9 +485,12 @@ function BackupCard() {
           </Button>
         )}
         <p className="min-w-0 flex-1 basis-full text-[0.8rem] text-ink-3 @min-[760px]:basis-auto @min-[760px]:min-w-[14rem]">
-          현장·원가·기성·변경공사·출퇴근·보고·작업 인원·지시·요청·이력이 모두 들어갑니다. 비밀번호·로그인 정보·QR 단말기 비밀값은 넣지 않고, 사진 원본은 크기 때문에 빠집니다(사진은 DB 전체 백업으로 보관).
+          {IS_LIVE
+            ? "현장·원가·기성·변경공사·출퇴근·보고·작업 인원·지시·요청·이력이 모두 들어간 압축 파일입니다(1년치 약 0.4MB). 새 시스템(태강 명의 계정)으로 옮길 때 첫 화면의 ‘백업 파일로 시작’에 이 파일을 넣습니다. 비밀번호·로그인 정보·QR 단말기 비밀값은 넣지 않습니다."
+            : "현장·원가·기성·변경공사·출퇴근·보고·작업 인원·지시·요청·이력이 모두 들어갑니다. 시연 자료라 사진 원본·사용자 목록은 빠지고, 복원에는 쓸 수 없습니다."}
         </p>
       </div>
+      {IS_LIVE && <PhotoBackup />}
     </Card>
   );
 }

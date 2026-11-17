@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { sharePhotoAccess, sharePhotoBlob } from "@/server/shareService";
 import { RULES, clientIp, limited } from "@/server/rateLimit";
+import { missingPhotoResponse } from "@/server/missingPhoto";
 import { errorResponse, notLive } from "@/server/http";
 
 export const runtime = "nodejs";
@@ -25,7 +26,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
     // 바뀌지 않았으면 사진 원본을 DB에서 꺼내지 않고 답한다
     if (req.headers.get("if-none-match") === `"${id}"`) return new Response(null, { status: 304, headers: cache });
     const photo = await sharePhotoBlob(ok.companyId, id);
-    if (!photo) return gone();
+    // 백업 복원 뒤 원본을 아직 올리지 않은 사진 — 깨진 그림 대신 이유를 보여 준다 (D-86)
+    if (!photo) return missingPhotoResponse(id, HEADERS);
     return new Response(Buffer.from(photo.data), { headers: { ...cache, "Content-Type": photo.mime } });
   } catch (e) {
     return errorResponse(e);

@@ -138,6 +138,51 @@ export async function loadState(tx: Tx, companyId: string): Promise<DemoDB> {
   return db;
 }
 
+/**
+ * 빈 회사에 전체 자료를 한 번에 넣는다 (백업 복원 · D-86). persistState(prev=null)와 같은 결과지만 여러 줄을 한 문장으로 —
+ * 1년치(수만 건)를 한 건씩 넣으면 서버 시간 한도(60초)를 넘는다. 사진은 저장된 주소(/api/photos/…)만 받는다(원본은 따로).
+ * 회사 줄(companies)은 먼저 만들어 두어야 한다.
+ */
+export async function bulkInsertState(tx: Tx, companyId: string, state: DemoDB): Promise<number> {
+  const N = state as unknown as Record<CollectionName, Item[] | undefined>;
+  let batch: string[] = [];
+  let size = 0;
+  let written = 0;
+  const flush = async () => {
+    if (!batch.length) return;
+    await tx.query(
+      `insert into records (company_id, collection, id, site_id, data, updated_at)
+       select $1, x->>'c', x->>'i', x->>'s', x->'d', now() from jsonb_array_elements($2::jsonb) with ordinality as t(x, n) order by n`,
+      [companyId, `[${batch.join(",")}]`],
+    );
+    written += batch.length;
+    batch = [];
+    size = 0;
+  };
+  for (const name of NAMES) {
+    const items = N[name] ?? [];
+    const keyOf = COLLECTIONS[name];
+    // 최신이 앞에 오는 컬렉션은 오래된 것부터 넣어 seq 순서를 persistState와 같게
+    const ordered = NEWEST_FIRST.has(name) ? [...items].reverse() : items;
+    for (const item of ordered) {
+      if (name === "photos" && !(typeof item.dataUrl === "string" && /^\/api\/photos\/[\w%-]+$/.test(item.dataUrl))) {
+        throw new CommandError("백업 파일의 사진 기록 형식이 올바르지 않습니다.", "VALIDATION");
+      }
+      const row = JSON.stringify({ c: name, i: keyOf(item), s: siteIdOf(name, item), d: item });
+      batch.push(row);
+      size += row.length;
+      if (size > 1_000_000 || batch.length >= 2000) await flush();
+    }
+  }
+  await flush();
+  await tx.query(
+    `insert into company_state (company_id, seeded_at, baseline, thresholds, settings, signal_states, idempotency_keys)
+     values ($1, $2, $3::jsonb, $4::jsonb, $5::jsonb, $6::jsonb, '[]'::jsonb)`,
+    [companyId, state.seededAt, JSON.stringify(state.baseline ?? {}), JSON.stringify(state.thresholds), JSON.stringify(state.settings ?? DEFAULT_SETTINGS), JSON.stringify(state.signalStates ?? {})],
+  );
+  return written;
+}
+
 /** data:image/...;base64 → photo_blobs, 엔터티에는 주소만 */
 async function extractPhoto(tx: Tx, companyId: string, item: Item, key: "dataUrl"): Promise<void> {
   const v = item[key];

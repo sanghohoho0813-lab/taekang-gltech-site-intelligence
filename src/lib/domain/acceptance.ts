@@ -241,7 +241,7 @@ export function acceptanceItems(db: DemoDB, stage: StageNo, from: string, to: st
       key: "handover",
       title: "인수인계·운영 매뉴얼",
       criteria: "계정 이전(회사 명의)·운영 매뉴얼·백업 실습",
-      how: "인수인계서(docs/HANDOVER.md) 체크리스트 · ‘사용 안내’ 인쇄본 전달 · ‘전체 자료 내려받기’ 실습",
+      how: "인수인계서(docs/HANDOVER.md) 체크리스트 · ‘사용 안내’ 인쇄본 전달 · ‘전체 자료 내려받기’·‘사진 백업’ 실습 · 태강 명의 새 계정에서 ‘백업 파일로 시작’으로 옮긴 뒤 숫자 확인 (D-86)",
       evidence: [txt("확인", "계정 소유(회사 명의) · 관리자 2명 이상 · 매뉴얼 인쇄본 · 백업 실습 — 아래 체크"), ev("본사 관리자", db.users.filter((x) => (x.role === "ceo" || x.role === "manager") && !x.inactive).length, "명")],
     },
   ];

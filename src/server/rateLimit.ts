@@ -25,6 +25,8 @@ export const RULES = {
   kioskPair: { name: "kioskPair", limit: 20, windowMs: 10 * 60_000 },
   kioskStatus: { name: "kioskStatus", limit: 120, windowMs: 60_000 },
   export: { name: "export", limit: 6, windowMs: 10 * 60_000 },
+  /** 사진 백업 올리기(D-86) — 1년치 약 3~4천 장을 40장씩 나눠 보낸다 */
+  photoRestore: { name: "photoRestore", limit: 600, windowMs: 10 * 60_000 },
   pushTest: { name: "pushTest", limit: 5, windowMs: 10 * 60_000 },
   clientError: { name: "clientError", limit: 30, windowMs: 10 * 60_000 },
   /** 보고서 링크(D-73) — 한 곳에서 여는 횟수 (문서 1번 + 사진 최대 12장이 한 번 열기) */

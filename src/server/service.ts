@@ -15,6 +15,7 @@ import { applyShareRetention } from "@/lib/data/shareCommands";
 import { applyIntakeRetention } from "@/lib/data/intakeCommands";
 import { runDailyChecks } from "@/lib/data/dailyJobs";
 import { recordError } from "./errors";
+import { MISSING_PHOTO } from "./missingPhoto";
 import { cachedEntry, cachedState, rememberState } from "./stateCache";
 import { ROLE_LABEL } from "@/lib/domain/labels";
 import { createSeed } from "@/lib/data/seed";
@@ -221,7 +222,7 @@ export async function runDailyJobs(now = new Date()): Promise<{ companies: numbe
 
 // ───────────── 사진 ─────────────
 
-export async function getPhoto(m: Member, id: string): Promise<{ mime: string; data: Uint8Array } | null> {
+export async function getPhoto(m: Member, id: string): Promise<{ mime: string; data: Uint8Array; missing?: true } | null> {
   const db = await getDb();
   if (m.role === "partner") {
     // 발주처는 본사가 공개한 본인 현장 사진만 (D-67) — 취소한 보고·자재 기록의 사진은 빼고. 같은 rev면 기억해 둔 데이터를 쓴다(사진마다 회사 전체를 다시 읽지 않게)
@@ -240,13 +241,21 @@ export async function getPhoto(m: Member, id: string): Promise<{ mime: string; d
     `select mime, data, site_id from photo_blobs where id = $1 and company_id = $2`,
     [id, m.companyId],
   );
-  if (!row) return null;
   if (m.role === "field") {
     const state = await db.transaction((tx) => loadState(tx, m.companyId));
-    if (!row.site_id || !fieldSiteIds(m, state).has(row.site_id)) return null;
-    // 발주처·접수자가 올린 하자 사진은 본인에게 온 작업지시에 붙은 것만 (D-74 점검 10차)
     const p = state.photos.find((x) => x.id === id);
+    // 원본이 없으면(백업 복원 뒤) 사진 기록의 현장으로 권한을 본다 (D-86)
+    const siteId = row ? row.site_id : (p?.siteId ?? null);
+    if (!siteId || !fieldSiteIds(m, state).has(siteId)) return null;
+    // 발주처·접수자가 올린 하자 사진은 본인에게 온 작업지시에 붙은 것만 (D-74 점검 10차)
     if (p?.partnerRequestId && !(state.workOrders ?? []).some((w) => w.assigneeUserId === m.id && (w.refPhotoIds ?? []).includes(id))) return null;
+    if (!row) return p ? MISSING_PHOTO : null;
+  }
+  if (!row) {
+    // 백업 파일로 복원한 뒤 사진 백업을 아직 올리지 않은 사진 — 기록이 있으면 ‘사진 원본 없음’ 그림 (D-86). 발주처 권한은 위에서 확인
+    const rev = await currentRev(m.companyId);
+    const state = cachedState(m.companyId, rev) ?? (await db.transaction((tx) => loadState(tx, m.companyId)));
+    return state.photos.some((x) => x.id === id) ? MISSING_PHOTO : null;
   }
   return { mime: row.mime, data: row.data };
 }
@@ -373,7 +382,7 @@ export async function setupCompany(input: SetupInput): Promise<{ token: string; 
   });
 }
 
-async function insertMember(
+export async function insertMember(
   tx: Tx,
   a: { id: string; companyId: string; email: string; name: string; title: string; role: RoleId; hash: string; mustChange: boolean; siteIds?: string[]; partnerSiteIds?: string[] },
 ) {

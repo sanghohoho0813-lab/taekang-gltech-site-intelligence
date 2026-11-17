@@ -9,6 +9,11 @@ import { ForbiddenError } from "./authz";
 
 export const json = (body: unknown, status = 200) => NextResponse.json(body, { status, headers: { "Cache-Control": "no-store" } });
 
+/** 최초 설정·백업 복원에 필요한 설정 코드 (배포 환경변수 SETUP_CODE) */
+export function setupCode(): string | undefined {
+  return process.env.SETUP_CODE?.trim() || undefined;
+}
+
 export function notLive(): NextResponse | null {
   return IS_LIVE ? null : json({ error: "LIVE 모드에서만 사용할 수 있습니다." }, 404);
 }

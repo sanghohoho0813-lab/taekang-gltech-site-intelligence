@@ -1,3 +1,4 @@
+import { gunzipSync } from "node:zlib";
 /**
  * LIVE 운영 시작 흐름 — 빈 회사 → 계정·현장 등록 → 현장 첫 로그인·보고 → 공무 확인 → 대표 손익
  * + 보안 경계 (로그인 없음·권한 없음·다른 사이트 요청·역할별 데이터)
@@ -315,8 +316,10 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     // 전체 자료 백업: 대표만, 비밀번호·QR 비밀값 없음
     const exp = await page.request.get("/api/export");
     expect(exp.status()).toBe(200);
-    expect(exp.headers()["content-disposition"]).toMatch(/attachment; filename="taekang_backup_\d{8}\.json"/);
-    const backupText = await exp.text();
+    // 압축 백업 (D-86) — Vercel 응답 한도 4.5MB를 1년치 원문이 넘기 때문
+    expect(exp.headers()["content-disposition"]).toMatch(/attachment; filename="taekang_backup_\d{8}\.json\.gz"/);
+    expect(exp.headers()["content-type"]).toBe("application/gzip");
+    const backupText = gunzipSync(await exp.body()).toString("utf8");
     expect(backupText).not.toMatch(/password_hash|token_hash|"secret"|pairHash|scrypt\$/);
     const backup = JSON.parse(backupText);
     expect(backup.data.sites.map((x: { shortName: string }) => x.shortName)).toContain("물류센터");

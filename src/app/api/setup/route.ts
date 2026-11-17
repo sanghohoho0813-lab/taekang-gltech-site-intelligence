@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { needsSetup, setupCompany, type SetupInput } from "@/server/service";
 import { RULES, clientIp, limited } from "@/server/rateLimit";
-import { crossSite, errorResponse, json, meBody, notLive, readJson, setSessionCookie } from "@/server/http";
+import { crossSite, errorResponse, json, meBody, notLive, readJson, setSessionCookie, setupCode } from "@/server/http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,6 +38,3 @@ export async function POST(req: NextRequest) {
   }
 }
 
-function setupCode(): string | undefined {
-  return process.env.SETUP_CODE?.trim() || undefined;
-}

@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { intakePhotoAccess, intakePhotoBlob } from "@/server/intakeService";
 import { RULES, clientIp, limited } from "@/server/rateLimit";
+import { missingPhotoResponse } from "@/server/missingPhoto";
 import { errorResponse, notLive } from "@/server/http";
 
 export const runtime = "nodejs";
@@ -20,7 +21,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ key:
     const cache = { ...HEADERS, "Cache-Control": "private, no-cache", ETag: `"${id}"` };
     if (req.headers.get("if-none-match") === `"${id}"`) return new Response(null, { status: 304, headers: cache });
     const photo = await intakePhotoBlob(ok.companyId, id);
-    if (!photo) return gone();
+    // 백업 복원 뒤 원본을 아직 올리지 않은 사진 — 깨진 그림 대신 이유를 보여 준다 (D-86)
+    if (!photo) return missingPhotoResponse(id, HEADERS);
     return new Response(Buffer.from(photo.data), { headers: { ...cache, "Content-Type": photo.mime } });
   } catch (e) {
     return errorResponse(e);
