@@ -241,6 +241,8 @@ export async function getPhoto(m: Member, id: string): Promise<{ mime: string; d
     `select mime, data, site_id from photo_blobs where id = $1 and company_id = $2`,
     [id, m.companyId],
   );
+  // 현장·발주처에게는 PDF(변경공사 증빙만 PDF)를 어떤 길로도 주지 않는다 (D-88 점검 — 기록이 꼬여도)
+  if (m.role !== "ceo" && m.role !== "manager" && row?.mime === "application/pdf") return null;
   if (m.role === "field") {
     const state = await db.transaction((tx) => loadState(tx, m.companyId));
     const p = state.photos.find((x) => x.id === id);

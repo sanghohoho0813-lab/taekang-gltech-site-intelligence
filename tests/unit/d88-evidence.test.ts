@@ -107,6 +107,39 @@ describe("D-88 명령 — 올리기·지우기·검사", () => {
   });
 });
 
+describe("D-88 점검 반영 — 기록·다시 보내기·파일 이름", () => {
+  it("증빙을 많이 올리고 지워도 변경공사 기록의 등록·승인은 밀려나지 않는다 (50개 한도)", () => {
+    let { db, co } = approved("contract");
+    for (let round = 0; round < 3; round++) {
+      for (let i = 0; i < EVIDENCE_MAX_PER_CO; i++) db = COMMANDS.addChangeOrderEvidence(db, { coId: co.id, docType: "other", dataUrl: JPG, fileName: `r${round}-${i}.jpg` }, ctx()).db;
+      for (const e of [...db.coEvidence!]) db = COMMANDS.removeChangeOrderEvidence(db, { evidenceId: e.id, reason: "다시 정리" }, ctx()).db;
+    }
+    const log = db.changeOrders.find((c) => c.id === co.id)!.log!;
+    expect(log.length).toBe(50);
+    expect(log.map((l) => l.kind)).toEqual(expect.arrayContaining(["created", "submitted", "approved"]));
+  });
+
+  it("20번째 파일을 같은 요청 번호로 다시 보내면 ‘이미 저장됨’(실패처럼 보이지 않게) · 지우기도 같음", () => {
+    let { db, co } = approved("contract");
+    for (let i = 0; i < EVIDENCE_MAX_PER_CO; i++) db = COMMANDS.addChangeOrderEvidence(db, { coId: co.id, docType: "other", dataUrl: JPG, idempotencyKey: `idem-d88-k${i}` }, ctx()).db;
+    expect(() => COMMANDS.addChangeOrderEvidence(db, { coId: co.id, docType: "other", dataUrl: JPG, idempotencyKey: "idem-d88-k19" }, ctx())).toThrow(expect.objectContaining({ code: "DUPLICATE" }));
+    const id = db.coEvidence![0].id;
+    db = COMMANDS.removeChangeOrderEvidence(db, { evidenceId: id, reason: "잘못 올림", idempotencyKey: "idem-d88-rm" }, ctx()).db;
+    expect(() => COMMANDS.removeChangeOrderEvidence(db, { evidenceId: id, reason: "잘못 올림", idempotencyKey: "idem-d88-rm" }, ctx())).toThrow(expect.objectContaining({ code: "DUPLICATE" }));
+  });
+
+  it("파일 이름의 확장자는 실제 형식으로 (사진을 .html·.bat로 올려도 .jpg · PDF는 .pdf)", () => {
+    const { db, co } = approved("contract");
+    const a = COMMANDS.addChangeOrderEvidence(db, { coId: co.id, docType: "other", dataUrl: JPG, fileName: "계약서.html" }, ctx()).db;
+    expect(a.coEvidence![0].fileName).toBe("계약서.jpg");
+    const b = COMMANDS.addChangeOrderEvidence(db, { coId: co.id, docType: "other", dataUrl: PDF, fileName: "run.bat" }, ctx()).db;
+    expect(b.coEvidence![0].fileName).toBe("run.pdf");
+    const c = COMMANDS.addChangeOrderEvidence(db, { coId: co.id, docType: "other", dataUrl: JPG, fileName: "가".repeat(150) + ".jpeg" }, ctx()).db;
+    expect(c.coEvidence![0].fileName.length).toBeLessThanOrEqual(100);
+    expect(c.coEvidence![0].fileName).toMatch(/\.jpg$/);
+  });
+});
+
 describe("D-88 승인 서면 상태 (표시용 — 처리 대기 수는 그대로)", () => {
   it("변경계약서·공문 근거 승인인데 파일 없음 → missing, 견적서만 → missing, 변경계약서·공문 파일 → ok", () => {
     const { db, co } = approved("contract");
@@ -278,6 +311,15 @@ describe("D-88 서버 — 원본 저장·열람 권한·지우기·백업", () =
     // 증빙 주소가 외부로 바뀐 백업은 받지 않는다
     const bad = { ...backup, data: { ...backup.data, coEvidence: [{ ...backup.data.coEvidence[0], dataUrl: "https://evil.example/x.pdf" }, ...backup.data.coEvidence.slice(1)] } };
     await expect(restoreCompany({ backup: gzipSync(Buffer.from(JSON.stringify(bad))).toString("base64"), email: "ceo@taekang.test", password: NEW_PW })).rejects.toBeInstanceOf(CommandError);
+    // 손으로 고친 백업: 사진 기록과 증빙 기록이 같은 번호 · 증빙 주소가 다른 번호 · 종류가 이상함 → 받지 않는다 (D-88 점검)
+    const b64 = (o: unknown) => gzipSync(Buffer.from(JSON.stringify(o))).toString("base64");
+    const ev0 = backup.data.coEvidence[0];
+    const tampered = [
+      { ...backup, data: { ...backup.data, photos: [...backup.data.photos, { ...backup.data.photos[0], id: ev0.id, dataUrl: ev0.dataUrl }] } },
+      { ...backup, data: { ...backup.data, coEvidence: [{ ...ev0, dataUrl: backup.data.coEvidence[1].dataUrl }, backup.data.coEvidence[1]] } },
+      { ...backup, data: { ...backup.data, coEvidence: [{ ...ev0, docType: "<script>" }, ...backup.data.coEvidence.slice(1)] } },
+    ];
+    for (const t of tampered) await expect(restoreCompany({ backup: b64(t), email: "ceo@taekang.test", password: NEW_PW })).rejects.toBeInstanceOf(CommandError);
     const r = await restoreCompany({ backup: backupB64, email: "ceo@taekang.test", password: NEW_PW });
     expect(r.summary.counts.coEvidence).toBe(2);
     const owner = await loginAs("ceo@taekang.test", NEW_PW);

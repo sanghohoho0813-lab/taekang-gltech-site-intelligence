@@ -195,7 +195,13 @@ export function prepareRestore(backup: Record<string, unknown>, ownerEmail: stri
   shape("payments", (x) => Number.isFinite(x.amount) && typeof x.receivedDate === "string" && DATE.test(x.receivedDate));
   shape("photos", (x) => typeof x.siteId === "string" && okTime(x.createdAt));
   // 변경공사 증빙 파일 (D-88) — 어느 변경공사의 무슨 파일인지 (화면이 종류·이름을 쓴다)
-  shape("coEvidence", (x) => typeof x.changeOrderId === "string" && typeof x.siteId === "string" && okTime(x.createdAt) && (x.kind === "image" || x.kind === "pdf") && typeof x.docType === "string" && typeof x.fileName === "string");
+  shape("coEvidence", (x) => typeof x.changeOrderId === "string" && typeof x.siteId === "string" && okTime(x.createdAt) && (x.kind === "image" || x.kind === "pdf") && ["contract", "letter", "estimate", "other"].includes(x.docType as string) && typeof x.fileName === "string" && x.fileName.length <= 100);
+  // 원본 주소는 그 기록 자신의 번호만 — 사진 기록과 증빙 기록이 같은 번호를 쓰면(손으로 고친 백업) 현장 직원이 증빙 원본을 받을 수 있다 (D-88 점검)
+  const ownUrl = (x: Record<string, unknown>) => x.dataUrl === `/api/photos/${encodeURIComponent(String(x.id))}`;
+  shape("photos", ownUrl);
+  shape("coEvidence", ownUrl);
+  const photoIds = new Set(collections.photos.map((x) => String(x.id)));
+  if (collections.coEvidence.some((x) => photoIds.has(String(x.id)))) bad("백업 파일의 자료(coEvidence)가 손상되었습니다(사진과 같은 번호).");
   shape("activityLogs", (x) => okTime(x.at) && typeof x.summary === "string");
   // 이력의 바로 가기는 이 앱 안 주소만 (다른 사이트 주소로 보내는 줄이 들어오지 않게)
   collections.activityLogs = collections.activityLogs.map((l) => (typeof l.link === "string" && !/^\/(?![/\\])/.test(l.link) ? { ...l, link: undefined } : l));

@@ -215,17 +215,27 @@ export interface AddEvidenceInput {
   idempotencyKey?: string;
 }
 
-/** 파일 이름 — 경로·제어 글자는 빼고 100자까지. 확장자가 종류와 맞지 않으면 붙인다 */
-function cleanFileName(v: unknown, kind: ChangeOrderEvidence["kind"]): string {
-  const base = typeof v === "string" ? tidyName(v.replace(/^.*[\\/]/, "").replace(/[\u0000-\u001f\u007f<>:"|?*]+/g, " "), FILE_NAME_MAX) : "";
-  const ext = kind === "pdf" ? ".pdf" : ".jpg";
-  if (!base) return kind === "pdf" ? "증빙.pdf" : "증빙.jpg";
-  if (kind === "pdf") return /\.pdf$/i.test(base) ? base : `${base}${ext}`;
-  return base;
+/** 저장된 원본 형식의 확장자 — 파일 이름의 확장자는 늘 이것으로 (사진을 .html·.bat 이름으로 내려받지 않게 · D-88 점검) */
+export function evidenceExt(dataUrl: string): string {
+  const m = /^data:(image\/(jpeg|png|webp)|application\/pdf);/.exec(dataUrl);
+  return !m ? ".jpg" : m[1] === "application/pdf" ? ".pdf" : m[2] === "jpeg" ? ".jpg" : `.${m[2]}`;
+}
+
+/** 파일 이름 — 경로·제어 글자는 빼고 100자까지, 확장자는 실제 형식으로 */
+function cleanFileName(v: unknown, ext: string): string {
+  const raw = typeof v === "string" ? tidyName(v.replace(/^.*[\\/]/, "").replace(/[\u0000-\u001f\u007f<>:"|?*]+/g, " "), FILE_NAME_MAX) : "";
+  const base = raw.replace(/\.[A-Za-z0-9]{1,8}$/, "").trim() || "증빙";
+  return `${Array.from(base).slice(0, FILE_NAME_MAX - ext.length).join("")}${ext}`;
+}
+
+/** 같은 요청을 다시 보낸 것 — 검사보다 먼저 (20번째 파일을 다시 보내면 ‘20개까지’로 실패처럼 보이던 문제 · D-88 점검) */
+function alreadySaved(db0: DemoDB, key: string | undefined) {
+  if (key && db0.idempotencyKeys.includes(key)) throw new CommandError("이미 저장된 요청입니다. (중복 저장 방지)", "DUPLICATE");
 }
 
 /** 변경공사에 증빙 파일(사진·PDF)을 붙인다 — 상태와 관계없이 (구두 승인 뒤 받은 서면도). 금액·이익은 바뀌지 않는다 */
 export function addChangeOrderEvidence(db0: DemoDB, input: AddEvidenceInput, ctx: Ctx) {
+  alreadySaved(db0, input?.idempotencyKey);
   const c0 = db0.changeOrders.find((c) => c.id === input?.coId);
   if (!c0) throw new CommandError("변경공사를 찾을 수 없습니다.", "NOT_FOUND");
   const errors: Record<string, string> = {};
@@ -256,7 +266,7 @@ export function addChangeOrderEvidence(db0: DemoDB, input: AddEvidenceInput, ctx
     kind,
     docType: input.docType,
     dataUrl: input.dataUrl,
-    fileName: cleanFileName(input.fileName, kind),
+    fileName: cleanFileName(input.fileName, evidenceExt(input.dataUrl)),
     caption,
     size: dataUrlBytes(input.dataUrl),
     createdAt: at,
@@ -283,6 +293,7 @@ export interface RemoveEvidenceInput {
 
 /** 증빙 파일을 지운다 — 원본도 지운다(다른 회사 서류를 잘못 올린 경우). 누가·왜 지웠는지는 변경공사 기록·활동 이력에 남는다 */
 export function removeChangeOrderEvidence(db0: DemoDB, input: RemoveEvidenceInput, ctx: Ctx) {
+  alreadySaved(db0, input?.idempotencyKey);
   const ev0 = (db0.coEvidence ?? []).find((e) => e.id === input?.evidenceId);
   if (!ev0) throw new CommandError("증빙 파일을 찾을 수 없습니다 (이미 지웠을 수 있습니다).", "NOT_FOUND");
   const reason = text(input.reason);

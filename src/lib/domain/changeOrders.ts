@@ -33,9 +33,11 @@ export function followUpError(v: unknown, today: string): string | undefined {
 export function pushCoLog(co: ChangeOrder, entry: Omit<ChangeOrderLog, "id">) {
   const all = [...(co.log ?? []), { id: uid("col"), ...entry }];
   // 넘치면 확인·답변·메모부터 오래된 것을 지운다 — 등록·청구·승인·반려·증빙 파일 기록은 남긴다 (D-84 버그 배시 · D-88)
+  // 증빙 파일 기록은 그다음으로 지우고(올리고 지우기를 되풀이해도 등록·승인 기록이 밀려나지 않게 · D-88 점검), 그래도 넘치면 가장 오래된 것
   const key = new Set(["created", "submitted", "approved", "rejected", "no_reclaim", "evidence"]);
   while (all.length > CO_LOG_MAX) {
-    const i = all.findIndex((l) => !key.has(l.kind));
+    let i = all.findIndex((l) => !key.has(l.kind));
+    if (i < 0) i = all.findIndex((l) => l.kind === "evidence");
     all.splice(i >= 0 ? i : 0, 1);
   }
   co.log = all;

@@ -21,14 +21,16 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     if (req.headers.get("if-none-match") === `"${id}"`) return new Response(null, { status: 304, headers: { "Cache-Control": "private, no-cache", ETag: `"${id}"` } });
     // 변경공사 증빙 PDF(D-88)는 이 사이트 안에서 열지 않고 내려받아 PC·휴대폰의 PDF 보기로 연다 (PDF 안의 스크립트·링크가 이 사이트 화면으로 동작하지 않게)
     const pdf = photo.mime === "application/pdf";
-    const name = (photo.fileName ?? "증빙.pdf").replace(/[\r\n"]/g, " ");
+    // 이름은 늘 .pdf로 끝나게(백업에서 온 이름도) · RFC 8187 글자만 그대로
+    const base = (photo.fileName ?? "증빙").replace(/[\r\n"]/g, " ").replace(/\.[A-Za-z0-9]{1,8}$/, "") || "증빙";
+    const name = encodeURIComponent(`${base}.pdf`).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
     return new Response(Buffer.from(photo.data), {
       headers: {
         "Content-Type": photo.mime,
         "Cache-Control": "private, no-cache",
         ETag: `"${id}"`,
         "X-Content-Type-Options": "nosniff",
-        ...(pdf ? { "Content-Disposition": `attachment; filename="evidence.pdf"; filename*=UTF-8''${encodeURIComponent(name)}` } : {}),
+        ...(pdf ? { "Content-Disposition": `attachment; filename="evidence.pdf"; filename*=UTF-8''${name}` } : {}),
       },
     });
   } catch (e) {

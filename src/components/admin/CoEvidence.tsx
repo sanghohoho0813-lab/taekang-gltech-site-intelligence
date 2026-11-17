@@ -71,6 +71,14 @@ export function EvidenceRow({ db, c, paper, onAdd }: { db: DemoDB; c: ChangeOrde
   );
 }
 
+/** 내려받을 이름 — 확장자는 늘 실제 형식(PDF·사진)으로 (백업에서 온 이름이어도) */
+function downloadName(e: ChangeOrderEvidence): string {
+  const base = e.fileName.replace(/\.[A-Za-z0-9]{1,8}$/, "") || "증빙";
+  if (e.kind === "pdf") return `${base}.pdf`;
+  const ext = /\.(jpe?g|png|webp)$/i.exec(e.fileName)?.[0];
+  return ext ? `${base}${ext.toLowerCase()}` : `${base}.jpg`;
+}
+
 /** 파일 하나 → data: 주소 (사진은 줄여서 JPEG, PDF는 그대로) */
 async function toDataUrl(f: File): Promise<string> {
   if (isPdf(f)) {
@@ -143,10 +151,10 @@ export function EvidenceUploadModal({ db, coId, docType, after, onClose }: { db:
             setFiles((cur) => cur.map((x) => (x.key === p.key ? { ...x, done: true } : x)));
             continue;
           }
+          // 인터넷 문제면 멈추고 그 파일은 ‘대기’로 둔다 — 다시 누르면 같은 요청 번호로 다시 보낸다(이미 저장됐으면 두 번 저장되지 않음 · D-88 점검)
+          if (e instanceof CommandError && e.code === "NETWORK") throw e;
           const msg = e instanceof CommandError ? e.message : e instanceof Error ? e.message : "올리지 못했습니다";
           setFiles((cur) => cur.map((x) => (x.key === p.key ? { ...x, error: msg } : x)));
-          // 인터넷 문제면 멈춘다 — 다시 누르면 남은 파일만 올린다
-          if (e instanceof CommandError && e.code === "NETWORK") throw e;
         }
       }
       if (ok) toast.push({ tone: "ok", title: `증빙 파일 ${ok}개를 올렸습니다`, desc: `${DOC_SHORT[kind]} · 변경공사 기록에 남았습니다` });
@@ -267,7 +275,7 @@ function EvidenceViewModal({ db, c, e, onClose }: { db: DemoDB; c: ChangeOrder; 
             <Button variant="ghost" icon={<Trash2 size={15} />} onClick={() => setRemoving(true)} data-testid="co-evidence-remove">
               지우기
             </Button>
-            <a href={e.dataUrl} download={e.fileName} className="press inline-flex h-10 items-center gap-1.5 rounded-xl border border-line px-3.5 text-[0.88rem] font-semibold hover:bg-surface-2" data-testid="co-evidence-download">
+            <a href={e.dataUrl} download={downloadName(e)} className="press inline-flex h-10 items-center gap-1.5 rounded-xl border border-line px-3.5 text-[0.88rem] font-semibold hover:bg-surface-2" data-testid="co-evidence-download">
               <Download size={15} aria-hidden />
               {e.kind === "pdf" ? "PDF 내려받아 열기" : "내려받기"}
             </a>
