@@ -23,7 +23,7 @@ import { siteFinancials } from "@/lib/domain/calc";
 import type { DemoDB } from "@/lib/domain/types";
 import { uid } from "@/lib/domain/ids";
 import { XLSX_MIME, downloadBytes, downloadCsv } from "@/lib/browser/download";
-import { monthWorkbook } from "@/lib/domain/monthWorkbook";
+import { monthWorkbook, verifyWorkbookFile } from "@/lib/domain/monthWorkbook";
 import { writeXlsx } from "@/lib/domain/xlsx";
 import { ForecastModal } from "./SitesAdmin";
 import { OverlapFixModal } from "./OverlapFix";
@@ -97,12 +97,15 @@ export function CloseBoard() {
             <Button
               variant="cta"
               icon={<FileSpreadsheet size={17} />}
-              onClick={() => {
-                // 세무·회계에 넘기는 한 달 자료 (D-87) — 만든 뒤 시트 숫자를 화면 숫자와 다시 맞춰 본다
+              onClick={async () => {
+                // 세무·회계에 넘기는 한 달 자료 (D-87) — 시트끼리·화면과 맞춰 보고, 실제로 쓴 파일을 다시 읽어 한 번 더 맞춘다
                 const w = monthWorkbook(db, chosen, today, { by: userId, report: r });
-                downloadBytes(w.filename, writeXlsx(w.sheets), XLSX_MIME);
-                if (w.ok) toast.push({ tone: "ok", title: `${label} 월 마감 엑셀을 내려받았습니다 — 합계 ${w.checks.length}개가 화면과 같음` });
-                else toast.push({ tone: "err", title: `엑셀 숫자 ${w.checks.filter((c) => !c.ok).length}개가 화면과 다릅니다 — 개발 담당에게 알려 주세요` });
+                const bytes = writeXlsx(w.sheets);
+                const file = await verifyWorkbookFile(bytes, w).catch(() => null);
+                downloadBytes(w.filename, bytes, XLSX_MIME);
+                const bad = [...w.checks, ...(file ?? [])].filter((c) => !c.ok).length + (file ? 0 : 1);
+                if (!bad) toast.push({ tone: "ok", title: `${label} 월 마감 엑셀을 내려받았습니다 — 합계 ${w.checks.length + (file?.length ?? 0)}개가 화면과 같음` });
+                else toast.push({ tone: "err", title: `엑셀 숫자 ${bad}개가 화면과 다릅니다 — 보내지 말고 개발 담당에게 알려 주세요` });
               }}
               data-testid="close-xlsx"
             >

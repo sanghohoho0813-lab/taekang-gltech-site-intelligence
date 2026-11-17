@@ -9,9 +9,10 @@ import { simulate } from "./moneySim";
 import { createSeed } from "@/lib/data/seed";
 import { COMMANDS } from "@/lib/data/registry";
 import { monthBounds, monthClose, profitEvents } from "@/lib/domain/monthClose";
-import { monthWorkbook } from "@/lib/domain/monthWorkbook";
+import { monthWorkbook, verifyWorkbookFile } from "@/lib/domain/monthWorkbook";
 import { moneyIntegrity } from "@/lib/domain/integrity";
 import { readXlsx, writeXlsx } from "@/lib/domain/xlsx";
+import { readZip } from "@/lib/domain/zip";
 import { siteFinancials } from "@/lib/domain/calc";
 
 const num = (v: string | undefined) => Number(v ?? "") || 0;
@@ -25,8 +26,11 @@ describe("D-87 월 마감 엑셀", () => {
       const r = monthClose(db, month, today);
       const w = monthWorkbook(db, month, today, { by: "u-manager", now: new Date("2026-11-14T03:00:00Z") });
       expect(w.ok, JSON.stringify(w.checks.filter((c) => !c.ok))).toBe(true);
-      expect(w.checks.length).toBe(14);
-      const sheets = await readXlsx(writeXlsx(w.sheets));
+      expect(w.checks.length).toBe(13);
+      const bytes = writeXlsx(w.sheets);
+      const file = await verifyWorkbookFile(bytes, w);
+      expect(file.filter((c) => !c.ok), JSON.stringify(file)).toEqual([]);
+      const sheets = await readXlsx(bytes);
       const by = (name: string) => sheets.find((s) => s.name === name)!.rows;
       const ended = monthBounds(month).to < today;
       expect(sheets.map((s) => s.name)).toEqual(["안내", "현장별 요약", "기성", "입금", ended ? "월말 미수" : "미수(오늘)", "원가", "원가 항목별", "변경공사", "노무", "이익을 바꾼 일"]);
@@ -80,8 +84,8 @@ describe("D-87 월 마감 엑셀", () => {
     const r = monthClose(db, "2026-10", today);
     const w = monthWorkbook(db, "2026-10", today, { report: { ...r, totals: { ...r.totals, billed: r.totals.billed + 10_000 } } });
     expect(w.ok).toBe(false);
-    // 요약 합계와 기성 시트는 실제 자료로 적었으므로 ‘화면’ 숫자와 1만 원 다르다
-    expect(w.checks.filter((c) => !c.ok).map((c) => c.label)).toEqual(["이달 기성 (요약 합계)", "이달 기성 (기성 시트)"]);
+    // 기성 시트는 자료에서 바로 만들었으므로 ‘화면’ 숫자와 1만 원 다르다
+    expect(w.checks.filter((c) => !c.ok).map((c) => c.label)).toEqual(["이달 기성: 기성 시트 = 화면"]);
     expect(moneyIntegrity(db, today).find((c) => c.key === "xlsx")?.level).toBe("ok");
   });
 
@@ -109,5 +113,45 @@ describe("D-87 무작위 점검에서 찾아 고친 것", () => {
     expect(ev?.date).toBe("2026-10-01");
     expect(ev?.text).toContain("받은 날 9/30 · 현장 등록 전");
     expect(moneyIntegrity(db, "2026-10-02").filter((c) => c.level === "err")).toEqual([]);
+  });
+});
+
+describe("D-87 점검 반영 — 엑셀 칸", () => {
+  it("메모의 제어 글자는 지우고, 전화번호·날짜 모양 메모는 글자 그대로 (숫자·날짜로 바꾸지 않음)", async () => {
+    const db = createSeed(new Date("2026-11-14T03:00:00Z"));
+    const e = db.costEntries.find((x) => x.status === "active")!;
+    e.note = "01012345678";
+    const month = e.date.slice(0, 7);
+    const co = db.changeOrders.find((c) => c.siteId === e.siteId) ?? db.changeOrders[0];
+    co.title = "벨\u0007소리\u000b변경";
+    const w = monthWorkbook(db, month, "2026-11-14");
+    const bytes = writeXlsx(w.sheets);
+    // 시트 XML에 XML이 받지 않는 제어 글자가 없어야 한다 (zip 머리 바이트는 빼고 XML만)
+    for (const f of readZip(bytes).filter((x) => x.name.endsWith(".xml"))) expect(new TextDecoder().decode(f.raw), f.name).not.toMatch(/[\u0001-\u0008\u000B\u000C\u000E-\u001F]/);
+    const sheets = await readXlsx(bytes);
+    const cost = sheets.find((s) => s.name === "원가")!.rows;
+    expect(cost.some((r) => r[8] === "01012345678")).toBe(true);
+    expect((await verifyWorkbookFile(bytes, w)).every((c) => c.ok)).toBe(true);
+  });
+
+  it("기준선을 다시 잡지 않고 가져온 ‘승인된 변경공사’(결정일이 등록 전)도 가져온 날로 잡혀 합이 맞는다", () => {
+    const now = new Date("2026-11-05T03:00:00Z");
+    let db = createSeed(new Date("2026-10-01T01:00:00Z"));
+    const site = db.sites[0];
+    const p0 = siteFinancials(db, site.id).expectedProfit;
+    db = COMMANDS.importData(db, { kind: "change", text: `현장,제목,금액,상태,요청일,승인금액,결정일,메모\n${site.shortName},지난 변경,20000000,승인,2026-08-10,,2026-08-20,`, idempotencyKey: "idem-d87-imp-0001", rebaseline: false } as never, { userId: "u-manager", now }).db;
+    expect(siteFinancials(db, site.id).expectedProfit - p0).toBe(20_000_000);
+    const checks = moneyIntegrity(db, "2026-11-05");
+    expect(checks.find((c) => c.key === "profit-events")?.level, JSON.stringify(checks.find((c) => c.key === "profit-events"))).toBe("ok");
+  });
+
+  it("현장 등록 전 날짜로 받은 승인도 그 달 월 마감에 현장이 들어가 달마다 더한 이익 변화 = 기준 대비 변화", () => {
+    const now = new Date("2026-11-05T03:00:00Z");
+    let db = createSeed(new Date("2026-10-01T01:00:00Z"));
+    const co = db.changeOrders.find((c) => c.status === "review" || c.status === "submitted")!;
+    db = COMMANDS.setChangeOrderStatus(db, { coId: co.id, status: "approved", note: "공문", date: "2026-09-30", basis: "letter" }, { userId: "u-ceo", now }).db;
+    const checks = moneyIntegrity(db, "2026-11-05");
+    expect(checks.find((c) => c.key === "profit-events")?.level, JSON.stringify(checks.find((c) => c.key === "profit-events"))).toBe("ok");
+    expect(monthClose(db, "2026-10", "2026-11-05").profit.some((p) => p.site.id === co.siteId && p.events.some((e) => e.text.includes("받은 날 9/30")))).toBe(true);
   });
 });

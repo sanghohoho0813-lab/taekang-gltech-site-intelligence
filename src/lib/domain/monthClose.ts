@@ -3,7 +3,7 @@
  * 금액·원가·노무·출퇴근은 다른 화면과 같은 계산(siteFinancials·laborEstimate·periodSummary)을 그대로 쓴다 — 숫자가 화면마다 달라지지 않게.
  * 날짜는 모두 한국 날짜(YYYY-MM-DD). ‘이번 달’이면 오늘까지만 센다.
  */
-import type { CostCategory, CostEntry, DemoDB, Site } from "./types";
+import type { ChangeOrder, CostCategory, CostEntry, DemoDB, Site } from "./types";
 import { CATEGORY_LABEL, CO_STATUS_LABEL, COST_CATEGORIES, IMPACT_LABEL, REASON_LABEL } from "./labels";
 import { activeAt, entryEacImpact, siteEacImpacts, siteFinancials } from "./calc";
 import { laborEstimate, type LaborSite } from "./labor";
@@ -177,7 +177,9 @@ export function closeSites(db: DemoDB, from: string, to: string): Site[] {
     db.payments.some((x) => x.siteId === id && inRange(x.receivedDate, from, to)) ||
     db.costEntries.some((e) => e.siteId === id && e.status !== "voided" && (inRange(e.date, from, to) || inRange(kst(activeAt(e)), from, to))) ||
     (db.forecastChanges ?? []).some((c) => c.siteId === id && inRange(kst(c.at), from, to)) ||
-    db.changeOrders.some((c) => c.siteId === id && !!c.decidedAt && inRange(kst(c.decidedAt), from, to));
+    db.changeOrders.some((c) => c.siteId === id && !!c.decidedAt && (inRange(kst(c.decidedAt), from, to) || (c.status === "approved" && inRange(coProfitDay(db, c), from, to)))) ||
+    // 원가 고침·취소·원 계약 변경 등으로 남은 예상이익 조정 (D-85) — 그 달 이익을 바꾼 일이 있으면 그 현장도 넣는다
+    (db.profitAdjustments ?? []).some((a) => a.siteId === id && inRange(kst(a.at), from, to));
   // 착공 전 달이라도 그 달 날짜로 돈·원가가 있으면 넣는다 — 자재 선발주처럼 착공 전 발생일 원가가 어느 달에도 안 잡혀 월 합 ≠ 누계가 되던 문제 (D-85)
   return db.sites.filter((s) => touched(s.id) || (s.startDate <= to && (s.status === "active" || s.endDate >= from)));
 }
@@ -188,6 +190,24 @@ export function closeSites(db: DemoDB, from: string, to: string): Site[] {
  * - 변경공사 승인 (+) · 그 예상 원가 (−)
  * - 잔여예상 재추정·준공 원가 마감 (예상 총원가 변화)
  */
+/**
+ * 변경공사 승인이 ‘이익을 바꾼 일’로 잡히는 날 — 받은 날(결정일) 기준 (D-84).
+ * 다만 현장 등록(기준) 뒤에 넣은 승인의 받은 날이 등록 전이면 등록한 날로 센다 — 기준에 들어 있지 않은 이익 변화가
+ * 어느 달에도 안 잡히던 문제 (D-87 무작위 점검). ‘넣은 시각’은 상태를 바꾼 시각, 없으면(가져오기) 가져온 시각.
+ * 월 마감 현장 고르기(closeSites)와 이익을 바꾼 일이 같은 날을 쓴다 (D-87 점검).
+ */
+export function coProfitDay(db: DemoDB, c: ChangeOrder): string {
+  const d = kst(c.decidedAt!);
+  const site = db.sites.find((s) => s.id === c.siteId);
+  // 기준 시각 — 숫자 맞추기 점검(integrity)과 같은 규칙 (등록 시각이 없으면 자료 시작 시각)
+  const baseAt = site?.baselineAt ?? db.seededAt;
+  if (!baseAt) return d;
+  const baseDay = kst(baseAt);
+  if (d >= baseDay) return d;
+  const booked = c.statusChangedAt ?? (c.importBatchId ? (db.importBatches ?? []).find((b) => b.id === c.importBatchId)?.at : undefined);
+  return booked && booked > baseAt ? baseDay : d;
+}
+
 export function profitEvents(db: DemoDB, siteId: string, from: string, to: string): CloseProfitEvent[] {
   const events: CloseProfitEvent[] = [];
   const impacts = siteEacImpacts(db, siteId);
@@ -207,16 +227,7 @@ export function profitEvents(db: DemoDB, siteId: string, from: string, to: strin
         : { date: when, amount: -impact, text: `잔여예상을 넘은 집행 — ${CATEGORY_LABEL[e.category]} ${e.note || ""}${occurred}`.replace(/\s+/g, " ").trim(), entryId: e.id },
     );
   }
-  // 변경공사는 받은 날(결정일) 기준 (D-84). 다만 현장 등록(기준) 뒤에 넣은 승인의 받은 날이 등록 전이면 등록한 날로 센다 —
-  // 기준에 들어 있지 않은 이익 변화가 ‘이익을 바꾼 일’에서 빠지던 문제 (D-87 무작위 점검). 등록 전에 넣은 승인은 기준에 들어 있다
-  const site = db.sites.find((s) => s.id === siteId);
-  // 기준 시각 — 숫자 맞추기 점검(integrity)과 같은 규칙 (등록 시각이 없으면 자료 시작 시각)
-  const baseAt = site?.baselineAt ?? db.seededAt;
-  const baseDay = baseAt ? kst(baseAt) : null;
-  const coDay = (c: { decidedAt?: string; statusChangedAt?: string }) => {
-    const d = kst(c.decidedAt!);
-    return baseDay && baseAt && d < baseDay && c.statusChangedAt && c.statusChangedAt > baseAt ? baseDay : d;
-  };
+  const coDay = (c: ChangeOrder) => coProfitDay(db, c);
   for (const c of db.changeOrders.filter((x) => x.siteId === siteId && x.status === "approved" && x.decidedAt && !history(x) && inRange(coDay(x), from, to))) {
     const amt = c.approvedAmount ?? c.amount;
     const when = coDay(c);

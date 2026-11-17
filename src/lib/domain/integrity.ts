@@ -14,7 +14,7 @@
  */
 import type { DemoDB } from "./types";
 import { portfolioTotals, siteFinancials } from "./calc";
-import { monthClose, monthCostRows, previousMonth, profitEvents } from "./monthClose";
+import { monthClose, monthCostRows, previousMonth, profitEvents, coProfitDay } from "./monthClose";
 import { monthWorkbook } from "./monthWorkbook";
 import { coByEntry } from "./changeOrders";
 import { CATEGORY_LABEL } from "./labels";
@@ -41,6 +41,9 @@ export function moneyMonths(db: DemoDB, today: string): string[] {
     ...db.payments.map((p) => p.receivedDate),
     ...db.changeOrders.filter((c) => c.decidedAt).map((c) => kst(c.decidedAt!)),
     ...(db.forecastChanges ?? []).map((c) => kst(c.at)),
+    // 이익을 바꾼 일이 생긴 달도 빠짐없이 (D-87 점검)
+    ...(db.profitAdjustments ?? []).map((a) => kst(a.at)),
+    ...db.changeOrders.filter((c) => c.status === "approved" && c.decidedAt).map((c) => coProfitDay(db, c)),
   ].filter((d) => d && d <= today);
   const first = (dates.sort()[0] ?? today).slice(0, 7);
   const out: string[] = [];
@@ -100,7 +103,7 @@ export function moneyIntegrity(db: DemoDB, today: string): IntegrityCheck[] {
   // ── err: 월 마감 엑셀(세무·회계용)의 합계 = 월 마감 화면 (D-87) — 시트에 적힌 숫자를 다시 읽어 맞춘다 ──
   const xlsxBad: string[] = [];
   months.forEach((m, i) => {
-    const w = monthWorkbook(db, m, today, { report: reports[i] });
+    const w = monthWorkbook(db, m, today, { report: reports[i], light: true });
     for (const c of w.checks.filter((x) => !x.ok)) xlsxBad.push(`${m} ${c.label}: 엑셀 ${fmtMan(c.sheet)} · 화면 ${fmtMan(c.screen)}`);
   });
   out.push(
@@ -118,6 +121,11 @@ export function moneyIntegrity(db: DemoDB, today: string): IntegrityCheck[] {
     const ev = profitEvents(db, site.id, from, today).reduce((a, e) => a + e.amount, 0);
     const actual = siteFinancials(db, site.id).expectedProfit - base.expectedProfit;
     if (ev !== actual) unexplained.push(`${site.shortName}: 이익을 바꾼 일 합 ${fmtMan(ev)} · 기준 대비 실제 ${fmtMan(actual)} (차이 ${fmtMan(actual - ev)})`);
+    // 달마다 나눠 더해도 같아야 한다 — 그 달 월 마감에서 현장이 빠지면 어느 달에도 안 보이는 이익 변화가 생긴다 (D-87 점검)
+    else {
+      const byMonths = reports.reduce((a, rep) => a + (rep.profit.find((x) => x.site.id === site.id)?.events.filter((e) => e.date >= from).reduce((x, e) => x + e.amount, 0) ?? 0), 0);
+      if (byMonths !== actual) unexplained.push(`${site.shortName}: 월 마감마다 이익을 바꾼 일을 더하면 ${fmtMan(byMonths)} · 기준 대비 실제 ${fmtMan(actual)} — 어느 달 월 마감에서 빠짐`);
+    }
   }
   out.push(
     unexplained.length

@@ -20,9 +20,11 @@ const n = (v: number) => String(Math.round(v));
 /** 부가세 10% (원 단위 반올림) — 계산값. 실제 세금계산서·통장과 맞춰 보는 참고 */
 const vat = (v: number) => Math.round(v / 10);
 const nextDay = (d: string) => new Date(Date.parse(`${d}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+// 한 번만 만든다 — 줄마다 새로 만들면 1년치에서 느려진다 (D-85 · D-87 점검)
+const HM = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", hour12: false });
 const isoMinute = (iso: string) => {
   const d = new Date(iso);
-  return `${todayIso(d)} ${new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", hour12: false }).format(d)}`;
+  return `${todayIso(d)} ${HM.format(d)}`;
 };
 
 export interface WorkbookCheck {
@@ -34,7 +36,19 @@ export interface WorkbookCheck {
   ok: boolean;
 }
 
+/** 화면(월 마감) 숫자 — 내려받은 파일을 다시 읽어 맞출 때 쓴다 */
+export interface WorkbookExpect {
+  billed: number;
+  received: number;
+  outstanding: number;
+  cost: number;
+  pending: number;
+  changeApproved: number;
+  profitNet: number;
+}
+
 export interface MonthWorkbook {
+  expect: WorkbookExpect;
   /** 진행중 · 마감전 · 대표확인전 · 확인뒤변경 · 대표확인 — 파일 이름·안내에 */
   stage: "진행중" | "마감전" | "대표확인전" | "확인뒤변경" | "대표확인";
   sheets: SheetSpec[];
@@ -46,7 +60,7 @@ export interface MonthWorkbook {
 /** 시트의 한 열(머리글 다음 ~ 합계 줄 전) 숫자 합 */
 const colSum = (rows: string[][], col: number, until = rows.length) => rows.slice(1, until).reduce((a, r) => a + (Number(r[col]) || 0), 0);
 
-export function monthWorkbook(db: DemoDB, month: string, today = todayIso(), opts: { by?: string; now?: Date; report?: MonthCloseReport } = {}): MonthWorkbook {
+export function monthWorkbook(db: DemoDB, month: string, today = todayIso(), opts: { by?: string; now?: Date; report?: MonthCloseReport; light?: boolean } = {}): MonthWorkbook {
   const r = opts.report ?? monthClose(db, month, today);
   const b = monthBounds(month);
   const from = r.from;
@@ -61,7 +75,8 @@ export function monthWorkbook(db: DemoDB, month: string, today = todayIso(), opt
   // 이 파일 숫자가 언제 기준인지 — 끝난 달은 월말, 진행 중인 달은 오늘 (점검 반영: 진행 중인 달 머리글이 ‘월말’이던 문제)
   const asOf = r.ended ? "월말" : `오늘(${to.slice(5).replace("-", "/")})`;
   const rec = currentClose(db, month);
-  const changed = rec ? changesAfterClose(db, rec, today).count : 0;
+  // 숫자 맞추기 점검에서 부를 때(light)는 마감 뒤 바뀐 것을 세지 않는다 — 단계 문구에만 쓰이고 달마다 월 마감을 다시 계산해 느리다 (D-87 점검)
+  const changed = rec && !opts.light ? changesAfterClose(db, rec, today).count : 0;
   const stage = !r.ended ? "진행중" : !rec ? "마감전" : !rec.confirmedAt ? "대표확인전" : changed ? "확인뒤변경" : "대표확인";
 
   // ── 현장별 요약 — 계약·변경공사·예상이익은 그 달 말 기준 (대표 보고서 달별 보기와 같은 계산 · 점검 반영: 오늘 숫자가 지난달 파일에 들어가던 문제) ──
@@ -186,25 +201,36 @@ export function monthWorkbook(db: DemoDB, month: string, today = todayIso(), opt
   const evRows = r.profit.flatMap((p) => p.events.map((e) => [e.date, p.site.shortName || p.site.name, n(e.amount), e.text]));
   const events: string[][] = [["손익에 들어온 날", "현장", "예상이익에 미친 금액(원)", "내용 (괄호 안은 실제 발생일·받은 날)"], ...evRows, ["합계", "", n(evRows.reduce((a, x) => a + Number(x[2]), 0)), ""]];
 
-  // ── 대조 — 엑셀에 적힌 숫자를 다시 읽어 화면 숫자와 ──
+  // ── 대조 — 서로 따로 만든 시트끼리, 그리고 화면(월 마감) 숫자와 (같은 숫자를 자기와 비교하지 않게 · D-87 점검) ──
+  //   기성·입금·미수·원가·변경공사 시트는 자료에서 바로 만들고, 현장별 요약·원가 항목별은 월 마감 계산에서 만든다
   const last = (rows: string[][], col: number) => Number(rows[rows.length - 1][col]) || 0;
   const confirmedSheet = confirmedRows.reduce((a, row) => a + (Number(row[AMOUNT_COL]) || 0), 0);
+  const pendingSheet = otherRows.filter((row) => row[STATUS_COL] === "공무 확인 대기").reduce((a, row) => a + (Number(row[AMOUNT_COL]) || 0), 0);
+  const CAT_COL = costRaw[0].indexOf("항목");
+  const catGap = cats.reduce((a, c, i) => {
+    const fromCost = confirmedRows.filter((row) => row[CAT_COL] === CATEGORY_LABEL[c]).reduce((x, row) => x + (Number(row[AMOUNT_COL]) || 0), 0);
+    return a + Math.abs(fromCost - (Number(byCategory[byCategory.length - 1][i + 1]) || 0));
+  }, 0);
   const profitNet = r.profit.reduce((a, p) => a + p.net, 0);
+  const billSheet = colSum(billing, 3, billing.length - 1);
+  const paySheet = colSum(payment, 3, payment.length - 1);
+  const arSheet = last(receivable, 3);
+  const coSheet = last(change, 11);
+  const evSheet = last(events, 2);
   const checks: WorkbookCheck[] = [
-    { label: "이달 기성 (요약 합계)", sheet: last(summary, 5), screen: r.totals.billed },
-    { label: "이달 기성 (기성 시트)", sheet: colSum(billing, 3, billing.length - 1), screen: r.totals.billed },
-    { label: "이달 입금 (요약 합계)", sheet: last(summary, 6), screen: r.totals.received },
-    { label: "이달 입금 (입금 시트)", sheet: colSum(payment, 3, payment.length - 1), screen: r.totals.received },
-    { label: "미수 (요약 합계)", sheet: last(summary, 7), screen: r.totals.outstandingAtEnd },
-    { label: "미수 (미수 시트)", sheet: last(receivable, 3), screen: r.totals.outstandingAtEnd },
-    { label: "이달 원가 (요약 합계)", sheet: last(summary, 8), screen: r.totals.costTotal },
-    { label: "이달 원가 (원가 시트 ‘확정’ 줄)", sheet: confirmedSheet, screen: r.totals.costTotal },
-    { label: "이달 원가 (원가 항목별 시트)", sheet: last(byCategory, byCategory[0].length - 1), screen: r.totals.costTotal },
-    { label: "공무 확인 대기 원가", sheet: last(summary, 9), screen: r.totals.pending },
-    { label: "이달 승인 변경공사 (요약 합계)", sheet: last(summary, 10), screen: r.totals.changeApproved },
-    { label: "이달 승인 변경공사 (변경공사 시트)", sheet: last(change, 11), screen: r.totals.changeApproved },
-    { label: "이익을 바꾼 일 합 (요약 합계)", sheet: last(summary, 12), screen: profitNet },
-    { label: "이익을 바꾼 일 합 (시트)", sheet: last(events, 2), screen: profitNet },
+    { label: "이달 기성: 기성 시트 = 화면", sheet: billSheet, screen: r.totals.billed },
+    { label: "이달 기성: 현장별 요약 = 기성 시트", sheet: last(summary, 5), screen: billSheet },
+    { label: "이달 입금: 입금 시트 = 화면", sheet: paySheet, screen: r.totals.received },
+    { label: "이달 입금: 현장별 요약 = 입금 시트", sheet: last(summary, 6), screen: paySheet },
+    { label: "미수: 미수 시트 = 화면", sheet: arSheet, screen: r.totals.outstandingAtEnd },
+    { label: "미수: 현장별 요약 = 미수 시트", sheet: last(summary, 7), screen: arSheet },
+    { label: "이달 원가: 원가 시트 ‘확정’ 줄 = 화면", sheet: confirmedSheet, screen: r.totals.costTotal },
+    { label: "이달 원가: 현장별 요약 = 원가 시트", sheet: last(summary, 8), screen: confirmedSheet },
+    { label: "원가 항목별 시트 = 원가 시트(항목마다 더한 값) — 차이 합", sheet: catGap, screen: 0 },
+    { label: "공무 확인 대기: 원가 시트 대기 줄 = 화면", sheet: pendingSheet, screen: r.totals.pending },
+    { label: "이달 승인 변경공사: 변경공사 시트 = 화면", sheet: coSheet, screen: r.totals.changeApproved },
+    { label: "이달 승인 변경공사: 현장별 요약 = 변경공사 시트", sheet: last(summary, 10), screen: coSheet },
+    { label: "이익을 바꾼 일: 현장별 요약 = 이익을 바꾼 일 시트", sheet: last(summary, 12), screen: evSheet },
   ].map((c) => ({ ...c, ok: Math.round(c.sheet) === Math.round(c.screen) }));
   const ok = checks.every((c) => c.ok);
 
@@ -244,16 +270,50 @@ export function monthWorkbook(db: DemoDB, month: string, today = todayIso(), opt
 
   const sheets: SheetSpec[] = [
     { name: "안내", rows: info, widths: [22, 110], header: true, wrap: true, typed: false },
-    { name: "현장별 요약", rows: summary, widths: [16, 9, 15, 17, 18, 14, 14, 14, 15, 15, 15, 15, 15, 16], header: true },
-    { name: "기성", rows: billing, widths: [12, 16, 7, 15, 15, 17, 20, 17, 10, 18], header: true },
-    { name: "입금", rows: payment, widths: [12, 16, 9, 20, 22, 20, 17, 10, 18], header: true },
-    { name: r.ended ? "월말 미수" : "미수(오늘)", rows: receivable, widths: [16, 24, 24, 18, 22, 13, 20], header: true },
-    { name: "원가", rows: cost, widths: [26, 17, 14, 10, 10, 14, 12, 12, 30, 16, 10, 12, 20, 14, 24], header: true },
-    { name: "원가 항목별", rows: byCategory, widths: [16, ...cats.map(() => 14), 16], header: true },
-    { name: "변경공사", rows: change, widths: [16, 26, 14, 14, 16, 16, 12, 16, 14, 14, 30, 14], header: true },
-    { name: "노무", rows: labor, widths: [16, 26, 22, 18, 16, 18, 12, 12], header: true },
-    { name: "이익을 바꾼 일", rows: events, widths: [14, 16, 18, 60], header: true },
+    // textCols — 사람이 적은 글(현장·제목·메모·사유·팀·이름)은 늘 글자로 (메모의 전화번호·날짜 모양 글이 숫자·날짜로 바뀌지 않게 · D-87 점검)
+    { name: "현장별 요약", rows: summary, widths: [16, 9, 15, 17, 18, 14, 14, 14, 15, 15, 15, 15, 15, 16], header: true, textCols: [0, 1] },
+    { name: "기성", rows: billing, widths: [12, 16, 7, 15, 15, 17, 20, 17, 10, 18], header: true, textCols: [1, 2, 6, 7, 8, 9] },
+    { name: "입금", rows: payment, widths: [12, 16, 9, 20, 22, 20, 17, 10, 18], header: true, textCols: [1, 2, 5, 6, 7, 8] },
+    { name: r.ended ? "월말 미수" : "미수(오늘)", rows: receivable, widths: [16, 24, 24, 18, 22, 13, 20], header: true, textCols: [0, 6] },
+    { name: "원가", rows: cost, widths: [26, 17, 14, 10, 10, 14, 12, 12, 30, 16, 10, 12, 20, 14, 24], header: true, textCols: costRaw[0].map((h, i) => (["발생일", "입력일", "금액(원)", "처음 금액(고치기 전)"].includes(h) ? -1 : i)).filter((i) => i >= 0) },
+    { name: "원가 항목별", rows: byCategory, widths: [16, ...cats.map(() => 14), 16], header: true, textCols: [0] },
+    { name: "변경공사", rows: change, widths: [16, 26, 14, 14, 16, 16, 12, 16, 14, 14, 30, 14], header: true, textCols: [0, 1, 4, 5, 9, 10] },
+    { name: "노무", rows: labor, widths: [16, 26, 22, 18, 16, 18, 12, 12], header: true, textCols: [0, 4, 7] },
+    { name: "이익을 바꾼 일", rows: events, widths: [14, 16, 18, 60], header: true, textCols: [1, 3] },
   ];
   const company = (db.company.name || "회사").replace(/[^\w가-힣]/g, "");
-  return { sheets, checks, ok, stage, filename: `월마감_${month}_${stage}_${company}.xlsx` };
+  const expect: WorkbookExpect = { billed: r.totals.billed, received: r.totals.received, outstanding: r.totals.outstandingAtEnd, cost: r.totals.costTotal, pending: r.totals.pending, changeApproved: r.totals.changeApproved, profitNet };
+  return { sheets, checks, ok, stage, expect, filename: `월마감_${month}_${stage}_${company}.xlsx` };
+}
+
+/**
+ * 내려받을 파일을 다시 읽어 합계가 화면과 같은지 (D-87 점검 — 만든 문자열이 아니라 실제로 쓴 엑셀 칸을 읽는다).
+ * 숫자 칸이 글자로 바뀌었거나 글자가 깨졌으면 여기서 다르게 나온다.
+ */
+export async function verifyWorkbookFile(bytes: Uint8Array, w: MonthWorkbook): Promise<WorkbookCheck[]> {
+  const { readXlsx } = await import("./xlsx");
+  const sheets = await readXlsx(bytes);
+  const rows = (name: string) => sheets.find((x) => x.name === name)?.rows ?? [];
+  const lastNum = (name: string, col: number) => {
+    const r = rows(name);
+    return Number((r[r.length - 1] ?? [])[col] ?? NaN);
+  };
+  const cost = rows("원가");
+  const head = cost[0] ?? [];
+  const amt = head.indexOf("금액(원)");
+  const st = head.indexOf("상태");
+  const total = cost.find((r) => r[0] === "확정 합계");
+  const pending = cost.filter((r) => r[st] === "공무 확인 대기").reduce((a, r) => a + (Number(r[amt]) || 0), 0);
+  const ar = sheets.find((x) => x.name === "월말 미수" || x.name === "미수(오늘)")?.name ?? "월말 미수";
+  return [
+    { label: "파일: 기성", sheet: lastNum("기성", 3), screen: w.expect.billed },
+    { label: "파일: 입금", sheet: lastNum("입금", 3), screen: w.expect.received },
+    { label: "파일: 미수", sheet: lastNum(ar, 3), screen: w.expect.outstanding },
+    { label: "파일: 원가(확정)", sheet: Number(total?.[amt] ?? NaN), screen: w.expect.cost },
+    { label: "파일: 공무 확인 대기", sheet: pending, screen: w.expect.pending },
+    { label: "파일: 이달 승인 변경공사", sheet: lastNum("변경공사", 11), screen: w.expect.changeApproved },
+    { label: "파일: 이익을 바꾼 일", sheet: lastNum("이익을 바꾼 일", 2), screen: w.expect.profitNet },
+    { label: "파일: 현장별 요약 기성", sheet: lastNum("현장별 요약", 5), screen: w.expect.billed },
+    { label: "파일: 현장별 요약 원가", sheet: lastNum("현장별 요약", 8), screen: w.expect.cost },
+  ].map((c) => ({ ...c, ok: Number.isFinite(c.sheet) && Math.round(c.sheet) === Math.round(c.screen) }));
 }

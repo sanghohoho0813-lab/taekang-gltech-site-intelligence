@@ -413,7 +413,17 @@ function zipStore(files: { name: string; data: Uint8Array }[]): Uint8Array {
   return out;
 }
 
-const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+/** 엑셀 칸 한 개 최대 글자 수 (엑셀 한도 32,767 — 여유를 둠) */
+const MAX_CELL = 32_000;
+// XML이 받지 않는 제어 글자(벨·탭 아닌 제어문자·U+FFFE/FFFF)는 지운다 — 남으면 엑셀이 파일을 열지 않거나 ‘복구’한다 (D-87 점검)
+const esc = (s: string) =>
+  s
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g, "")
+    .slice(0, MAX_CELL)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 const colName = (i: number) => {
   let s = "";
   for (let n = i + 1; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + ((n - 1) % 26)) + s;
@@ -432,6 +442,8 @@ export interface SheetSpec {
   wrap?: boolean;
   /** 날짜·숫자처럼 보이는 값을 엑셀 날짜·숫자 칸으로 (기본 켬) */
   typed?: boolean;
+  /** 늘 글자로 둘 열 (메모·제목·현장 등) — 메모의 ‘01012345678’이 숫자, ‘2026-11-05’가 날짜로 바뀌지 않게 (D-87 점검) */
+  textCols?: number[];
 }
 
 /** 서식 번호: 0 기본, 1 머리글(굵게·배경), 2 날짜(yyyy-mm-dd), 3 숫자(#,##0), 4 줄바꿈 */
@@ -440,6 +452,7 @@ const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 function sheetXml(s: SheetSpec): string {
   const typed = s.typed !== false;
+  const textCols = new Set(s.textCols ?? []);
   const cols = s.widths?.length ? `<cols>${s.widths.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join("")}</cols>` : "";
   const pane = s.header ? `<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A2" sqref="A2"/></sheetView></sheetViews>` : `<sheetViews><sheetView workbookViewId="0"/></sheetViews>`;
   const rows = s.rows
@@ -449,8 +462,9 @@ function sheetXml(s: SheetSpec): string {
           const ref = `${colName(ci)}${ri + 1}`;
           if (v === "") return "";
           const head = s.header && ri === 0;
-          if (!head && typed && /^\d{4}-\d{2}-\d{2}$/.test(v) && Number.isFinite(toSerial(v))) return `<c r="${ref}" s="2"><v>${toSerial(v)}</v></c>`;
-          if (!head && typed && /^-?\d{1,15}$/.test(v)) return `<c r="${ref}" s="${Math.abs(Number(v)) >= 1000 ? 3 : 0}"><v>${Number(v)}</v></c>`;
+          const auto = !head && typed && !textCols.has(ci);
+          if (auto && /^\d{4}-\d{2}-\d{2}$/.test(v) && Number.isFinite(toSerial(v))) return `<c r="${ref}" s="2"><v>${toSerial(v)}</v></c>`;
+          if (auto && /^-?\d{1,15}$/.test(v)) return `<c r="${ref}" s="${Math.abs(Number(v)) >= 1000 ? 3 : 0}"><v>${Number(v)}</v></c>`;
           const st = head ? 1 : s.wrap ? 4 : 0;
           return `<c r="${ref}" s="${st}" t="inlineStr"><is><t xml:space="preserve">${esc(v)}</t></is></c>`;
         })
