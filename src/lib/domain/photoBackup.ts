@@ -7,7 +7,12 @@ import { todayIso } from "./format";
 export const PHOTO_BACKUP_FORMAT = "taekang-site-intelligence-photos";
 
 /** 사진이 올라온 달 — 한국 날짜 기준 */
-export const photoMonth = (createdAt: string) => todayIso(new Date(createdAt)).slice(0, 7);
+export const photoMonth = (createdAt: string) => {
+  const t = Date.parse(createdAt);
+  // 날짜가 깨진 기록 하나 때문에 사진 백업 카드 전체가 오류로 사라지지 않게 (점검 반영)
+  return Number.isFinite(t) ? todayIso(new Date(t)).slice(0, 7) : NO_MONTH;
+};
+export const NO_MONTH = "0000-00";
 
 export interface PhotoManifestItem {
   file: string;
@@ -42,6 +47,12 @@ export function safeName(s: string, max = 30): string {
 }
 
 export function photoFileName(p: { id: string; createdAt: string; caption: string }, site: string, mime: string): string {
-  const date = todayIso(new Date(p.createdAt));
+  const t = Date.parse(p.createdAt);
+  const date = Number.isFinite(t) ? todayIso(new Date(t)) : "0000-00-00";
   return `${date.slice(0, 7)}/${date}_${safeName(site, 16)}_${safeName(p.caption || "사진", 24)}_${safeName(p.id, 40)}.${EXT[mime] ?? "jpg"}`;
+}
+
+/** ZIP 안 파일 이름 끝의 ‘_사진번호.확장자’ — 다시 묶으면서 한글 이름이 깨져도(윈도우 CP949·맥 NFD) 사진 번호로 찾는다 */
+export function photoIdSuffix(id: string, mime: string): string {
+  return `_${safeName(id, 40)}.${EXT[mime] ?? "jpg"}`;
 }

@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { restoreCompany, type RestoreInput } from "@/server/restore";
+import { needsSetup } from "@/server/service";
 import { RULES, clientIp, limited } from "@/server/rateLimit";
 import { crossSite, errorResponse, json, meBody, notLive, readJson, setSessionCookie, setupCode } from "@/server/http";
 
@@ -23,6 +24,8 @@ export async function POST(req: NextRequest) {
     if (!code && process.env.VERCEL && process.env.NODE_ENV === "production") {
       return json({ error: "배포 환경변수 SETUP_CODE를 먼저 등록하고 다시 배포해주세요.", code: "SETUP_CODE_MISSING" }, 503);
     }
+    // 본문을 읽기 전에 — 이미 쓰고 있는 시스템이면 큰 요청을 받지도 않는다 (점검 반영)
+    if (!(await needsSetup())) return json({ error: "이미 회사 설정이 끝난 시스템에는 복원할 수 없습니다.", code: "ALREADY_SETUP" }, 403);
     const body = (await readJson(req, MAX_BODY)) as RestoreInput & { setupCode?: string };
     if (code && body.setupCode !== code) return json({ error: "설정 코드가 맞지 않습니다.", fieldErrors: { setupCode: "확인 필요" } }, 403);
     const r = await restoreCompany(body);

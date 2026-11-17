@@ -4,12 +4,14 @@
  * - 사진 백업: 달마다 사진을 한 장씩 받아 ZIP으로 묶기 / ZIP에서 꺼내 원본이 없는 사진에 올리기
  */
 import type { DemoDB } from "@/lib/domain/types";
-import { PHOTO_BACKUP_FORMAT, photoFileName, photoMonth, type PhotoManifest } from "@/lib/domain/photoBackup";
+import { PHOTO_BACKUP_FORMAT, photoFileName, photoIdSuffix, photoMonth, type PhotoManifest } from "@/lib/domain/photoBackup";
 import { readZip, unzipEntry, zipStore, type ZipEntry } from "@/lib/domain/zip";
 import { todayIso } from "@/lib/domain/format";
 
-/** 서버 요청 한도(4.5MB) 안 — base64로 늘어나는 것(×4/3)까지 생각한 압축 파일 크기 */
-export const MAX_RESTORE_GZ = 3_200_000;
+/** 한 번에 보내는 크기 — 서버 요청 한도(4.5MB) 안 (base64로 ×4/3). 넘으면 3MB 조각으로 나눠 올린다 */
+export const RESTORE_PART_BYTES = 3_000_000;
+/** 화면으로 복원할 수 있는 압축 백업 최대 크기 (16조각) — 넘으면 DB 복원 */
+export const MAX_RESTORE_GZ = 16 * RESTORE_PART_BYTES;
 
 const isGzip = (b: Uint8Array) => b[0] === 0x1f && b[1] === 0x8b;
 
@@ -33,7 +35,7 @@ export interface BackupPeek {
 }
 
 /** 고른 파일이 백업인지, 어느 회사·언제 백업인지 미리 본다 (서버에 보내기 전) */
-export async function peekBackup(file: File): Promise<{ peek: BackupPeek; payload: string }> {
+export async function peekBackup(file: File): Promise<{ peek: BackupPeek; gz: Uint8Array }> {
   const raw = new Uint8Array(await file.arrayBuffer());
   let text: string;
   if (isGzip(raw)) {
@@ -59,7 +61,7 @@ export async function peekBackup(file: File): Promise<{ peek: BackupPeek; payloa
       if (raw.length > MAX_RESTORE_GZ) throw new Error("이 브라우저에서는 큰 백업 파일을 보낼 수 없습니다. 크롬·엣지 최신 버전에서 해 주세요.");
     } else gz = await pipe(raw, new CompressionStream("gzip"));
   }
-  if (gz.length > MAX_RESTORE_GZ) throw new Error("백업 파일이 너무 커서 화면으로 복원할 수 없습니다. 개발 담당에게 DB 복원을 요청하세요.");
+  if (gz.length > MAX_RESTORE_GZ) throw new Error("백업 파일이 너무 커서(압축 48MB 초과) 화면으로 복원할 수 없습니다. 개발 담당에게 DB 복원을 요청하세요.");
   return {
     peek: {
       companyName: String((data.company as { name?: string } | undefined)?.name ?? ""),
@@ -68,8 +70,34 @@ export async function peekBackup(file: File): Promise<{ peek: BackupPeek; payloa
       members: members.length,
       rows,
     },
-    payload: toBase64(gz),
+    gz,
   };
+}
+
+/** 압축 백업을 서버로 — 3MB 이하는 한 번에, 넘으면 조각(uploadId·순번)으로 먼저 올리고 마지막 요청에 조각 수를 보낸다 */
+export async function restorePayload(gz: Uint8Array, setupCode: string, onProgress?: (done: number, total: number) => void): Promise<{ backup: string } | { uploadId: string; parts: number } | { error: string; fieldErrors?: Record<string, string> }> {
+  if (gz.length <= RESTORE_PART_BYTES) return { backup: toBase64(gz) };
+  const rnd = new Uint8Array(18);
+  crypto.getRandomValues(rnd);
+  const uploadId = toBase64(rnd).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const parts = Math.ceil(gz.length / RESTORE_PART_BYTES);
+  for (let seq = 0; seq < parts; seq++) {
+    const data = toBase64(gz.subarray(seq * RESTORE_PART_BYTES, (seq + 1) * RESTORE_PART_BYTES));
+    let ok = false;
+    let last: { error?: string; fieldErrors?: Record<string, string> } | null = null;
+    // 조각 하나가 실패하면 두 번까지 다시 보낸다 (현장 사무실 인터넷)
+    for (let attempt = 0; attempt < 3 && !ok; attempt++) {
+      const r = await fetch("/api/setup/restore/part", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify({ uploadId, seq, data, setupCode }) }).catch(() => null);
+      ok = !!r?.ok;
+      if (!ok) {
+        last = r ? await r.json().catch(() => null) : { error: "서버에 연결할 수 없습니다. 인터넷 연결을 확인해주세요." };
+        if (r && r.status < 500) break;
+      }
+    }
+    if (!ok) return { error: last?.error ?? "백업 파일 조각을 보내지 못했습니다.", fieldErrors: last?.fieldErrors };
+    onProgress?.(seq + 1, parts);
+  }
+  return { uploadId, parts };
 }
 
 // ───────────── 사진 백업 ─────────────
@@ -120,8 +148,17 @@ export async function buildPhotoZip(db: DemoDB, month: string, onProgress: (done
 export interface PhotoRestoreResult {
   saved: number;
   existed: number;
+  /** 이 회사 기록에 없는 사진 (다른 회사·다른 시스템의 ZIP) */
   unknown: number;
+  /** 사진이 아닌 파일·너무 큰 파일 */
   invalid: number;
+  /** 원래 원본과 다른 사진 (지문 불일치) */
+  mismatch: number;
+  /** ZIP 안에서 깨진 파일 (손상) */
+  corrupt: number;
+  /** 목록에는 있는데 ZIP 안에서 찾지 못한 사진 */
+  notFound: number;
+  /** 인터넷 문제로 보내지 못함 — 같은 파일을 다시 올리면 된다 */
   failed: number;
 }
 
@@ -145,7 +182,14 @@ export async function uploadPhotoZip(file: File, onProgress: (done: number, tota
   if (manifest.format !== PHOTO_BACKUP_FORMAT || !Array.isArray(manifest.photos)) throw new Error("사진 백업 파일이 아닙니다.");
   const prefix = mf.name.slice(0, mf.name.length - "photos.json".length);
   const byName = new Map(files.map((f) => [f.name, f]));
-  const out: PhotoRestoreResult = { saved: 0, existed: 0, unknown: 0, invalid: 0, failed: 0 };
+  // 다시 묶은 ZIP(윈도우 ‘압축 폴더’ CP949 · 맥 NFD)은 한글 이름이 바뀐다 — 이름 끝의 ‘_사진번호.확장자’(영문·숫자)로 찾는다 (점검 반영)
+  const findFile = (item: PhotoManifest["photos"][number]) => {
+    const exact = byName.get(prefix + item.file) ?? byName.get(item.file) ?? byName.get(item.file.normalize("NFD"));
+    if (exact) return exact;
+    const tail = photoIdSuffix(item.id, item.mime);
+    return files.find((f) => f.name.endsWith(tail));
+  };
+  const out: PhotoRestoreResult = { saved: 0, existed: 0, unknown: 0, invalid: 0, mismatch: 0, corrupt: 0, notFound: 0, failed: 0 };
   let batch: { id: string; mime: string; data: string }[] = [];
   let size = 0;
   let done = 0;
@@ -154,12 +198,13 @@ export async function uploadPhotoZip(file: File, onProgress: (done: number, tota
     if (!batch.length) return;
     const n = batch.length;
     const r = await fetch("/api/backup/photos", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify({ photos: batch }) }).catch(() => null);
-    const j = r?.ok ? ((await r.json().catch(() => null)) as Omit<PhotoRestoreResult, "failed"> | null) : null;
+    const j = r?.ok ? ((await r.json().catch(() => null)) as Pick<PhotoRestoreResult, "saved" | "existed" | "unknown" | "invalid" | "mismatch"> | null) : null;
     if (j) {
       out.saved += j.saved;
       out.existed += j.existed;
       out.unknown += j.unknown;
       out.invalid += j.invalid;
+      out.mismatch += j.mismatch ?? 0;
     } else out.failed += n;
     batch = [];
     size = 0;
@@ -167,9 +212,9 @@ export async function uploadPhotoZip(file: File, onProgress: (done: number, tota
     onProgress(done, total);
   };
   for (const item of manifest.photos) {
-    const f = byName.get(prefix + item.file) ?? byName.get(item.file);
+    const f = findFile(item);
     if (!f) {
-      out.failed += 1;
+      out.notFound += 1;
       onProgress(++done, total);
       continue;
     }
@@ -177,7 +222,7 @@ export async function uploadPhotoZip(file: File, onProgress: (done: number, tota
     try {
       data = toBase64(await unzipEntry(f));
     } catch {
-      out.invalid += 1;
+      out.corrupt += 1;
       onProgress(++done, total);
       continue;
     }

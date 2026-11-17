@@ -106,6 +106,9 @@ describe("D-86 백업 파일로 시작 (빈 시스템 복원)", () => {
       ["같은 줄 두 번", b64({ ...j, data: { ...j.data, sites: [...j.data.sites, j.data.sites[0]] } })],
       ["사진 주소가 외부", b64({ ...j, data: { ...j.data, photos: [{ ...j.data.photos[0], dataUrl: "https://evil.example/x.jpg" }] } })],
       ["깨진 gzip", Buffer.from([0x1f, 0x8b, 1, 2, 3]).toString("base64")],
+      ["금액 빠진 원가", b64({ ...j, data: { ...j.data, costEntries: [{ ...j.data.costEntries[0], amount: undefined }, ...j.data.costEntries.slice(1)] } })],
+      ["이름 빠진 현장", b64({ ...j, data: { ...j.data, sites: [{ ...j.data.sites[0], name: "" }, ...j.data.sites.slice(1)] } })],
+      ["날짜 깨진 사진", b64({ ...j, data: { ...j.data, photos: [{ ...j.data.photos[0], createdAt: "언젠가" }, ...j.data.photos.slice(1)] } })],
       ["JSON 아님", Buffer.from("not json").toString("base64")],
     ];
     for (const [label, backup] of cases) {
@@ -126,6 +129,7 @@ describe("D-86 백업 파일로 시작 (빈 시스템 복원)", () => {
     expect(r.summary.integrity.filter((c) => c.level === "err")).toEqual([]);
     expect(r.summary.photos).toBe(sourceView.photos.length);
     expect(r.summary.pendingMembers).toBe(3); // 관리자·현장 1·발주처 (퇴사자 제외)
+    expect(r.summary.pending).toEqual({ field: 1, manager: 1, partner: 1 });
     const ceo = await loginAs("ceo@taekang.test", NEW_PW);
     expect(ceo.companyId).toBe(JSON.parse(backupJson).companyId);
     const v = (await svc.getView(ceo)).db;
@@ -193,18 +197,26 @@ describe("D-86 백업 파일로 시작 (빈 시스템 복원)", () => {
     expect(st.months.reduce((a, m) => a + m.count, 0)).toBe(st.total);
     const manager = await loginAs("manager@demo.local", "kpqmt48273").catch(() => null);
     expect(manager).toBeNull(); // 관리자는 아직 첫 로그인 전(비밀번호 모름)
+    // 원래 원본과 다른 JPEG(지문 불일치)는 받지 않는다 — 증빙 사진을 바꿔 넣지 못하게
+    expect(sourceView.photos.find((p) => p.id === photoId)!.sha256).toMatch(/^[0-9a-f]{64}$/);
+    const other = Buffer.from(JPG_B64, "base64");
+    other[other.length - 3] ^= 0x01;
+    expect(await restorePhotos(ceo, [{ id: photoId, mime: "image/jpeg", data: other.toString("base64") }])).toEqual({ saved: 0, existed: 0, unknown: 0, invalid: 0, mismatch: 1 });
     const r = await restorePhotos(ceo, [
       // 사진이라 적고 다른 파일(그림 아닌 것)을 올리면 거부
       { id: photoId, mime: "image/jpeg", data: Buffer.from("<svg onload=alert(1)>").toString("base64") },
       { id: "no-such-photo", mime: "image/jpeg", data: JPG_B64 },
       { id: photoId, mime: "image/jpeg", data: JPG_B64 },
     ]);
-    expect(r).toEqual({ saved: 1, existed: 0, unknown: 1, invalid: 1 });
+    expect(r).toEqual({ saved: 1, existed: 0, unknown: 1, invalid: 1, mismatch: 0 });
     const real = await svc.getPhoto(ceo, photoId);
     expect(real?.missing).toBeUndefined();
     expect(real?.mime).toBe("image/jpeg");
     // 이미 있는 원본은 바꾸지 않는다
-    expect(await restorePhotos(ceo, [{ id: photoId, mime: "image/jpeg", data: JPG_B64 }])).toEqual({ saved: 0, existed: 1, unknown: 0, invalid: 0 });
+    expect(await restorePhotos(ceo, [{ id: photoId, mime: "image/jpeg", data: JPG_B64 }])).toEqual({ saved: 0, existed: 1, unknown: 0, invalid: 0, mismatch: 0 });
+    // 채운 일은 활동 이력에 남는다
+    const pg = await getDb();
+    expect((await pg.query<{ s: string }>(`select data->>'summary' as s from records where collection = 'activityLogs' and data->>'summary' like '사진 백업 올리기%'`)).length).toBe(1);
     expect((await photoBackupStatus(ceo)).missing).toBe(st.missing - 1);
     // 현장 직원은 사진 백업을 올리거나 볼 수 없다
     const field = await loginAs("field@demo.local", "kpqmt48273");
@@ -212,12 +224,19 @@ describe("D-86 백업 파일로 시작 (빈 시스템 복원)", () => {
     await expect(photoBackupStatus(field)).rejects.toBeInstanceOf(ForbiddenError);
   });
 
-  it("예전 백업(.json 원문)도 받는다 · 형식 검사는 저장 없이 따로 돈다", () => {
-    const parsed = readBackup(Buffer.from(backupJson).toString("base64"));
+  it("예전 백업(.json 원문)도 받는다 · 형식 검사는 저장 없이 따로 돈다 · 이력 바로 가기는 앱 안 주소만 · 이름의 NUL은 고친다", () => {
+    const j = JSON.parse(backupJson);
+    j.data.activityLogs[0].link = "https://evil.example/login";
+    j.data.activityLogs[1].link = "//evil.example";
+    const parsed = readBackup(Buffer.from(JSON.stringify(j).replace('"summary"', '"summ\\u0000ary"')).toString("base64"));
     const p = prepareRestore(parsed, "ceo@taekang.test", new Date("2026-11-17T00:00:00Z"));
     expect(p.owner.role).toBe("ceo");
     expect(p.state.idempotencyKeys).toEqual([]);
     expect((p.state as unknown as { users: unknown[] }).users.length).toBe(p.members.length);
+    expect(p.state.activityLogs[0].link).toBeUndefined();
+    expect(p.state.activityLogs[1].link).toBeUndefined();
+    expect(p.state.activityLogs[2].link === undefined || p.state.activityLogs[2].link.startsWith("/")).toBe(true);
+    expect(JSON.stringify(p.state)).not.toContain("\\u0000");
   });
 });
 

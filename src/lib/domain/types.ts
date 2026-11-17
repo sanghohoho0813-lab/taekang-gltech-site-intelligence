@@ -527,6 +527,8 @@ export interface SitePhoto {
   caption: string;
   createdAt: string;
   createdBy: string;
+  /** 원본의 SHA-256 (서버가 저장할 때 · D-86) — 백업으로 옮긴 뒤 사진 백업을 올릴 때 같은 원본인지 확인 */
+  sha256?: string;
   /** 발주처 포털에 공개 (본사가 골라서 · D-67) — 공개 설명은 내부 설명과 따로 적는다 */
   shared?: { at: string; by: string; caption: string };
   /** 한 번이라도 공개한 적 있음 — 다시 공개할 때는 발주처 알림을 보내지 않는다 */

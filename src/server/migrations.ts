@@ -106,6 +106,20 @@ create index if not exists records_intake_id on records(id) where collection = '
 create index if not exists records_request_status_key on records((data->>'statusKey')) where collection = 'partnerRequests'
 `,
   },
+  {
+    // 백업 파일로 시작(D-86): 큰 백업(압축 3MB 넘음)을 조각으로 받아 두는 곳 — 빈 시스템에서만 쓰고, 복원하면 비운다
+    name: "004_restore_uploads",
+    sql: `
+create table if not exists restore_uploads (
+  id text not null,
+  seq integer not null,
+  data bytea not null,
+  created_at timestamptz not null default now(),
+  primary key (id, seq)
+);
+alter table restore_uploads enable row level security
+`,
+  },
 ];
 
 function statements(sql: string): string[] {

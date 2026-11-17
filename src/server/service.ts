@@ -111,7 +111,7 @@ export async function exportCompany(m: Member): Promise<{ filename: string; body
       exportedAt,
       companyId: m.companyId,
       exportedBy: m.id,
-      note: "사진 원본은 포함되지 않습니다(사진 주소만). 사진까지 보관하려면 DB 전체 백업을 함께 보관하세요. 비밀번호·로그인 정보는 포함되지 않습니다.",
+      note: "사진 원본은 포함되지 않습니다(사진 기록·지문만) — ‘사진 백업 내려받기’(달마다 .zip)로 함께 보관하세요. 비밀번호·로그인 정보는 포함되지 않습니다. 새 시스템 첫 화면의 ‘백업 파일로 시작’으로 되살립니다.",
       members: members.map((r) => {
         const x = toMember(r);
         return { id: x.id, email: x.email, name: x.name, title: x.title, role: x.role, siteIds: x.siteIds, partnerSiteIds: x.partnerSiteIds, active: x.active };
@@ -253,9 +253,9 @@ export async function getPhoto(m: Member, id: string): Promise<{ mime: string; d
   }
   if (!row) {
     // 백업 파일로 복원한 뒤 사진 백업을 아직 올리지 않은 사진 — 기록이 있으면 ‘사진 원본 없음’ 그림 (D-86). 발주처 권한은 위에서 확인
-    const rev = await currentRev(m.companyId);
-    const state = cachedState(m.companyId, rev) ?? (await db.transaction((tx) => loadState(tx, m.companyId)));
-    return state.photos.some((x) => x.id === id) ? MISSING_PHOTO : null;
+    // 회사 전체를 읽지 않고 그 사진 기록 한 줄만 본다 (사진마다 다시 읽지 않게 · 점검 반영)
+    const [rec] = await db.query<{ id: string }>(`select id from records where company_id = $1 and collection = 'photos' and id = $2`, [m.companyId, id]);
+    return rec ? MISSING_PHOTO : null;
   }
   return { mime: row.mime, data: row.data };
 }

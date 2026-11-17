@@ -91,3 +91,14 @@ create index if not exists records_share_id on records(id) where collection = 's
 create index if not exists records_intake_id on records(id) where collection = 'intakes';
 
 create index if not exists records_request_status_key on records((data->>'statusKey')) where collection = 'partnerRequests';
+
+-- 004_restore_uploads
+create table if not exists restore_uploads (
+  id text not null,
+  seq integer not null,
+  data bytea not null,
+  created_at timestamptz not null default now(),
+  primary key (id, seq)
+);
+
+alter table restore_uploads enable row level security;

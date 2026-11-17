@@ -9,7 +9,7 @@ import { useRef, useState } from "react";
 import { ArchiveRestore, FileUp } from "lucide-react";
 import { Button, Field, Notice, inputCls } from "@/components/ui/primitives";
 import { api } from "@/lib/live/api";
-import { peekBackup, type BackupPeek } from "@/lib/browser/backupFiles";
+import { peekBackup, restorePayload, type BackupPeek } from "@/lib/browser/backupFiles";
 import { fmtDateTime } from "@/lib/domain/format";
 
 interface Summary {
@@ -18,14 +18,17 @@ interface Summary {
   counts: Record<string, number>;
   members: number;
   pendingMembers: number;
+  /** 첫 로그인 전 — 현장 직원 / 본사 관리자 / 발주처 */
+  pending: { field: number; manager: number; partner: number };
   photos: number;
   kiosks: number;
   integrity: { key: string; level: "ok" | "warn" | "err"; title: string }[];
 }
 
-export function RestoreSetup({ codeRequired }: { codeRequired: boolean }) {
+export function RestoreSetup({ codeRequired, onDone }: { codeRequired: boolean; onDone?: () => void }) {
   const fileRef = useRef<HTMLInputElement>(null);
-  const [file, setFile] = useState<{ name: string; peek: BackupPeek; payload: string } | null>(null);
+  const [file, setFile] = useState<{ name: string; peek: BackupPeek; gz: Uint8Array } | null>(null);
+  const [progress, setProgress] = useState<string | null>(null);
   const [f, setF] = useState({ email: "", password: "", confirm: "", phone: "", setupCode: "" });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
@@ -62,9 +65,20 @@ export function RestoreSetup({ codeRequired }: { codeRequired: boolean }) {
     setBusy(true);
     setError(null);
     setErrors({});
+    // 큰 백업(압축 3MB 넘음)은 조각으로 먼저 올린다 — 서버 요청 한도 4.5MB
+    const payload = await restorePayload(file.gz, f.setupCode, (d, t) => setProgress(`백업 파일 보내는 중 ${d}/${t}`));
+    setProgress(null);
+    if ("error" in payload) {
+      setErrors(payload.fieldErrors ?? {});
+      setError(payload.error);
+      setBusy(false);
+      return;
+    }
+    setProgress("자료를 되살리는 중…");
     const r = await api<{ summary: Summary }>("/api/setup/restore", {
-      body: { backup: file.payload, email: f.email, password: f.password, publicPhone: f.phone, setupCode: f.setupCode },
+      body: { ...payload, email: f.email, password: f.password, publicPhone: f.phone, setupCode: f.setupCode },
     });
+    setProgress(null);
     setBusy(false);
     if (!r.ok || !r.data) {
       setErrors(r.fieldErrors);
@@ -72,6 +86,7 @@ export function RestoreSetup({ codeRequired }: { codeRequired: boolean }) {
       return;
     }
     setDone(r.data.summary);
+    onDone?.();
   };
 
   if (done) {
@@ -94,22 +109,34 @@ export function RestoreSetup({ codeRequired }: { codeRequired: boolean }) {
         <div className="rounded-xl border border-line bg-surface-2 p-4">
           <p className="text-[0.92rem] font-bold">이어서 할 일</p>
           <ol className="mt-2 list-decimal space-y-2 pl-5 text-[0.88rem]">
-            {done.pendingMembers > 0 && (
+            {done.pending.field > 0 && (
               <li>
-                <b>직원 {done.pendingMembers}명 로그인 쪽지 인쇄</b> — 비밀번호는 백업에 없어 모두 ‘첫 로그인 전’입니다.{" "}
+                <b>현장 직원 {done.pending.field}명 로그인 쪽지 인쇄</b> — 비밀번호는 백업에 없어 ‘첫 로그인 전’입니다.{" "}
                 <Link href="/launch" className="font-bold text-theme-ink underline">
                   시범 운영 준비
                 </Link>
                 에서 골라 인쇄하면 임시 비밀번호가 새로 들어갑니다.
               </li>
             )}
+            {done.pending.manager + done.pending.partner > 0 && (
+              <li>
+                <b>
+                  {[done.pending.manager ? `본사 관리자 ${done.pending.manager}명` : "", done.pending.partner ? `발주처 ${done.pending.partner}명` : ""].filter(Boolean).join(" · ")} 임시 비밀번호
+                </b>{" "}
+                —{" "}
+                <Link href="/admin?tab=members" className="font-bold text-theme-ink underline">
+                  운영 관리 → 사용자
+                </Link>
+                에서 사람마다 ‘비밀번호 초기화’를 누르면 임시 비밀번호가 나오고, 한꺼번에 로그인 쪽지로 인쇄됩니다.
+              </li>
+            )}
             {done.photos > 0 && (
               <li>
-                <b>사진 {done.photos}장 원본 올리기</b> — 예전 시스템에서 받은 사진 백업(.zip)을{" "}
+                <b>사진 {done.photos}장 원본 올리기</b> — 예전 시스템에서 받은 사진 백업(.zip)을 풀지 말고 그대로{" "}
                 <Link href="/data#backup" className="font-bold text-theme-ink underline">
-                  자료 관리 → 전체 자료 백업
+                  자료 이관·점검 → 전체 자료 백업
                 </Link>
-                에서 올립니다. 그 전에는 ‘사진 원본 없음’ 그림이 보입니다.
+                의 ‘사진 백업 올리기’로 올립니다. 그 전에는 ‘사진 원본 없음’ 그림이 보입니다.
               </li>
             )}
             {done.kiosks > 0 && (
@@ -123,6 +150,9 @@ export function RestoreSetup({ codeRequired }: { codeRequired: boolean }) {
             )}
             <li>대시보드·월 마감 숫자를 예전 시스템과 한 번 비교해 보세요.</li>
           </ol>
+          <p className="mt-3 border-t border-line pt-3 text-[0.8rem] text-ink-3">
+            옮겨지지 않는 것: 비밀번호·로그인 상태 · QR 단말기 연결 · 휴대폰 알림(직원이 다시 켭니다) · 하자 접수자에게 보낸 ‘진행 확인’ 주소. 이 화면은 다시 볼 수 없으니 필요하면 인쇄해 두세요.
+          </p>
         </div>
         <Button variant="cta" size="lg" block onClick={() => window.location.assign("/dashboard")} data-testid="restore-go">
           대시보드로
@@ -134,7 +164,7 @@ export function RestoreSetup({ codeRequired }: { codeRequired: boolean }) {
   return (
     <form onSubmit={submit} className="space-y-4" noValidate data-testid="restore-form">
       <Notice tone="info" title="새 시스템(태강 명의 계정)으로 옮길 때">
-        예전 시스템의 ‘자료 관리 → 전체 자료 백업’에서 받은 파일(taekang_backup_….json.gz)을 넣습니다. 이 시스템이 비어 있을 때만 됩니다 — 이미 쓰고 있는 자료를 덮어쓰지 않습니다.
+        예전 시스템의 ‘자료 이관·점검 → 전체 자료 백업’에서 받은 파일(taekang_backup_….json.gz)을 넣습니다. 이 시스템이 비어 있을 때만 됩니다 — 이미 쓰고 있는 자료를 덮어쓰지 않습니다.
       </Notice>
       {error && <Notice tone="err" title={error} />}
       <Field label="백업 파일" htmlFor="r-file" required error={errors.file}>
@@ -179,13 +209,18 @@ export function RestoreSetup({ codeRequired }: { codeRequired: boolean }) {
         </Field>
       </div>
       {codeRequired && (
-        <Field label="설정 코드" htmlFor="r-code" required error={errors.setupCode} hint="배포할 때 환경변수 SETUP_CODE로 정한 값">
+        <Field label="설정 코드" htmlFor="r-code" required error={errors.setupCode} hint="배포 담당자에게 받은 설정 코드">
           <input id="r-code" className={inputCls} value={f.setupCode} onChange={set("setupCode")} autoComplete="off" />
         </Field>
       )}
       <Button type="submit" variant="cta" size="lg" block loading={busy && !!file} disabled={!file} icon={<ArchiveRestore size={18} />} data-testid="restore-submit">
         백업 파일로 시작하기
       </Button>
+      {progress && (
+        <p className="text-center text-[0.86rem] font-semibold text-theme-ink" role="status" data-testid="restore-progress">
+          {progress}
+        </p>
+      )}
     </form>
   );
 }

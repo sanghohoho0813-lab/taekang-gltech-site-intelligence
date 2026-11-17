@@ -23,19 +23,25 @@ import { getDb } from "./sql";
 import { ForbiddenError } from "./authz";
 import { COLLECTIONS, bulkInsertState, memberToUser, type CollectionName, type MemberRow } from "./state";
 import { createSession, hashPassword, MEMBER_COLS, normalizeEmail, passwordProblem, toMember, type Member } from "./auth";
-import { insertMember } from "./service";
+import { insertMember, needsSetup } from "./service";
 
 export const BACKUP_FORMAT = "taekang-site-intelligence-backup";
-/** 압축을 푼 백업의 최대 크기 — 1년치가 약 15MB. 넉넉히 잡되 서버 메모리를 지킨다 */
-const MAX_JSON_BYTES = 200 * 1024 * 1024;
+/** 압축을 푼 백업의 최대 크기 — 1년치가 약 15MB(실제와 비슷하게 섞인 자료). 4년치까지, 그 이상은 DB 복원 (압축 폭탄으로 서버 메모리를 다 쓰지 않게 · 점검 반영) */
+const MAX_JSON_BYTES = 64 * 1024 * 1024;
+/** 큰 백업은 나눠 올린다 — 한 조각 3MB(서버 요청 한도 4.5MB 안), 최대 16조각(압축 48MB) */
+export const RESTORE_PART_BYTES = 3_000_000;
+const MAX_PARTS = 16;
+const UPLOAD_ID = /^[A-Za-z0-9_-]{16,64}$/;
 const MAX_ITEMS = 2_000_000;
 const MAX_MEMBERS = 500;
 const ROLES: RoleId[] = ["ceo", "manager", "field", "partner"];
 const NAMES = Object.keys(COLLECTIONS) as CollectionName[];
 
 export interface RestoreInput {
-  /** 백업 파일 내용 — gzip 압축본(.json.gz) 또는 JSON 원문(예전 백업 .json), base64 */
-  backup: string;
+  /** 백업 파일 내용 — gzip 압축본(.json.gz) 또는 JSON 원문(예전 백업 .json), base64. 큰 파일은 대신 uploadId·parts(나눠 올린 조각) */
+  backup?: string;
+  uploadId?: string;
+  parts?: number;
   email: string;
   password: string;
   publicPhone?: string;
@@ -49,6 +55,8 @@ export interface RestoreSummary {
   members: number;
   /** 첫 로그인 전으로 되살린 직원 수 — 로그인 쪽지를 새로 나눠 줄 사람 */
   pendingMembers: number;
+  /** 첫 로그인 전 — 현장 직원(시범 운영 준비에서 쪽지) / 본사 관리자·발주처(운영 관리 → 사용자에서 초기화) */
+  pending: { field: number; manager: number; partner: number };
   /** 원본을 따로 올려야 하는 사진 수 */
   photos: number;
   /** 다시 연결해야 하는 QR 단말기 수 */
@@ -74,14 +82,22 @@ function clean(v: unknown, depth = 0): unknown {
     return v;
   }
   const o = v as Record<string, unknown>;
-  for (const k of Object.keys(o)) o[k] = clean(o[k], depth + 1);
+  for (const k of Object.keys(o)) {
+    const val = clean(o[k], depth + 1);
+    // 이름(키)에 든 NUL·짝 없는 서로게이트도 고친다 — 그대로 두면 저장할 때 DB 오류(500) (점검 반영)
+    const nk = cleanText(k);
+    if (nk !== k) {
+      delete o[k];
+      o[nk] = val;
+    } else o[k] = val;
+  }
   return o;
 }
 
 /** base64 → (gzip이면 풀어서) JSON 객체 */
-export function readBackup(base64: unknown): Record<string, unknown> {
-  if (typeof base64 !== "string" || !base64) bad("백업 파일을 골라 주세요.");
-  const bytes = Buffer.from(base64 as string, "base64");
+export function readBackup(input: unknown): Record<string, unknown> {
+  if (!(Buffer.isBuffer(input) && input.length) && !(typeof input === "string" && input)) bad("백업 파일을 골라 주세요.");
+  const bytes = Buffer.isBuffer(input) ? input : Buffer.from(input as string, "base64");
   let text: string;
   if (bytes[0] === 0x1f && bytes[1] === 0x8b) {
     try {
@@ -167,6 +183,20 @@ export function prepareRestore(backup: Record<string, unknown>, ownerEmail: stri
     if (total > MAX_ITEMS) bad("백업 파일의 자료가 너무 많습니다.");
     collections[name] = v as Record<string, unknown>[];
   }
+  // 화면·계산이 꼭 쓰는 값의 모양 — 번호만 맞고 이름·금액·날짜가 빠진 줄이 들어가면 복원 뒤 화면이 깨지고 되돌릴 수 없다 (점검 반영)
+  const DATE = /^\d{4}-\d{2}-\d{2}$/;
+  const okTime = (v: unknown) => typeof v === "string" && Number.isFinite(Date.parse(v));
+  const shape = (name: string, ok: (x: Record<string, unknown>) => boolean) => {
+    if (!collections[name].every(ok)) bad(`백업 파일의 자료(${name})에 빠진 값이 있습니다(파일 손상).`);
+  };
+  shape("sites", (x) => typeof x.name === "string" && !!x.name);
+  shape("costEntries", (x) => Number.isFinite(x.amount) && typeof x.date === "string" && DATE.test(x.date));
+  shape("billings", (x) => Number.isFinite(x.amount) && typeof x.billedDate === "string" && DATE.test(x.billedDate));
+  shape("payments", (x) => Number.isFinite(x.amount) && typeof x.receivedDate === "string" && DATE.test(x.receivedDate));
+  shape("photos", (x) => typeof x.siteId === "string" && okTime(x.createdAt));
+  shape("activityLogs", (x) => okTime(x.at) && typeof x.summary === "string");
+  // 이력의 바로 가기는 이 앱 안 주소만 (다른 사이트 주소로 보내는 줄이 들어오지 않게)
+  collections.activityLogs = collections.activityLogs.map((l) => (typeof l.link === "string" && !/^\/(?![/\\])/.test(l.link) ? { ...l, link: undefined } : l));
 
   const nowIso = now.toISOString();
   const company = isObj(d.company) ? d.company : {};
@@ -197,6 +227,38 @@ export function prepareRestore(backup: Record<string, unknown>, ownerEmail: stri
   return { companyId, state, members, owner: owner!, exportedAt };
 }
 
+const ALREADY = "이미 회사 설정이 끝난 시스템에는 복원할 수 없습니다. 빈 시스템(새 DB)에서만 복원합니다 — 지금 자료를 덮어쓰지 않게.";
+
+/**
+ * 큰 백업 나눠 올리기 (압축 3MB 넘는 파일 · 대략 1년 반 넘은 자료) — 조각을 잠시 DB에 두었다가 마지막 요청에서 합쳐 복원한다.
+ * 빈 시스템에서만, 설정 코드는 경로에서 확인. 한 시간 지난 조각은 지운다.
+ */
+export async function storeRestorePart(input: { uploadId?: unknown; seq?: unknown; data?: unknown }): Promise<{ stored: number }> {
+  const { uploadId, seq, data } = input;
+  if (typeof uploadId !== "string" || !UPLOAD_ID.test(uploadId) || !Number.isInteger(seq) || (seq as number) < 0 || (seq as number) >= MAX_PARTS || typeof data !== "string" || !data) bad("요청 형식이 올바르지 않습니다.");
+  if (!(await needsSetup())) throw new ForbiddenError(ALREADY);
+  const bytes = Buffer.from(data as string, "base64");
+  if (!bytes.length || bytes.length > RESTORE_PART_BYTES) bad("조각 크기가 맞지 않습니다.");
+  const db = await getDb();
+  return db.transaction(async (tx) => {
+    await tx.query(`delete from restore_uploads where created_at < now() - interval '1 hour'`);
+    // 임시 조각 전체 크기 한도 — 여러 번호로 계속 올려 DB를 채우지 못하게 (조각 16개 × 3MB + 여유)
+    const [{ total }] = await tx.query<{ total: string | number }>(`select coalesce(sum(length(data)), 0) as total from restore_uploads where not (id = $1 and seq = $2)`, [uploadId, seq]);
+    if (Number(total) + bytes.length > MAX_PARTS * RESTORE_PART_BYTES + RESTORE_PART_BYTES) bad("임시로 받아 둔 백업 조각이 너무 많습니다. 한 시간 뒤 다시 시도해 주세요.");
+    await tx.query(`insert into restore_uploads (id, seq, data) values ($1, $2, $3) on conflict (id, seq) do update set data = excluded.data, created_at = now()`, [uploadId, seq, bytes]);
+    const [{ n }] = await tx.query<{ n: string | number }>(`select count(*) as n from restore_uploads where id = $1`, [uploadId]);
+    return { stored: Number(n) };
+  });
+}
+
+async function takeParts(uploadId: unknown, parts: unknown): Promise<Buffer> {
+  if (typeof uploadId !== "string" || !UPLOAD_ID.test(uploadId) || !Number.isInteger(parts) || (parts as number) < 1 || (parts as number) > MAX_PARTS) return bad("요청 형식이 올바르지 않습니다.");
+  const db = await getDb();
+  const rows = await db.query<{ seq: number; data: Uint8Array }>(`select seq, data from restore_uploads where id = $1 order by seq`, [uploadId]);
+  if (rows.length !== parts || rows.some((r, i) => Number(r.seq) !== i)) return bad("백업 파일 조각이 다 올라오지 않았습니다. 다시 시도해 주세요.");
+  return Buffer.concat(rows.map((r) => Buffer.from(r.data)));
+}
+
 export async function restoreCompany(input: RestoreInput, now = new Date()): Promise<{ token: string; expires: Date; member: Member; summary: RestoreSummary }> {
   const errors: Record<string, string> = {};
   const email = normalizeEmail(input.email);
@@ -208,7 +270,10 @@ export async function restoreCompany(input: RestoreInput, now = new Date()): Pro
   if (phoneRaw && !publicPhone) errors.publicPhone = "전화번호를 확인해 주세요. (예: 031-123-4567)";
   if (Object.keys(errors).length) throw new CommandError("입력값을 확인해주세요.", "VALIDATION", errors);
 
-  const backup = readBackup(input.backup);
+  // 무거운 일(압축 풀기·읽기·비밀번호 해시)보다 먼저 — 이미 쓰고 있는 시스템이면 바로 거부 (점검 반영: 압축 폭탄으로 운영 서버를 멈추지 못하게)
+  if (!(await needsSetup())) throw new ForbiddenError(ALREADY);
+  const raw = input.uploadId !== undefined ? await takeParts(input.uploadId, input.parts) : input.backup;
+  const backup = readBackup(raw);
   const { companyId, state, members, owner, exportedAt } = prepareRestore(backup, email!, now);
   if (publicPhone) state.settings = { ...state.settings, publicPhone, helpPhone: publicPhone } as DemoDB["settings"];
   // 복원 자체도 활동 이력에 남긴다 (누가·언제·어느 백업으로)
@@ -218,11 +283,12 @@ export async function restoreCompany(input: RestoreInput, now = new Date()): Pro
     ...state.activityLogs,
   ];
   // 숫자 맞추기 점검 — 원본 시스템과 같은 결과여야 한다. 점검이 실패해도 복원은 계속(결과에 표시)
-  let integrity: RestoreSummary["integrity"];
+  let integrity: RestoreSummary["integrity"] = [];
   try {
     integrity = moneyIntegrity(state, todayIso(now)).map(({ key, level, title }) => ({ key, level, title }));
   } catch {
-    integrity = [{ key: "check-failed", level: "warn", title: "숫자 맞추기 점검을 하지 못했습니다 — 복원 뒤 ‘자료 관리’에서 다시 보세요." }];
+    // 점검이 돌지 못하는 자료는 화면 계산도 깨진다 — 저장하지 않는다(한 번 들어가면 빈 시스템이 아니라 다시 복원할 수 없음 · 점검 반영)
+    return bad("백업 자료가 손상되어 숫자 맞추기 점검을 할 수 없습니다. 복원하지 않았습니다 — 예전 시스템에서 백업을 다시 받아 주세요.");
   }
 
   // 비밀번호 해시는 잠금 밖에서 미리 (scrypt는 느리다 — 잠금을 오래 쥐지 않게)
@@ -233,7 +299,7 @@ export async function restoreCompany(input: RestoreInput, now = new Date()): Pro
   const done = await db.transaction(async (tx) => {
     await tx.query(`lock table companies in exclusive mode`);
     const [row] = await tx.query<{ n: string | number }>(`select count(*) as n from companies`);
-    if (Number(row?.n ?? 0) > 0) throw new ForbiddenError("이미 회사 설정이 끝난 시스템에는 복원할 수 없습니다. 빈 시스템(새 DB)에서만 복원합니다 — 지금 자료를 덮어쓰지 않게.");
+    if (Number(row?.n ?? 0) > 0) throw new ForbiddenError(ALREADY);
     // 다른 회사의 사용자와 이메일이 겹치면(같은 DB를 다른 용도로 쓰던 경우) 복원하지 않는다
     const taken = await tx.query<{ email: string }>(`select email from members where email = any($1::text[])`, [members.map((m) => m.email)]);
     if (taken.length) throw new CommandError(`이미 쓰이는 이메일이 있어 복원할 수 없습니다: ${taken.map((t) => t.email).join(", ")}`, "VALIDATION");
@@ -261,6 +327,8 @@ export async function restoreCompany(input: RestoreInput, now = new Date()): Pro
     const inactive = members.filter((m) => !m.active).map((m) => m.id);
     if (inactive.length) await tx.query(`update members set active = false where company_id = $1 and id = any($2::text[])`, [companyId, inactive]);
     await bulkInsertState(tx, companyId, state);
+    // 나눠 올린 조각은 다 썼으면 지운다
+    await tx.query(`delete from restore_uploads`);
     const session = await createSession(tx, owner.id);
     const [mrow] = await tx.query<Parameters<typeof toMember>[0]>(`select ${MEMBER_COLS} from members where id = $1`, [owner.id]);
     return { ...session, member: toMember(mrow) };
@@ -273,6 +341,11 @@ export async function restoreCompany(input: RestoreInput, now = new Date()): Pro
       counts,
       members: members.length,
       pendingMembers: members.filter((m) => m.active && m.id !== owner.id).length,
+      pending: {
+        field: members.filter((m) => m.active && m.role === "field").length,
+        manager: members.filter((m) => m.active && m.id !== owner.id && (m.role === "manager" || m.role === "ceo")).length,
+        partner: members.filter((m) => m.active && m.role === "partner").length,
+      },
       photos: state.photos.length,
       kiosks: (state.kiosks ?? []).length,
       integrity,

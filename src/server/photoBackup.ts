@@ -4,7 +4,9 @@
  * - 올리기는 ‘기록은 있는데 원본이 없는’ 사진만 채운다. 이미 있는 원본은 바꾸지 않는다(덮어쓰기 불가).
  * - 대표만. 한 번에 4MB 이하(서버 요청 한도 4.5MB) — 브라우저가 나눠 보낸다.
  */
+import { createHash } from "node:crypto";
 import type { DemoDB } from "@/lib/domain/types";
+import { uid } from "@/lib/domain/ids";
 import { CommandError, PHOTO_DATA_URL } from "@/lib/data/commands";
 import { photoLooksReal } from "@/lib/domain/photoSniff";
 import { photoMonth } from "@/lib/domain/photoBackup";
@@ -70,7 +72,7 @@ export interface PhotoUpload {
 }
 
 /** 원본이 없는 사진에 원본을 채운다. 기록에 없는 사진·이미 원본이 있는 사진은 건너뛴다 */
-export async function restorePhotos(m: Member, items: unknown): Promise<{ saved: number; existed: number; unknown: number; invalid: number }> {
+export async function restorePhotos(m: Member, items: unknown): Promise<{ saved: number; existed: number; unknown: number; invalid: number; mismatch: number }> {
   requireCeo(m);
   if (!Array.isArray(items) || items.length > MAX_ITEMS) throw new CommandError("요청 형식이 올바르지 않습니다.");
   const state = await stateOf(m);
@@ -80,6 +82,7 @@ export async function restorePhotos(m: Member, items: unknown): Promise<{ saved:
   let existed = 0;
   let unknown = 0;
   let invalid = 0;
+  let mismatch = 0;
   for (const it of items as Partial<PhotoUpload>[]) {
     const p = typeof it?.id === "string" ? known.get(it.id) : undefined;
     if (!p) {
@@ -96,6 +99,11 @@ export async function restorePhotos(m: Member, items: unknown): Promise<{ saved:
       invalid += 1;
       continue;
     }
+    // 원래 시스템이 저장한 원본 지문이 있으면 같은 사진만 받는다 — 다른 사진으로 증빙을 바꿔 넣지 못하게 (점검 반영)
+    if (p.sha256 && createHash("sha256").update(bytes).digest("hex") !== p.sha256) {
+      mismatch += 1;
+      continue;
+    }
     const rows = await db.query<{ id: string }>(
       `insert into photo_blobs (id, company_id, site_id, mime, data) values ($1, $2, $3, $4, $5) on conflict (id) do nothing returning id`,
       [p.id, m.companyId, p.siteId ?? null, it.mime, bytes],
@@ -103,5 +111,10 @@ export async function restorePhotos(m: Member, items: unknown): Promise<{ saved:
     if (rows.length) saved += 1;
     else existed += 1;
   }
-  return { saved, existed, unknown, invalid };
+  if (saved) {
+    // 누가·언제 원본을 채웠는지 활동 이력에 (지워지지 않는 이력)
+    const log = { id: uid("log"), at: new Date().toISOString(), by: m.id, type: "member", summary: `사진 백업 올리기 — 원본 ${saved}장 채움`, link: "/data#backup" };
+    await db.query(`insert into records (company_id, collection, id, site_id, data) values ($1, 'activityLogs', $2, null, $3::jsonb)`, [m.companyId, log.id, JSON.stringify(log)]);
+  }
+  return { saved, existed, unknown, invalid, mismatch };
 }

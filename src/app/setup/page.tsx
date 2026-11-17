@@ -18,6 +18,8 @@ export default function SetupPage() {
   const [codeRequired, setCodeRequired] = useState(false);
   // 새로 시작 / 백업 파일로 시작(계정·서버 이전 · D-86)
   const [mode, setMode] = useState<"new" | "restore">("new");
+  // 복원이 끝나면 고르기 줄을 감춘다 — 눌러서 ‘이어서 할 일’ 화면을 잃지 않게 (점검 반영)
+  const [restored, setRestored] = useState(false);
 
   const check = () => {
     setState("checking");
@@ -85,7 +87,7 @@ export default function SetupPage() {
       title="회사 설정 (처음 1회)"
       desc={mode === "new" ? "회사와 대표 계정을 만듭니다. 이후 직원 계정은 ‘운영 관리 → 사용자’에서 추가합니다." : "예전 시스템의 백업 파일로 회사 자료·사용자를 그대로 옮겨 옵니다."}
     >
-      <div className="mb-4">
+      <div className={restored ? "hidden" : "mb-4"}>
         <Segmented
           label="시작 방법"
           value={mode}
@@ -97,7 +99,7 @@ export default function SetupPage() {
         />
       </div>
       {mode === "restore" ? (
-        <RestoreSetup codeRequired={codeRequired} />
+        <RestoreSetup codeRequired={codeRequired} onDone={() => setRestored(true)} />
       ) : (
         <form onSubmit={submit} className="space-y-4" noValidate data-testid="setup-form">
           {error && <Notice tone="err" title={error} />}

@@ -459,6 +459,13 @@ function BatchList() {
 /** 전체 자료 백업 (대표 전용) — 고객이 자기 데이터를 직접 보관 (계약 4단계 인수인계) */
 function BackupCard() {
   const { db, role } = useMe();
+  const ready = !!db && role === "ceo";
+  // 복원 결과 화면의 ‘자료 이관·점검 → 전체 자료 백업’ 바로 가기(#backup) — 화면이 그려진 뒤 카드로 내려간다 (점검 반영)
+  useEffect(() => {
+    if (!ready || typeof window === "undefined" || window.location.hash !== "#backup") return;
+    const t = setTimeout(() => document.getElementById("backup")?.scrollIntoView({ block: "start" }), 400);
+    return () => clearTimeout(t);
+  }, [ready]);
   if (!db || role !== "ceo") return null;
   const demoDownload = () => {
     const blob = new Blob([JSON.stringify({ format: "taekang-site-intelligence-backup", version: 1, exportedAt: new Date().toISOString(), note: "DEMO 브라우저 자료 (가상 데이터)", data: db }, null, 1)], { type: "application/json" });
@@ -486,7 +493,7 @@ function BackupCard() {
         )}
         <p className="min-w-0 flex-1 basis-full text-[0.8rem] text-ink-3 @min-[760px]:basis-auto @min-[760px]:min-w-[14rem]">
           {IS_LIVE
-            ? "현장·원가·기성·변경공사·출퇴근·보고·작업 인원·지시·요청·이력이 모두 들어간 압축 파일입니다(1년치 약 0.4MB). 새 시스템(태강 명의 계정)으로 옮길 때 첫 화면의 ‘백업 파일로 시작’에 이 파일을 넣습니다. 비밀번호·로그인 정보·QR 단말기 비밀값은 넣지 않습니다."
+            ? "현장·원가·기성·변경공사·출퇴근·보고·작업 인원·지시·요청·이력이 모두 들어간 압축 파일입니다(1년치 약 2MB). 새 시스템(태강 명의 계정)으로 옮길 때 첫 화면의 ‘백업 파일로 시작’에 이 파일을 넣습니다. 비밀번호·로그인 정보·QR 단말기 비밀값은 넣지 않습니다."
             : "현장·원가·기성·변경공사·출퇴근·보고·작업 인원·지시·요청·이력이 모두 들어갑니다. 시연 자료라 사진 원본·사용자 목록은 빠지고, 복원에는 쓸 수 없습니다."}
         </p>
       </div>

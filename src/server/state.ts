@@ -7,6 +7,7 @@
  */
 import type { DemoDB, DemoUser, RiskThresholds } from "@/lib/domain/types";
 import { DEFAULT_SETTINGS } from "@/lib/domain/types";
+import { createHash } from "node:crypto";
 import type { Tx } from "./sql";
 import { CommandError } from "@/lib/data/commands";
 
@@ -202,6 +203,8 @@ async function extractPhoto(tx: Tx, companyId: string, item: Item, key: "dataUrl
     [id, companyId, (item.siteId as string) ?? null, mime, bytes],
   );
   item[key] = `/api/photos/${encodeURIComponent(id)}`;
+  // 원본 지문 — 백업으로 옮긴 뒤 사진 백업을 올릴 때 같은 사진인지 확인한다 (D-86)
+  item.sha256 = createHash("sha256").update(bytes).digest("hex");
 }
 
 /** 저장할 때 만든 JSON을 기억 — 다음 명령에서 이 상태가 ‘이전’이 되면 다시 만들지 않는다 (D-50) */
