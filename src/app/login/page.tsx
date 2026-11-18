@@ -5,7 +5,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Loader2, LogIn } from "lucide-react";
 import { AuthFrame } from "@/components/auth/AuthFrame";
-import { Notice } from "@/components/ui/primitives";
+import { Notice, cx } from "@/components/ui/primitives";
 import { BigLabel, HangulWarning, PasswordInput, bigInputCls } from "@/components/auth/BigInputs";
 import { api } from "@/lib/live/api";
 import { canAccess, homeFor } from "@/lib/nav";
@@ -24,6 +24,7 @@ function LoginForm() {
   // 이 기기에서 틀린 횟수 — 8번 틀리면 10분 잠기므로 미리 알린다 (서버는 계정 유무를 드러내지 않게 같은 문구만 준다 · D-77 리허설)
   const [fails, setFails] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [blocked, setBlocked] = useState(false);
   const [needsSetup, setNeedsSetup] = useState(false);
   // 이 휴대폰에 이미 로그인된 사람 — 로그인 쪽지 QR로 다른 사람이 들어오면 앞 사람을 정리하고 바꾼다 (D-68)
   const [current, setCurrent] = useState<{ id: string; email: string; name: string; role: RoleId; mustChangePassword: boolean } | null>(null);
@@ -64,6 +65,8 @@ function LoginForm() {
     const r = await api<{ me: { role: RoleId; mustChangePassword: boolean }; replaced?: string }>("/api/auth/login", { body: { email: email.trim(), password, ...(endpoint ? { deviceEndpoint: endpoint } : {}) } });
     if (!r.ok || !r.data) {
       setError(r.error);
+      // 비밀번호는 맞지만 승인 대기·승인 안 함·일시 정지 (D-90) — 오류가 아니라 안내로
+      setBlocked(r.status === 403 && /승인|일시 정지/.test(r.error ?? ""));
       if (/비밀번호가 맞지/.test(r.error ?? "")) setFails((n) => n + 1);
       setBusy(false);
       return;
@@ -126,7 +129,7 @@ function LoginForm() {
           <PasswordInput id="l-pw" value={password} onChange={setPassword} autoComplete="current-password" show={show} onToggle={() => setShow((v) => !v)} />
         </div>
         {error && (
-          <p className="rounded-2xl bg-err-bg px-4 py-3 text-[1.08rem] font-bold leading-relaxed text-err" role="alert" data-testid="login-error">
+          <p className={cx("rounded-2xl px-4 py-3 text-[1.08rem] font-bold leading-relaxed", blocked ? "bg-warn-bg text-ink" : "bg-err-bg text-err")} role="alert" data-testid="login-error" data-blocked={blocked || undefined}>
             {error}
             {/* 비밀번호가 틀렸을 때만 — 인터넷·서버 오류에는 엉뚱한 안내가 되지 않게 (D-65) */}
             {/비밀번호가 맞지/.test(error) && <span className="mt-1 block text-[0.98rem] font-semibold text-ink-2">‘보기’를 눌러 비밀번호를 확인해 보세요. 영어 대문자·소문자를 구분합니다.</span>}
@@ -146,6 +149,11 @@ function LoginForm() {
           <br />
           비밀번호를 잊었다면 회사 관리자에게 초기화를 요청하세요.
         </p>
+        {!needsSetup && (
+          <Link href="/signup" className="press flex h-[3.4rem] w-full items-center justify-center rounded-full border-2 border-line-strong bg-surface text-[1.12rem] font-extrabold text-ink" data-testid="login-signup">
+            처음이면 회원가입 신청
+          </Link>
+        )}
       </form>
     </AuthFrame>
   );

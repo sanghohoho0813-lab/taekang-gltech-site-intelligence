@@ -456,17 +456,20 @@ describe("현장 등록·사용자 관리", () => {
     expect(mine[0]).toMatchObject({ closeout: true, eacBefore: expect.any(Number), eacAfter: expect.any(Number) });
     expect((await svc.getView(field)).db.forecastChanges).toEqual([]);
   });
-  it("관리자는 대표 권한을 줄 수 없고, 본인 비활성화 불가, 비활성화하면 세션 종료", async () => {
+  it("관리자는 대표 권한을 줄 수 없고, 본인 비활성화 불가, 비활성화하면 세션 종료 · 계정 추가·일시 정지는 가입 승인 담당만 (D-90)", async () => {
     await expect(svc.createMember(manager, { email: "x@taekang.test", name: "x", role: "ceo", password: PW })).rejects.toBeInstanceOf(ForbiddenError);
     await expect(svc.updateMember(manager, manager.id, { active: false })).rejects.toBeInstanceOf(ForbiddenError);
     await expect(svc.createMember(field, { email: "y@taekang.test", name: "y", role: "field", password: PW })).rejects.toBeInstanceOf(ForbiddenError);
-    const created = await svc.createMember(manager, { email: "new@taekang.test", name: "신규 소장", role: "field", password: PW });
+    // 승인 담당이 아닌 본사관리자는 계정을 바로 만들지 못한다 (D-90)
+    await expect(svc.createMember(manager, { email: "new@taekang.test", name: "신규 소장", role: "field", password: PW })).rejects.toBeInstanceOf(ForbiddenError);
+    const created = await svc.createMember(ceo, { email: "new@taekang.test", name: "신규 소장", role: "field", password: PW });
     expect(created.mustChangePassword).toBe(true);
     const r = await auth.login("new@taekang.test", PW);
     if (!r.ok) throw new Error(r.error);
-    await svc.updateMember(manager, created.id, { active: false });
+    await expect(svc.updateMember(manager, created.id, { active: false })).rejects.toBeInstanceOf(ForbiddenError);
+    await svc.updateMember(ceo, created.id, { active: false });
     expect(await auth.memberFromToken(r.token)).toBeNull();
-    await expect(svc.createMember(manager, { email: "new@taekang.test", name: "중복", role: "field", password: PW })).rejects.toBeInstanceOf(CommandError);
+    await expect(svc.createMember(ceo, { email: "new@taekang.test", name: "중복", role: "field", password: PW })).rejects.toBeInstanceOf(CommandError);
   });
   it("비밀번호 변경: 현재 비밀번호 확인 + 정책", async () => {
     const r = await auth.login("field2@demo.local", PW);

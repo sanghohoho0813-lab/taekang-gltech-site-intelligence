@@ -12,7 +12,7 @@ import { closeStatuses } from "./closeRecord";
 import { coAttentionCount } from "./changeOrders";
 import { moneyIntegrity } from "./integrity";
 
-export type PendingKey = "fix" | "report" | "wo-done" | "wo-late" | "partner" | "defect" | "warranty" | "labor" | "feedback" | "ready" | "cost" | "close" | "close-confirm" | "close-change" | "co" | "integrity";
+export type PendingKey = "signup" | "fix" | "report" | "wo-done" | "wo-late" | "partner" | "defect" | "warranty" | "labor" | "feedback" | "ready" | "cost" | "close" | "close-confirm" | "close-change" | "co" | "integrity";
 export interface PendingItem {
   key: PendingKey;
   label: string;
@@ -38,6 +38,8 @@ export function pendingItems(db: DemoDB, today: string, live: boolean, role?: st
   const integrityErr = moneyIntegrity(db, today).filter((c) => c.level === "err").length;
   return [
     ...(integrityErr ? [{ key: "integrity" as const, label: "숫자 맞추기 점검 — 화면끼리 다른 숫자 (개발 담당에게 알림)", n: integrityErr, href: "/data#integrity" }] : []),
+    // 회원가입 승인 대기 (D-90) — 서버가 승인 담당에게만 숫자를 준다
+    ...(db.signup?.canApprove && db.signup.pending ? [{ key: "signup" as const, label: "가입 신청 — 승인 대기", n: db.signup.pending, href: "/admin?tab=members#signups" }] : []),
     ...closeRows,
     { key: "fix", label: "근태 수정 요청", n: (db.attendanceRequests ?? []).filter((q) => q.status === "pending").length, href: "/orders?tab=fixes" },
     // 엑셀로 옮긴 지난 기록은 이미 확인된 것 (D-71)

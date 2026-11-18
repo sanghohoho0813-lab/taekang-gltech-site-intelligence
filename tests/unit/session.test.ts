@@ -135,7 +135,7 @@ describe("모든 기기 로그아웃 · 사용자 관리 이력", () => {
     const logs = (await svc.listActivity(ceo, { from: "2026-01-01", to: "2030-12-31", type: "member" })).logs.map((l) => l.summary);
     expect(logs.some((s) => /사용자 변경 — .*비밀번호 초기화/.test(s))).toBe(true);
     expect(logs).toContain("사용자 추가 — 신규 소장 (현장직원)");
-    expect(logs.some((s) => s.startsWith("사용자 변경 — 신규 소장: 비활성화"))).toBe(true);
+    expect(logs.some((s) => s.startsWith("사용자 변경 — 신규 소장: 일시 정지"))).toBe(true);
   });
 });
 

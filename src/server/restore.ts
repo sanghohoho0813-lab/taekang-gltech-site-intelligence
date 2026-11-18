@@ -128,6 +128,8 @@ interface BackupMember {
   siteIds: string[];
   partnerSiteIds: string[];
   active: boolean;
+  /** 가입 승인 담당 (D-90) — 본사관리자만 */
+  approver?: boolean;
 }
 
 /** 형식 검사 + 저장할 상태로 정리. 서버에 아무것도 쓰지 않는다 (시험에서 따로 부른다) */
@@ -154,7 +156,7 @@ export function prepareRestore(backup: Record<string, unknown>, ownerEmail: stri
     if (seenId.has(id) || seenEmail.has(email!)) bad("백업 파일에 같은 사용자가 두 번 있습니다(파일 손상).");
     seenId.add(id);
     seenEmail.add(email!);
-    return { id, email: email!, name: str(x.name, 40) || "이름 없음", title: str(x.title, 40), role, siteIds: strList(x.siteIds), partnerSiteIds: strList(x.partnerSiteIds), active: x.active !== false };
+    return { id, email: email!, name: str(x.name, 40) || "이름 없음", title: str(x.title, 40), role, siteIds: strList(x.siteIds), partnerSiteIds: strList(x.partnerSiteIds), active: x.active !== false, ...(x.approver === true && role === "manager" ? { approver: true } : {}) };
   });
   const owner = members.find((m) => m.email === ownerEmail);
   if (!owner) bad("이 백업 파일에 없는 이메일입니다. 백업 속 대표 계정의 이메일(로그인 아이디)을 넣어 주세요.");
@@ -333,6 +335,7 @@ export async function restoreCompany(input: RestoreInput, now = new Date()): Pro
         mustChange: !isOwner,
         siteIds: m.siteIds,
         partnerSiteIds: m.partnerSiteIds,
+        approver: m.approver === true,
       });
     }
     const inactive = members.filter((m) => !m.active).map((m) => m.id);

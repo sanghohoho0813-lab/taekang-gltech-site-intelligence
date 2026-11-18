@@ -16,6 +16,8 @@ export async function POST(req: NextRequest) {
     const body = (await readJson(req, 10_000)) as { email?: unknown; password?: unknown; deviceEndpoint?: unknown };
     const r = await login(body.email, body.password);
     if (!r.ok) {
+      // 비밀번호는 맞지만 승인 대기·승인 안 함·일시 정지 (D-90) — 실패로 세지 않는다
+      if (r.blocked) return json({ error: r.error, code: `ACCOUNT_${r.blocked.toUpperCase()}` }, 403);
       // 틀리면 이 휴대폰에 로그인돼 있던 사람은 그대로 둔다 (D-68 점검 반영)
       hit(RULES.login, ip);
       return json({ error: r.error }, 401);

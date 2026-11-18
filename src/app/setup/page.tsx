@@ -11,7 +11,7 @@ export default function SetupPage() {
   // error: 서버·DB에 닿지 못함 — ‘이미 설정이 끝났습니다’로 보여 계정도 없는 대표를 로그인으로 보내던 문제 (D-77 리허설)
   const [state, setState] = useState<"checking" | "open" | "done" | "error">("checking");
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [f, setF] = useState({ companyName: "(주)태강지엘텍", name: "", email: "", phone: "", password: "", confirm: "", setupCode: "", withDemoData: false });
+  const [f, setF] = useState({ companyName: "(주)태강지엘텍", name: "", title: "대표", email: "", phone: "", password: "", confirm: "", setupCode: "", withDemoData: false });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -107,8 +107,11 @@ export default function SetupPage() {
             <input id="s-co" className={inputCls} value={f.companyName} onChange={set("companyName")} />
           </Field>
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="대표 이름" htmlFor="s-name" required error={errors.name}>
+            <Field label="이름 (첫 관리자)" htmlFor="s-name" required error={errors.name} hint="이 계정은 대표 권한(모든 화면·가입 승인)을 가집니다">
               <input id="s-name" className={inputCls} value={f.name} onChange={set("name")} autoComplete="name" />
+            </Field>
+            <Field label="직함" htmlFor="s-title" error={errors.title} hint="예: 대표 · 실장 · 개발자">
+              <input id="s-title" className={inputCls} value={f.title} maxLength={40} onChange={set("title")} data-testid="setup-title" />
             </Field>
             <Field label="이메일 (로그인 아이디)" htmlFor="s-email" required error={errors.email}>
               <input id="s-email" type="email" className={inputCls} value={f.email} onChange={set("email")} autoComplete="username" />

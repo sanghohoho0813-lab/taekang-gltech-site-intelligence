@@ -120,6 +120,19 @@ create table if not exists restore_uploads (
 alter table restore_uploads enable row level security
 `,
   },
+  {
+    // 회원가입 신청·승인 (D-90): 신청하면 ‘승인 대기’ — 승인 담당(대표 권한 또는 지정된 담당)이 승인해야 로그인된다.
+    // signup_status: null(관리자가 만든 계정) · pending(승인 대기) · approved(승인됨) · rejected(승인 안 함)
+    // approver: 가입 승인·거절, 계정 추가, 일시 정지를 할 수 있는 사람 (대표 권한은 늘 가능)
+    // signup: 신청 때 적은 휴대폰·구분·메모·처리 기록 (승인 안 함 30일 · 처리 안 된 신청 60일 뒤 매일 점검이 지움)
+    name: "005_signup_approval",
+    sql: `
+alter table members add column if not exists signup_status text;
+alter table members add column if not exists approver boolean not null default false;
+alter table members add column if not exists signup jsonb;
+create index if not exists members_signup_status on members(company_id, signup_status) where signup_status is not null
+`,
+  },
 ];
 
 function statements(sql: string): string[] {

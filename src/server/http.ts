@@ -4,7 +4,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { IS_LIVE } from "@/lib/mode";
 import { CommandError, cleanText } from "@/lib/data/commands";
-import { memberFromToken, SESSION_COOKIE, SESSION_DAYS, type Member } from "./auth";
+import { canApprove, memberFromToken, SESSION_COOKIE, SESSION_DAYS, type Member } from "./auth";
 import { ForbiddenError } from "./authz";
 
 export const json = (body: unknown, status = 200) => NextResponse.json(body, { status, headers: { "Cache-Control": "no-store" } });
@@ -133,5 +133,5 @@ export function clearSessionCookie(res: NextResponse) {
 }
 
 export function meBody(m: Member) {
-  return { id: m.id, email: m.email, name: m.name, title: m.title, role: m.role, mustChangePassword: m.mustChangePassword };
+  return { id: m.id, email: m.email, name: m.name, title: m.title, role: m.role, mustChangePassword: m.mustChangePassword, approver: canApprove(m) };
 }

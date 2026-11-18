@@ -5,7 +5,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 const LIVE = process.env.NEXT_PUBLIC_DATA_MODE === "live";
-const PUBLIC = ["/login", "/setup"];
+const PUBLIC = ["/login", "/setup", "/signup"];
 /** 로그인 없이 여는 화면 — 현장 QR 태블릿 (연결 코드·단말기 비밀값으로만 동작) */
 const KIOSK = "/kiosk";
 

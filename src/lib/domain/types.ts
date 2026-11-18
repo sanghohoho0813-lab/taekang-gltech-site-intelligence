@@ -1069,4 +1069,6 @@ export interface DemoDB {
   me?: string;
   /** LIVE: 서버가 역할별로 걸러 보낸 데이터인지 */
   scope?: "full" | "field" | "partner";
+  /** LIVE 본사: 회원가입 승인 대기 수 · 내가 승인할 수 있는지 (D-90 · 서버가 채움) */
+  signup?: { pending: number; canApprove: boolean };
 }

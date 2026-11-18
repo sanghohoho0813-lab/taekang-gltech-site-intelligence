@@ -31,7 +31,7 @@ function AdminInner() {
           onChange={setTab}
           options={[
             { value: "sites", label: "현장", testId: "admin-tab-sites" },
-            { value: "members", label: "사용자", testId: "admin-tab-members" },
+            { value: "members", label: db.signup?.canApprove && db.signup.pending ? `사용자 · 가입 신청 ${db.signup.pending}` : "사용자", testId: "admin-tab-members" },
             { value: "review", label: pending ? `공무 확인 ${pending}` : "공무 확인", testId: "admin-tab-review" },
             { value: "settings", label: "운영 설정", testId: "admin-tab-settings" },
             { value: "privacy", label: "개인위치정보", testId: "admin-tab-privacy" },
@@ -39,7 +39,7 @@ function AdminInner() {
         />
       </div>
       {tab === "sites" && <SitesAdmin db={db} />}
-      {tab === "members" && <MembersAdmin db={db} me={{ id: userId, role }} />}
+      {tab === "members" && <MembersAdmin db={db} me={{ id: userId, role, approver: role === "ceo" || !!db.signup?.canApprove }} />}
       {tab === "review" && <ReviewAdmin db={db} />}
       {tab === "settings" && (
         <>

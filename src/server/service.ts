@@ -6,7 +6,7 @@ import { pairHash, pairKiosk } from "@/lib/data/attendanceCommands";
 import { hex, randomBytes } from "@/lib/domain/hmac";
 import type { ActivityLog, DemoDB, RoleId } from "@/lib/domain/types";
 import { DEFAULT_SETTINGS } from "@/lib/domain/types";
-import { normalizeOfficePhone } from "@/lib/domain/intake";
+import { normalizeOfficePhone, normalizePhone } from "@/lib/domain/intake";
 import { AUDIT_LIMIT, auditRange, type AuditFilter } from "@/lib/domain/audit";
 import { COMMANDS, isCommandName, type CommandName } from "@/lib/data/registry";
 import { CommandError } from "@/lib/data/commands";
@@ -22,11 +22,11 @@ import { createSeed } from "@/lib/data/seed";
 import { uid } from "@/lib/domain/ids";
 import { getDb, type Tx } from "./sql";
 import { deliver, pushReady } from "./push";
-import { noticesFor } from "@/lib/domain/notify";
+import { noticesFor, type Notice } from "@/lib/domain/notify";
 import { COLLECTIONS, loadState, persistState } from "./state";
 import { authorize, fieldSiteIds, ForbiddenError, sanitizeResult, viewFor } from "./authz";
 import { photoWithdrawn } from "@/lib/domain/partnerFeed";
-import { createSession, hashPassword, MEMBER_COLS, normalizeEmail, passwordProblem, toMember, type Member } from "./auth";
+import { canApprove, createSession, hashPassword, MEMBER_COLS, normalizeEmail, passwordProblem, toMember, type Member, type SignupStatus } from "./auth";
 
 export async function getView(m: Member): Promise<{ rev: number; db: DemoDB }> {
   const db = await getDb();
@@ -43,7 +43,13 @@ export async function getView(m: Member): Promise<{ rev: number; db: DemoDB }> {
   // 명령이 없는 날(주말 등)에도 보관 기간이 지난 좌표·접수자 연락처는 보내지 않는다 — 저장은 다음 명령 때 (rev는 DB 값 그대로 · D-49 · D-74 점검 10차)
   const at = new Date();
   const state = applyIntakeRetention(applyLocationRetention(loaded, at), at);
-  return { rev: loaded.rev, db: viewFor(m, state) };
+  const view = viewFor(m, state);
+  // 가입 승인 대기 수 (D-90) — 본사 화면의 메뉴·처리 대기에. 승인 권한이 있는 사람에게만 숫자를 준다
+  if (canApprove(m)) {
+    const [c] = await db.query<{ n: number }>(`select count(*)::int as n from members where company_id = $1 and signup_status = 'pending'`, [m.companyId]);
+    view.signup = { pending: Number(c?.n ?? 0), canApprove: true };
+  } else if (m.role === "manager") view.signup = { pending: 0, canApprove: false };
+  return { rev: loaded.rev, db: view };
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -92,7 +98,8 @@ export async function exportCompany(m: Member): Promise<{ filename: string; body
     ...retained,
     partnerRequests: retained.partnerRequests.map(({ statusKey: _k, statusToken: _t, intakeKey: _i, intakeSrc: _s, ...r }) => (void _k, void _t, void _i, void _s, r)),
   };
-  const members = await db.query<Parameters<typeof toMember>[0]>(`select ${MEMBER_COLS} from members where company_id = $1 order by role, name`, [m.companyId]);
+  // 가입 신청(승인 대기·승인 안 함)은 백업에 넣지 않는다 — 회사 사람이 아니고 개인정보라서 (D-90)
+  const members = await db.query<Parameters<typeof toMember>[0]>(`select ${MEMBER_COLS} from members where company_id = $1 and (signup_status is null or signup_status = 'approved') order by role, name`, [m.companyId]);
   const kiosks = (state.kiosks ?? []).map((k) => {
     const { secret: _s, pairHash: _p, ...rest } = k;
     void _s;
@@ -114,7 +121,7 @@ export async function exportCompany(m: Member): Promise<{ filename: string; body
       note: "사진 원본은 포함되지 않습니다(사진 기록·지문만) — ‘사진 백업 내려받기’(달마다 .zip)로 함께 보관하세요. 비밀번호·로그인 정보는 포함되지 않습니다. 새 시스템 첫 화면의 ‘백업 파일로 시작’으로 되살립니다.",
       members: members.map((r) => {
         const x = toMember(r);
-        return { id: x.id, email: x.email, name: x.name, title: x.title, role: x.role, siteIds: x.siteIds, partnerSiteIds: x.partnerSiteIds, active: x.active };
+        return { id: x.id, email: x.email, name: x.name, title: x.title, role: x.role, siteIds: x.siteIds, partnerSiteIds: x.partnerSiteIds, active: x.active, ...(x.approver ? { approver: true } : {}) };
       }),
       counts: Object.fromEntries(Object.entries(data).filter(([, v]) => Array.isArray(v)).map(([k, v]) => [k, (v as unknown[]).length])),
       data,
@@ -194,6 +201,8 @@ export async function runDailyJobs(now = new Date()): Promise<{ companies: numbe
   let briefs = 0;
   let pushed = 0;
   let failed = 0;
+  // 오래된 가입 신청(승인 안 함 30일 · 처리 안 됨 60일) 지우기 (D-90)
+  await purgeSignups(now).catch((e) => (failed += 1, console.error("[daily signup purge]", e)));
   for (const { id } of companies) {
     try {
       const done = await db.transaction(async (tx) => {
@@ -286,6 +295,8 @@ export interface SetupInput {
   withDemoData?: boolean;
   /** 회사 전화번호 — 로그인 쪽지·현장 화면·하자 접수 화면의 ‘모르면 본사로 전화’ (D-77) */
   publicPhone?: string;
+  /** 첫 계정의 직함 (기본 ‘대표’) — 개발 담당이 먼저 설정할 때 ‘개발자’ 등 (D-90) */
+  title?: string;
 }
 
 /** 데모 데이터로 시작할 때 만드는 가상 직원 계정 (비밀번호는 대표 계정과 같음) */
@@ -307,6 +318,8 @@ export async function setupCompany(input: SetupInput): Promise<{ token: string; 
   const phoneRaw = typeof input.publicPhone === "string" ? input.publicPhone.trim() : "";
   const publicPhone = phoneRaw ? normalizeOfficePhone(phoneRaw) : null;
   if (phoneRaw && !publicPhone) errors.publicPhone = "전화번호를 확인해 주세요. (예: 031-123-4567)";
+  const title = typeof input.title === "string" && input.title.trim() ? input.title.trim() : "대표";
+  if (Array.from(title).length > 40) errors.title = "40자 이내";
   if (Object.keys(errors).length) throw new CommandError("입력값을 확인해주세요.", "VALIDATION", errors);
 
   const db = await getDb();
@@ -367,7 +380,7 @@ export async function setupCompany(input: SetupInput): Promise<{ token: string; 
       state.rev,
     ]);
     const hash = await hashPassword(input.password);
-    await insertMember(tx, { id: ownerId, companyId, email: email!, name: input.name.trim(), title: "대표", role: "ceo", hash, mustChange: false });
+    await insertMember(tx, { id: ownerId, companyId, email: email!, name: input.name.trim(), title, role: "ceo", hash, mustChange: false });
     if (input.withDemoData) {
       for (const a of DEMO_ACCOUNTS) {
         const u = seed.users.find((x) => x.id === a.id)!;
@@ -393,12 +406,41 @@ export async function setupCompany(input: SetupInput): Promise<{ token: string; 
 
 export async function insertMember(
   tx: Tx,
-  a: { id: string; companyId: string; email: string; name: string; title: string; role: RoleId; hash: string; mustChange: boolean; siteIds?: string[]; partnerSiteIds?: string[] },
+  a: {
+    id: string;
+    companyId: string;
+    email: string;
+    name: string;
+    title: string;
+    role: RoleId;
+    hash: string;
+    mustChange: boolean;
+    siteIds?: string[];
+    partnerSiteIds?: string[];
+    approver?: boolean;
+    /** 회원가입 신청 (D-90) — 승인 전에는 로그인되지 않는다 */
+    signup?: SignupInfo;
+  },
 ) {
   await tx.query(
-    `insert into members (id, company_id, email, name, title, role, site_ids, partner_site_ids, password_hash, must_change_password)
-     values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10)`,
-    [a.id, a.companyId, a.email, a.name, a.title, a.role, JSON.stringify(a.siteIds ?? []), JSON.stringify(a.partnerSiteIds ?? []), a.hash, a.mustChange],
+    `insert into members (id, company_id, email, name, title, role, site_ids, partner_site_ids, password_hash, must_change_password, approver, active, signup_status, signup)
+     values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10, $11, $12, $13, $14::jsonb)`,
+    [
+      a.id,
+      a.companyId,
+      a.email,
+      a.name,
+      a.title,
+      a.role,
+      JSON.stringify(a.siteIds ?? []),
+      JSON.stringify(a.partnerSiteIds ?? []),
+      a.hash,
+      a.mustChange,
+      a.approver === true,
+      !a.signup,
+      a.signup ? "pending" : null,
+      a.signup ? JSON.stringify(a.signup) : null,
+    ],
   );
 }
 
@@ -418,10 +460,43 @@ export interface MemberView {
   /** 로그인된 기기 수 (만료 전 세션) · 마지막 사용 시각 (D-48) */
   devices: number;
   lastSeenAt: string | null;
+  /** 가입 승인 담당 (D-90) */
+  approver?: boolean;
+  /** 회원가입 신청 상태 (D-90) — null: 관리자가 만든 계정 */
+  signupStatus: SignupStatus | null;
+  signup: SignupInfo | null;
+  createdAt: string | null;
 }
+
+/** 회원가입 신청 때 적은 것과 처리 기록 (D-90) */
+export interface SignupInfo {
+  phone: string;
+  /** 무슨 일로 쓰는지 — 승인할 때 역할을 고르는 참고 */
+  kind: SignupKind;
+  /** 소속·현장 등 (선택) */
+  note: string;
+  requestedAt: string;
+  decidedAt?: string;
+  decidedBy?: string;
+  decidedByName?: string;
+  reason?: string;
+}
+export type SignupKind = "field" | "manager" | "partner" | "other";
+export const SIGNUP_KIND_LABEL: Record<SignupKind, string> = { field: "현장 직원", manager: "본사 직원", partner: "발주처·협력사", other: "그 밖" };
+/** 승인 대기로 쌓아 둘 수 있는 신청 수 — 넘으면 새 신청을 받지 않는다 (장난 신청이 쌓이지 않게) */
+export const SIGNUP_PENDING_MAX = 30;
+/** 승인 안 함 기록은 30일, 처리 안 된 신청은 60일 뒤 지운다 (개인정보 · 매일 점검) */
+export const SIGNUP_REJECTED_KEEP_DAYS = 30;
+export const SIGNUP_PENDING_KEEP_DAYS = 60;
 
 function requireAdmin(m: Member) {
   if (m.role !== "ceo" && m.role !== "manager") throw new ForbiddenError("사용자 관리는 대표·관리자만 할 수 있습니다.");
+}
+
+/** 계정 추가·가입 승인/거절·일시 정지/다시 사용 — 대표 권한 또는 ‘가입 승인 담당’만 (D-90) */
+function requireApprover(m: Member) {
+  requireAdmin(m);
+  if (!canApprove(m)) throw new ForbiddenError("가입 승인·계정 추가·일시 정지는 가입 승인 담당(대표 권한 또는 지정된 본사 담당)만 할 수 있습니다.");
 }
 
 async function bumpRev(tx: Tx, companyId: string) {
@@ -437,20 +512,27 @@ async function appendActivity(tx: Tx, companyId: string, by: string, summary: st
 export async function listMembers(m: Member): Promise<MemberView[]> {
   requireAdmin(m);
   const db = await getDb();
-  const rows = await db.query<Parameters<typeof toMember>[0] & { locked_until: string | Date | null; devices: number; last_seen: string | Date | null }>(
-    `select ${MEMBER_COLS}, locked_until,
+  const rows = await db.query<Parameters<typeof toMember>[0] & { locked_until: string | Date | null; devices: number; last_seen: string | Date | null; signup: SignupInfo | string | null; created_at: string | Date | null }>(
+    `select ${MEMBER_COLS}, locked_until, signup, created_at,
        (select count(*)::int from sessions s where s.member_id = members.id and s.expires_at > now()) as devices,
        (select max(s.last_seen_at) from sessions s where s.member_id = members.id) as last_seen
      from members where company_id = $1 order by active desc, role, name`,
     [m.companyId],
   );
+  // 승인 대기 신청의 휴대폰 번호는 승인 권한이 있는 사람에게만 (D-90)
+  const approver = canApprove(m);
   return rows.map((r) => {
     const x = toMember(r);
+    const raw = typeof r.signup === "string" ? (JSON.parse(r.signup) as SignupInfo) : r.signup;
+    const signup = raw ? (approver ? raw : { ...raw, phone: "" }) : null;
     return {
       ...x,
       lockedUntil: r.locked_until && new Date(r.locked_until).getTime() > Date.now() ? new Date(r.locked_until).toISOString() : null,
       devices: Number(r.devices ?? 0),
       lastSeenAt: r.last_seen ? new Date(r.last_seen).toISOString() : null,
+      signupStatus: (r.signup_status as SignupStatus | null) ?? null,
+      signup,
+      createdAt: r.created_at ? new Date(r.created_at).toISOString() : null,
     };
   });
 }
@@ -469,6 +551,8 @@ export interface MemberInput {
   password?: string;
   /** 비밀번호 초기화를 ‘아직 첫 로그인 전’인 사람에게만 (시범 운영 준비의 로그인 쪽지 · 이미 자기 비밀번호를 쓰는 사람을 실수로 초기화하지 않게) */
   onlyIfMustChange?: boolean;
+  /** 가입 승인 담당 (D-90) — 대표 권한만 정한다 · 본사관리자에게만 */
+  approver?: boolean;
 }
 
 function validateMemberInput(input: MemberInput, creating: boolean): Record<string, string> {
@@ -478,6 +562,7 @@ function validateMemberInput(input: MemberInput, creating: boolean): Record<stri
   if (input.title !== undefined && (typeof input.title !== "string" || input.title.length > 40)) errors.title = "40자 이내";
   // ‘비활성화’ 판단이 문자열 "false"로 우회되지 않게
   if (input.active !== undefined && typeof input.active !== "boolean") errors.active = "활성 여부 형식";
+  if (input.approver !== undefined && typeof input.approver !== "boolean") errors.approver = "승인 담당 형식";
   if (creating || input.role !== undefined) if (!ROLES.includes(input.role as RoleId)) errors.role = "역할을 선택해주세요.";
   if (creating || input.password !== undefined) {
     const p = passwordProblem(input.password);
@@ -490,10 +575,11 @@ function validateMemberInput(input: MemberInput, creating: boolean): Record<stri
 }
 
 export async function createMember(m: Member, input: MemberInput): Promise<MemberView> {
-  requireAdmin(m);
+  requireApprover(m);
   const errors = validateMemberInput(input, true);
   if (Object.keys(errors).length) throw new CommandError("입력값을 확인해주세요.", "VALIDATION", errors);
   if (input.role === "ceo" && m.role !== "ceo") throw new ForbiddenError("대표 권한은 대표만 부여할 수 있습니다.");
+  approverRule(m, input.approver, input.role!);
   const db = await getDb();
   const id = uid("u");
   await db.transaction(async (tx) => {
@@ -510,8 +596,9 @@ export async function createMember(m: Member, input: MemberInput): Promise<Membe
       mustChange: true,
       siteIds: input.siteIds,
       partnerSiteIds: input.partnerSiteIds,
+      approver: input.approver === true,
     });
-    await appendActivity(tx, m.companyId, m.id, `사용자 추가 — ${input.name!.trim()} (${ROLE_LABEL[input.role!]})`);
+    await appendActivity(tx, m.companyId, m.id, `사용자 추가 — ${input.name!.trim()} (${ROLE_LABEL[input.role!]}${input.approver ? " · 가입 승인 담당" : ""})`);
     await bumpRev(tx, m.companyId);
   });
   return (await listMembers(m)).find((x) => x.id === id)!;
@@ -535,8 +622,17 @@ export async function signOutMember(m: Member, id: string): Promise<{ devices: n
   });
 }
 
+/** 가입 승인 담당은 대표 권한만 정하고, 본사관리자에게만 줄 수 있다 (대표 권한은 늘 승인 가능) */
+function approverRule(m: Member, approver: boolean | undefined, role: RoleId) {
+  if (approver === undefined) return;
+  if (m.role !== "ceo") throw new ForbiddenError("가입 승인 담당은 대표 권한으로만 정할 수 있습니다.");
+  if (approver && role !== "manager") throw new CommandError("가입 승인 담당은 본사관리자에게만 줄 수 있습니다. (대표 권한은 원래 승인할 수 있습니다)", "VALIDATION", { approver: "본사관리자만" });
+}
+
 export async function updateMember(m: Member, id: string, input: MemberInput): Promise<MemberView> {
   requireAdmin(m);
+  // 일시 정지·다시 사용은 승인 담당만 (D-90)
+  if (input.active !== undefined) requireApprover(m);
   const errors = validateMemberInput(input, false);
   if (Object.keys(errors).length) throw new CommandError("입력값을 확인해주세요.", "VALIDATION", errors);
   const db = await getDb();
@@ -549,6 +645,11 @@ export async function updateMember(m: Member, id: string, input: MemberInput): P
     if (input.password !== undefined && input.onlyIfMustChange === true && !target.mustChangePassword)
       throw new CommandError(`${target.name}님은 이미 첫 로그인을 마쳐 자기 비밀번호를 쓰고 있어 초기화하지 않았습니다.`, "STATE");
     if (id === m.id && (input.active === false || (input.role && input.role !== m.role))) throw new ForbiddenError("본인 계정의 역할 변경·비활성화는 할 수 없습니다.");
+    // 가입 신청은 ‘승인’·‘승인 안 함’으로만 처리한다 — 역할·현장을 정하지 않고 그냥 켜지지 않게 (D-90)
+    const status = (row as { signup_status?: SignupStatus | null }).signup_status ?? null;
+    if ((status === "pending" || status === "rejected") && Object.keys(input).some((k) => k !== "onlyIfMustChange"))
+      throw new CommandError("가입 신청은 ‘승인’ 또는 ‘승인 안 함’으로 처리해 주세요.", "STATE");
+    approverRule(m, input.approver, input.role ?? target.role);
     if (target.role === "ceo" && (input.active === false || (input.role && input.role !== "ceo"))) {
       const [c] = await tx.query<{ n: string | number }>(`select count(*) as n from members where company_id = $1 and role = 'ceo' and active = true and id <> $2`, [m.companyId, id]);
       if (Number(c?.n ?? 0) === 0) throw new ForbiddenError("활성 대표 계정이 최소 1개는 있어야 합니다.");
@@ -570,6 +671,9 @@ export async function updateMember(m: Member, id: string, input: MemberInput): P
     if (input.siteIds !== undefined) set("site_ids", JSON.stringify(input.siteIds), "::jsonb");
     if (input.partnerSiteIds !== undefined) set("partner_site_ids", JSON.stringify(input.partnerSiteIds), "::jsonb");
     if (input.active !== undefined) set("active", input.active);
+    if (input.approver !== undefined) set("approver", input.approver);
+    // 본사관리자가 아닌 역할로 바뀌면 승인 담당도 내려놓는다
+    else if (input.role !== undefined && input.role !== "manager" && target.approver) set("approver", false);
     if (input.password !== undefined) {
       set("password_hash", await hashPassword(input.password));
       set("must_change_password", true);
@@ -581,8 +685,10 @@ export async function updateMember(m: Member, id: string, input: MemberInput): P
     await tx.query(`update members set ${sets.join(", ")} where id = $1`, vals);
     const what = [
       input.password !== undefined && "비밀번호 초기화 (첫 로그인 때 본인이 변경)",
-      input.active === false && target.active && "비활성화 (로그인 종료·휴대폰 알림 해제)",
-      input.active === true && !target.active && "다시 활성화",
+      input.active === false && target.active && "일시 정지 (로그인 종료·휴대폰 알림 해제)",
+      input.active === true && !target.active && "다시 사용",
+      input.approver === true && !target.approver && "가입 승인 담당 지정",
+      input.approver === false && target.approver && "가입 승인 담당 해제",
       input.role !== undefined && input.role !== target.role && `역할 ${ROLE_LABEL[target.role]} → ${ROLE_LABEL[input.role]}`,
       (input.siteIds !== undefined || input.partnerSiteIds !== undefined) && "담당 현장 변경",
       (input.name !== undefined || input.title !== undefined || input.email !== undefined) && "정보 수정",
@@ -599,6 +705,167 @@ export async function updateMember(m: Member, id: string, input: MemberInput): P
     await bumpRev(tx, m.companyId);
   });
   return (await listMembers(m)).find((x) => x.id === id)!;
+}
+
+// ───────────── 회원가입 신청 · 승인 (D-90) ─────────────
+
+export interface SignupRequest {
+  name?: unknown;
+  email?: unknown;
+  password?: unknown;
+  phone?: unknown;
+  /** 소속·직함 (예: OO건설 공무) */
+  title?: unknown;
+  kind?: unknown;
+  note?: unknown;
+  /** 개인정보 수집·이용 동의 */
+  agree?: unknown;
+}
+
+const SIGNUP_KINDS: SignupKind[] = ["field", "manager", "partner", "other"];
+const text = (v: unknown, max: number) => (typeof v === "string" ? v.trim().replace(/\s+/g, " ").slice(0, max * 2) : "");
+
+/**
+ * 로그인 없이 받는 회원가입 신청 — ‘승인 대기’로 저장되고 승인 전에는 로그인되지 않는다.
+ * 승인 담당에게 휴대폰 알림(키가 있을 때). 회사가 아직 없으면(최초 설정 전) 받지 않는다.
+ */
+export async function signUp(input: SignupRequest, now = new Date()): Promise<{ notices: Notice[]; companyId: string }> {
+  const errors: Record<string, string> = {};
+  const name = text(input?.name, 40);
+  if (!name || Array.from(name).length > 40) errors.name = "이름을 넣어 주세요 (40자 이내).";
+  const email = normalizeEmail(input?.email);
+  if (!email) errors.email = typeof input?.email === "string" && input.email.trim() ? "이메일 형식을 확인해 주세요." : "로그인 아이디로 쓸 이메일을 넣어 주세요.";
+  const pw = passwordProblem(input?.password);
+  if (pw) errors.password = pw;
+  const phone = normalizePhone(input?.phone);
+  if (!phone) errors.phone = "휴대폰 번호를 확인해 주세요. (예: 010-1234-5678)";
+  const title = text(input?.title, 40);
+  if (Array.from(title).length > 40) errors.title = "40자 이내";
+  const kind = SIGNUP_KINDS.includes(input?.kind as SignupKind) ? (input.kind as SignupKind) : null;
+  if (!kind) errors.kind = "어떤 일로 쓰시는지 골라 주세요.";
+  const note = text(input?.note, 200);
+  if (Array.from(note).length > 200) errors.note = "200자 이내";
+  if (input?.agree !== true) errors.agree = "개인정보 수집·이용에 동의해야 신청할 수 있습니다.";
+  if (Object.keys(errors).length) throw new CommandError(Object.values(errors)[0], "VALIDATION", errors);
+
+  const db = await getDb();
+  return db.transaction(async (tx) => {
+    const [co] = await tx.query<{ id: string }>(`select id from companies order by created_at limit 1`);
+    if (!co) throw new ForbiddenError("아직 회사 설정 전이라 가입 신청을 받을 수 없습니다.");
+    // 같은 이메일로 동시에 두 번 눌러도 하나만 — 회사 단위로 잠근다
+    await tx.query(`select rev from companies where id = $1 for update`, [co.id]);
+    const [dup] = await tx.query<{ signup_status: SignupStatus | null }>(`select signup_status from members where email = $1`, [email]);
+    if (dup)
+      throw new CommandError(
+        dup.signup_status === "pending"
+          ? "이미 가입 신청한 이메일입니다. 본사 승인을 기다려 주세요."
+          : dup.signup_status === "rejected"
+            ? "이 이메일은 가입이 승인되지 않았습니다. 잘못된 것이면 본사에 전화해 주세요."
+            : "이미 가입된 이메일입니다. 로그인 화면에서 로그인해 주세요.",
+        "DUPLICATE",
+        { email: "이미 있음" },
+      );
+    const [p] = await tx.query<{ n: number }>(`select count(*)::int as n from members where company_id = $1 and signup_status = 'pending'`, [co.id]);
+    if (Number(p?.n ?? 0) >= SIGNUP_PENDING_MAX) throw new CommandError("가입 신청이 많이 밀려 있어 지금은 받을 수 없습니다. 본사에 전화해 주세요.", "STATE");
+    const id = uid("u");
+    // 역할은 승인할 때 정한다 — 그 전에는 가장 좁은 ‘현장’ 자리로 둔다(로그인 자체가 막혀 있음). 본사·발주처를 고른 신청도 마찬가지
+    await insertMember(tx, {
+      id,
+      companyId: co.id,
+      email: email!,
+      name,
+      title,
+      role: kind === "partner" ? "partner" : "field",
+      hash: await hashPassword(input.password as string),
+      mustChange: false,
+      signup: { phone: phone!, kind: kind!, note, requestedAt: now.toISOString() },
+    });
+    await appendActivity(tx, co.id, id, `가입 신청 — ${name}${title ? ` ${title}` : ""} (${SIGNUP_KIND_LABEL[kind!]}) · 승인 대기`);
+    await bumpRev(tx, co.id);
+    const approvers = await tx.query<{ id: string }>(`select id from members where company_id = $1 and active = true and (role = 'ceo' or (role = 'manager' and approver = true))`, [co.id]);
+    const notices: Notice[] = approvers.length
+      ? [{ to: approvers.map((a) => a.id), title: "가입 신청 — 승인 대기", body: `${name}${title ? ` ${title}` : ""} (${SIGNUP_KIND_LABEL[kind!]}) · 운영 관리 → 사용자에서 승인하거나 승인 안 함`, url: "/admin?tab=members#signups", tag: "signup" }]
+      : [];
+    return { notices, companyId: co.id };
+  });
+}
+
+export interface SignupDecision {
+  action?: unknown;
+  /** 승인: 역할·직함·현장 */
+  role?: unknown;
+  title?: unknown;
+  siteIds?: unknown;
+  partnerSiteIds?: unknown;
+  approver?: unknown;
+  /** 승인 안 함 이유 (선택) */
+  reason?: unknown;
+}
+
+/** 가입 신청 처리 — 승인(역할·현장을 정해 바로 로그인 가능) · 승인 안 함(이유 · 로그인 막힘) · 지우기(장난·중복 신청) */
+export async function decideSignup(m: Member, id: string, input: SignupDecision): Promise<MemberView | { deleted: true }> {
+  requireApprover(m);
+  const action = input?.action;
+  if (action !== "approve" && action !== "reject" && action !== "delete") throw new CommandError("무엇을 할지 골라 주세요.", "VALIDATION");
+  const db = await getDb();
+  const out = await db.transaction(async (tx) => {
+    const [row] = await tx.query<Parameters<typeof toMember>[0] & { signup: SignupInfo | string | null }>(`select ${MEMBER_COLS}, signup from members where id = $1 and company_id = $2 for update`, [id, m.companyId]);
+    if (!row) throw new CommandError("가입 신청을 찾을 수 없습니다 (이미 처리했을 수 있습니다).", "NOT_FOUND");
+    const status = (row as { signup_status?: SignupStatus | null }).signup_status ?? null;
+    if (status !== "pending" && status !== "rejected") throw new CommandError("이미 처리한 가입 신청입니다.", "STATE");
+    const info = (typeof row.signup === "string" ? JSON.parse(row.signup) : row.signup) as SignupInfo;
+    const decided = { ...info, decidedAt: new Date().toISOString(), decidedBy: m.id, decidedByName: m.name };
+    if (action === "delete") {
+      await tx.query(`delete from members where id = $1`, [id]);
+      await appendActivity(tx, m.companyId, m.id, `가입 신청 지움 — ${row.name} (${status === "pending" ? "승인 대기" : "승인 안 함"})`);
+      await bumpRev(tx, m.companyId);
+      return { deleted: true as const };
+    }
+    if (action === "reject") {
+      if (status === "rejected") throw new CommandError("이미 ‘승인 안 함’으로 처리했습니다.", "STATE");
+      const reason = text(input.reason, 200);
+      await tx.query(`update members set signup_status = 'rejected', active = false, signup = $2::jsonb, updated_at = now() where id = $1`, [id, JSON.stringify({ ...decided, reason })]);
+      await tx.query(`delete from sessions where member_id = $1`, [id]);
+      await appendActivity(tx, m.companyId, m.id, `가입 승인 안 함 — ${row.name}${reason ? ` (${reason})` : ""}`);
+      await bumpRev(tx, m.companyId);
+      return null;
+    }
+    // 승인 — 역할·현장을 정한다
+    const role = input.role as RoleId;
+    const errs = validateMemberInput({ role, title: typeof input.title === "string" ? input.title : undefined, siteIds: input.siteIds as string[] | undefined, partnerSiteIds: input.partnerSiteIds as string[] | undefined }, false);
+    if (!ROLES.includes(role)) errs.role = "역할을 골라 주세요.";
+    if (Object.keys(errs).length) throw new CommandError(Object.values(errs)[0], "VALIDATION", errs);
+    if (role === "ceo" && m.role !== "ceo") throw new ForbiddenError("대표 권한은 대표만 줄 수 있습니다.");
+    const approver = input.approver === true;
+    if (input.approver !== undefined && typeof input.approver !== "boolean") throw new CommandError("승인 담당 형식", "VALIDATION");
+    if (approver) approverRule(m, true, role);
+    const siteIds = role === "field" ? ((input.siteIds as string[] | undefined) ?? []) : [];
+    const partnerSiteIds = role === "partner" ? ((input.partnerSiteIds as string[] | undefined) ?? []) : [];
+    const title = typeof input.title === "string" ? input.title.trim() : row.title;
+    await tx.query(
+      `update members set signup_status = 'approved', active = true, role = $2, title = $3, site_ids = $4::jsonb, partner_site_ids = $5::jsonb, approver = $6, signup = $7::jsonb, failed_logins = 0, locked_until = null, updated_at = now() where id = $1`,
+      [id, role, title, JSON.stringify(siteIds), JSON.stringify(partnerSiteIds), approver, JSON.stringify(decided)],
+    );
+    await appendActivity(tx, m.companyId, m.id, `가입 승인 — ${row.name} (${ROLE_LABEL[role]}${approver ? " · 가입 승인 담당" : ""})${status === "rejected" ? " · 승인 안 함에서 다시 승인" : ""}`);
+    await bumpRev(tx, m.companyId);
+    return null;
+  });
+  if (out) return out;
+  return (await listMembers(m)).find((x) => x.id === id)!;
+}
+
+/** 승인 안 함 30일 · 처리 안 된 신청 60일이 지나면 지운다 (매일 점검 · 개인정보 최소 보관) */
+export async function purgeSignups(now = new Date()): Promise<number> {
+  const db = await getDb();
+  const day = 86_400_000;
+  const rows = await db.query<{ id: string }>(
+    `delete from members
+      where (signup_status = 'rejected' and coalesce((signup->>'decidedAt')::timestamptz, updated_at) < $1)
+         or (signup_status = 'pending' and created_at < $2)
+      returning id`,
+    [new Date(now.getTime() - SIGNUP_REJECTED_KEEP_DAYS * day).toISOString(), new Date(now.getTime() - SIGNUP_PENDING_KEEP_DAYS * day).toISOString()],
+  );
+  return rows.length;
 }
 
 // ───────────── 현장 QR 단말기 (로그인하지 않은 태블릿) ─────────────

@@ -27,7 +27,12 @@ export interface Member {
   partnerSiteIds: string[];
   active: boolean;
   mustChangePassword: boolean;
+  /** 가입 승인·거절, 계정 추가, 일시 정지를 할 수 있는 사람 (D-90) — 대표 권한은 이 값과 상관없이 가능 */
+  approver?: boolean;
 }
+
+/** 가입 승인 상태 (D-90) — null: 관리자가 만든 계정 */
+export type SignupStatus = "pending" | "approved" | "rejected";
 
 interface MemberRecord {
   id: string;
@@ -40,6 +45,8 @@ interface MemberRecord {
   partner_site_ids: string[];
   active: boolean;
   must_change_password: boolean;
+  approver?: boolean | null;
+  signup_status?: SignupStatus | null;
   password_hash?: string;
   failed_logins?: number;
   locked_until?: string | Date | null;
@@ -57,10 +64,16 @@ export function toMember(r: MemberRecord): Member {
     partnerSiteIds: r.partner_site_ids ?? [],
     active: r.active,
     mustChangePassword: r.must_change_password,
+    approver: r.approver === true,
   };
 }
 
-const MEMBER_COLS = `id, company_id, email, name, title, role, site_ids, partner_site_ids, active, must_change_password`;
+/** 가입 승인·거절, 계정 추가, 일시 정지 권한 (D-90) — 대표 권한이거나 ‘가입 승인 담당’으로 지정된 본사 사람 */
+export function canApprove(m: Pick<Member, "role" | "approver">): boolean {
+  return m.role === "ceo" || (m.role === "manager" && m.approver === true);
+}
+
+const MEMBER_COLS = `id, company_id, email, name, title, role, site_ids, partner_site_ids, active, must_change_password, approver, signup_status`;
 
 // ───────────── 비밀번호 ─────────────
 
@@ -120,7 +133,7 @@ export async function memberFromToken(token: string | undefined | null, onRenew?
   if (!token || token.length < 20 || token.length > 100) return null;
   const db = await getDb();
   const rows = await db.query<MemberRecord & { last_seen_at: string | Date; expires_at: string | Date; created_at: string | Date }>(
-    `select m.id, m.company_id, m.email, m.name, m.title, m.role, m.site_ids, m.partner_site_ids, m.active, m.must_change_password, s.last_seen_at, s.expires_at, s.created_at
+    `select m.id, m.company_id, m.email, m.name, m.title, m.role, m.site_ids, m.partner_site_ids, m.active, m.must_change_password, m.approver, m.signup_status, s.last_seen_at, s.expires_at, s.created_at
      from sessions s join members m on m.id = s.member_id
      where s.token_hash = $1 and s.expires_at > now() and m.active = true`,
     [tokenHash(token)],
@@ -156,7 +169,15 @@ export async function destroySession(token: string | undefined | null) {
   await db.query(`delete from sessions where token_hash = $1`, [tokenHash(token)]);
 }
 
-export type LoginResult = { ok: true; token: string; expires: Date; member: Member } | { ok: false; error: string };
+/** 비밀번호는 맞지만 들어올 수 없는 계정 (D-90) — 승인 대기 · 승인 안 함 · 일시 정지 */
+export type BlockedStatus = "pending" | "rejected" | "suspended";
+export const BLOCKED_MESSAGE: Record<BlockedStatus, string> = {
+  pending: "가입 신청을 받았습니다. 본사에서 승인하면 로그인할 수 있습니다.",
+  rejected: "가입이 승인되지 않았습니다. 잘못된 것이면 본사에 전화해 주세요.",
+  suspended: "사용이 일시 정지된 계정입니다. 본사에 문의해 주세요.",
+};
+
+export type LoginResult = { ok: true; token: string; expires: Date; member: Member } | { ok: false; error: string; blocked?: BlockedStatus };
 
 export async function login(emailIn: unknown, password: unknown): Promise<LoginResult> {
   const email = normalizeEmail(emailIn);
@@ -165,7 +186,7 @@ export async function login(emailIn: unknown, password: unknown): Promise<LoginR
   const db = await getDb();
   return db.transaction(async (tx) => {
     const [row] = await tx.query<MemberRecord>(`select ${MEMBER_COLS}, password_hash, failed_logins, locked_until from members where email = $1`, [email]);
-    if (!row || !row.active) {
+    if (!row) {
       // 존재 여부를 응답 시간으로 드러내지 않도록 같은 비용의 계산을 수행
       await hashPassword(password);
       return { ok: false, error: generic };
@@ -182,6 +203,11 @@ export async function login(emailIn: unknown, password: unknown): Promise<LoginR
         fails >= MAX_FAILS ? new Date(Date.now() + LOCK_MINUTES * 60_000).toISOString() : null,
       ]);
       return { ok: false, error: generic };
+    }
+    // 비밀번호가 맞을 때만 왜 못 들어오는지 알려 준다 — 남의 이메일로 가입 여부를 떠볼 수 없게 (D-90)
+    if (!row.active) {
+      const blocked: BlockedStatus = row.signup_status === "pending" ? "pending" : row.signup_status === "rejected" ? "rejected" : "suspended";
+      return { ok: false, error: BLOCKED_MESSAGE[blocked], blocked };
     }
     await tx.query(`update members set failed_logins = 0, locked_until = null where id = $1`, [row.id]);
     await tx.query(`delete from sessions where member_id = $1 and expires_at < now()`, [row.id]);

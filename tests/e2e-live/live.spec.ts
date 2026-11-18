@@ -47,8 +47,8 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
   test("배포 직후 점검: 상태 확인(DB 연결)·홈 화면 앱 파일은 로그인 없이, 회사 데이터는 로그인 필요", async ({ page }) => {
     const h = await page.request.get("/api/health");
     expect(h.status()).toBe(200);
-    // 스키마 4개: 처음 표 + 보고서 링크 색인 (D-73) + 하자 접수 색인 (D-74) + 큰 백업 조각 임시 표 (D-86)
-    expect(await h.json()).toMatchObject({ ok: true, mode: "live", db: "ok", migrations: 4 });
+    // 스키마 5개: 처음 표 + 보고서 링크 색인 (D-73) + 하자 접수 색인 (D-74) + 큰 백업 조각 임시 표 (D-86) + 회원가입 승인 (D-90)
+    expect(await h.json()).toMatchObject({ ok: true, mode: "live", db: "ok", migrations: 5 });
     const mf = await page.request.get("/manifest.webmanifest");
     expect(mf.status()).toBe(200);
     expect((await mf.json()).name).toBe("TAEKANG 현장");
@@ -1240,9 +1240,9 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     expect((await field.request.get("/api/state")).status()).toBe(200);
     const admin = await login(browser, CEO.email, CEO.password);
     await admin.goto("/admin?tab=members");
-    await admin.getByTestId("member-row").filter({ hasText: "박현장" }).getByRole("button", { name: "비활성" }).click();
-    // 버튼 글자에도 ‘비활성’이 있어 처리 전에 통과하던 확인 → 버튼이 ‘활성’으로 바뀐 것(처리 완료)을 기다린다
-    await expect(admin.getByTestId("member-row").filter({ hasText: "박현장" }).getByRole("button", { name: "활성", exact: true })).toBeVisible();
+    await admin.getByTestId("member-row").filter({ hasText: "박현장" }).getByRole("button", { name: "일시 정지" }).click();
+    // 버튼이 ‘다시 사용’으로 바뀐 것(처리 완료)을 기다린다 (D-90: 비활성 → 일시 정지)
+    await expect(admin.getByTestId("member-row").filter({ hasText: "박현장" }).getByRole("button", { name: "다시 사용", exact: true })).toBeVisible();
     expect((await field.request.get("/api/state")).status()).toBe(401);
   });
 
@@ -1465,5 +1465,82 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
       expect(v.receivableAdjustments ?? []).toEqual([]);
       expect(v.voidedMoney ?? []).toEqual([]);
     }
+  });
+
+  test("회원가입 승인(D-90): 로그인 화면 → 가입 신청 → 로그인하면 ‘승인 대기’ → 대표 권한이 승인(역할·현장) → 로그인 · 다른 신청은 승인 안 함 → 로그인 막힘 · 일시 정지하면 바로 끊김 · 승인 담당이 아니면 403", async ({ browser }) => {
+    // 1) 로그인 없는 휴대폰에서 신청
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const phone = await ctx.newPage();
+    await phone.goto("/login");
+    await phone.getByTestId("login-signup").click();
+    await expect(phone).toHaveURL(/\/signup$/);
+    const apply = async (name: string, email: string, kind: string) => {
+      await phone.locator("#su-name").fill(name);
+      await phone.locator("#su-phone").fill("010-2222-3333");
+      await phone.locator("#su-email").fill(email);
+      await phone.locator("#su-pw").fill("Signup2026a");
+      await phone.locator("#su-pw2").fill("Signup2026a");
+      await pick(phone, `su-kind-${kind}`);
+      await phone.getByTestId("signup-submit").click();
+      // 동의 안 하면 막힘
+      await expect(phone.getByTestId("signup-error")).toContainText("동의");
+      await phone.getByTestId("su-agree").click();
+      await phone.getByTestId("signup-submit").click();
+      await expect(phone.getByTestId("signup-done")).toBeVisible();
+    };
+    await apply("최신입", "newbie@taekang.test", "field");
+    expect(await phone.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+    // 2) 승인 전 로그인 → ‘승인 대기’ 안내 (비밀번호가 맞을 때만)
+    await phone.getByTestId("signup-to-login").click();
+    await phone.locator("#l-email").fill("newbie@taekang.test");
+    await phone.locator("#l-pw").fill("Signup2026a");
+    await phone.getByTestId("login-submit").click();
+    await expect(phone.getByTestId("login-error")).toContainText("승인하면 로그인");
+    await expect(phone.getByTestId("login-error")).toHaveAttribute("data-blocked", "true");
+    // 3) 대표 권한: 메뉴·탭에 가입 신청 수 → 승인(현장소장 · 물류센터)
+    const ceo = await login(browser, CEO.email, CEO.password);
+    await ceo.goto("/admin?tab=members");
+    await expect(ceo.getByTestId("admin-tab-members")).toContainText("가입 신청 1");
+    const row = ceo.getByTestId("signup-row").filter({ hasText: "최신입" });
+    await expect(row).toContainText("010-2222-3333");
+    await row.getByTestId("signup-approve").click();
+    const form = ceo.getByTestId("approve-form");
+    await pick(ceo, "ap-role-field");
+    await form.getByText("물류센터").click();
+    await form.getByTestId("approve-save").click();
+    await expect(form).toHaveCount(0);
+    await expect(ceo.getByTestId("member-row").filter({ hasText: "최신입" })).toContainText("현장직원");
+    await expect(ceo.getByTestId("member-row").filter({ hasText: "최신입" })).toContainText("물류센터");
+    // 4) 승인되면 본인 비밀번호로 바로 로그인 (임시 비밀번호 없음)
+    const newbie = await login(browser, "newbie@taekang.test", "Signup2026a", { width: 390, height: 844 });
+    expect(new URL(newbie.url()).pathname).not.toBe("/account");
+    expect((await newbie.request.get("/api/state")).status()).toBe(200);
+    // 5) 다른 신청은 승인 안 함(이유) → 로그인 막힘
+    await phone.goto("/signup");
+    await apply("모르는사람", "stranger@taekang.test", "other");
+    await ceo.reload();
+    const r2 = ceo.getByTestId("signup-row").filter({ hasText: "모르는사람" });
+    await r2.getByTestId("signup-reject").click();
+    await r2.getByTestId("signup-reject-reason").fill("회사 직원 아님");
+    await r2.getByTestId("signup-reject-yes").click();
+    await expect(ceo.getByTestId("signup-row").filter({ hasText: "모르는사람" })).toHaveCount(0);
+    const deny = await ceo.request.post("/api/auth/login", { data: { email: "stranger@taekang.test", password: "Signup2026a" } });
+    expect(deny.status()).toBe(403);
+    expect((await deny.json()).error).toContain("승인되지 않았습니다");
+    // 6) 일시 정지 → 그 사람의 로그인이 바로 끊기고, 다시 로그인하면 ‘일시 정지’ 안내
+    await ceo.getByTestId("member-row").filter({ hasText: "최신입" }).getByTestId("member-suspend").click();
+    // 버튼 글자에도 ‘일시 정지’가 있어 처리 전에 통과하지 않게 — 버튼이 ‘다시 사용’으로 바뀐 것(처리 완료)을 기다린다
+    await expect(ceo.getByTestId("member-row").filter({ hasText: "최신입" }).getByRole("button", { name: "다시 사용", exact: true })).toBeVisible();
+    expect((await newbie.request.get("/api/state")).status()).toBe(401);
+    const again = await ceo.request.post("/api/auth/login", { data: { email: "newbie@taekang.test", password: "Signup2026a" } });
+    expect((await again.json()).error).toContain("일시 정지");
+    // 7) 승인 담당이 아닌 사람(현장소장)은 가입 처리 API가 막힘
+    const members = (await (await ceo.request.get("/api/admin/members")).json()).members as { id: string; email: string; active: boolean }[];
+    const park = members.find((m) => m.email === FIELD.email)!;
+    if (!park.active) await ceo.request.patch(`/api/admin/members/${encodeURIComponent(park.id)}`, { data: { active: true } });
+    const field = await login(browser, FIELD.email, FIELD.password, { width: 390, height: 844 });
+    const stranger = members.find((m) => m.email === "stranger@taekang.test")!;
+    expect((await field.request.post(`/api/admin/members/${encodeURIComponent(stranger.id)}/signup`, { data: { action: "approve", role: "field" } })).status()).toBe(403);
+    await ctx.close();
   });
 });

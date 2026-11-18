@@ -102,3 +102,12 @@ create table if not exists restore_uploads (
 );
 
 alter table restore_uploads enable row level security;
+
+-- 005_signup_approval
+alter table members add column if not exists signup_status text;
+
+alter table members add column if not exists approver boolean not null default false;
+
+alter table members add column if not exists signup jsonb;
+
+create index if not exists members_signup_status on members(company_id, signup_status) where signup_status is not null;

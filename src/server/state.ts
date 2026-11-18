@@ -113,7 +113,8 @@ export async function loadState(tx: Tx, companyId: string): Promise<DemoDB> {
     idempotency_keys: string[];
   }>(`select seeded_at, baseline, thresholds, settings, signal_states, idempotency_keys from company_state where company_id = $1`, [companyId]);
   const members = await tx.query<MemberRow>(
-    `select id, company_id, email, name, title, role, site_ids, partner_site_ids, active, must_change_password from members where company_id = $1 order by created_at`,
+    // 가입 신청(승인 대기·승인 안 함)은 아직 회사 사람이 아니라 화면 데이터에 넣지 않는다 (D-90)
+    `select id, company_id, email, name, title, role, site_ids, partner_site_ids, active, must_change_password from members where company_id = $1 and (signup_status is null or signup_status = 'approved') order by created_at`,
     [companyId],
   );
   const rows = await tx.query<{ collection: CollectionName; data: Item }>(

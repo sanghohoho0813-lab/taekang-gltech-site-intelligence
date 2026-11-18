@@ -182,7 +182,7 @@ function start() {
 
 // ───────────────────────── LIVE (서버 DB) ─────────────────────────
 
-export const STANDALONE_PATHS = ["/login", "/setup", "/account", "/kiosk"];
+export const STANDALONE_PATHS = ["/login", "/setup", "/signup", "/account", "/kiosk"];
 /** 회사 데이터를 받지 않는 화면 — 로그인·설정·태블릿, 그리고 로그인 없이 여는 보고서 링크(/s/…, D-73)·하자 접수 링크(/r/…, D-74) */
 export const isStandalonePath = (pathname: string) => STANDALONE_PATHS.includes(pathname) || /^\/[sr](\/|$)/.test(pathname);
 

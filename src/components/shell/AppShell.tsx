@@ -31,7 +31,7 @@ export function AppShell({ children, compactSidebar }: { children: ReactNode; co
   useEffect(() => registerOfflinePage(IS_LIVE), []);
   const isPartnerSurface = pathname === "/partner" || pathname.startsWith("/partner/");
   // 로그인·최초 설정 화면은 메뉴 없이
-  if (isPartnerSurface || pathname === "/login" || pathname === "/setup" || pathname === "/account") return <>{children}</>;
+  if (isPartnerSurface || pathname === "/login" || pathname === "/setup" || pathname === "/signup" || pathname === "/account") return <>{children}</>;
   return (
     <div className="app-frame flex min-h-[calc(100dvh-var(--demo-bar-h))] w-full min-w-0">
       <Sidebar compact={compactSidebar} />

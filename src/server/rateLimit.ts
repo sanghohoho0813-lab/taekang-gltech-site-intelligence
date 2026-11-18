@@ -22,6 +22,8 @@ export const RULES = {
   password: { name: "password", limit: 10, windowMs: 10 * 60_000 },
   commands: { name: "commands", limit: 120, windowMs: 60_000 },
   members: { name: "members", limit: 60, windowMs: 60_000 },
+  /** 회원가입 신청(D-90) — 한 접속 주소에서 1시간에 5번 (현장 사무실 와이파이에서 몇 명이 같이 신청해도 되게) */
+  signup: { name: "signup", limit: 5, windowMs: 60 * 60_000 },
   kioskPair: { name: "kioskPair", limit: 20, windowMs: 10 * 60_000 },
   kioskStatus: { name: "kioskStatus", limit: 120, windowMs: 60_000 },
   export: { name: "export", limit: 6, windowMs: 10 * 60_000 },
