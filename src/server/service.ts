@@ -21,7 +21,7 @@ import { ROLE_LABEL } from "@/lib/domain/labels";
 import { createSeed } from "@/lib/data/seed";
 import { uid } from "@/lib/domain/ids";
 import { getDb, type Tx } from "./sql";
-import { deliver, pushReady } from "./push";
+import { createAppVapid, deliver, hasEnvVapid, pushReadyFor, vapidFor, vapidSubject } from "./push";
 import { noticesFor, type Notice } from "@/lib/domain/notify";
 import { COLLECTIONS, loadState, persistState } from "./state";
 import { authorize, fieldSiteIds, ForbiddenError, sanitizeResult, viewFor } from "./authz";
@@ -205,13 +205,15 @@ export async function runDailyJobs(now = new Date()): Promise<{ companies: numbe
   await purgeSignups(now).catch((e) => (failed += 1, console.error("[daily signup purge]", e)));
   for (const { id } of companies) {
     try {
+      // 알림 키(환경변수 또는 대표가 켠 키)가 있는 회사만 알림이 생기는 점검을 돌린다 (D-91)
+      const ready = await pushReadyFor(id);
       const done = await db.transaction(async (tx) => {
         await tx.query(`select rev from companies where id = $1 for update`, [id]);
         const loaded = await loadState(tx, id);
         // 닫히거나 기한이 지난 보고서 링크의 내용·오래된 기록도 함께 지운다 (D-73)
         const retained = applyIntakeRetention(applyShareRetention(applyLocationRetention(loaded, now), now), now);
         // 알림 키가 없으면 하자보증 만료 알림은 건너뛴다 (‘보낸 알림’으로 남지 않게) — 위치 좌표 정리는 그대로
-        const out = pushReady() ? runDailyChecks(retained, now) : { db: retained, notices: [], warranty: [], brief: { hq: 0, field: 0 }, changed: false };
+        const out = ready ? runDailyChecks(retained, now) : { db: retained, notices: [], warranty: [], brief: { hq: 0, field: 0 }, changed: false };
         if (out.db === loaded) return null;
         await persistState(tx, id, loaded, out.db);
         return out;
@@ -227,6 +229,43 @@ export async function runDailyJobs(now = new Date()): Promise<{ companies: numbe
     }
   }
   return { companies: companies.length, changed, warrantyNotices, briefs, pushed, failed };
+}
+
+// ───────────── 회사 휴대폰 알림 켜기 (D-91) ─────────────
+
+export interface PushStatus {
+  /** 회사 알림 키가 있어 알림을 보낼 수 있는가 */
+  enabled: boolean;
+  /** env = Vercel 환경변수 · app = 운영 설정에서 켬 */
+  source: "env" | "app" | null;
+  /** 휴대폰이 구독할 때 쓰는 공개 키 (비밀 아님) */
+  publicKey: string | null;
+  /** 이 사람이 회사 알림을 켤 수 있는가 (대표 권한) */
+  canEnable: boolean;
+}
+
+export async function companyPushStatus(m: Member): Promise<PushStatus> {
+  const v = await vapidFor(m.companyId);
+  return { enabled: !!v, source: v?.source ?? null, publicKey: v?.publicKey ?? null, canEnable: m.role === "ceo" };
+}
+
+/**
+ * 대표가 운영 설정에서 ‘휴대폰 알림 켜기’ — 서버가 알림 키를 만들어 DB에 보관한다. Vercel 환경변수를 손대지 않아도 된다.
+ * 환경변수 키가 있으면 그것을 쓰므로 아무것도 만들지 않는다. 이미 켰으면 그대로(키가 바뀌면 모든 휴대폰이 다시 켜야 하므로 덮어쓰지 않음).
+ */
+export async function enableCompanyPush(m: Member, origin?: string | null): Promise<PushStatus & { created: boolean }> {
+  if (m.role !== "ceo") throw new ForbiddenError("회사 휴대폰 알림은 대표 권한으로만 켤 수 있습니다.");
+  let created = false;
+  if (!hasEnvVapid()) {
+    const db = await getDb();
+    created = await db.transaction(async (tx) => {
+      await tx.query(`select rev from companies where id = $1 for update`, [m.companyId]);
+      const made = await createAppVapid(tx, m.companyId, m.id, vapidSubject(origin));
+      if (made) await appendActivity(tx, m.companyId, m.id, "회사 휴대폰 알림을 켰습니다 (서버가 알림 키를 만들어 보관)", "/admin?tab=settings");
+      return made;
+    });
+  }
+  return { ...(await companyPushStatus(m)), created };
 }
 
 // ───────────── 사진 ─────────────
@@ -504,8 +543,8 @@ async function bumpRev(tx: Tx, companyId: string) {
 }
 
 /** 사용자 관리(명령 밖) 변경을 활동 이력에 남긴다 — 누가 비밀번호를 초기화·로그아웃시켰는지 (D-48) */
-async function appendActivity(tx: Tx, companyId: string, by: string, summary: string) {
-  const log = { id: uid("log"), at: new Date().toISOString(), by, type: "member", summary, link: "/admin?tab=members" };
+async function appendActivity(tx: Tx, companyId: string, by: string, summary: string, link = "/admin?tab=members") {
+  const log = { id: uid("log"), at: new Date().toISOString(), by, type: "member", summary, link };
   await tx.query(`insert into records (company_id, collection, id, site_id, data) values ($1, 'activityLogs', $2, null, $3::jsonb)`, [companyId, log.id, JSON.stringify(log)]);
 }
 

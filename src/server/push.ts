@@ -7,7 +7,7 @@
 import { createHash } from "node:crypto";
 import { CommandError } from "@/lib/data/commands";
 import type { Notice } from "@/lib/domain/notify";
-import { getDb } from "./sql";
+import { getDb, type Tx } from "./sql";
 import type { Member } from "./auth";
 
 export interface PushSubscriptionInput {
@@ -32,18 +32,105 @@ const PUSH_HOSTS = /^(fcm\.googleapis\.com|android\.googleapis\.com|updates\.pus
 const MAX_PER_USER = 5;
 const COLLECTION = "pushSubscriptions";
 
-export function vapid(): { publicKey: string; privateKey: string; subject: string } | null {
+export interface Vapid {
+  publicKey: string;
+  privateKey: string;
+  subject: string;
+  /** env = Vercel 환경변수 · app = 대표가 운영 설정에서 켜서 서버가 만든 키 (D-91) */
+  source: "env" | "app";
+}
+interface StoredVapid {
+  id: string;
+  publicKey: string;
+  privateKey: string;
+  subject: string;
+  createdAt: string;
+  createdBy: string;
+}
+
+/**
+ * 알림 키 보관 (D-91) — records 표의 serverKeys에 회사마다 1개.
+ * COLLECTIONS 목록에 없어 화면 데이터(loadState)·전체 백업·복원에 들어가지 않는다(비밀키가 휴대폰·파일로 나가지 않음).
+ * DB 공개 API는 전 테이블 RLS로 막혀 있다.
+ */
+export const KEY_COLLECTION = "serverKeys";
+const VAPID_ID = "vapid";
+const FALLBACK_SUBJECT = "mailto:admin@example.com";
+
+function envVapid(): Vapid | null {
   const publicKey = process.env.VAPID_PUBLIC_KEY?.trim();
   const privateKey = process.env.VAPID_PRIVATE_KEY?.trim();
   if (!publicKey || !privateKey) return null;
-  return { publicKey, privateKey, subject: process.env.VAPID_SUBJECT?.trim() || "mailto:admin@example.com" };
+  return { publicKey, privateKey, subject: process.env.VAPID_SUBJECT?.trim() || FALLBACK_SUBJECT, source: "env" };
+}
+
+/** 환경변수 키가 있는가 (있으면 그것을 쓰고, 화면에서 켤 필요가 없다) */
+export function hasEnvVapid(): boolean {
+  return !!envVapid();
+}
+
+const appKeys = new Map<string, Vapid>();
+
+/** 이 회사가 쓸 알림 키 — 환경변수가 먼저, 없으면 화면에서 켠 키. 둘 다 없으면 null */
+export async function vapidFor(companyId: string): Promise<Vapid | null> {
+  const env = envVapid();
+  if (env) return env;
+  const hit = appKeys.get(companyId);
+  if (hit) return hit;
+  const db = await getDb();
+  const [row] = await db.query<{ data: StoredVapid | string }>(`select data from records where company_id = $1 and collection = $2 and id = $3`, [companyId, KEY_COLLECTION, VAPID_ID]);
+  if (!row) return null;
+  const d = typeof row.data === "string" ? (JSON.parse(row.data) as StoredVapid) : row.data;
+  if (b64urlLen(d?.publicKey) !== 65 || b64urlLen(d?.privateKey) !== 32) return null;
+  const v: Vapid = { publicKey: d.publicKey, privateKey: d.privateKey, subject: process.env.VAPID_SUBJECT?.trim() || d.subject || FALLBACK_SUBJECT, source: "app" };
+  appKeys.set(companyId, v);
+  return v;
+}
+
+/** 알림을 실제로 보낼 수 있는가 (키가 있거나 테스트 발송 함수) — 매일 점검이 보내지 못할 알림을 ‘보냄’으로 남기지 않게 (D-71) */
+export async function pushReadyFor(companyId: string): Promise<boolean> {
+  return !!testSender || !!(await vapidFor(companyId));
+}
+
+/** VAPID 발신자 — 운영 주소(https)면 그 주소, 아니면 예비 메일 주소 */
+export function vapidSubject(origin: string | null | undefined): string {
+  try {
+    const u = new URL(String(origin ?? ""));
+    if (u.protocol === "https:") return u.origin;
+  } catch {
+    /* 아래 예비 값 */
+  }
+  return FALLBACK_SUBJECT;
+}
+
+/**
+ * 화면에서 켠 알림 키를 만든다 (D-91 · 대표 확인은 부르는 쪽). 이미 있으면 그대로 둔다(키가 바뀌면 모든 휴대폰이 다시 켜야 함).
+ * @returns 새로 만들었으면 true
+ */
+export async function createAppVapid(tx: Tx, companyId: string, by: string, subject: string, now = new Date()): Promise<boolean> {
+  const webpush = (await import("web-push")).default;
+  const keys = webpush.generateVAPIDKeys();
+  const data: StoredVapid = { id: VAPID_ID, publicKey: keys.publicKey, privateKey: keys.privateKey, subject, createdAt: now.toISOString(), createdBy: by };
+  const rows = await tx.query<{ id: string }>(
+    `insert into records (company_id, collection, id, site_id, data) values ($1, $2, $3, null, $4::jsonb) on conflict (company_id, collection, id) do nothing returning id`,
+    [companyId, KEY_COLLECTION, VAPID_ID, JSON.stringify(data)],
+  );
+  return rows.length > 0;
+}
+
+/** 서버 상태 확인용 — 알림 키가 어딘가에 있는가 (값은 보지 않음) */
+export async function anyAppVapid(): Promise<boolean> {
+  const db = await getDb();
+  const [r] = await db.query<{ n: number }>(`select count(*)::int as n from records where collection = $1 and id = $2`, [KEY_COLLECTION, VAPID_ID]);
+  return Number(r?.n ?? 0) > 0;
+}
+
+/** 테스트에서 기억해 둔 키를 비운다 */
+export function forgetAppKeys() {
+  appKeys.clear();
 }
 
 let testSender: Sender | null = null;
-/** 알림을 실제로 보낼 수 있는가 (키가 있거나 테스트 발송 함수) — 매일 점검이 보내지 못할 알림을 ‘보냄’으로 남기지 않게 (D-71) */
-export function pushReady(): boolean {
-  return !!vapid() || !!testSender;
-}
 /** 테스트에서 실제 발송 대신 쓸 함수 (null이면 실제 발송) */
 export function setPushSender(fn: Sender | null) {
   testSender = fn;
@@ -70,7 +157,7 @@ export function validateSubscription(input: unknown): PushSubscriptionInput {
 const idOf = (endpoint: string) => createHash("sha256").update(endpoint).digest("hex").slice(0, 32);
 
 export async function saveSubscription(m: Member, input: unknown, ua?: string): Promise<{ count: number }> {
-  if (!vapid() && !testSender) throw new CommandError("알림이 아직 설정되지 않았습니다. 관리자에게 문의해주세요.", "STATE");
+  if (!testSender && !(await vapidFor(m.companyId))) throw new CommandError("회사 휴대폰 알림이 아직 꺼져 있습니다. 대표가 ‘운영 관리 → 운영 설정’에서 먼저 켜야 합니다.", "STATE");
   const sub = validateSubscription(input);
   const db = await getDb();
   const id = idOf(sub.endpoint);
@@ -111,13 +198,12 @@ export async function countFor(m: Member): Promise<number> {
   return Number(r?.n ?? 0);
 }
 
-async function send(sub: PushSubscriptionInput, payload: string): Promise<{ statusCode: number }> {
+async function send(sub: PushSubscriptionInput, payload: string, v: Vapid | null): Promise<{ statusCode: number }> {
   if (testSender) return testSender(sub, payload);
-  const v = vapid();
   if (!v) return { statusCode: 0 };
   const webpush = (await import("web-push")).default;
   try {
-    const r = await webpush.sendNotification(sub, payload, { TTL: 6 * 3600, urgency: "high", vapidDetails: v, timeout: 3500 });
+    const r = await webpush.sendNotification(sub, payload, { TTL: 6 * 3600, urgency: "high", vapidDetails: { subject: v.subject, publicKey: v.publicKey, privateKey: v.privateKey }, timeout: 3500 });
     return { statusCode: r.statusCode };
   } catch (e) {
     return { statusCode: Number((e as { statusCode?: number }).statusCode ?? 0) };
@@ -126,7 +212,9 @@ async function send(sub: PushSubscriptionInput, payload: string): Promise<{ stat
 
 /** 알림 발송 — 받을 사람의 활성 구독에만. 만료된 구독(404·410)은 지운다 */
 export async function deliver(companyId: string, notices: Notice[]): Promise<{ sent: number; removed: number }> {
-  if (!notices.length || (!vapid() && !testSender)) return { sent: 0, removed: 0 };
+  if (!notices.length) return { sent: 0, removed: 0 };
+  const v = testSender ? null : await vapidFor(companyId);
+  if (!v && !testSender) return { sent: 0, removed: 0 };
   const db = await getDb();
   const userIds = [...new Set(notices.flatMap((n) => n.to))];
   const rows = await db.query<{ data: StoredSub | string }>(
@@ -140,7 +228,7 @@ export async function deliver(companyId: string, notices: Notice[]): Promise<{ s
   const gone = new Set<string>();
   const run = Promise.allSettled(
     jobs.map(async ({ s, payload }) => {
-      const r = await send(s, payload);
+      const r = await send(s, payload, v);
       if (r.statusCode >= 200 && r.statusCode < 300) sent += 1;
       if (r.statusCode === 404 || r.statusCode === 410) gone.add(s.id);
     }),

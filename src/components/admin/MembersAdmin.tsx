@@ -17,6 +17,7 @@ import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { tempPassword } from "@/lib/domain/password";
 import { SlipPrintDialog, type Slip } from "./LoginSlips";
+import { InviteCard } from "./InviteCard";
 
 interface MemberView {
   id: string;
@@ -105,6 +106,7 @@ export function MembersAdmin({ db, me }: { db: DemoDB; me: Me }) {
 
   return (
     <div className="space-y-5">
+    <InviteCard db={db} approver={!!me.approver} />
     <SignupsCard db={db} me={me} signups={signups} rejected={rejected} loaded={!!members} onApprove={setApproving} onDone={async () => (await load(), void liveFetch())} />
     <Card data-testid="admin-members">
       <CardHeader

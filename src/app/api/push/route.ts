@@ -1,20 +1,21 @@
 import type { NextRequest } from "next/server";
-import { countFor, removeSubscription, saveSubscription, vapid } from "@/server/push";
+import { countFor, removeSubscription, saveSubscription } from "@/server/push";
+import { companyPushStatus } from "@/server/service";
 import { RULES, limited } from "@/server/rateLimit";
 import { crossSite, errorResponse, json, notLive, readJson, requireMember } from "@/server/http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** 내 알림 상태 + 서버 공개 키 (공개 키는 비밀이 아님) */
+/** 내 알림 상태 + 회사 알림 상태 + 서버 공개 키 (공개 키는 비밀이 아님) */
 export async function GET(req: NextRequest) {
   const blocked = notLive();
   if (blocked) return blocked;
   try {
     const m = await requireMember(req);
     if (m instanceof Response) return m;
-    const v = vapid();
-    return json({ enabled: !!v, publicKey: v?.publicKey ?? null, subscribed: v ? await countFor(m) : 0 });
+    const st = await companyPushStatus(m);
+    return json({ ...st, subscribed: st.enabled ? await countFor(m) : 0 });
   } catch (e) {
     return errorResponse(e);
   }

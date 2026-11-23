@@ -10,6 +10,7 @@ import { MembersAdmin } from "@/components/admin/MembersAdmin";
 import { ReviewAdmin } from "@/components/admin/ReviewAdmin";
 import { SettingsAdmin } from "@/components/admin/SettingsAdmin";
 import { MorningBriefCard } from "@/components/admin/MorningBriefCard";
+import { CompanyPushCard } from "@/components/admin/CompanyPushCard";
 import { PrivacyAdmin } from "@/components/admin/PrivacyAdmin";
 
 type Tab = "sites" | "members" | "review" | "settings" | "privacy";
@@ -44,6 +45,7 @@ function AdminInner() {
       {tab === "settings" && (
         <>
           <SettingsAdmin db={db} />
+          <CompanyPushCard />
           <MorningBriefCard db={db} />
         </>
       )}

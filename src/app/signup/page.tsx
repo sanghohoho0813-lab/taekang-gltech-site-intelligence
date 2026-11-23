@@ -32,6 +32,9 @@ export default function SignupPage() {
 
   useEffect(() => {
     if (IS_LIVE) void api<{ needsSetup: boolean }>("/api/setup").then((r) => setNeedsSetup(!!r.data?.needsSetup));
+    // 본사가 보낸 안내 주소(?k=field|manager|partner)면 ‘어떤 일로’를 미리 골라 둔다 — 바꿀 수 있고, 역할은 승인할 때 본사가 정한다 (D-91)
+    const k = new URLSearchParams(window.location.search).get("k");
+    if (k === "field" || k === "manager" || k === "partner") setF((v) => (v.kind ? v : { ...v, kind: k }));
   }, []);
 
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setF({ ...f, [k]: e.target.value });

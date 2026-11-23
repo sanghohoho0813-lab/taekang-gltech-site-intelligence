@@ -58,7 +58,7 @@ export async function smokeCheck(baseUrl, fetchFn = fetch) {
     if (health.mode === "live") {
       if (h.status === 200 && health.db === "ok") add(health.dbMs > 2000 ? "warn" : "ok", "db", `DB 연결 정상 (${health.dbMs}ms${health.dbMs > 2000 ? " — 느림: DB 지역·연결 주소 확인" : ""}) · 스키마 ${health.migrations}개 적용`);
       else add("error", "db", "DB에 연결되지 않습니다 — DATABASE_URL(Supabase 연결 문자열)을 확인하세요");
-      if (health.push === "off") add("warn", "push", "휴대폰 알림 키(VAPID)가 없습니다 — 알림 없이 동작합니다 (npm run vapid)");
+      if (health.push === "off") add("warn", "push", "휴대폰 알림이 꺼져 있습니다 — 대표가 ‘운영 관리 → 운영 설정’에서 ‘회사 휴대폰 알림 켜기’를 누르면 켜집니다 (또는 VAPID 환경변수 · npm run vapid)");
       else if (health.push === "on") add("ok", "push", "휴대폰 알림 키 설정됨");
     }
   }

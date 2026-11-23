@@ -254,5 +254,5 @@ QA_BASE_URL=http://127.0.0.1:3000 npm run qa:cuesheet   # 시연 큐시트 54개
 | `npm run perf` | 1년치 데이터 성능 측정 + **아침 출근 몰림**(20명 동시 출근·보고+본사 화면) (`PERF_DAYS=900`이면 3년치 · `PEAK_PEOPLE=40`처럼 인원 변경 · 실제 Postgres는 `TEST_DATABASE_URL=…` · D-50) |
 | `TEST_DATABASE_URL=postgres://… npx vitest run` | 단위·서버 테스트를 **실제 Postgres**로 — 배포 전 필수 (D-41·D-42). 테스트 파일마다 빈 임시 DB를 만들고 지우므로 아무 DB 주소나 됨(DB를 만들 권한 필요) |
 | `E2E_DATABASE_URL=postgres://… npm run e2e:live` | LIVE 화면 E2E를 **실제 Postgres**로 (빈 DB) |
-| `npm run vapid` | 휴대폰 알림(웹 푸시) 키 만들기 → Vercel 환경변수 `VAPID_PUBLIC_KEY`·`VAPID_PRIVATE_KEY`·`VAPID_SUBJECT` (한 번만, 다시 만들면 모두 알림을 다시 켜야 함) |
+| `npm run vapid` | (선택 · D-91부터는 대표가 ‘운영 관리 → 운영 설정 → 회사 휴대폰 알림 켜기’로 충분) 휴대폰 알림(웹 푸시) 키 만들기 → Vercel 환경변수 `VAPID_PUBLIC_KEY`·`VAPID_PRIVATE_KEY`·`VAPID_SUBJECT` (한 번만, 다시 만들면 모두 알림을 다시 켜야 함) |
 

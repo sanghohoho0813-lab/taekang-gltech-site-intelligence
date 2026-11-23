@@ -27,6 +27,14 @@ export interface MemberInfo {
   siteIds: string[];
   mustChangePassword: boolean;
   active: boolean;
+  /** 회원가입 신청 상태 (D-90) — pending이면 아직 승인 대기 */
+  signupStatus?: "pending" | "approved" | "rejected" | null;
+}
+
+/** 서버에서만 아는 운영 상태 (D-91) — 시연에는 없다(null이면 항목을 빼고 본다) */
+export interface LaunchServerInfo {
+  /** 회사 휴대폰 알림이 켜져 있는가 (환경변수 또는 운영 설정에서 켬) */
+  push: boolean | null;
 }
 
 export interface PersonLaunch {
@@ -56,7 +64,7 @@ export interface LaunchReport {
   peopleReady: number;
 }
 
-export function launchReport(db: DemoDB, members: MemberInfo[] | null): LaunchReport {
+export function launchReport(db: DemoDB, members: MemberInfo[] | null, server: LaunchServerInfo | null = null): LaunchReport {
   const active = (u: DemoUser) => !u.inactive;
   const userById = new Map(db.users.map((u) => [u.id, u]));
   const crewOf = (site: Site) => db.users.filter((u) => u.role === "field" && active(u) && worksOnSite(u, site));
@@ -76,6 +84,16 @@ export function launchReport(db: DemoDB, members: MemberInfo[] | null): LaunchRe
       ? { key: "hq", label: "본사 관리자", status: "ok", text: `${hq}명 (대표 포함)` }
       : { key: "hq", label: "본사 관리자", status: "warn", text: `${hq}명 — 휴가·퇴사 때 확인할 사람이 없습니다. 관리자 1명을 더 두세요`, fix: "members" },
   ];
+  // 회사 휴대폰 알림 (D-91) — 꺼져 있으면 작업지시·보완 요청·가입 신청·아침 알림이 휴대폰으로 가지 않는다
+  if (server && server.push != null)
+    company.push(
+      server.push
+        ? { key: "push", label: "회사 휴대폰 알림", status: "ok", text: "켜짐 — 사람마다 자기 휴대폰에서 ‘알림 켜기’를 한 번 누르면 받습니다" }
+        : { key: "push", label: "회사 휴대폰 알림", status: "warn", text: "꺼짐 — 작업지시·보완 요청·가입 신청이 휴대폰으로 가지 않습니다. 대표가 ‘회사 휴대폰 알림 켜기’를 한 번 누르세요", fix: "settings" },
+    );
+  // 승인 대기 가입 신청 (D-90·D-91) — 신청한 직원은 승인 전까지 로그인할 수 없다
+  const waiting = (members ?? []).filter((m) => m.signupStatus === "pending").length;
+  if (waiting) company.push({ key: "signup", label: "가입 신청", status: "warn", text: `${waiting}명 승인 대기 — 승인 전에는 로그인할 수 없습니다. ‘가입 신청’에서 승인하거나 승인 안 함`, fix: "members" });
 
   const running = db.sites.filter((s) => s.status === "active");
   const sites = running.map((site) => {

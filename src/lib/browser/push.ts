@@ -5,7 +5,8 @@ export type PushState =
   | { kind: "unsupported" }
   /** 아이폰: 홈 화면에 추가한 아이콘으로 열어야 알림 가능 */
   | { kind: "ios-install" }
-  | { kind: "server-off" }
+  /** 회사 알림이 아직 꺼져 있음 — canEnable이면 이 사람(대표)이 운영 설정에서 켤 수 있다 (D-91) */
+  | { kind: "server-off"; canEnable?: boolean }
   | { kind: "denied" }
   | { kind: "off" }
   | { kind: "on" };
@@ -19,7 +20,15 @@ function keyBytes(b64url: string): Uint8Array {
   return Uint8Array.from(raw, (c) => c.charCodeAt(0));
 }
 
-async function serverStatus(): Promise<{ enabled: boolean; publicKey: string | null; subscribed: number }> {
+export interface ServerPushStatus {
+  enabled: boolean;
+  publicKey: string | null;
+  subscribed: number;
+  source: "env" | "app" | null;
+  canEnable: boolean;
+}
+
+export async function serverStatus(): Promise<ServerPushStatus> {
   const r = await fetch("/api/push", { cache: "no-store", credentials: "same-origin" });
   if (!r.ok) throw new Error("알림 상태를 확인하지 못했습니다.");
   return r.json();
@@ -30,6 +39,23 @@ async function currentSub(): Promise<PushSubscription | null> {
   return reg ? reg.pushManager.getSubscription() : null;
 }
 
+/** 이 기기의 구독이 지금 서버 알림 키로 만든 것인가 — 키가 바뀌었으면(환경변수 ↔ 운영 설정) 다시 켜야 한다 (D-91) */
+function sameKey(sub: PushSubscription, publicKey: string): boolean {
+  const k = sub.options?.applicationServerKey;
+  if (!k) return true; // 브라우저가 알려 주지 않으면 그대로 둔다
+  const a = new Uint8Array(k);
+  const b = keyBytes(publicKey);
+  return a.length === b.length && a.every((x, i) => x === b[i]);
+}
+
+/** 회사 휴대폰 알림 켜기 (대표) — 서버가 알림 키를 만든다 (D-91) */
+export async function enableCompanyPush(): Promise<ServerPushStatus> {
+  const r = await fetch("/api/push/enable", { method: "POST", credentials: "same-origin" });
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body.error ?? "회사 알림을 켜지 못했습니다.");
+  return { ...body, subscribed: 0 };
+}
+
 export async function pushState(live: boolean): Promise<PushState> {
   if (!live) return { kind: "demo" };
   if (typeof window === "undefined" || !("serviceWorker" in navigator)) return { kind: "unsupported" };
@@ -37,19 +63,25 @@ export async function pushState(live: boolean): Promise<PushState> {
   if (isIos() && !standalone()) return { kind: "ios-install" };
   if (Notification.permission === "denied") return { kind: "denied" };
   const s = await serverStatus().catch(() => null);
-  if (!s?.enabled) return { kind: "server-off" };
+  if (!s) return { kind: "server-off" };
+  if (!s.enabled || !s.publicKey) return { kind: "server-off", canEnable: s.canEnable };
   const sub = await currentSub().catch(() => null);
-  return sub && s.subscribed > 0 ? { kind: "on" } : { kind: "off" };
+  return sub && s.subscribed > 0 && sameKey(sub, s.publicKey) ? { kind: "on" } : { kind: "off" };
 }
 
 export async function enablePush(): Promise<PushState> {
   const s = await serverStatus();
-  if (!s.enabled || !s.publicKey) return { kind: "server-off" };
+  if (!s.enabled || !s.publicKey) return { kind: "server-off", canEnable: s.canEnable };
   const perm = await Notification.requestPermission();
   if (perm !== "granted") return { kind: perm === "denied" ? "denied" : "off" };
   const reg = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
   await navigator.serviceWorker.ready;
   let sub = await reg.pushManager.getSubscription();
+  // 예전 알림 키로 만든 구독이면 끄고 새 키로 다시 (그대로 두면 알림이 조용히 안 감)
+  if (sub && !sameKey(sub, s.publicKey)) {
+    await sub.unsubscribe().catch(() => {});
+    sub = null;
+  }
   if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(s.publicKey) as BufferSource });
   const r = await fetch("/api/push", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify({ subscription: sub.toJSON() }) });
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "알림을 켜지 못했습니다.");

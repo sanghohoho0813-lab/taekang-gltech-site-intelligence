@@ -1,5 +1,6 @@
 import { getDb } from "@/server/sql";
 import { json } from "@/server/http";
+import { anyAppVapid, hasEnvVapid } from "@/server/push";
 import { IS_LIVE } from "@/lib/mode";
 
 export const runtime = "nodejs";
@@ -18,8 +19,8 @@ export async function GET() {
     const db = await getDb();
     await db.query("select 1");
     const [m] = await db.query<{ n: number }>("select count(*)::int as n from schema_migrations");
-    // 알림 키가 있는지만 (값은 내보내지 않음) — 배포 후 점검(npm run smoke)이 확인
-    const push = process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY ? "on" : "off";
+    // 알림 키가 있는지만 (값은 내보내지 않음) — 배포 후 점검(npm run smoke)이 확인. 환경변수 또는 대표가 운영 설정에서 켠 키 (D-91)
+    const push = hasEnvVapid() || (await anyAppVapid()) ? "on" : "off";
     return json({ ok: true, ...base, db: "ok", dbMs: Date.now() - t0, migrations: Number(m?.n ?? 0), push });
   } catch {
     return json({ ok: false, ...base, db: "error" }, 503);

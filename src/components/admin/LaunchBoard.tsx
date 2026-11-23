@@ -19,6 +19,7 @@ import { PageBody, PageHeader } from "@/components/shell/AppShell";
 import { Badge, Button, Card, CardHeader, Notice, PageSkeleton, cx } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/Toast";
 import { SlipPrintDialog, type Slip } from "./LoginSlips";
+import { serverStatus } from "@/lib/browser/push";
 
 const FIX: Record<LaunchFix, { href: string | null; label: string }> = {
   settings: { href: IS_LIVE ? "/admin?tab=settings" : null, label: "운영 관리 → 운영 설정" },
@@ -51,6 +52,7 @@ export function LaunchBoard() {
   const { db } = useMe();
   const toast = useToast();
   const [members, setMembers] = useState<MemberInfo[] | null>(null);
+  const [push, setPush] = useState<boolean | null>(null);
   const [memberErr, setMemberErr] = useState(false);
   const [picked, setPicked] = useState<string[]>([]);
   const [askReset, setAskReset] = useState(false);
@@ -58,6 +60,10 @@ export function LaunchBoard() {
   const [slips, setSlips] = useState<Slip[] | null>(null);
   const load = useCallback(async () => {
     if (!IS_LIVE) return;
+    // 회사 휴대폰 알림이 켜졌는지 (D-91) — 실패하면 항목을 빼고 본다
+    void serverStatus()
+      .then((s) => setPush(s.enabled))
+      .catch(() => setPush(null));
     const r = await api<{ members: MemberInfo[] }>("/api/admin/members");
     if (r.ok && r.data) {
       setMembers(r.data.members);
@@ -68,7 +74,7 @@ export function LaunchBoard() {
     void load();
   }, [load]);
   if (!db) return <PageSkeleton />;
-  const rep = launchReport(db, members);
+  const rep = launchReport(db, members, IS_LIVE ? { push } : null);
   const chosen = rep.people.filter((p) => picked.includes(p.user.id));
   const pendingChosen = chosen.filter((p) => p.firstLogin === "pending");
   const toSlips = (list: PersonLaunch[], pw: Record<string, string> = {}): Slip[] =>

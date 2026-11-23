@@ -54,7 +54,18 @@ export function PushCard({ size = "easy", audience = "field" }: { size?: "easy" 
       {!st && <p className={cx("text-ink-3", text)}>확인 중…</p>}
       {st?.kind === "demo" && <p className={cx("rounded-xl bg-surface-2 px-3 py-2 text-ink-2", text)}>시연 화면에서는 알림이 오지 않아요. 실제 운영에서 여기서 켭니다.</p>}
       {st?.kind === "unsupported" && <p className={cx("rounded-xl bg-surface-2 px-3 py-2 text-ink-2", text)}>이 브라우저는 알림을 지원하지 않아요. 갤럭시는 ‘크롬’이나 ‘삼성 인터넷’으로 열어 주세요.</p>}
-      {st?.kind === "server-off" && <p className={cx("rounded-xl bg-surface-2 px-3 py-2 text-ink-2", text)}>알림이 아직 준비되지 않았어요. 본사에 알려 주세요.</p>}
+      {st?.kind === "server-off" &&
+        (st.canEnable ? (
+          <p className={cx("rounded-xl bg-warn-bg px-3 py-2 text-ink-2", text)} data-testid="push-company-off">
+            회사 알림이 아직 꺼져 있어요. 먼저{" "}
+            <a href="/admin?tab=settings" className="font-bold text-theme-ink underline">
+              운영 관리 → 운영 설정
+            </a>
+            에서 ‘회사 휴대폰 알림 켜기’를 누르세요.
+          </p>
+        ) : (
+          <p className={cx("rounded-xl bg-surface-2 px-3 py-2 text-ink-2", text)}>알림이 아직 준비되지 않았어요. 본사에 알려 주세요.</p>
+        ))}
       {st?.kind === "ios-install" && (
         <ol className={cx("list-decimal space-y-1 rounded-xl bg-surface-2 py-2 pl-8 pr-3 text-ink-2", text)} data-testid="push-ios">
           <li>아이폰은 먼저 홈 화면에 추가해야 알림을 받을 수 있어요.</li>

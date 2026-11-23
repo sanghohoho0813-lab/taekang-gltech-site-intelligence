@@ -1543,4 +1543,65 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     expect((await field.request.post(`/api/admin/members/${encodeURIComponent(stranger.id)}/signup`, { data: { action: "approve", role: "field" } })).status()).toBe(403);
     await ctx.close();
   });
+
+  test("시범 운영 시작(D-91): 회사 휴대폰 알림 상태(환경변수 키) · 대표만 켜기 API · 직원 가입 안내(누구용 주소·보낼 글·QR·A4 안내문) → 신청 화면에 미리 골라짐 · 준비 점검에 알림 항목", async ({ browser }) => {
+    const ceo = await login(browser, CEO.email, CEO.password);
+    await ceo.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+    // 1) 회사 휴대폰 알림 — 이 시험 서버는 환경변수 키로 돈다: 켜짐 + 환경변수 표시, 대표 화면에서 내 기기 알림 카드까지
+    await ceo.goto("/admin?tab=settings");
+    const card = ceo.getByTestId("company-push");
+    await expect(card).toHaveAttribute("data-state", "on");
+    await expect(card.getByTestId("company-push-source")).toContainText("환경변수");
+    await expect(card.getByTestId("push-card")).toBeVisible();
+    const st = await (await ceo.request.get("/api/push")).json();
+    expect(st).toMatchObject({ enabled: true, source: "env", canEnable: true });
+    expect(JSON.stringify(st)).not.toMatch(/privateKey/i);
+    const en = await ceo.request.post("/api/push/enable");
+    expect(en.status()).toBe(200);
+    expect(await en.json()).toMatchObject({ source: "env", created: false });
+    // 현장소장은 회사 알림을 켤 수 없다 (403) · 다른 사이트에서 보낸 요청도 차단
+    const field = await login(browser, FIELD.email, FIELD.password, { width: 390, height: 844 });
+    expect((await field.request.post("/api/push/enable")).status()).toBe(403);
+    expect((await (await field.request.get("/api/push")).json()).canEnable).toBe(false);
+    expect((await ceo.request.post("/api/push/enable", { headers: { Origin: "https://evil.example" } })).status()).toBe(403);
+    // 2) 직원 가입 안내 — 누구용을 바꾸면 주소·보낼 글이 바뀐다
+    await ceo.goto("/admin?tab=members");
+    const inv = ceo.getByTestId("invite-card");
+    await expect(inv.getByTestId("invite-url")).toHaveValue(/\/signup\?k=field$/);
+    await inv.getByTestId("invite-kind-manager").click();
+    await expect(inv.getByTestId("invite-url")).toHaveValue(/\/signup\?k=manager$/);
+    const url = await inv.getByTestId("invite-url").inputValue();
+    await inv.getByTestId("invite-copy-message").click();
+    await expect(inv.getByTestId("invite-status")).toContainText("복사했습니다");
+    const copied = await ceo.evaluate(() => navigator.clipboard.readText());
+    expect(copied).toContain(url);
+    expect(copied).toContain("‘본사 직원’을 확인하고");
+    expect(copied).toContain("승인 대기");
+    await inv.getByTestId("invite-qr").click();
+    await expect(ceo.getByTestId("invite-qr-dialog").locator("svg[role=img]")).toBeVisible();
+    await ceo.keyboard.press("Escape");
+    // 3) A4 안내문 (발주처용) — QR·주소·전화
+    await ceo.goto("/admin/invite?k=partner");
+    await expect(ceo.getByTestId("invite-notice-who")).toHaveText("발주처·협력사용");
+    await expect(ceo.getByTestId("invite-notice-url")).toHaveText(/\/signup\?k=partner$/);
+    await expect(ceo.getByTestId("invite-notice-body").locator("svg[role=img]")).toBeVisible();
+    // 현장 직원은 안내문을 볼 수 없다
+    await field.goto("/admin/invite?k=field");
+    await expect(field.getByTestId("invite-notice")).toHaveCount(0);
+    // 4) 로그인 없는 휴대폰에서 받은 주소 → ‘어떤 일로’가 미리 골라져 있다(바꿀 수 있음)
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const phone = await ctx.newPage();
+    await phone.goto("/signup?k=partner");
+    await expect(phone.getByTestId("su-kind-partner")).toBeChecked();
+    await pick(phone, "su-kind-field");
+    await expect(phone.getByTestId("su-kind-partner")).not.toBeChecked();
+    await phone.goto("/signup?k=ceo");
+    await expect(phone.getByTestId("su-kind-field")).not.toBeChecked();
+    await expect(phone.locator("input[name=su-kind]:checked")).toHaveCount(0);
+    await ctx.close();
+    // 5) 시범 운영 준비 — 회사 휴대폰 알림이 켜짐으로
+    await ceo.goto("/launch");
+    await expect(ceo.getByTestId("launch-company")).toContainText("회사 휴대폰 알림");
+    await expect(ceo.getByTestId("launch-company")).toContainText("켜짐");
+  });
 });
