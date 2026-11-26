@@ -26,7 +26,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="ko" data-theme={DEFAULT_THEME} data-font="md" data-motion="full" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: PREFS_BOOT_SCRIPT }} />
-        <style dangerouslySetInnerHTML={{ __html: themeCss() + `\n@media (min-width:1024px){html:not([data-frame="1"]){--demo-bar-h:2.45rem}}` }} />
+        {/* 시연(DEMO) PC 화면 맨 위 검은 조작 바의 높이만큼 상단 띠·메뉴를 내린다. 운영(LIVE)에는 그 바가 없으므로 0 —
+            예전에는 운영에도 2.45rem이 적용돼 상단 띠가 본문 위쪽을 덮었다 (D-92 긴급 수정) */}
+        <style dangerouslySetInnerHTML={{ __html: themeCss() + (IS_LIVE ? "" : `\n@media (min-width:1024px){html:not([data-frame="1"]){--demo-bar-h:2.45rem}}`) }} />
       </head>
       <body>
         <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[200] focus:rounded-lg focus:bg-surface focus:px-3 focus:py-2 focus:shadow-pop">

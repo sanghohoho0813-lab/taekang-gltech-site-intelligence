@@ -1604,4 +1604,39 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     await expect(ceo.getByTestId("launch-company")).toContainText("회사 휴대폰 알림");
     await expect(ceo.getByTestId("launch-company")).toContainText("켜짐");
   });
+
+  test("PC 화면 상단 띠가 본문을 덮지 않음 (D-92 긴급): 운영판에는 시연 조작 바가 없으므로 띠·메뉴가 맨 위에 붙고, 본문은 띠 아래에서 시작 · 첫 버튼을 누를 수 있음", async ({ browser }) => {
+    for (const vp of [{ width: 1280, height: 800 }, { width: 1920, height: 1080 }]) {
+      const ceo = await login(browser, CEO.email, CEO.password, vp);
+      for (const path of ["/dashboard", "/field", "/daily", "/photos", "/labor", "/finance", "/admin"]) {
+        await ceo.goto(path);
+        await expect(ceo.locator("main h1").first()).toBeVisible();
+        const m = await ceo.evaluate(() => {
+          const hdr = [...document.querySelectorAll("header")].find((h) => getComputedStyle(h).position === "sticky" && h.getBoundingClientRect().height > 0)!;
+          const main = document.querySelector("main")!;
+          const aside = document.querySelector("aside");
+          return {
+            bar: getComputedStyle(document.documentElement).getPropertyValue("--demo-bar-h").trim(),
+            hdrTop: hdr.getBoundingClientRect().top,
+            hdrBottom: hdr.getBoundingClientRect().bottom,
+            mainTop: main.getBoundingClientRect().top,
+            asideTop: aside ? aside.getBoundingClientRect().top : 0,
+          };
+        });
+        expect(m.bar, path).toBe("0px");
+        expect(m.hdrTop, path).toBe(0);
+        expect(m.asideTop, path).toBe(0);
+        expect(m.mainTop, path).toBeGreaterThanOrEqual(m.hdrBottom - 1);
+        // 본문 맨 위 줄(제목)이 띠에 가려지지 않아 바로 눌리고 읽힌다
+        const covered = await ceo.evaluate(() => {
+          const h1 = document.querySelector("main h1")!;
+          const r = h1.getBoundingClientRect();
+          const hit = document.elementFromPoint(r.left + 4, r.top + 2);
+          return !hit || !h1.contains(hit);
+        });
+        expect(covered, path).toBe(false);
+      }
+      await ceo.context().close();
+    }
+  });
 });
