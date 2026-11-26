@@ -10,7 +10,8 @@ import { CommandError } from "@/lib/data/commands";
 import { PARTNER_STATUS_LABEL, PARTNER_TYPE_LABEL } from "@/lib/domain/labels";
 import { fmtDate, fmtDateTime, fmtRelative } from "@/lib/domain/format";
 import { uid } from "@/lib/domain/ids";
-import type { DemoDB, PartnerRequest, PartnerRequestStatus } from "@/lib/domain/types";
+import type { DemoDB, DemoUser, PartnerRequest, PartnerRequestStatus } from "@/lib/domain/types";
+import { samplePortalDb } from "@/lib/data/samplePortal";
 import { Badge, Button, Card, CardHeader, DemoBadge, EmptyState, Field, Notice, PageSkeleton, ProgressBar, cx, inputCls } from "@/components/ui/primitives";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
@@ -52,6 +53,23 @@ export default function PartnerPage() {
   // 관리자 미리보기: 현장이 지정된 첫 발주처 계정 기준 / 발주처: 본인 계정
   const partner = preview ? db.users.find((u) => u.role === "partner" && !u.inactive && (u.partnerSiteIds ?? []).some((id) => db.sites.some((s) => s.id === id))) : db.users.find((u) => u.id === userId);
   const mySites = db.sites.filter((s) => partner?.partnerSiteIds?.includes(s.id));
+  // 본사 미리보기인데 발주처 계정이 없을 때 (D-93) — 막지 않고 바로 본다
+  //  · 현장이 있으면: 그 현장들을 공개받은 ‘가상의 발주처’ 기준으로 (계정 만들기 전 미리보기)
+  //  · 현장도 없으면: 가상 현장으로 만든 예시 화면 (시연판 자료 · 서버에 저장하지 않음)
+  if (preview && (!partner || mySites.length === 0)) {
+    if (db.sites.length) {
+      const virtual: DemoUser = { id: "preview-partner", role: "partner", name: "발주처", title: "담당자", partnerSiteIds: db.sites.map((x) => x.id) };
+      return (
+        <>
+          <SampleDataBanner />
+          <PartnerPortal db={db} partner={virtual} sites={db.sites} preview mode="virtual" />
+        </>
+      );
+    }
+    const sample = samplePortalDb();
+    const sp = sample.users.find((u) => u.role === "partner" && (u.partnerSiteIds ?? []).length)!;
+    return <PartnerPortal db={sample} partner={sp} sites={sample.sites.filter((x) => sp.partnerSiteIds!.includes(x.id))} preview mode="sample" />;
+  }
   if (!partner || mySites.length === 0) {
     return (
       <div className="mx-auto max-w-xl px-5 py-16" data-testid="partner-portal">
@@ -91,7 +109,7 @@ export default function PartnerPage() {
   );
 }
 
-function PartnerPortal({ db, partner, sites: mySites, preview }: { db: NonNullable<ReturnType<typeof useMe>["db"]>; partner: NonNullable<ReturnType<typeof useMe>["db"]>["users"][number]; sites: NonNullable<ReturnType<typeof useMe>["db"]>["sites"]; preview: boolean }) {
+function PartnerPortal({ db, partner, sites: mySites, preview, mode = "account" }: { db: NonNullable<ReturnType<typeof useMe>["db"]>; partner: NonNullable<ReturnType<typeof useMe>["db"]>["users"][number]; sites: NonNullable<ReturnType<typeof useMe>["db"]>["sites"]; preview: boolean; mode?: "account" | "virtual" | "sample" }) {
   const [siteId, setSiteId] = useState(mySites[0].id);
   const site = mySites.find((s) => s.id === siteId) ?? mySites[0];
   // 아직 만들지 않은 기능 소개는 시연·본사 미리보기에서만 (실제 고객 화면에는 숨김 · D-65)
@@ -166,7 +184,28 @@ function PartnerPortal({ db, partner, sites: mySites, preview }: { db: NonNullab
       </header>
 
       <main id="main" className="mx-auto max-w-[1240px] space-y-5 px-4 py-6 pb-16">
-        {preview && (
+        {preview && mode === "sample" && (
+          <Notice tone="warn" title="예시 화면 — 가상 현장·가상 자료입니다">
+            <span data-testid="partner-sample-note">
+              아직 등록된 현장이 없어, 발주처에게 어떻게 보이는지 가상 현장으로 보여 드립니다. 실제 발주처에게는 이 화면이 보이지 않고, 저장되지도 않습니다. 현장을 등록하면 그 현장 화면으로 바뀝니다.{" "}
+              <Link href="/admin?tab=sites" className="font-bold text-theme-ink underline">
+                현장 등록하기
+              </Link>
+            </span>
+          </Notice>
+        )}
+        {preview && mode === "virtual" && (
+          <Notice tone="info" title="발주처 계정을 만들기 전 미리보기 — 현장을 공개받은 발주처에게 이렇게 보입니다">
+            <span data-testid="partner-virtual-note">
+              내부 원가·예상이익·미수금·다른 현장 정보는 표시되지 않습니다. 발주처 계정은{" "}
+              <Link href="/admin?tab=members" className="font-bold text-theme-ink underline">
+                운영 관리 → 사용자
+              </Link>
+              의 ‘직원에게 가입 안내 보내기’(발주처용)나 ‘사용자 추가’로 만들고, 공개할 현장을 정합니다.
+            </span>
+          </Notice>
+        )}
+        {preview && mode === "account" && (
           <Notice tone="info" title={`관리자 미리보기 — ‘${partner.name} ${partner.title}’에게 보이는 화면입니다`}>
             내부 원가·예상이익·미수금·다른 현장 정보는 이 포털에 표시되지 않습니다.
             {!IS_LIVE && (

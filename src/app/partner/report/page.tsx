@@ -20,6 +20,7 @@ import { Badge, Button, DemoBadge, EmptyState, PageSkeleton, Segmented, cx, inpu
 import { SampleDataBanner } from "@/components/shell/AppShell";
 import { MonthlyDocView } from "@/components/docs/ReportDocs";
 import { ShareLinkButton } from "@/components/admin/ShareLinks";
+import { samplePortalDb } from "@/lib/data/samplePortal";
 
 const monthOf = (d: string) => d.slice(0, 7);
 const prevMonth = (m: string) => {
@@ -37,10 +38,13 @@ export default function PartnerReportPage() {
 }
 
 function Inner() {
-  const { db, role, userId } = useMe();
+  const { db: real, role, userId } = useMe();
   const q = useSearchParams();
   const router = useRouter();
-  if (!db) return <PageSkeleton />;
+  if (!real) return <PageSkeleton />;
+  // 본사 미리보기인데 운영 회사에 현장이 하나도 없으면 가상 현장 예시로 보여 준다 (D-93 · 서버에 저장하지 않음)
+  const sample = role !== "partner" && role !== "field" && real.sites.length === 0;
+  const db = sample ? samplePortalDb() : real;
   if (role === "field") {
     return (
       <div className="mx-auto max-w-xl px-5 py-16 text-center" data-testid="access-denied">
@@ -121,7 +125,7 @@ function Inner() {
             )}
             <span className="ml-auto flex flex-wrap items-center gap-2">
               <DemoBadge compact />
-              {preview && <ShareLinkButton kind="monthly" siteId={site.id} month={month} title={`${site.shortName} ${monthTitle(month, today)} 공정 보고서`} company={db.company.name} />}
+              {preview && !sample && <ShareLinkButton kind="monthly" siteId={site.id} month={month} title={`${site.shortName} ${monthTitle(month, today)} 공정 보고서`} company={db.company.name} />}
               <Button icon={<Printer size={17} />} onClick={() => window.print()} data-testid="report-print">
                 인쇄·PDF
               </Button>
@@ -143,7 +147,12 @@ function Inner() {
                 : `보고서는 이번 달과 지난달만 볼 수 있습니다 — ${Number(month.slice(5))}월 보고서를 보여 드립니다. 그 전 기록은 태강지엘텍에 요청해 주세요.`}
             </p>
           )}
-          {preview && (
+          {sample && (
+            <p className="no-print mb-3 rounded-xl bg-warn-bg px-3.5 py-2 text-[0.84rem] font-semibold text-ink" data-testid="report-sample">
+              예시 화면 — 아직 등록된 현장이 없어 가상 현장·가상 자료로 보여 드립니다. 실제 발주처에게는 보이지 않고 저장되지도 않습니다. 현장을 등록하면 그 현장 보고서로 바뀝니다.
+            </p>
+          )}
+          {preview && !sample && (
             <p className="no-print mb-3 rounded-xl bg-active-soft px-3.5 py-2 text-[0.84rem] font-semibold text-theme-ink" data-testid="report-preview">
               {!partner
                 ? "관리자 미리보기 — 이 현장에는 발주처 계정이 없습니다. 인쇄하거나 ‘링크로 보내기’로 전하세요."

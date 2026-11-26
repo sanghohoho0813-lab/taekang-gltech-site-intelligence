@@ -85,6 +85,14 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     // 두 번째 설정 시도는 거부
     const again = await page.request.post("/api/setup", { data: { companyName: "x", name: "x", email: "x@x.test", password: "abcd1234" } });
     expect(again.status()).toBe(403);
+    // 현장이 하나도 없을 때 발주처 포털·월간 보고서 = 가상 현장 예시 화면 (D-93 · 서버에 저장하지 않음 · 링크 보내기 없음)
+    await page.goto("/partner");
+    await expect(page.getByTestId("partner-sample-note")).toBeVisible();
+    await expect(page.getByTestId("partner-site")).toContainText("가상");
+    await page.getByTestId("partner-report-link").first().click();
+    await expect(page.getByTestId("report-sample")).toBeVisible();
+    await expect(page.getByTestId("share-open")).toHaveCount(0);
+    expect((await (await page.request.get("/api/state")).json()).db.sites).toHaveLength(0);
   });
 
   test("관리자: 현장소장·발주처 계정 추가 → 현장 등록 (계획 이익률 자동)", async ({ browser }) => {
@@ -128,6 +136,12 @@ test.describe.serial("LIVE 운영 시작 흐름", () => {
     await page.getByTestId("site-save").click();
     await expect(page.getByTestId("admin-site-row")).toHaveCount(1);
     siteId = await page.evaluate(async () => (await (await fetch("/api/state")).json()).db.sites[0].id);
+    // 발주처 계정에 현장을 정하기 전: 발주처 포털은 이 현장 기준 미리보기 (D-93)
+    await page.goto("/partner");
+    await expect(page.getByTestId("partner-virtual-note")).toBeVisible();
+    await expect(page.getByTestId("partner-site")).toHaveText("○○물류센터 커튼월·창호 공사");
+    await expect(page.getByTestId("partner-sample-note")).toHaveCount(0);
+    await page.goto("/admin?tab=members");
     // 발주처에 현장 공개
     await page.getByTestId("admin-tab-members").click();
     await page.getByTestId("member-row").filter({ hasText: "원청 공무" }).getByRole("button", { name: "수정" }).click();
